@@ -1,0 +1,58 @@
+---
+name: bosskuai-ratchet-loop
+description: Use when improving something measurable, where every change needs a baseline, metric, test/eval, keep-or-revert decision, and short log entry.
+---
+
+# BosskuAI Ratchet Loop
+
+Use this skill when improving prompts, skills, tests, UI conversion, performance, SEO copy, code quality, or any workflow where "better" must be measured.
+
+## Contract
+
+Do not make many broad changes at once. Run a small loop:
+
+1. Define the metric.
+2. Capture the baseline.
+3. Make one change.
+4. Run the same eval/test/check again.
+5. Keep the change only if the metric improves or the tradeoff is explicitly accepted.
+6. Revert or isolate the change if it makes the result worse.
+7. Log the result and next candidate improvement.
+
+## Good Metrics
+
+- test pass/fail
+- eval score
+- token surface
+- load time
+- conversion rate proxy
+- false positive / false negative count
+- lint/security finding count
+- review defects found
+
+## Output Shape
+
+```txt
+Metric:
+Baseline:
+Versions: [model, SDK and tool versions, from config and lockfile]
+Change:
+Result:
+Decision: keep | revert | needs manual review
+Next:
+```
+
+## Guardrails
+
+- One meaningful variable per loop.
+- Do not claim improvement without the metric result.
+- Prefer deterministic checks before subjective judgement.
+- If the metric is weak, state that clearly.
+- A model id, SDK or tool version (test runner, linter, eval harness) is a variable too. Read it from config and the lockfile, and keep it fixed inside the loop, or change it in its own loop.
+- Measure on data shaped like production (types, nulls, sizes). A small fixture can show a gain that never happens in production.
+- Measuring a change on a branch is not shipping it. A kept change still needs a rollout behind a flag or to a small share first, and a way back.
+
+## Reference
+
+- `../../references/checklists/ratchet-loop-checklist.md`
+- `../../references/checklists/engineering-quality-bar.md`

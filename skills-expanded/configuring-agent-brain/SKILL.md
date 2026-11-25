@@ -1,0 +1,838 @@
+---
+name: configuring-agent-brain
+description: |
+  Installation and configuration skill for Agent Brain document search system.
+  Use when asked to "install agent brain", "setup agent brain", "configure agent brain",
+  "setting up document search", "installing agent-brain packages", "configuring API keys",
+  "initializing project for search", "troubleshooting agent brain", "pip install agent-brain",
+  "agent brain not working", "agent brain setup error", "configure embeddings provider",
+  "setup ollama for agent brain", "agent brain environment variables",
+  "install agent brain mcp", "configure mcp server", or "connect agent brain to claude desktop".
+  Covers package installation (server, CLI, MCP), provider configuration, project initialization, and server management.
+license: MIT
+allowed-tools:
+  - Bash
+  - Read
+metadata:
+  version: 10.4.0
+  category: ai-tools
+  author: Spillwave
+  last_validated: 2026-06-24
+---
+
+# Configuring Agent Brain
+
+Installation and configuration for Agent Brain document search with pluggable providers.
+
+## Contents
+
+- [Quick Setup](#quick-setup)
+- [Setup Wizard](#setup-wizard)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [MCP Server](#mcp-server-optional)
+- [Provider Configuration](#provider-configuration)
+- [Project Initialization](#project-initialization)
+- [Verification](#verification)
+- [When Not to Use](#when-not-to-use)
+- [Reference Documentation](#reference-documentation)
+
+---
+
+## Multi-Runtime Support
+
+Agent Brain supports multiple AI coding runtimes from a single canonical plugin source:
+
+| Runtime | Install Command |
+|---------|----------------|
+| Claude Code | `agent-brain install-agent --agent claude` |
+| OpenCode | `agent-brain install-agent --agent opencode` |
+| Codex (+ AGENTS.md) | `agent-brain install-agent --agent codex` |
+| Cursor | `agent-brain install-agent --agent cursor` |
+| Grok Build | `agent-brain install-agent --agent grok` |
+| Any skill runtime | `agent-brain install-agent --agent skill-runtime --dir <path>` |
+
+All runtimes share the same `.agent-brain/` data directory for indexes, configuration, and server state. The `install-agent` command converts the canonical plugin format into each runtime's native format automatically.
+
+Use `--global` for user-level installation, or `--dry-run` to preview files before writing.
+
+---
+
+## Quick Setup
+
+### Option A: Local with Ollama (FREE, No API Keys)
+
+```bash
+# 1. Install packages
+pip install agent-brain-rag agent-brain-cli
+
+# 2. Install and start Ollama
+brew install ollama  # macOS
+ollama serve &
+ollama pull nomic-embed-text
+ollama pull llama3.2
+
+# 3. Configure for Ollama
+export EMBEDDING_PROVIDER=ollama
+export EMBEDDING_MODEL=nomic-embed-text
+export SUMMARIZATION_PROVIDER=ollama
+export SUMMARIZATION_MODEL=llama3.2
+
+# 4. Initialize and start
+agent-brain init
+agent-brain start
+agent-brain status
+```
+
+### Option B: Cloud Providers (Best Quality)
+
+```bash
+# 1. Install packages
+pip install agent-brain-rag agent-brain-cli
+
+# 2. Configure API keys
+export OPENAI_API_KEY="sk-proj-..."       # For embeddings
+export ANTHROPIC_API_KEY="sk-ant-..."     # For summarization (optional)
+
+# 3. Initialize and start
+agent-brain init
+agent-brain start
+agent-brain status
+```
+
+**Validation**: After each step, verify success before proceeding to the next.
+
+---
+
+## Setup Wizard
+
+The canonical entry point for a complete guided setup is `/agent-brain-setup`. It asks all configuration questions interactively before running any CLI commands, then writes a comprehensive `config.yaml`.
+
+### Wizard Configuration Questions
+
+The wizard asks the following questions in sequence:
+
+| Step | Question | Config Keys Set |
+|------|----------|----------------|
+| 2 | Embedding Provider | `embedding.provider`, `embedding.model`, optionally `embedding.base_url`, `embedding.api_key` or `embedding.api_key_env` |
+| 3 | Summarization Provider | `summarization.provider`, `summarization.model`, optionally `summarization.base_url`, `summarization.api_key` or `summarization.api_key_env` |
+| 4 | Storage Backend | `storage.backend` (`chroma` or `postgres`) |
+| 5 | GraphRAG | `graphrag.enabled`, `graphrag.store_type`, `graphrag.use_code_metadata` |
+| 6 | Default Query Mode | Written as YAML comment: `# query.default_mode` |
+
+### Embedding Provider Options
+
+| Option | Provider Key | Model | Notes |
+|--------|-------------|-------|-------|
+| Ollama (FREE, local) | `ollama` | `nomic-embed-text` | Requires Ollama running locally |
+| OpenAI | `openai` | `text-embedding-3-large` | Requires `OPENAI_API_KEY` |
+| Cohere | `cohere` | `embed-multilingual-v3.0` | Requires `COHERE_API_KEY`, multi-language support |
+| Google Gemini | `gemini` | `text-embedding-004` | Requires `GOOGLE_API_KEY` |
+| Custom | (user-specified) | (user-specified) | Specify provider, model, and base_url |
+
+### Summarization Provider Options
+
+| Option | Provider Key | Model | Notes |
+|--------|-------------|-------|-------|
+| Ollama (FREE, local) | `ollama` | `llama3.2` | Requires Ollama running locally |
+| Ollama + Mistral (FREE, local) | `ollama` | `mistral-small3.2` | Better summarization quality |
+| Anthropic | `anthropic` | `claude-haiku-4-5-20251001` | Requires `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `gpt-4o-mini` | Requires `OPENAI_API_KEY` |
+| Google Gemini | `gemini` | `gemini-2.0-flash` | Requires `GOOGLE_API_KEY` |
+| Grok (xAI) | `grok` | `grok-3-mini-fast` | Requires `XAI_API_KEY` |
+
+### Config.yaml Written by Wizard
+
+After answering all questions, the wizard writes a comprehensive `config.yaml` covering:
+- `embedding.*` — provider, model, api_key or api_key_env, optional base_url
+- `summarization.*` — provider, model, api_key or api_key_env, optional base_url
+- `storage.*` — backend selection and (if PostgreSQL) connection settings
+- `graphrag.*` — enabled flag, store_type, use_code_metadata
+- `# query.default_mode` as a YAML comment (informational)
+
+The file is chmod 600 automatically. A security warning is shown: never commit config.yaml to git.
+
+**PostgreSQL + BM25**: When `storage.backend: "postgres"` is selected, the
+disk-based BM25 index is replaced by PostgreSQL's built-in full-text search
+(`tsvector` + `websearch_to_tsquery`). The `--mode bm25` command works
+identically from the user's perspective. Language is configurable via
+`storage.postgres.language` (default: `"english"`).
+
+### Standalone Config Command
+
+`/agent-brain-config` handles provider-specific details when called standalone (without the full wizard). It includes storage backend selection, indexing exclude patterns, and Ollama status checks.
+
+---
+
+## Prerequisites
+
+### Required
+- **Python 3.10+**: Verify with `python --version`
+- **pip**: Python package manager
+
+### Provider-Dependent
+- **OpenAI API Key**: Required for OpenAI embeddings
+- **Ollama**: Required for local/private deployments (no API key needed)
+
+### System Requirements
+- ~500MB RAM for typical document collections
+- ~1GB RAM with GraphRAG enabled
+- Disk space for ChromaDB vector store
+
+---
+
+## Installation
+
+> **Recommended installer**: use **pipx** (isolated global) or **uv** to install the
+> CLI — `pipx install agent-brain-cli` or `uv tool install agent-brain-cli`. The bare
+> `pip` commands below work everywhere and are kept for simplicity, but pipx/uv avoid
+> dependency clashes. See [Installation Guide](references/installation-guide.md) for the
+> full comparison.
+
+### Standard Installation
+
+```bash
+pip install agent-brain-rag agent-brain-cli
+```
+
+**Verify installation succeeded**:
+```bash
+agent-brain --version
+```
+
+Expected: Version number displayed (e.g., `10.3.0` or later)
+
+### With GraphRAG Support
+
+```bash
+pip install "agent-brain-rag[graphrag]" agent-brain-cli
+# Kuzu backend (optional):
+pip install "agent-brain-rag[graphrag-kuzu]" agent-brain-cli
+```
+
+### Enable GraphRAG (server)
+
+```bash
+export ENABLE_GRAPH_INDEX=true            # Master switch (default: false)
+export GRAPH_STORE_TYPE=simple            # or kuzu
+export GRAPH_INDEX_PATH=./graph_index
+export GRAPH_USE_CODE_METADATA=true       # Extract from AST metadata
+export GRAPH_USE_LLM_EXTRACTION=true      # Use LLM extractor when available
+export GRAPH_MAX_TRIPLETS_PER_CHUNK=10    # Triplet cap per chunk
+export GRAPH_TRAVERSAL_DEPTH=2            # Default traversal depth
+export GRAPH_EXTRACTION_MODEL=claude-haiku-4-5
+```
+
+Add the same values to your `.env` if you prefer file-based config.
+
+### Virtual Environment (Recommended)
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+pip install agent-brain-rag agent-brain-cli
+```
+
+### Installation Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `pip not found` | Run `python -m ensurepip` |
+| Permission denied | Use `pip install --user` or virtual env |
+| Module not found after install | Restart terminal or activate venv |
+| Wrong Python version | Use `python3.10 -m pip install` |
+
+**Counter-example - Wrong approach**:
+```bash
+# DO NOT use sudo with pip
+sudo pip install agent-brain-rag  # Wrong - creates permission issues
+```
+
+**Correct approach**:
+```bash
+pip install --user agent-brain-rag  # Correct - user installation
+# OR use virtual environment
+```
+
+---
+
+## MCP Server (Optional)
+
+Agent Brain ships an **MCP (Model Context Protocol) server** that exposes the running
+instance to MCP-aware clients — Claude Desktop, Claude Code, Cursor, Windsurf, the Claude
+Agent SDK, and LangChain DeepAgents.
+
+### Install
+
+```bash
+pip install agent-brain-ag-mcp
+```
+
+> **PyPI name vs. command**: the package publishes as `agent-brain-ag-mcp` (renamed in
+> v10.1.2 — the original name hit PyPI's typosquatting filter), but the installed console
+> script is still `agent-brain-mcp` and the import path is still `agent_brain_mcp`.
+
+### Register through the plugin (recommended for Claude Code)
+
+`install-agent` can register the MCP server for you while installing the plugin —
+no hand-editing of `.mcp.json`:
+
+```bash
+# Install the plugin AND register the agent-brain MCP server for Claude Code
+agent-brain install-agent --agent claude --with-mcp
+
+# ...or for OpenCode (writes the project-root opencode.json)
+agent-brain install-agent --agent opencode --with-mcp
+
+# ...or for Codex (writes ~/.codex/config.toml, TOML [mcp_servers.agent-brain])
+agent-brain install-agent --agent codex --with-mcp
+
+# ...or for Cursor (writes .cursor/mcp.json)
+agent-brain install-agent --agent cursor --with-mcp
+
+# ...or for Grok Build (writes .mcp.json — Grok loads Claude plugins)
+agent-brain install-agent --agent grok --with-mcp
+
+# Preview without writing anything
+agent-brain install-agent --agent claude --with-mcp --dry-run
+
+# Register with client-side OAuth enabled (for a remote, OAuth-protected server)
+agent-brain install-agent --agent claude --with-mcp --mcp-auth oauth
+```
+
+What `--with-mcp` does:
+- Writes/merges an `agent-brain` entry into the runtime's MCP config, **preserving any other
+  MCP servers and keys** — Claude Code's `.mcp.json` / `~/.claude.json` (`mcpServers`), OpenCode's
+  project-root `opencode.json` / `~/.config/opencode/opencode.json` (`mcp`), Codex's
+  `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`, `[mcp_servers.agent-brain]` TOML),
+  Cursor's `.cursor/mcp.json` / `~/.cursor/mcp.json`, or Grok Build's Claude path.
+- Pins `AGENT_BRAIN_STATE_DIR` to the project's absolute `.agent-brain` path so the
+  server is discoverable regardless of the client's working directory.
+- Is **idempotent** — re-running reports `unchanged` when the entry already matches.
+
+| Flag | Values | Default | Purpose |
+|------|--------|---------|---------|
+| `--with-mcp` | — | off | Register the MCP server during install |
+| `--mcp-backend` | `auto`/`uds`/`http` | `auto` | How the MCP server reaches `agent-brain-serve` |
+| `--mcp-auth` | `none`/`oauth` | `none` | Write `AGENT_BRAIN_MCP_AUTH=oauth` for remote OAuth servers |
+
+> Auto-registration targets **Claude Code**, **OpenCode**, **Codex**, **Cursor**, and **Grok Build**. For other MCP hosts,
+> register manually with the JSON block below (the flag will print a note and skip). Codex has no
+> project-level MCP config, so both scopes write the single user-level `config.toml`. Conforming
+> Agent Plugins 1.0 clients also pick up `agent-brain-plugin/mcp.json` automatically.
+
+### Configure an MCP client (manual)
+
+Add the server to your client's MCP config (Claude Desktop / Cursor / Windsurf use the
+same `mcpServers` shape):
+
+```json
+{
+  "mcpServers": {
+    "agent-brain": {
+      "command": "agent-brain-mcp",
+      "args": ["--backend", "auto"],
+      "env": { "AGENT_BRAIN_STATE_DIR": "/abs/path/.agent-brain" }
+    }
+  }
+}
+```
+
+- `--backend {auto,uds,http}` selects how the MCP server reaches `agent-brain-serve`
+  (`auto` prefers the Unix domain socket, falls back to HTTP). This is **orthogonal** to
+  the MCP *listen* transport.
+- **stdio** is the default listen transport (no flag). For IDE/framework clients that
+  prefer HTTP, use `agent-brain-mcp --transport http --host 127.0.0.1 --port 8765`
+  (loopback only — public binds are rejected).
+
+### OAuth 2.1 for remote servers (shipped in v10.4)
+
+For a **local/loopback** server you need no auth — leave the defaults. To run Agent Brain
+remotely (CI box, shared dev server, hosted), the MCP server supports **OAuth 2.1** on the
+Streamable HTTP transport. Auth is **off by default**; opt in with env vars:
+
+| Variable | Side | Values | Notes |
+|----------|------|--------|-------|
+| `AGENT_BRAIN_AUTH` | server | `none` (default) / `basic` / `oauth` | Server-side auth mode |
+| `AGENT_BRAIN_OAUTH_RESOURCE` | server | absolute URI (scheme, no fragment) | Required **only** when `AGENT_BRAIN_AUTH=oauth` (RFC 8707 resource id) |
+| `AGENT_BRAIN_MCP_AUTH` | client | unset (off) / `oauth` | Opts the MCP client into the OAuth dance |
+
+The client side persists tokens at `<state_dir>/mcp-oauth-tokens.json` (chmod `0o600`) and
+refreshes silently. `install-agent --with-mcp --mcp-auth oauth` writes the client toggle for
+you. Per-tool scopes (`agent-brain:read|index|admin|subscribe`) enforce least privilege, with
+default-deny on the mutating tools.
+
+### Verify
+
+```bash
+# stdio server starts and exposes tools/resources/prompts
+agent-brain-mcp --help
+
+# Or drive it from the CLI's mcp transport
+agent-brain --transport mcp resources list
+```
+
+The current surface is **16 tools**, 5 `corpus://` resources, and 6 prompts. See the MCP
+package README, `docs/MCP_USER_GUIDE.md`, and this skill's
+[MCP Setup Guide](references/mcp-setup-guide.md) for the full reference.
+
+---
+
+## Provider Configuration
+
+Agent Brain supports pluggable providers with two configuration methods.
+
+### Method 1: Configuration File (Recommended)
+
+Create a `config.yaml` file in one of these locations:
+
+1. **Project-level**: `.agent-brain/config.yaml`
+2. **User-level**: `~/.agent-brain/config.yaml`
+3. **XDG config**: `~/.config/agent-brain/config.yaml`
+4. **Current directory**: `./config.yaml` or `./agent-brain.yaml`
+
+```yaml
+# ~/.agent-brain/config.yaml
+server:
+  url: "http://127.0.0.1:8000"
+  port: 8000
+
+project:
+  state_dir: null  # null = use default (.agent-brain)
+
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-large"
+  api_key: "sk-proj-..."  # Direct key, OR use api_key_env
+  # api_key_env: "OPENAI_API_KEY"  # Read from env var
+
+summarization:
+  provider: "anthropic"
+  model: "claude-haiku-4-5-20251001"
+  api_key: "sk-ant-..."  # Direct key, OR use api_key_env
+  # api_key_env: "ANTHROPIC_API_KEY"
+```
+
+**Config file search order**: AGENT_BRAIN_CONFIG env → current dir → project dir → user home
+
+**Security**: If storing API keys in config file:
+- Set file permissions: `chmod 600 ~/.agent-brain/config.yaml`
+- Add to `.gitignore`: `config.yaml`
+- Never commit API keys to version control
+
+### Method 2: Environment Variables
+
+Set variables in shell or `.env` file:
+
+```bash
+export EMBEDDING_PROVIDER=openai
+export EMBEDDING_MODEL=text-embedding-3-large
+export SUMMARIZATION_PROVIDER=anthropic
+export SUMMARIZATION_MODEL=claude-haiku-4-5-20251001
+export OPENAI_API_KEY="sk-proj-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+**Precedence order**: CLI options → environment variables → config file → defaults
+
+---
+
+### Provider Profiles
+
+#### Fully Local with Ollama (No API Keys)
+
+Best for privacy, air-gapped environments:
+
+**Config file** (`~/.agent-brain/config.yaml`):
+```yaml
+embedding:
+  provider: "ollama"
+  model: "nomic-embed-text"
+  base_url: "http://localhost:11434/v1"
+
+summarization:
+  provider: "ollama"
+  model: "llama3.2"
+  base_url: "http://localhost:11434/v1"
+```
+
+**Or environment variables**:
+```bash
+export EMBEDDING_PROVIDER=ollama
+export EMBEDDING_MODEL=nomic-embed-text
+export SUMMARIZATION_PROVIDER=ollama
+export SUMMARIZATION_MODEL=llama3.2
+```
+
+**Prerequisite**: Ollama must be installed and running with models pulled.
+
+#### Cloud (Best Quality)
+
+**Config file**:
+```yaml
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-large"
+  api_key: "sk-proj-..."
+
+summarization:
+  provider: "anthropic"
+  model: "claude-haiku-4-5-20251001"
+  api_key: "sk-ant-..."
+```
+
+**Or environment variables**:
+```bash
+export OPENAI_API_KEY="sk-proj-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+#### Mixed (Balance Quality and Privacy)
+
+```yaml
+embedding:
+  provider: "openai"
+  model: "text-embedding-3-large"
+  api_key: "sk-proj-..."
+
+summarization:
+  provider: "ollama"
+  model: "llama3.2"
+```
+
+### GraphRAG Configuration
+
+GraphRAG enables graph-based entity-relationship extraction for advanced query modes.
+
+**YAML config keys** (`config.yaml`):
+
+```yaml
+graphrag:
+  enabled: false                    # Master switch (default: false)
+  store_type: "simple"              # "simple" (in-memory) or "kuzu" (persistent disk)
+  use_code_metadata: true           # Extract entities from AST metadata (imports, classes)
+  langextract_provider: openai      # Optional override — see below
+  langextract_model: gpt-4o-mini    # Optional override — see below
+```
+
+**Corresponding environment variables**:
+
+| Env Var | Config Key | Default | Description |
+|---------|-----------|---------|-------------|
+| `ENABLE_GRAPH_INDEX` | `graphrag.enabled` | `false` | Master switch |
+| `GRAPH_STORE_TYPE` | `graphrag.store_type` | `simple` | `simple` or `kuzu` |
+| `GRAPH_USE_CODE_METADATA` | `graphrag.use_code_metadata` | `true` | AST metadata extraction |
+| `GRAPH_LANGEXTRACT_PROVIDER` | `graphrag.langextract_provider` | _(reuses summarization)_ | Override the provider used for doc-chunk extraction |
+| `GRAPH_LANGEXTRACT_MODEL` | `graphrag.langextract_model` | _(reuses summarization)_ | Override the model used for doc-chunk extraction |
+
+**Anthropic / Claude summarization users:** langextract's provider registry does
+not recognise Claude model ids. If `summarization.provider: anthropic` is set
+and no langextract override is given, Agent Brain auto-routes langextract to
+`openai/gpt-4o-mini` (you'll see an INFO log). Set `langextract_provider` /
+`langextract_model` explicitly to use a different model — Agent Brain validates
+the choice at startup and raises a clear `ConfigurationError` if the model is
+not registered with langextract.
+
+**Note**: GraphRAG requires the `--include-code` flag during indexing to extract code structure:
+
+```bash
+agent-brain index ./src --include-code
+```
+
+For Kuzu (persistent), install the optional extra first:
+
+```bash
+pip install "agent-brain-rag[graphrag-kuzu]"
+```
+
+### Query Mode Selection
+
+Agent Brain supports the following query modes, selectable per request with `--mode`:
+
+| Mode | Description | Requirements |
+|------|-------------|-------------|
+| `hybrid` | Vector similarity + BM25 keyword (recommended default) | None |
+| `semantic` | Pure vector similarity search | None |
+| `bm25` | Keyword-only search (fast, no embedding needed) | None |
+| `graph` | Entity relationship graph traversal | GraphRAG + ChromaDB backend |
+| `multi` | Fuses vector + BM25 + graph with RRF | GraphRAG + ChromaDB backend |
+
+**Note**: `graph` and `multi` modes are not available with PostgreSQL backend.
+GraphRAG uses an in-memory/Kuzu graph store that is separate from the vector
+store — it currently integrates only with ChromaDB.
+
+**Per-request override**:
+
+```bash
+agent-brain query "authentication flow" --mode hybrid
+agent-brain query "class relationships" --mode graph    # GraphRAG + ChromaDB required
+agent-brain query "how do services work" --mode multi   # GraphRAG + ChromaDB required
+```
+
+**Note**: There is no global `query.default_mode` config key yet. Mode is per-request only. The setup wizard writes the selected default mode as a YAML comment for documentation purposes.
+
+### Verify Configuration
+
+```bash
+agent-brain verify
+```
+
+**Counter-example - Common mistake**:
+```bash
+# DO NOT put keys in shell command history
+OPENAI_API_KEY="sk-proj-abc123" agent-brain start  # Wrong - key in history
+```
+
+**Correct approaches**:
+```bash
+# Use config file (keys are in file, not command line)
+agent-brain start
+
+# Or use environment from shell profile
+export OPENAI_API_KEY="sk-proj-..."  # In ~/.bashrc
+agent-brain start
+```
+
+---
+
+## Project Initialization
+
+### Initialize Project
+
+Navigate to the project root and run:
+
+```bash
+agent-brain init
+```
+
+**Verify initialization succeeded**:
+```bash
+ls .agent-brain/config.json
+```
+
+Expected: File exists
+
+### Start Server
+
+```bash
+agent-brain start
+```
+
+**Verify server started**:
+```bash
+agent-brain status
+```
+
+Expected output:
+```
+Server Status: healthy
+Port: 49321
+Documents: 0
+Mode: project
+```
+
+### Index Documents
+
+```bash
+agent-brain index ./docs
+```
+
+**Verify indexing succeeded**:
+```bash
+agent-brain status
+```
+
+Expected: Documents count > 0
+
+### Test Search
+
+```bash
+agent-brain query "test query" --mode hybrid
+```
+
+Expected: Search results or "No results" (not an error)
+
+---
+
+## Verification
+
+### Full Verification Checklist
+
+Run each command and verify expected output:
+
+- [ ] `agent-brain --version` shows version number (10.3.0+)
+- [ ] `echo ${OPENAI_API_KEY:+SET}` shows "SET" (if using OpenAI)
+- [ ] `ls .agent-brain/config.json` file exists
+- [ ] `agent-brain status` shows "healthy"
+- [ ] `agent-brain status` shows document count > 0
+- [ ] `agent-brain query "test"` returns results or "no matches"
+- [ ] `agent-brain folders list` shows indexed folders
+- [ ] `agent-brain types list` shows file type presets
+- [ ] `agent-brain jobs` shows job queue (empty or with history)
+
+### GraphRAG Verification (if enabled)
+
+- [ ] `echo ${ENABLE_GRAPH_INDEX}` shows "true"
+- [ ] `agent-brain status --json | jq '.graph_index'` shows graph index info
+- [ ] `agent-brain query "class relationships" --mode graph` returns results or graceful error
+- [ ] `agent-brain query "how it works" --mode multi` returns fused results
+
+### Automated Verification
+
+```bash
+agent-brain verify
+```
+
+This runs all checks and reports any issues.
+
+### Post-Indexing Verification
+
+After indexing documents, verify the pipeline is working:
+
+```bash
+# Monitor indexing job
+agent-brain jobs --watch
+
+# Check job completed successfully
+agent-brain jobs <job_id>
+
+# Verify incremental indexing works
+agent-brain index ./docs  # Should show eviction summary with unchanged files
+
+# Validate injection scripts before use
+agent-brain inject ./docs --script enrich.py --dry-run
+```
+
+---
+
+## When Not to Use
+
+This skill focuses on **installation and configuration**. Do NOT use for:
+
+- **Searching documents** - Use `using-agent-brain` skill instead
+- **Query optimization** - Use `using-agent-brain` skill instead
+- **Understanding search modes** - Use `using-agent-brain` skill instead
+- **GraphRAG queries** - Use `using-agent-brain` skill instead
+
+**Scope boundary**: Once Agent Brain is installed, configured, initialized, and verified healthy, switch to the `using-agent-brain` skill for search operations.
+
+---
+
+## Common Setup Issues
+
+### Issue: Module Not Found
+
+```bash
+pip install --force-reinstall agent-brain-rag agent-brain-cli
+```
+
+### Issue: API Key Not Working
+
+```bash
+# Test OpenAI key
+curl -s https://api.openai.com/v1/models \
+  -H "Authorization: Bearer $OPENAI_API_KEY" | head -c 100
+```
+
+Expected: JSON response (not error)
+
+### Issue: Server Won't Start
+
+```bash
+# Check for stale state
+rm -f .agent-brain/runtime.json
+rm -f .agent-brain/lock.json
+agent-brain start
+```
+
+### Issue: Ollama Connection Failed
+
+```bash
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+```
+
+Expected: JSON with model list
+
+### Issue: No Search Results
+
+```bash
+agent-brain status  # Check document count
+```
+
+If count is 0, index documents:
+```bash
+agent-brain index ./docs
+```
+
+---
+
+## Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AGENT_BRAIN_CONFIG` | No | - | Path to config.yaml file |
+| `AGENT_BRAIN_URL` | No | `http://127.0.0.1:8000` | Server URL for CLI |
+| `AGENT_BRAIN_STATE_DIR` | No | `.agent-brain` | State directory path |
+| `EMBEDDING_PROVIDER` | No | `openai` | Provider: openai, cohere, ollama |
+| `EMBEDDING_MODEL` | No | `text-embedding-3-large` | Model name |
+| `SUMMARIZATION_PROVIDER` | No | `anthropic` | Provider: anthropic, openai, gemini, grok, ollama |
+| `SUMMARIZATION_MODEL` | No | `claude-haiku-4-5-20251001` | Model name |
+| `OPENAI_API_KEY` | Conditional | - | Required if using OpenAI |
+| `ANTHROPIC_API_KEY` | Conditional | - | Required if using Anthropic |
+| `GOOGLE_API_KEY` | Conditional | - | Required if using Gemini |
+| `XAI_API_KEY` | Conditional | - | Required if using Grok |
+| `COHERE_API_KEY` | Conditional | - | Required if using Cohere |
+| `EMBEDDING_CACHE_MAX_MEM_ENTRIES` | No | 1000 | Max in-memory LRU entries (~12 MB at 3072 dims per 1000 entries) |
+| `EMBEDDING_CACHE_MAX_DISK_MB` | No | 500 | Max disk size for the SQLite embedding cache |
+
+**Note**: Environment variables override config file values. Config file values override defaults.
+
+### Caching
+
+#### Embedding Cache
+
+The embedding cache is **automatic** — no setup required. Embeddings are cached on first compute
+and reused on subsequent reindexes of unchanged content, significantly reducing OpenAI API costs
+when using file watching or frequent reindexing.
+
+The two cache env vars allow tuning for specific environments:
+- **Large indexes** — increase `EMBEDDING_CACHE_MAX_MEM_ENTRIES` (e.g., 5000) to keep more embeddings
+  in the fast in-memory tier and reduce SQLite lookups
+- **Memory-constrained environments** — decrease `EMBEDDING_CACHE_MAX_MEM_ENTRIES` (e.g., 200) to
+  limit RAM usage; the disk cache still provides cost savings even with a small memory tier
+- **Disk space constrained** — decrease `EMBEDDING_CACHE_MAX_DISK_MB` (e.g., 100) to cap the SQLite
+  cache database size; oldest entries are evicted when the limit is reached
+
+The disk cache uses SQLite with WAL mode for safe concurrent access during indexing operations.
+
+#### Query Cache
+
+The query cache is **automatic** — no setup required. Identical queries within
+the TTL window return instantly without hitting storage.
+
+- **`graph` and `multi` modes bypass the cache** — each call reaches storage
+  for fresh results.
+- Cache is **invalidated on every completed reindex job** (file watcher or manual).
+- Configurable via environment variables (see Configuration Guide for details):
+  - `QUERY_CACHE_TTL` — cache TTL in seconds (default: 300, i.e., 5 minutes)
+  - `QUERY_CACHE_MAX_SIZE` — max cached query results (default: 256)
+
+---
+
+## Reference Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Configuration Guide](references/configuration-guide.md) | Config file format and locations |
+| [Installation Guide](references/installation-guide.md) | Detailed installation options |
+| [Provider Configuration](references/provider-configuration.md) | All provider settings |
+| [MCP Setup Guide](references/mcp-setup-guide.md) | MCP server install, registration, OAuth, per-runtime config |
+| [Troubleshooting Guide](references/troubleshooting-guide.md) | Extended issue resolution |
+
+---
+
+## Support
+
+- Issues: https://github.com/SpillwaveSolutions/agent-brain-plugin/issues
+- Documentation: Reference guides in this skill

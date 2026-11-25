@@ -1,0 +1,128 @@
+---
+name: clean-delivery-workflow
+description: >
+  The order of work for a change, and how much of that order a given change actually warrants:
+  understanding before editing, clarifying what is ambiguous, deciding the test approach,
+  implementing in reversible steps, separating refactoring from behaviour where independently valid,
+  running the gates the risk deserves, and verifying before declaring done. Also the entry
+  point that routes a situation to the skill that owns it. Use when starting a change and the
+  order is not obvious, when a change has sprawled and needs re-sequencing, when refactoring
+  and behaviour changes have been mixed in one commit, when work is being declared done
+  without verification, when the same ceremony is being applied to a one-line fix and a
+  migration, or when you know the problem but not which skill covers it. Does not itself cover
+  any step in depth — it routes to requirements-and-acceptance, java-testing-strategy, tdd,
+  java-refactoring, code-review and quality-gates, each of which owns its own.
+---
+
+# Clean Delivery Workflow
+
+## Purpose
+
+Two failures this exists to prevent, and they look nothing alike. The first is the change that
+starts in the editor: code written before anyone established what was being asked, discovering
+in review that it solves the wrong problem. The second is ceremony applied uniformly — a
+one-line configuration fix carrying a design discussion, an acceptance-criteria table and the
+full pipeline, until the process becomes something people route around.
+
+The workflow establishes prerequisites, not a one-way pass. New evidence can send work
+back to clarification, risk assessment or test design; how much each step deserves depends
+on the change.
+
+The request determines which steps are actions now. A sequencing or review-only request
+produces a plan or findings; it does not authorize implementation merely because this workflow
+includes it. For an implementation request, carry already authorized work through the requested
+delivery boundary without asking again for routine reversible steps. Preparing a change,
+committing it and deploying it are distinct outcomes; establish which the user requested.
+
+## Workflow
+
+1. **Understand.** Read the affected source. For a behavior change, follow a relevant caller
+   or entry point to its observable result. Resolve active wiring, configuration overrides or generated inputs
+   when they determine which source controls that behavior; a matching name is only a search lead.
+   Find the existing checks, ownership and history. Inspect commits when intent is unclear;
+   “the last three” is not a meaningful boundary when the change history has a different shape.
+   Read applicable repository instructions and build/CI configuration. Inspect staged,
+   unstaged and untracked changes before editing; preserve work outside your ownership.
+   For Java, use the project's compiler/toolchain, runtime and dependency evidence; this
+   workflow sets no Java baseline and does not authorize upgrades or preview features.
+2. **Clarify.** Resolve ambiguity from available evidence first. Ask only for missing decisions
+   that materially change correctness or scope; record safe assumptions and continue
+   independent work (requirements-and-acceptance). Establish the observable outcome and
+   how it will be checked, reusing existing acceptance criteria. Do not invent product constraints.
+3. **Establish the risk.** What breaks if this is wrong, how soon would anyone notice, how hard
+   is it to undo? For changes crossing deployment or data boundaries, establish which versions
+   and consumers must coexist, the allowed interruption and the recovery path. These constraints
+   set the sequence, test level, gate set and review depth; revise them when evidence changes.
+4. **Decide the test approach** before implementing: which check can distinguish the requested
+   outcome on the affected path, at which level, and whether to drive the change with tests or
+   verify after (java-testing-strategy, tdd). Reuse adequate checks; a helper test alone does not
+   verify that the application selects that helper when wiring is the risk. For a bug, capture the
+   observed failure and attempt a safe reproduction before the fix. If reproduction remains
+   unavailable, record the evidence and limits of the proposed fix (debugging). During an
+   incident, authorized mitigation may precede reproduction: preserve evidence within the
+   response budget and distinguish service recovery from a verified cause.
+5. **Implement in reviewable, reversible steps**, keeping the tree green where practical. Separate
+   preparatory refactoring from behaviour when each is independently valid and testable. When a
+   safe refactoring exists only to enable the behaviour, preserve the distinction in the diff or
+   commit sequence without manufacturing invalid intermediate states (java-refactoring).
+   For multistep work, use the project's plan convention to record increments, their dependencies
+   and completion checks. Update completed work, evidence and blockers as each increment finishes;
+   revise the remaining sequence when evidence changes. A small change needs no separate plan file.
+6. **Verify.** Run repository-required gates plus checks the risk warrants (quality-gates),
+   and read the output. Risk-based selection does not waive a mandatory gate. Not "the
+   build should pass" — what it printed. Confirm the expected tests actually ran; inspect
+   zero-test results, skips and disabled jobs before treating an exit code or CI badge as evidence.
+7. **Review** at a depth set by the risk, not by the diff size (code-review). After review fixes,
+   generated-file changes or concurrent edits, inspect the delta and rerun checks whose results
+   it invalidates, plus any gates required for the final state. Preserve other contributors'
+   work and resolve overlapping ownership before editing it.
+8. **Record what the code cannot say**: assumptions, the trade you took, the decision and its
+   alternatives (technical-debt-decisions, architecture-decision-making). When a discovery changes
+   a reusable delivery rule, keep its triggering condition, evidence and limits in the existing
+   handoff or authorized project record; one successful rollout does not establish a universal sequence.
+9. **Deliver.** For edited work, compare the final staged, unstaged and untracked content with
+   the starting state and requested scope; a working-tree check does not prove an intended
+   commit or artifact contains the same files. Connect the requested outcome to observed checks
+   and state what remains unverified or deferred. A completed plan or a green pipeline alone
+   does not establish that requested implementation was delivered; a planning task ends with
+   its justified sequence, checks and unresolved decisions.
+
+## Rules
+
+- Understand the affected path before editing it, including under urgency. Revisit earlier
+  decisions when implementation or verification exposes a false assumption.
+- Ceremony scales with risk, and risk is not proportional to diff size. A large rename
+  confined to compiler-resolved internal references can be lower risk than a small timeout
+  change. Reflection, persisted/serialized names and external consumers can invalidate that
+  classification; compilation alone does not verify those contracts (java-refactoring).
+  See `references/workflow-by-risk.md` for risk-dependent sequencing.
+- Do not start editing to understand. Read first; if the code is genuinely unreadable, that is a
+  finding to report, not a reason to start rewriting it.
+- Prefer one coherent change per commit. Separate refactoring from behaviour when the refactoring
+  stands on its own; otherwise optimise for a buildable, reviewable history and make the mechanical
+  and semantic portions explicit. Commit structure is evidence for review and bisection, not a
+  substitute for tests or a universal revert boundary (debugging).
+  Advice about history does not authorize commits, staging unrelated files, rewriting
+  existing history or publication; follow the user's requested delivery boundary.
+- Prefer passing checkpoints between reviewable changes; a deliberate failing test during
+  reproduction/TDD is expected. Record pre-existing failures and distinguish them from
+  regressions. Do not weaken tests or discard another contributor's work to obtain green.
+- Do not expand the change. Adjacent problems are reported, not fixed, unless the change makes
+  them materially worse or leaving them makes your change wrong.
+- "Done" means verified, not written. If a gate could not be run, that is part of the report,
+  not an omission (coding-agent-discipline).
+- If something turns out to be blocked, finish everything that is not, and say precisely what
+  was left and why. Silently reducing scope is the failure mode that costs the most trust.
+
+## References
+
+- **Workflow by risk** — `references/workflow-by-risk.md`. What each step actually collapses to
+  at three risk levels, walked through on a configuration fix, a new endpoint and a schema
+  migration, plus incident mitigation before reproduction and delivery checks. Read
+  when deciding how much process a change warrants, when incident response changes the sequence,
+  or when checking that the evidence covers the intended delivery. Its decision cases are
+  teaching exercises, not measured agent evaluations.
+- **Routing** — `references/routing.md`. Situation-to-skill map across this repository: the
+  craftsmanship skills, the Java language and design skills, testing, concurrency, performance,
+  architecture and operations. Read when you know the problem but not which skill owns it, or
+  when two skills seem to disagree.

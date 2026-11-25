@@ -1,0 +1,413 @@
+---
+name: autopilot-patterns
+license: MIT
+description: Use when you're ready to let Copilot execute a multi-step plan autonomously — configures appropriate guardrails, handles plan-to-autopilot transitions, and sets safety boundaries.
+metadata:
+  category: copilot-exclusive
+  copilot_feature: "Autopilot mode, autonomous execution, --max-autopilot-continues, /allow-all"
+---
+
+# Autopilot Mode Patterns
+
+## Why This is Copilot-Exclusive
+
+Copilot CLI's **Autopilot mode** lets the agent work autonomously through a plan without
+stopping for approval at each step. Combined with Plan Mode's structured todos and Fleet's
+parallelism, this creates a spectrum of autonomy levels — from fully interactive to fully
+autonomous — that you can dial in per task. Claude Code has auto and bypass permission modes
+too; Copilot's autopilot differs in continuing from an approved plan until the task is complete.
+
+## When to Use
+
+- Well-defined tasks with clear acceptance criteria
+- Repetitive operations across many files (migrations, formatting, refactors)
+- After you've reviewed and approved a plan in Plan Mode
+- When the cost of review per step exceeds the risk of autonomous execution
+- Overnight or long-running tasks you want to fire-and-forget
+
+## Workflow
+
+### 1. Start with a Plan
+
+Always begin in Plan Mode for autopilot tasks:
+
+```text
+[Shift+Tab to enter Plan Mode]
+You: "Convert all React class components to functional components with hooks"
+```
+
+### 2. Review the Plan Carefully
+
+This is your guardrail moment. The plan should include:
+
+- Clear scope (which files, which patterns)
+- Defined completion criteria
+- Test verification steps
+- Rollback approach (e.g., git branch)
+
+### 3. Select Autopilot Execution
+
+When presented with the approval menu, choose **Autopilot**:
+
+```text
+exit_plan_mode:
+  summary: "Convert 12 class components to functional components..."
+  recommendedAction: "autopilot"
+```
+
+### 4. Monitor Progress
+
+Even in autopilot, you can:
+
+- Watch the output stream in real-time
+- Check todo status via SQL queries
+- Interrupt if something goes wrong (Ctrl+C)
+
+## Continuation Boundaries and Permissions
+
+Autopilot keeps working until the task completes, you interrupt it, a blocker stops progress,
+or it reaches the continuation limit.
+
+### Set explicit checkpoints when you want them
+
+The limit counts automatic continuation messages, not tool calls or plan phases. The command
+reference gives a default of 5 continuations outside an active autopilot objective; it does not
+say how the limit applies while an objective is active. To stop earlier outside an objective, set
+a lower value:
+
+```text
+copilot --max-autopilot-continues 3
+```
+
+A lower value gives you an earlier review checkpoint outside an objective, but it will not stop
+exactly at a phase boundary. Reaching the limit is a different stop from finishing the task, so
+confirm what was completed before you trust the result.
+
+### Give autopilot an explicit objective
+
+`/autopilot OBJECTIVE` (alias `/goal OBJECTIVE`) starts or refocuses autopilot on a stated goal.
+Without one, autopilot infers intent from context and shows your last prompt as the inferred
+objective. Add `--max-ai-credits N` to cap what the objective may spend:
+
+```text
+/goal Refactor the auth module --max-ai-credits 5
+```
+
+When the cap is reached, autopilot pauses and opens a panel with the credits used. Enter a new
+amount to resume, or dismiss the panel to stay paused. You can also resume without the panel by
+running the option alone, for example `/goal --max-ai-credits 5`. Either way the amount is a
+fresh window of that size, not an increment. `/goal on` and `/goal off` toggle autopilot without
+setting an objective and do not accept `--max-ai-credits`.
+
+### `/allow-all` changes permissions, not task structure
+
+`/allow-all` (or starting with `--allow-all`) grants Copilot permission to use tools, paths, and
+URLs without stopping for approval. It does **not** replace good planning and it does not create
+task checkpoints by itself.
+
+```text
+/allow-all
+[Shift+Tab to enter Plan Mode]
+You: "Refactor the auth module in autopilot, but stop if changes extend beyond src/auth/"
+```
+
+It also does **not** grant standing approval for irreversible commands. If the run would need to
+discard local work, rewrite Git history, or destroy infrastructure, spell out that permission
+explicitly in the task instead of assuming `/allow-all` covers it.
+
+As documented in the v1.0.77 release notes, unconditional autopilot approval also disables the
+sandbox for the current session when bypass is allowed. Treat approval convenience and loss of
+isolation as one risk decision; see the `sub-agent-sandboxing` skill.
+
+Use `/permissions default`, `/permissions assisted`, or `/permissions allow-all` to switch approval
+modes (`/allow-all` and `/yolo` are aliases that take `on`, `off`, or `show`), `/permissions show`
+to see the current mode, and `/permissions reset` to clear the in-memory tool and path approvals for
+the current session. `/reset-allowed-tools` goes further: it also returns the session to manual
+approval and clears the approvals saved for the current location.
+
+Allow-all grants blanket permission with no model safety review. The safety review belongs to
+assisted permissions (`/permissions assisted`), generally available without experimental mode as of
+v1.0.104: requests the review classifies as clearly safe proceed, and the rest still ask you. The
+v1.0.78 note that the safety-judge model is selected automatically referred to the former
+`/allow-all auto` argument, which the current command reference no longer lists.
+
+Autopilot remains selected after `task_complete` by default as of v1.0.76. Set
+`stayInAutopilot` to `false` when each completed task should return to interactive mode.
+
+### If autopilot pauses or stops mid-task
+
+1. Check which todo is still `in_progress`
+2. Inspect the current diff before continuing
+3. Continue with a corrective instruction if the next step needs tighter guidance
+
+### Split the builder from the judge
+
+An autonomous run that grades its own work carries the same blind spots into both steps. For goals
+that take several iterations, separate the roles:
+
+1. **Write the goal first.** Before any work, record the goal, measurable acceptance criteria, and
+   what is out of scope in a file such as `.goals/<id>/goal.md`, and do not edit it during the run.
+2. **Builder** — a sub-agent implements and commits.
+3. **Inspector** — a different sub-agent with fresh context checks the result against the goal file,
+   the repository, and the quality gates. It never reads the builder's summary of what it did. It
+   writes a PASS or FAIL verdict with reasons to a file the next iteration can read.
+4. **Cap the loop.** Stop after a fixed number of FAIL verdicts (five is a reasonable default) and hand
+   back to a human with the open issues — do not keep iterating on a goal the inspector keeps
+   rejecting.
+
+Label the commits by role (for example `[B]` and `[I]` in the subject) so the history shows who
+claimed what. Adapted from `gsemet/copilot-goal-skill` (MIT), which runs this as a Copilot plugin.
+The hard stop is this collection's own rule: upstream has no iteration limit and only warns after
+five iterations.
+
+## Unattended Runs: The Exit-Code Contract
+
+CI, cron jobs, and orchestrators need a machine-readable result. Judge prompt-mode success by the
+process exit code, never by parsing model prose from stdout. The command reference states that
+`-p` exits with a non-zero status if the run is interrupted, and Copilot CLI release notes confirm a
+failure exit when a prompt is blocked before responding and a non-zero exit when `--share` or
+`--share-gist` export fails. Malformed `--allow-tool` and `--deny-tool` patterns are
+reported as errors, but their exit code is not yet confirmed; keep that case out of automation
+until the installed runtime is tested.
+
+Branch immediately on the captured code:
+
+```powershell
+copilot -p "Run the approved maintenance task" --autopilot --allow-tool='shell(npm test)'
+$copilotExitCode = $LASTEXITCODE
+if ($copilotExitCode -ne 0) {
+  throw "Copilot failed with exit code $copilotExitCode"
+}
+```
+
+```bash
+if ! copilot -p "Run the approved maintenance task" --autopilot --allow-tool='shell(npm test)'; then
+  echo "Copilot failed" >&2
+  exit 1
+fi
+```
+
+Grant only the tools the task needs with `--allow-tool` (or `--allow-all-tools` in a sandbox); prompt mode cannot show approval prompts.
+
+As of v1.0.104, `--assisted-approval` (or `COPILOT_ASSISTED_APPROVAL=true`) turns on assisted
+permissions for a non-interactive run, so a safety review can approve eligible requests without a
+prompt. It is valid only with `-p` or when no terminal is attached. When it is enabled, it takes
+precedence over `--allow-all-tools` but does not affect `--allow-all-paths` or `--allow-all-urls`.
+Keep explicit `--allow-tool` grants for anything the run must be able to do, because a request the
+review does not approve cannot fall back to asking you.
+
+Values supplied to `--max-autopilot-continues` must be integers; reject computed NaN, negative, or
+fractional values before invocation. Also set an error budget for repeated permission denial or
+policy blocking (for example, stop after three consecutive failures) and decide where to record
+the diagnosis. Never retry an unattended denial indefinitely.
+
+Consecutive failures are not the only loop signal: also stop and escalate when the same normalized
+error keeps coming back, or when two fixes alternate (fix A causes error B, fix B brings back
+error A). Put this rule in your own wrapper or task instructions — it is not a documented Copilot
+CLI feature — and choose the thresholds yourself. The exit code alone cannot show these patterns;
+read them from the session log or your run report.
+
+### Safety Patterns
+
+#### Pattern 1: Branch-First Autopilot
+
+```bash
+# Create a safety branch before autopilot
+git checkout -b autopilot/class-to-hooks
+
+# Run autopilot on the branch
+# If results are bad: git checkout main && git branch -D autopilot/class-to-hooks
+# If results are good: create a PR for review
+```
+
+#### Pattern 2: Test-Gated Autopilot
+
+Include test verification in every todo:
+
+```sql
+INSERT INTO todos (id, title, description) VALUES
+  ('convert-user', 'Convert UserComponent',
+   'Convert to hooks AND run npm test -- UserComponent.test to verify');
+```
+
+Autopilot runs tests after each conversion — if tests fail, it stops and fixes.
+
+#### Pattern 3: Incremental Autopilot
+
+Don't autopilot everything at once. Batch into phases:
+
+```text
+Phase 1 (Autopilot): Convert simple components (no state, no lifecycle)
+Phase 2 (Interactive): Review Phase 1, then autopilot complex components
+Phase 3 (Interactive): Handle edge cases manually
+```
+
+#### Pattern 4: Dry-Run First
+
+```text
+You: "First, analyze all class components and list what would change.
+      Don't modify any files yet."
+
+# Review the analysis
+# Then: "OK, now execute the conversions in autopilot mode"
+```
+
+#### Pattern 5: Careful Scope Lock
+
+When a task is safe to automate but the blast radius must stay narrow, tell Copilot exactly
+what is frozen:
+
+```text
+You: "Use autopilot, but be careful:
+      - Only touch files under src/auth/
+      - Do not change config, CI, or lockfiles
+      - Stop and report if the plan requires out-of-scope edits"
+```
+
+This is the practical equivalent of a **careful** mode: autonomous execution with hard scope
+boundaries and an explicit stop condition.
+
+#### Pattern 6: Freeze Approved Files
+
+After review, keep the approved surface stable while autopilot finishes the remaining work:
+
+```text
+You: "Freeze these files unless a blocker forces a change:
+      - src/contracts/*
+      - docs/api.md
+      Continue autopilot only on the implementation files."
+```
+
+Use this when some outputs are already reviewed, signed off, or shared with another team.
+
+#### Pattern 7: Irreversible-Command Guard
+
+Autopilot should stop before any command that can permanently discard work or destroy state unless
+the user explicitly asked for that exact action in the current run.
+
+Treat these as opt-in, not implied permission:
+
+- `git reset --hard`
+- `git checkout -- <path>` or `git checkout -- .`
+- `git clean -fd`
+- `git stash drop`
+- `git commit --amend` when it rewrites an earlier or already-shared commit
+- `terraform destroy`, `pulumi destroy`, or `cdk destroy`
+
+When a plan seems to require one of these, pause the run, explain why, and get a fresh explicit
+instruction instead of trying to recover automatically.
+
+## Examples
+
+### Safe Autopilot for Code Migration
+
+```sql
+-- Plan with built-in verification
+INSERT INTO todos (id, title, description) VALUES
+  ('backup', 'Create backup branch', 'git checkout -b backup/pre-migration'),
+  ('migrate-1', 'Migrate users module', 'Convert + test src/users/'),
+  ('migrate-2', 'Migrate orders module', 'Convert + test src/orders/'),
+  ('migrate-3', 'Migrate products module', 'Convert + test src/products/'),
+  ('verify', 'Full test suite', 'npm test -- --coverage'),
+  ('cleanup', 'Clean up', 'Remove unused imports, run linter');
+
+INSERT INTO todo_deps (todo_id, depends_on) VALUES
+  ('migrate-1', 'backup'),
+  ('migrate-2', 'backup'),
+  ('migrate-3', 'backup'),
+  ('verify', 'migrate-1'), ('verify', 'migrate-2'), ('verify', 'migrate-3'),
+  ('cleanup', 'verify');
+```
+
+### Autopilot + Fleet Hybrid
+
+For independent todos, combine autopilot with fleet:
+
+```text
+exit_plan_mode:
+  summary: "3 independent migration tasks + verification + cleanup"
+  recommendedAction: "autopilot_fleet"
+```
+
+Fleet parallelizes `migrate-1`, `migrate-2`, `migrate-3`, then autopilot
+handles `verify` and `cleanup` sequentially.
+
+### Documentation Autopilot
+
+Low-risk, high-volume — perfect for full autopilot:
+
+```text
+You: "Add JSDoc to all exported functions in src/. Use autopilot, run
+      the TypeScript compiler after each file to verify no errors."
+```
+
+#### Pattern 8: Ralph Wiggum Autonomous Loop
+
+An autonomous improvement cycle that repeats until an exit condition is met. Use for iterative quality improvement tasks where the number of passes is unknown upfront.
+
+```text
+[Loop start]
+1. Execute task (run tests / lint / analyze)
+2. Collect failures or gaps
+3. Apply fixes
+4. Re-run verification
+5. If all pass → exit. Else → repeat from step 1.
+
+[Loop exit condition: all tests pass OR max 5 iterations reached]
+```
+
+**Implementation with SQL state:**
+
+```sql
+CREATE TABLE IF NOT EXISTS loop_state (
+    iteration INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'running',  -- running | done | max_reached
+    failures_last_run INTEGER DEFAULT 0
+);
+INSERT INTO loop_state VALUES (0, 'running', -1);
+```
+
+Each iteration:
+
+```sql
+-- Before iteration
+UPDATE loop_state SET iteration = iteration + 1;
+
+-- After verification
+UPDATE loop_state SET
+    failures_last_run = :count,
+    status = CASE
+        WHEN :count = 0 THEN 'done'
+        WHEN iteration >= 5 THEN 'max_reached'
+        ELSE 'running'
+    END;
+```
+
+**Best for:** Auto-fix lint cycles, test-fix-retest loops, retry-until-passing scenarios.
+
+**Guard rails:**
+
+- Always set a hard max iterations (5 is a good default)
+- Log each iteration's result before continuing
+- If `max_reached`: surface remaining failures for human review — do not silently skip them
+
+## Tips
+
+- **Plan quality determines autopilot quality**: A vague plan produces vague
+  results. Invest time in a detailed plan before switching to autopilot.
+- **Always branch first**: `git checkout -b autopilot/task-name` is your
+  safety net. Worst case, you delete the branch.
+- **Include tests in every todo**: The single best guardrail for autopilot
+  is automated test verification at each step.
+- **Use careful/freeze language explicitly**: if scope must stay narrow, say what is
+  locked and when autopilot must stop rather than assuming it will infer the boundary.
+- **Treat irreversible commands as separate consent**: `/allow-all` is not permission to discard
+  work, rewrite history, or destroy infrastructure without an explicit request.
+- **Set a continuation limit for risky runs**: use `--max-autopilot-continues` when you want
+  an explicit review checkpoint after a fixed number of automatic continuations.
+- **Start small**: First time using autopilot? Try it on a 3-todo task.
+  Build confidence before running 20-todo autopilot sessions.
+- **Know when NOT to autopilot**: Security-critical code, database migrations,
+  production configs — these deserve interactive review.
+- **Review the diff after**: Even successful autopilot runs deserve a
+  `git diff` review before merging.

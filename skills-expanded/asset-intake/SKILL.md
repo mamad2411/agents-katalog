@@ -1,0 +1,41 @@
+---
+name: asset-intake
+description: Find, vet, and log third-party or AI-assisted assets (music, SFX, art, fonts, 3D, tools, plugins). Use when the user wants to find or add music, sound effects, sprites, fonts, models, or asks "where can I get X". Consults docs/RESOURCES.md, verifies licenses, and logs to ASSET_LOG.md before anything enters the repo.
+---
+
+# Asset intake
+
+Follow `docs/sop/SOP-04-assets-and-licensing.md`. Lists: `docs/RESOURCES.md` is the index into `docs/resources/`.
+
+## A. Finding
+1. Clarify the need if vague: mood, genre, length, loopable or one-shot, style, palette or resolution, budget.
+2. Read the matching file: `docs/resources/audio.md` (music, SFX), `art.md` (2D, 3D, UI, fonts, VFX), `ai-tools.md` (generators, MCP servers), `world-and-levels.md`, `licenses.md`.
+3. Suggest 3 to 5 options with license notes. Prefer CC0, then CC BY. Say clearly which came from the list and which from a live web search.
+4. Warn about license traps (NC, ShareAlike on derivatives, site-specific terms).
+
+To generate instead of find, hand off to `/gen-brief`, then come back here to log the result.
+
+## B. Vetting (before download is used)
+1. Open the specific asset page and read its license. Quote the key terms in your notes, never assume from site reputation.
+2. Check: commercial use, modification, redistribution inside a game, attribution wording, AI-training clauses, platform restrictions.
+3. Unknown or unclear license: do not import for release. Tell the user why. Only for a throwaway prototype, and only
+   if the user agrees, it may come in as a `PLACEHOLDER` (`fetch_asset.py --placeholder`) that `/release-check` flags and
+   that is replaced before release.
+
+## C. Logging
+0. A downloaded pack goes through `tools/fetch_asset.py`, which downloads (HTTPS only), unpacks safely, copies the
+   picked files and writes the row and the evidence file in one step: `python tools/fetch_asset.py --url <download>
+   --list`, then `--url <download> --page <license page> --author <name> --license "<as read>" --take "<path or glob>"
+   --to <folder> --type <type>` (`--dry-run` first). It refuses a pack whose own licence file contradicts `--license`
+   (all rights reserved, NC, ND): read it; `--license-mismatch "why"` only when the page's licence really applies. A
+   pack already on this computer: `--url file:///... --allow-local`. Check the row; do not retype it.
+1. Otherwise (no tool for that source), add a row to `docs/ASSET_LOG.md` (next free `A-NNNN` ID): type, repo path, source URL, author, license, attribution text, AI-assisted (`no`, `dev-only`, `pre-generated`, `live`; see SOP-04), modified yes/no, date, notes.
+2. Save license evidence in `docs/licenses/A-NNNN.txt` (text of the license or page summary with URL and date).
+3. Import using the naming conventions in `docs/ENGINE.md` or `docs/ENGINE_FLOW.md` ("Assets and audio"); 3D names are in SOP-11.
+4. Mark temporary or NC assets `PLACEHOLDER` in Notes.
+5. A Dotwork pack (`tools/art/dotwork/`) logs itself: `python tools/art/dotwork/dotwork.py log --pack NAME --dry-run`, then without `--dry-run`, writes the row and the evidence file from its manifest (models, licenses, seeds). Check the row, do not retype it.
+6. A sound edited by hand in a DAW through Wavesmith (`python tools/audio/wavesmith/wavesmith.py daw reaper --reexport <folder>` or `daw import <folder>`) logs itself too: one row per working folder with `Modified? yes`, updated on later runs, plus the evidence file. Check it; do not add a second row for the same files.
+6b. A Bozzetto model (`tools/bozzetto/bozzetto.py make`) logs itself as it is made (pre-generated AI, models, seed, prompt, the "Built with DINOv3" credit) and copies the model licence texts into `docs/licenses/` the first time; a re-run with `--overwrite` updates the same row. Check it; do not add another.
+7. Report the row you added and any attribution that must appear in credits.
+
+If the license check cannot be completed (site unreachable, ambiguous), say what is unknown and ask the user to decide.

@@ -1,0 +1,82 @@
+---
+name: bonsai
+description: Manage git worktrees with the bonsai CLI - create isolated per-branch worktrees outside the repo, jump between them, and clean up merged ones. Use when starting commit, push, or pull-request work, isolating a branch, parallelizing tasks across worktrees, or tidying up worktrees and branches.
+---
+
+# bonsai — centralized git worktrees
+
+## Mental model
+
+- Worktrees live outside the repository at `<root>/<repo-id>/<branch>`
+  (default root `~/.bonsai`). Branch names nest: `feat/x` → `feat/x/`.
+- Run bonsai from anywhere inside the repo — the main checkout or any
+  worktree — it always operates on the repository as a whole.
+- `add` slugifies branch inputs segment-by-segment while preserving `/` as a
+  nested branch/path delimiter, creates branches automatically, and fetches
+  the remote default branch first. Missing arguments open fuzzy pickers on a
+  real terminal only; in non-interactive use, always pass arguments or the
+  command exits with an error.
+
+## Core workflow
+
+```sh
+path=$(bonsai add <branch>)     # create or reuse; prints absolute path; idempotent
+cd "$path"                      # then work inside the worktree
+bonsai add <branch> --base HEAD # stack on the checkout you run it from
+bonsai list --json              # this repo's worktrees, machine-readable
+bonsai remove <branch> [-d]     # drop the worktree (keep branch unless -d)
+bonsai clean --dry-run --json   # inspect merged/squash-merged/gone branches
+bonsai clean --yes              # then execute
+```
+
+## Invariants you would otherwise get wrong
+
+- `--base` resolves against the directory bonsai runs from, not the main
+  checkout: `--base HEAD` inside a worktree stacks on that worktree.
+- New branches carry no upstream (`--no-track`) until first push.
+- A fresh worktree with zero commits already counts as "merged", so `clean`
+  will list it — read the plan before executing.
+- Untracked local config (`.env*`, `.envrc`, `.mcp.json`, `CLAUDE.local.md`,
+  ...) is copied into new worktrees automatically.
+- Dependencies are installed automatically in new worktrees when a lockfile
+  is present (pnpm/npm/yarn/bun/cargo/uv, lockfile-frozen); a missing tool is
+  skipped and an install failure never aborts `add` — check stderr before
+  assuming deps are in place. Follow any linked package-manager configuration
+  warning to enable its worktree-optimized shared store.
+
+## Existing-work handoff
+
+- Before leaving the source checkout, record its absolute path, branch, HEAD,
+  upstream and remotes, staged and unstaged changes, and intended untracked
+  files. Resolve an existing pull request against this source branch.
+- Reuse a bonsai worktree only when it contains the intended branch and work.
+  For a new task branch, use `bonsai add ab/<slug> --base <source-head>`;
+  the default branch is not a substitute for the captured source HEAD.
+- For commit or pull-request work, copy the intended tracked changes and
+  untracked files into the destination without changing the source files or
+  index. Preserve binary contents, deletions, symlinks, and executable bits.
+  Verify the destination matches the intended source changes before staging;
+  do not overwrite concurrent or unrelated destination work.
+- For push-only work, leave pending source changes in place. Carry the source
+  branch's synchronization upstream and separately resolved Git push destination
+  across the handoff; these may differ in a fork workflow. A temporary task
+  branch must not silently become the branch being published.
+- Recheck the source HEAD and pending changes before publishing. If they changed
+  concurrently, stop and reconcile the intended work before continuing. Report
+  the source and destination paths; never silently clear the original checkout.
+
+## Destructive-command policy
+
+- Inspect first, then act: `bonsai clean --dry-run --json`, review, then
+  `bonsai clean --yes`. Same for `prune` (`--yes` skips confirmation). Check
+  that every target is within the requested cleanup; retain unfinished work
+  even when bonsai labels it merged.
+- An explicit request to clean up the reviewed targets authorizes `--yes`;
+  the user need not name the flag or repeat prior authorization. If the plan
+  includes other targets, narrow the operation or ask about those targets.
+- Never pass `--force` without explicit authorization to discard the affected
+  work. `clean` never touches dirty worktrees; `remove` refuses them without
+  `--force`.
+
+Flags drift; this file does not. Trust `bonsai <cmd> --help` for the exact
+current interface.

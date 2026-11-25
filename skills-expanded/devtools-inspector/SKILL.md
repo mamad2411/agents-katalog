@@ -1,0 +1,57 @@
+---
+name: devtools-inspector
+description: Add or fix how an inspector collects data, from the page-side overlay through the devframe server to the panel and the MCP tools. Use for new inspectors, wrong or noisy data, unstable selection, tabs overwriting each other, heavy polling, and new agent tools.
+---
+
+# Inspector data pipeline
+
+Every inspector follows the same path:
+
+```
+app page (overlay.ts + <area>-collector.ts)
+  -> rpc.call('push-<area>', { pageId, ... })
+  -> devframe.ts and devframe-<area>.ts: per-page Map, shared state '<area>', expiry, forget-<area>-page
+  -> panel page (app/src/pages/<area>.ts) via rpc.sharedState('<area>')
+  -> agent tools (ctx.agent.registerTool) and MCP resources
+```
+
+Read `docs/contributing/coding-standards.md` ("Reading data from the page") before you start.
+
+## Page side (`packages/devtools/src`)
+
+- Put collection logic in its own module (`<area>-collector.ts`) and keep `overlay.ts` changes to wiring: import, attach, push, `leave()` and the returned cleanup.
+- Read Angular through the debug APIs on `window.ng` and verify each field against `node_modules/@angular/core/fesm2022` (or the library's fesm build). Known helpers:
+  - `debug-api.ts`: `NgDebugApi`, the typed `window.ng` with `@since` notes, and `pageDebugApi()`. Add a function there (and to `NG_DEBUG_FUNCTIONS`) before a collector reads it.
+  - `element-id.ts`: stable `WeakMap` ids for elements (`elementId`, `elementById`).
+  - `injector-tree.ts`: `className()` strips bundler `_` prefixes, `tokenName()`, `dependenciesOf()`, environment injector walk.
+  - `serialize.ts`: safe, size-limited serialization.
+  - `router.ts` `providerOf()`: find a service through the injector resolution path.
+- Never write attributes into the app's DOM. Never run app code (validators, guards) on a timer unless the user turned recording on.
+- Pushes: send on change, skip unchanged payloads (compare with the last JSON), and let the page heartbeat keep the page alive: re-send an unchanged report only when `keepaliveDue`/`keepaliveAfter` says so (the server lost the page), and avoid full DOM scans on a timer (cache, rescan after a `MutationObserver` signal).
+- Every report carries `pageId` from `claimPageId()`. Call `forget-<area>-page` from `leave()`.
+
+## Server side (`devframe.ts`, `rpc/`)
+
+- `devframe.ts` wires the setup. A new inspector goes in its own `rpc/<area>-register.ts` (see `rpc/errors-register.ts`). Existing inspectors follow one of two layouts: the ones registered from `devframe-inspectors.ts` (errors, perf, build and the like) keep their state, RPC functions and tools in their `rpc/<area>-register.ts`; the older areas keep their state and RPC functions in `devframe-<area>.ts`. Change an inspector in the module it already lives in. An older area's agent tools are in that module or in a separate `devframe-*-tools.ts` module. These modules take the setup values they read as an `env` object typed through `devframe-env.ts`. The page registry (owners, heartbeats, lease) is `devframe-pages.ts` and the registrars are `devframe-registrars.ts`. Keep `devframe.ts` under the line ratchet of `pnpm lint`.
+
+- Keep a `Map<pageId, report>` with `reportedAt`, drop pages older than `ttl(pageId)` (from `visibility.ttl()`, so a page with a current heartbeat never expires) in the shared expiry interval, and write the combined value into the shared state.
+- Page actions that the panel triggers (restore, highlight, run) go panel -> `request-<area>-action` -> broadcast `<area>-action` to the page -> `<area>-action-result`, keyed by `requestId`, with a timeout.
+- Source scans in `rpc/` enrich or stand in for live data. They must return a `kind` for anything the Dashboard counts.
+
+## Panel side
+
+- Subscribe with `const state = await rpc.sharedState('<area>'); apply(state.value()); state.on('updated', apply)` and remove the listener through `DestroyRef`. There is no `subscribe()` on shared state.
+- Filter to the current page with the `?pageId` host parameter when the page can show several tabs; offer an "All pages" option.
+- Then follow the `devtools-ui` skill for the page itself.
+
+## Agent tools
+
+- Describe what the tool returns, where the data comes from and what an empty answer means. Answer in markdown.
+- Give each new tool or resource one entry in `AGENT_ENTRIES` (`packages/devtools/src/config.ts`): its inspector, safety tier, the `actions` it writes for and whether it needs a page. `AGENT_INSPECTOR`, `AGENT_SAFETY`, `ACTION_TOOLS`, `PAGE_AGENT_ENTRIES` and the tags derive from it. `packages/devtools/src/__tests__/agent-metadata.test.ts` fails on a registered tool without an entry; update `packages/devtools/src/__tests__/fixtures/agent-metadata-derived.json` with it.
+- Update tool descriptions (in `devframe.ts`, `devframe-<area>.ts`, `devframe-<area>-tools.ts` or the inspector's register module) when data shapes change, and the tool list on the docs site (apps/docs/src/content/agents/tools.md). Use the `devtools-docs` skill for that edit.
+
+## Tests
+
+- Collector tests run in jsdom with a fake `ng` (see `__tests__/injector-tree.test.ts`, `component-tree.test.ts`, `ngrx-collector.test.ts`). Cover stable ids, dedupe, expiry and the Angular shapes you rely on.
+- Server tests call the RPC handlers directly (see `http-server.test.ts`, `agent-tools.test.ts`).
+- `pnpm test:devtools` must stay green.

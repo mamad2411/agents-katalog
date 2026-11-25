@@ -1,0 +1,182 @@
+---
+name: ccem
+description: Use when the user asks an agent to operate CCEM or CCEM Desktop, including creating workspace sessions, opening or inspecting ccem:// session links, monitoring task progress, scheduling CCEM cron work, or using bot binding flows. Prefer structured `ccem ... --json` commands.
+---
+
+# CCEM
+
+Use CCEM as the local control plane for Codex, Claude Code, and related desktop workflows. Prefer the `ccem` CLI JSON wrappers over direct files or ad hoc HTTP calls.
+
+## Desktop Session Control
+
+Start every desktop-control workflow by checking the live desktop bridge:
+
+```bash
+ccem desktop health --json
+```
+
+If `ccem desktop health` reports a stale descriptor, use the CLI message as
+the source of truth and do not inspect `~/.ccem/control.json` yourself. A
+dead-pid descriptor at the default path is removed automatically. If the message
+says the endpoint refused the connection or timed out while the publishing
+process is still running, restarting CCEM Desktop may be needed to republish a
+fresh endpoint. For read-only requests, report the unavailable bridge; do not
+launch, restart, or foreground Desktop as an automatic fallback.
+
+### Development builds and the control descriptor
+
+`pnpm tauri:dev` derives a distinct product name, bundle identifier, Vite port,
+Rust lock, and 100-port MCP block for each worktree. It does **not** publish the
+global `~/.ccem/control.json` descriptor by default, so `ccem desktop health` from
+another terminal will keep using the last release app's descriptor. Run the
+dev build with the opt-in flag when you need the CLI/skill to talk to it:
+
+```bash
+CCEM_DESKTOP_PUBLISH_CONTROL_DESCRIPTOR=1 pnpm tauri:dev
+```
+
+Different worktrees may run concurrently. The launcher prints an ignored
+`.artifacts/tauri-dev/` manifest with the exact `launcherPid`, `identifier`, and
+`mcpPort`; target those values when operating or stopping a dev app. A second
+launch in the same worktree is rejected with the live owner PID. Stop only a
+process the current task launched, via its terminal or exact `launcherPid`.
+Never use `pkill`, `killall`, port cleanup, lock deletion, or an installed-app
+quit to resolve a collision.
+
+Named dev instances default automatic shared background services off. Set
+`CCEM_DESKTOP_DEV_BACKGROUND_SERVICES=1` only for a targeted single-owner test
+of runtime cleanup/reconciliation, proxy boot, system autostart sync, session
+monitoring, cron, bot watchers, or chat bridge auto-start. The launcher does
+not clone `~/.ccem`; manual settings/config/session writes remain shared, so
+coordinate concurrent tests that mutate the same records.
+
+Release builds always publish the descriptor. Do not edit or read
+`~/.ccem/control.json` directly — let the CLI wrapper negotiate the
+descriptor for you.
+
+A development self-test must not quit, terminate, or kill
+`/Applications/CCEM Desktop.app` to resolve an ambiguous automation target.
+Target the exact generated bundle identifier or Tauri MCP port from the
+manifest. If those are unavailable, stop and report the targeting failure
+without disturbing the installed release.
+
+### Create sessions without opening Desktop by default
+
+If the bridge is healthy and session creation was requested, use the desktop CLI wrapper:
+
+```bash
+ccem desktop create --provider codex --cwd /absolute/project/path --prompt "Task to run" --perm dev --effort low --open false --json
+```
+
+Use absolute working directories. Preserve the returned `runtimeId`, `sessionId`, and `ccem://` link when reporting progress or sending follow-up input.
+
+### Read sessions in the background by default
+
+Requests to read, inspect, summarize, or check a session (including “读一下”,
+“查看内容”, “总结”, and “检查状态”) must use background queries without changing
+desktop focus or navigation. A `ccem://` link, including `focus=history` or
+`focus=live`, does not by itself authorize opening the UI.
+
+When the link includes `runtimeId` (or `id` with `idKind=runtime`), query that
+runtime directly with `status` and `events`. Otherwise, use `providerSessionId`
+(or `id` with `idKind=provider`) to resolve the runtime from the session list:
+
+```bash
+ccem desktop sessions --json
+```
+
+Match the returned `provider` to the link's `source`, match `providerSessionId`,
+and match `cwd` when supplied. Narrow the query with `--provider` and `--cwd`
+when available, and filter out unrelated sessions before displaying results.
+Use the matched `runtimeId` to read the requested session:
+
+```bash
+ccem desktop status <runtimeId> --json
+ccem desktop events <runtimeId> --json
+```
+
+If a query fails, no unique matching runtime is found, or the history cannot be
+read, report the limitation without automatically launching, restarting, or
+foregrounding Desktop. Do not parse provider history directories yourself unless
+the wrapper reports that the desktop bridge is unavailable.
+
+### Open Desktop only on explicit request
+
+Use `ccem desktop open` only when the user explicitly asks to open, show, or
+navigate to the session in Desktop (for example, “在桌面端打开这个会话”). It
+foregrounds Desktop and changes its selected session. Reading or validating a
+link must not call `open`, an OS URL opener, or UI automation to foreground
+Desktop. Likewise, use `--open true` when creating a session only if opening it
+was explicitly requested; otherwise use `--open false`.
+
+```bash
+ccem desktop open "<ccem://session-link>" --json
+```
+
+### Send follow-up input
+
+Send follow-up input only when requested:
+
+```bash
+ccem desktop send <runtimeId> --text "Follow-up instruction" --json
+```
+
+## Cron And Scheduled Work
+
+Use the installed `ccem cron` contract and structured output for scheduled work:
+
+```bash
+ccem cron --help
+ccem cron list --json
+```
+
+The current agent-facing CLI supports `list`, `notification-targets`, `create`, `trigger`, and `delete`. It does not expose an `update`, `edit`, or `runs` command.
+
+Read task IDs and complete task configuration from the array returned by `ccem cron list --json`. Resolve an exact task ID before changing an existing task.
+
+For creation, run `ccem cron create --help`, resolve natural-language schedules to explicit five-field cron expressions, and use the supported options or JSON input:
+
+```bash
+ccem cron create --from-json @task.json --json
+```
+
+When the user asks to send task results to a Hermes bot, run `ccem cron notification-targets --json` and select the paired recipient matching the request. Ask when multiple recipients match; never invent recipient IDs or silently select another channel after a lookup failure.
+
+For deletion, confirm the exact task and use its ID:
+
+```bash
+ccem cron delete "<taskId>" --json
+```
+
+When the user wants an existing task to run immediately instead of waiting for its schedule, trigger it by exact ID or exact name:
+
+```bash
+ccem cron trigger "<taskIdOrName>" --json
+```
+
+`ccem cron trigger` requires CCEM Desktop to be running; the task executes in the desktop's background and run history appears on its Cron page. Triggering does not modify the task or its schedule. The response confirms the triggered task; run status is not available through the CLI.
+
+For an update request, first read the task with `ccem cron list --json`. If desktop UI control is available, use CCEM Desktop's Cron page to edit the exact task in place, then read the task list again to verify the stored result. Otherwise explain the CLI limitation and ask whether the user wants to update it in Desktop or replace it. Replacement creates a new task ID and does not preserve the old task's run-history association.
+
+After every create, edit, replacement, or delete, rerun `ccem cron list --json` and report the actual stored task state.
+
+## Bot Binding
+
+For Telegram, WeCom, Weixin, or other bot-bound sessions, use the `ccem bot-bind` CLI flow when available. Do not invent peer IDs or binding IDs. Query existing bindings first, then act on the exact IDs returned by CCEM.
+
+## Safety Rules
+
+- Do not read or write ~/.ccem/control.json directly.
+- Do not call CCEM's loopback HTTP port yourself.
+- Do not embed, log, or copy desktop control tokens.
+- Do not edit CCEM config, cron, or session stores by hand unless the user explicitly asks for recovery work and the CLI path cannot do it.
+- Ask before destructive session actions when the target session is ambiguous.
+
+## Response Shape
+
+When you start work through CCEM, report:
+
+- The provider and absolute working directory.
+- The returned runtime or session ID.
+- The current status command you will use for follow-up.
+- The `ccem://` link when CCEM returns one.

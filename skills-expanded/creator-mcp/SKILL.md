@@ -1,0 +1,3 @@
+# Genex creator MCP
+
+Genex includes the main creator MCP at mcp.genex.games, sharing this plugin account. Its genex-creator__ tools search games and animations, list your games and inspect generation status. Use genex__asset for generation, local delivery and authoritative account/credit status (including Unlimited); use genex__publish for Studio-managed publishing. The generic remote generate, credits, setup_genex_tools and publish_game tools are intentionally replaced by these Studio operations. Never install another CLI or sign in again just to use the bundled MCP. Account unlocked is local credential availability; remote failures remain actionable errors.

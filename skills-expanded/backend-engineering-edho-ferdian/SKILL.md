@@ -1,0 +1,83 @@
+---
+name: backend-engineering-edho-ferdian
+description: >-
+  Write server-side code well: service layering and ports/adapters, typed
+  errors, retry with backoff and circuit breakers, background jobs and
+  queues, structured logging, new integrations; NestJS and Rails guides. Use
+  for "struktur service layer", "error handling di backend", "retry/circuit
+  breaker", "background job / queue", "tambah integrasi baru", "bikin app
+  Rails".
+metadata:
+  last_reviewed: "2026-09-24"
+---
+
+# Backend Engineering — Edho Ferdian Mode
+
+## Where this sits
+
+- `api-design-edho-ferdian` decides the **contract** at the boundary.
+- `data-layer-patterns-edho-ferdian` decides the **storage** behind it.
+- This skill is the **middle**: how the code between them is layered, how it
+  fails, and how it defers work.
+- `code-review-edho-ferdian` reviews the result — in particular
+  `silent-failure-lens.md`, which is the review-side mirror of
+  `references/error-and-resilience.md` here. Cross-reference, never restate.
+
+## References
+
+- `references/error-and-resilience.md`
+- `references/llm-pipelines.md` — regex-first parsing with confidence-scoring
+  as the LLM gate, plus cost-aware model routing, budget tracking, retry
+  policy, and prompt caching for pipelines that call an LLM API.
+- `references/scheduled-collection.md` — unattended collect/enrich/store
+  pipelines (scrapers, feed pollers, report builders): source selection,
+  per-source failure isolation, LLM-enrichment batching and fallback,
+  prompt-injection rules for untrusted scraped content, idempotent upsert,
+  and cron/alerting operations. Covers the background-job concerns
+  (idempotency, dead-letter-style backfill, run scheduling) for this class of
+  job — see the note below for what it does not cover.
+- `references/nestjs.md` — NestJS project structure (`common/`, `config/`,
+  `modules/<fitur>/` with module-local DTOs), canonical bootstrap (global
+  `ValidationPipe`, `ClassSerializerInterceptor`, `HttpExceptionFilter`), env
+  validation at boot, repository/transaction placement, and background
+  jobs/event consumers in their own modules. Not speculative — this is the
+  framework behind `ghostfolio`, a real project in Edho's stack.
+- `references/rails.md` — Rails 7.1+/8.x authoring: directory contract,
+  when to extract a service/form/query object or ViewComponent, service
+  result objects and transactions, ActiveRecord discipline (eager loading,
+  callbacks, no `default_scope`), idempotent jobs, Hotwire, and the Rails 8
+  Solid stack. Review and build-failure lenses for Ruby live in
+  `language-code-review-edho-ferdian` and `build-fix-edho-ferdian`.
+
+- `references/layering-and-boundaries.md` — ports & adapters (hexagonal
+  architecture) with a framework-agnostic dependency-direction diagram, the
+  repository-vs-service layer split with a misplaced-concern test, the
+  composition root (NestJS DI and hand-wired bootstrap variants), a six-step
+  migration playbook for entangled/legacy code, and a checklist for adding a
+  new integration cleanly through the same port/adapter seam.
+- `references/jobs-and-queues.md` — generic queue-backend reference, distinct
+  from `references/scheduled-collection.md` (which covers the
+  scheduled-collection job shape specifically): backend choice (BullMQ vs
+  SQS vs Postgres-based pg-boss/graphile-worker), worker-pool concurrency
+  sizing, retry/backoff classification, dead-letter queues generically, job
+  idempotency keys, and queue observability.
+
+## External docs (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Before using a fast-moving or rarely-touched framework/queue/ORM API surface
+(new integration, version upgrade, NestJS/BullMQ/pg-boss specifics), resolve
+it live via Context7 rather than from memory. Full contract:
+`skill-authoring-edho-ferdian` §9.
+
+## Surgical changes (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+This skill inherits the default as-is: when extending or fixing an existing
+service, error path, or job, change only what the task requires — don't
+relayer or restructure adjacent, already-working code as a side effect. Full
+contract: `skill-authoring-edho-ferdian` §10.
+
+## Language routing (fixed — see skill-authoring-edho-ferdian's canonical contract)
+
+Communication to the user in Bahasa Indonesia; code, comments, and any
+generated files in English — fixed, never ask. Full contract:
+`skill-authoring-edho-ferdian` §7.

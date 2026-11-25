@@ -1,0 +1,40 @@
+---
+name: bosskuai-windows-desktop-e2e
+description: "Use when the task explicitly concerns windows desktop e2e. E2E testing for Windows native desktop apps (WPF, WinForms, Win32/MFC, Qt) using pywinauto and Windows UI Automation. Use when writing E2E tests for a Windows native desktop app with pywinauto or UI Automation."
+metadata:
+  origin: ECC-adaptation
+---
+
+# Windows Desktop E2E Testing — portable workflow
+
+E2E testing for Windows native desktop apps (WPF, WinForms, Win32/MFC, Qt) using pywinauto and Windows UI Automation. Use when writing E2E tests for a Windows native desktop app with pywinauto or UI Automation.
+
+Use it only when the request supplies this domain, framework, data source or artifact; a shared keyword is not a match. Related skills, each for its own concern: `bosskuai-perl-testing`, `bosskuai-browser-automation`, `bosskuai-csharp-testing`, `accessibility`, `bosskuai-cpp-coding-standards`, `bosskuai-cpp-testing`, `e2e-testing`.
+
+## Workflow
+
+Read [the source workflow](references/upstream/SKILL.md) first, then work through these sections in order:
+
+1. Core Concepts.
+2. Python 3.8+, Windows only.
+3. Optional: screen recording.
+4. Testability Setup (by Framework).
+5. WPF.
+6. WinForms.
+
+- Resolve its `scripts/`, `references/`, `assets/` and template paths against `references/upstream/`, not the project root. Source skill names map through [SOURCE.json](SOURCE.json) (`bossku skills show <id>`). ECC slash commands, agent names and package-root paths are not installed: use what this host has, or say what is missing.
+- Check the source prerequisites first. Then check the Python version, the pywinauto version pinned in `requirements*.txt` or `pyproject.toml`, and the app's UI framework version. Compare each of those versions with its latest stable release, checked live at work time. A documented command is an example, not permission to install packages, add an account, expose secrets, upload private content or change an external service.
+- It can need a named provider, MCP server or API: check that it is available and in scope, report it when it is not, and never invent its output.
+
+## Done when
+
+Complete the source “.github/workflows/e2e-desktop.yml” procedure for this task. Keep its resulting artifact, command output or cited evidence, and state what remains unverified.
+
+- Run the tests on a machine that matches the users' Windows build, display scaling and language. Scaling and translated names change control positions and the text the tests find.
+- Find controls by automation ID first, not by text or screen position, and run against a copy of the app's data.
+- Each test closes the app and removes its test data, so a failed run leaves no locked file or stale data for the next one.
+- Meet every check in the [shared quality bar](../../references/checklists/engineering-quality-bar.md).
+
+If an input, provider, runtime or authorisation is missing, stop that step, carry on with read-only analysis, and say exactly what is missing. A generated plan alone is not completion.
+
+Adapted from the locally reviewed `affaan-m/ECC` snapshot: provenance and hashes in [SOURCE.json](SOURCE.json), the original text and resources in [references/upstream/](references/upstream/SKILL.md) under its [MIT licence](references/upstream/LICENSE). Copyright (c) 2026 Affaan Mustafa.

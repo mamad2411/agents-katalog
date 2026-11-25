@@ -1,0 +1,253 @@
+---
+name: authoring-presentations
+display-name: Presentation Authoring
+short-description: Create and edit native Open Slide decks in Lattice.
+description: Creates and edits Open Slide presentations stored as React and TypeScript under slides/<deck-id>/. Use when a user asks for slides, decks, presentations, PPT, PPTX, PowerPoint, 演示文稿, or 幻灯片 content, speaker notes, visuals, transitions, or presentation structure in Lattice.
+---
+
+# Authoring Lattice presentations
+
+Create and revise native Open Slide decks inside the current Lattice project.
+Lattice hosts Open Slide directly, so the deck source, editor, presenter mode, comments, assets, design controls, and HTML or PDF export all use Open Slide's native behavior.
+
+## Work on the native deck
+
+- A deck id is a short, descriptive kebab-case directory name such as `attention-results`.
+- The entry file is always `slides/<deck-id>/index.tsx`.
+- Deck-local images, videos, and fonts belong under `slides/<deck-id>/assets/`.
+- Assets reused by multiple decks belong under the project-root `assets/` directory and are imported through `@assets/...`.
+- Themes belong under the project-root `themes/` directory.
+- Speaker notes stay in the entry module's exported `notes` array.
+- Do not create an alternate slide source, a separate notes file, or a Lattice-specific manifest.
+- Do not add dependencies or modify `package.json` for ordinary deck authoring.
+- The managed runtime uses the fixed directories above and deliberately does not execute `open-slide.config.ts`.
+- Do not edit another deck or shared assets unless the request requires it.
+- Preserve existing page order, notes, metadata, design tokens, transitions, and assets outside the requested change.
+
+Before creating a new deck, inspect markdown files under `themes/`.
+If the user names a theme, read its markdown end to end and treat its palette, typography, layout, fixed components, motion, and aesthetic constraints as authoritative.
+If themes exist but the user did not specify a visual direction, offer the relevant existing themes along with a custom design option.
+When applying a theme, copy its concrete design and components into the deck source and set `meta.theme` to the theme id so Open Slide can link the deck back to the theme.
+Theme files are authoring-time specifications, so an existing deck does not inherit later theme edits automatically.
+
+Write a new deck page by page so the user can follow along on the canvas, which reloads after every write.
+First create the entry file with the imports, `meta`, `design`, and the cover page only, then add each remaining page and its notes with a separate edit, keeping the file compiling after every write.
+
+When the Lattice host context contains `presentation`, treat it as the live Open Slide cursor for the current turn.
+Use `presentation.pagePath`, `pageIndex`, and `pageNumber` to resolve references such as “this slide,” and use `presentation.selection.line` and `column` as the source handle for references such as “this heading.”
+Re-check the current host context on every turn that uses such a reference because the user can navigate or select another element between turns.
+
+Open Slide comments arrive automatically in `presentation.pendingComments` with every user message.
+Apply them when the message asks you to, such as the request to apply the pending comments that the comment island's Apply button sends, or when it plainly refers to them; otherwise leave them pending, and mention them only when they bear on the request.
+To apply the pending comments, treat every one as a requested edit: find its `@slide-comment` marker by id in `presentation.pagePath`, apply the note to the enclosing JSX element, and remove only that marker after the edit succeeds while preserving any JSX that shares its source line.
+`page` is the 0-based page the comment was left on.
+A comment with a `rect` covers a region the user dragged across, in pixels on the 1920×1080 page from its top-left corner: apply the note to the children of the enclosing element that fall inside that region, not to the whole element.
+Process multiple markers from the bottom of the file upward, preserve ambiguous markers rather than guessing, and verify that every applied comment disappeared from the source.
+Never tell the user to run `/apply-comments`; Lattice has already supplied the comments for the current turn.
+
+When the user asks for a presentation without naming an output format, create or edit a native Open Slide deck.
+If the user explicitly requests `.pptx`, explain that Lattice does not author PowerPoint files and offer the native deck or Open Slide's HTML or PDF export instead.
+
+## Use the file contract
+
+Each entry module default-exports a non-empty array of zero-prop React page components in presentation order.
+Keep helper components and constants in the same `index.tsx` file so Open Slide's inspector can edit source locations reliably.
+
+```tsx
+import type { DesignSystem, Page, SlideMeta } from '@open-slide/core';
+
+export const design: DesignSystem = {
+  palette: { bg: '#0f172a', text: '#f8fafc', accent: '#fbbf24' },
+  fonts: {
+    display: '"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif',
+    body: '"Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif',
+  },
+  typeScale: { hero: 168, body: 40 },
+  radius: 12,
+};
+
+const Cover: Page = () => (
+  <div
+    style={{
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      padding: '0 160px',
+      background: 'var(--osd-bg)',
+      color: 'var(--osd-text)',
+      fontFamily: 'var(--osd-font-body)',
+    }}
+  >
+    <h1
+      style={{
+        margin: 0,
+        fontFamily: 'var(--osd-font-display)',
+        fontSize: 'var(--osd-size-hero)',
+        lineHeight: 1.05,
+      }}
+    >
+      The Big Idea
+    </h1>
+  </div>
+);
+
+export const notes = [
+  'Introduce the question before showing the result.',
+];
+
+export const meta: SlideMeta = {
+  title: 'The Big Idea',
+  createdAt: '2026-05-16T12:00:00Z',
+};
+
+export default [Cover] satisfies Page[];
+```
+
+Set `meta.createdAt` once when creating a deck, using the current ISO 8601 timestamp as a plain string literal.
+The `notes` array is index-aligned with the exported pages, and an entry may be `undefined` when that page has no notes.
+Set `meta.theme` only when the deck follows a matching `themes/<id>.md` theme.
+
+## Design for the fixed canvas
+
+Every page uses a fixed 1920 × 1080 canvas that Open Slide scales to the available surface.
+The root element of every page must fill `100% × 100%`.
+Use absolute pixel values for typography, spacing, and fixed geometry, and never depend on page scrolling.
+
+- Keep content 100–160px from the canvas edges.
+- Use roughly 140–200px for hero titles, 80–120px for section headings, 56–80px for page headings, 32–44px for body text, and 22–28px for labels.
+- Keep each page focused on one idea, with at most five short bullets.
+- Split crowded content into more pages instead of shrinking body text below 28px or hiding overflow.
+- Verify the vertical budget: content height plus gaps and top and bottom padding must not exceed 1080px.
+
+Default new decks to an exported `DesignSystem` so users can tune the palette, fonts, type scale, and radius in Open Slide's Design panel.
+Use `var(--osd-bg)`, `var(--osd-text)`, `var(--osd-accent)`, `var(--osd-font-display)`, `var(--osd-font-body)`, `var(--osd-size-hero)`, `var(--osd-size-body)`, and `var(--osd-radius)` in visual styles.
+Keep the design object as a literal without spreads or helper calls so the Design panel can update it.
+
+## Use assets and native primitives
+
+Choose the asset scope separately for each new file, and preserve every existing asset's location and import specifier unless the user explicitly asks to reorganize assets.
+Do not copy project-root assets into a deck-local directory or rewrite unrelated `@assets/...` imports to `./assets/...` merely because the new asset is deck-local.
+
+Import deck-local assets as modules:
+
+```tsx
+import hero from './assets/hero.jpg';
+
+<img src={hero} alt="Attention map" style={{ width: 960, height: 540, objectFit: 'cover' }} />
+```
+
+Import a reusable global asset through the alias:
+
+```tsx
+import logo from '@assets/logos/lattice.svg';
+```
+
+When Lattice starts the deck's runtime, it moves each deck-local asset the entry imports into the project-root `assets/` library and rewrites that import to `@assets/...`, so re-read the entry before editing it once the user has opened the deck.
+
+To embed a deck-local HTML visualization, import only that HTML file with `?raw` and pass the resulting string to an iframe's `srcDoc`; leave existing image and media imports unchanged.
+
+Render mathematical notation with the KaTeX package bundled by Lattice.
+Open Slide does not interpret `$...$`, `\\(...\\)`, or a LaTeX string on its own, so never place raw LaTeX in JSX and expect it to typeset itself.
+
+```tsx
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+
+const Formula = ({ latex, display = true }: { latex: string; display?: boolean }) => (
+  <span
+    aria-label={latex}
+    dangerouslySetInnerHTML={{
+      __html: katex.renderToString(latex, {
+        displayMode: display,
+        throwOnError: false,
+        strict: false,
+      }),
+    }}
+  />
+);
+```
+
+Keep `throwOnError: false` so an invalid expression remains visible as an error instead of blanking the page.
+Use `String.raw` for formulas containing backslashes, for example `<Formula latex={String.raw`\\frac{QK^T}{\\sqrt{d_k}}`} />`.
+KaTeX is lazy: decks without formulas do not load it.
+
+When a specific user-owned image is required but unavailable, use `ImagePlaceholder` with a concrete content hint instead of inventing an asset.
+Do not use placeholders for decoration or generic stock imagery.
+
+Use `Steps` and direct-child `Step` elements only when the order of ideas matters:
+
+```tsx
+import { Step, Steps } from '@open-slide/core';
+
+<Steps>
+  <h2>The framing appears immediately.</h2>
+  <Step><p>The first consequence appears next.</p></Step>
+  <Step><p>The conclusion appears last.</p></Step>
+</Steps>
+```
+
+Non-`Step` children appear immediately, and every `Step` must be a direct child of `Steps`.
+Pages reached from the overview or by backward navigation appear fully revealed, so the complete composition must remain readable.
+
+Use `useSlidePageNumber()` for a dynamic page-number footer rather than hardcoding the current page or total.
+Use one restrained `SlideTransition` family across a deck, or omit transitions entirely.
+Use `MorphElement` only for the same visual object across adjacent pages, with a stable id and deterministic geometry.
+
+## Keep inspector edits independent
+
+For repeated cards, tiles, logos, or diagram nodes, define one helper component in `index.tsx` and instantiate each item explicitly.
+Do not render inspector-editable repeated visuals by mapping a data array because every rendered instance would share one source location.
+Ordinary literal `<li>` elements are already independent and do not need a helper component.
+
+## Preview pages visually
+
+After creating or editing pages, look at them: the vertical-budget math catches overflow, but not clashing colors, awkward wraps, or a broken image.
+
+Call `preview_presentation_page` with the deck id (the `<deck>` in `slides/<deck>/index.tsx`) and the 1-based `page`; add `step=<n>` to show only the first `n` `Step`s of a stepped page.
+Lattice renders that page from the files on disk, without editor chrome, and returns it as a 1920 × 1080 image, so pixel positions match the slide canvas.
+It needs no browser or open deck, and never moves the user's current page or inspector selection.
+It first compiles the deck the way the Lattice editor loads it.
+An error names its cause: `presentation_build_failed` lists every file of the deck that does not compile or import that does not resolve, such as an asset that is not at the imported path, with its `file:line:column` and source line; `presentation_deck_not_found`; `presentation_page_out_of_range` (its message gives the deck's page range); or `presentation_preview_failed` with Open Slide's message when the page threw while rendering or did not settle.
+Fix that cause first and preview again.
+A deck that fails here shows the same error when the user opens it, so never hand over a deck whose preview fails.
+
+When the tool is unavailable, the latest host context's `presentation.previewUrl` opens the current page through Open Slide's preview route instead; it expires when the presentation runtime stops or restarts.
+Set its `p` parameter to the page you want, replace the deck id in its path to preview another deck in this project, and add `step=<n>` as above.
+Open it with a 1920 × 1080 viewport and screenshot it once `[data-osd-preview="ready"]` appears; `[data-osd-preview="error"]` instead holds the message in `[data-osd-preview-error]`.
+Use whichever browser tool your session already has.
+Without one, a Chromium browser's headless mode needs nothing installed (Microsoft Edge takes the same flags at `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`):
+
+```bash
+browser="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+shot=/tmp/<deck-id>-p3.png
+"$browser" --headless --user-data-dir="$(mktemp -d)" --window-size=1920,1080 --hide-scrollbars \
+  --virtual-time-budget=10000 --screenshot="$shot" "<previewUrl with p=3>" >/dev/null 2>&1 &
+for _ in $(seq 30); do [ -s "$shot" ] && break; sleep 1; done; kill $! 2>/dev/null
+```
+
+Some browsers keep running after writing the file, so the loop bounds the wait.
+Replace `--screenshot="$shot"` with `--dump-dom`, redirecting its output to a file, to read the page's `data-osd-preview` state and error message.
+When neither the tool nor a `previewUrl` can show the page, skip the visual check and say so in your hand-off; ask before installing a browser or Playwright.
+
+## Validate before finishing
+
+- Confirm that `slides/<deck-id>/index.tsx` default-exports a non-empty `Page[]`.
+- Confirm that every page root fills the 1920 × 1080 canvas and all visible content fits without scrolling or cropping.
+- Confirm that `notes` remains aligned with the exported pages.
+- Confirm that every imported asset exists under the deck's `assets/` directory or the project-root `assets/` directory.
+- Confirm that no dependency, unrelated deck, alternate slide source, or generated export was added.
+- Re-read the changed page and the exports after editing.
+- Preview every page you touched, and at least one page after any change to the deck's imports or assets, and fix what looked off or failed.
+- Never claim to have visually inspected, presented, or exported the deck unless the corresponding app action or tool was actually used.
+
+Open Slide provides live editing, thumbnails, comments, asset management, design controls, presenter view, fullscreen navigation, speaker notes, and HTML or PDF export inside Lattice.
+Do not instruct the user to run a separate Vite server or `npx @open-slide/cli` for a Lattice project.
+
+## Upstream references
+
+- Open Slide repository: <https://github.com/1weiho/open-slide>
+- Open Slide package: <https://www.npmjs.com/package/@open-slide/core>
+
+Use Open Slide's native TypeScript and React contract when upstream behavior is required.

@@ -1,0 +1,203 @@
+---
+name: cartographer-ops
+description: Configure, operate, troubleshoot, or upgrade a Cartographer server or client; connect agents and manage Knowledge Bases.
+version: "1.7"
+---
+# Cartographer Operations
+
+## Mental model
+
+Cartographer is one server process over a data directory whose direct subfolders are Knowledge
+Bases (KBs). Connect clients to it with `cartographer connect`; agents use the MCP server rather
+than editing KB files. Every KB write is committed to git, and a configured remote is synchronized
+around writes.
+
+## CLI surface
+
+| Command | Use it when |
+|---|---|
+| `cartographer setup` | First-time setup of this machine: service, first KB and agents, verified (see below). |
+| `cartographer serve` | Starting the server directly, for development or a custom deployment. |
+| `cartographer service install\|status\|restart` | Installing, checking, or restarting the native local service. |
+| `cartographer kb create <name> --remote <url>` | Creating the first local KB in the service data directory, pushed to an empty repository (or one holding only a forge's initial README/LICENSE/.gitignore commit, which is adopted) that becomes its `origin`; any other non-empty remote is refused before the push. `--no-remote` opts out into a local-only KB that is neither durable nor synced; the choice is mandatory. |
+| `cartographer kb clone <remote> [name]` | Mounting an existing OKF KB remote in the service data directory. |
+| `cartographer kb attach <kb> --remote <url>` | Giving a KB created with `--no-remote` a remote later: an empty repository, or one holding a fast-forward ancestor of the KB; no restart; never forced. |
+| `cartographer kb reauthor <kb> [--apply]` | A push was refused because of the commits' author or committer: preview, then re-author the unpushed commits as the configured `git.identity` and push (offline, on the server host). |
+| `cartographer connect [provider\|all] [--agents a,b]` | Connecting one or more detected agent clients to a server. |
+| `cartographer status` | Checking client configuration and provisioning drift. |
+| `cartographer sync` | Realigning provisioned skills, agents, hooks, and instructions. |
+| `cartographer disconnect [provider\|all] [--agents a,b]` | Removing Cartographer-managed client configuration. |
+| `cartographer version` | Checking the installed binary version. |
+| `cartographer update check` | Checking whether a newer release exists, and the upgrade command for this install. |
+
+`--agents claude,codex` selects a comma-separated subset for `connect` or `disconnect`; do not
+combine it with the positional provider. `connect` probes the server before writing: a reachable
+server with no KBs needs `kb create --remote <url>` followed by `service restart` — or simply
+`cartographer setup --remote <url>`.
+
+## First-time setup
+
+`cartographer setup` sets a machine up in one step: the native service, the first KB (created in
+an empty repository, or mounted from one that already holds a KB — it asks the remote with
+`git ls-remote`) and the agent clients, then a health check. It checks git and the remote's
+credentials before changing anything, and a rerun skips what is done.
+
+When you run it for a user, interview them first, in **one** message:
+
+1. the git remote of the first KB — an empty repository they own, or one holding their KB; a
+   local-only KB only if they explicitly accept that it is never backed up or synced;
+2. which agent clients to connect — default: the one you are running in;
+3. whether the KB should be visible everywhere (default) or only inside one repository.
+
+Then preview and run, never answering its questions on the user's behalf:
+
+```bash
+cartographer setup --remote <url> --agents <a,b> [--workspace <repo>] --dry-run --no-input
+cartographer setup --remote <url> --agents <a,b> [--workspace <repo>] --yes --no-input
+```
+
+If the plan's KB line says *mount* for a repository the user called empty (or *create* for one
+they said holds their KB), stop and tell them. On a machine that already mounts two or more KBs,
+ask which ones the agents receive and pass `--kb`. End by telling the user to restart their agent
+sessions.
+
+## Configuration
+
+Server settings resolve as **flag > environment > YAML > default**. Keep secrets in environment
+variables or the platform secret store, not in a committed YAML file.
+
+| Variable | Purpose |
+|---|---|
+| `CARTOGRAPHER_KB` | One or more folders to mount as they are. A folder mounted this way has no remote, so it never syncs: for development and tests. |
+| `CARTOGRAPHER_KB_REMOTES` | One or more git remotes to clone under the data directory and mount. |
+| `CARTOGRAPHER_DATA` | Data directory whose direct subfolders are discovered as KBs. |
+| `CARTOGRAPHER_HTTP` | HTTP listen address, such as `:39273`. |
+| `CARTOGRAPHER_AUTH` | Explicit auth mode: on, off, or automatic when unset. |
+| `CARTOGRAPHER_TOKENS` | Bearer tokens, including optional per-KB scopes. |
+
+A KB syncs exactly when it has a remote, and every write is one commit: neither is a setting.
+
+## Diagnosis playbook
+
+1. Check `GET /health`. Its `status`, `version`, `ready`, and `kbs` fields distinguish a live
+   process from a usable server.
+2. If `ready` is false or no KBs are mounted, ask for the git remote the KB belongs to, then run
+   `cartographer kb create <name> --remote <url>` (or `cartographer kb clone <url>` if that
+   repository already holds a KB; a forge-initialized one is adopted by `kb create`) and `cartographer service restart` for a local service.
+3. If client artifacts are stale or missing, run `cartographer sync`, then restart the affected
+   agent session so it reloads MCP configuration and skills.
+4. If concepts are degraded after a git conflict, use the `cartographer-kb-conflict-resolve` skill; do not
+   repair their files outside Cartographer.
+5. If the binary and the running service differ, run `cartographer upgrade-repair` (D121): it
+   gracefully replaces a running server, proves the new version is serving, and reconciles the
+   configured providers. A bare `service restart` does none of that and can leave a client
+   configured against the previous version.
+6. If writes fail and `sync_status` (not in `tools/list`: call it by name) reports `degraded` with `branch` different from
+   `remote_default_branch`, the KB's clone is on a branch other than its canonical one — the
+   remote's default, or the `branch` of the `settings.yaml` committed on that default branch
+   when `branch_source` is `settings` (D335, D903), or the server file's `kbs[].branch` when it
+   is `server` (D1093) — and Cartographer refuses to write rather than fork the KB on the
+   remote (D264). Reads keep working. A clean clone with nothing unpushed is switched to the
+   canonical branch by the first sync on its own; when it is not, `last_error` ends with why
+   (uncommitted changes, N commits unpushed, branch never pushed). Show the user `last_error`,
+   which names both branches and the clone path; recovery is theirs to choose: merge the stray
+   branch into the default branch on the remote (a pull or merge request), or check out the
+   default branch in the clone — with `branch_source: settings`, check out the configured branch
+   or change `branch` on the default branch; with `server`, check it out or change or remove
+   `kbs[].branch`. Then `cartographer service restart`. Never merge, rebase, push or delete a
+   branch yourself.
+7. If `sync_status` (not in `tools/list`) is `failed` and `last_error` says the remote refused the push because the
+   branch is protected (D903), Cartographer pushes to the branch itself and never opens a pull
+   request: the commit is safe in the clone, and the way out is the user's — unprotect the
+   branch on the remote, or set `branch` in `settings.yaml` on the default branch so writes go
+   to another one. Do not retry in a loop: the remote's answer will not change.
+   If instead `last_error` says the remote refused the push because of who authored or committed
+   the commits (a membership or private-email rule; it names the identities, D1063), the branch is
+   not the problem. Check that `git.identities.default` (or a `git.identities` entry per KB) is set in the server file and
+   the service restarted; commits made by the server identity are re-authored by the next sync, but
+   commits authored by a token need `cartographer kb reauthor <kb>` on the server host. Run it
+   without `--apply` first, show the user the list of commits it would change, and run it with
+   `--apply` only on their consent; it refuses anything already published. Never rewrite those
+   commits with git by hand.
+8. If a sync warns that a `{{repo:…}}`/`{{path:…}}` placeholder is not resolved, run
+   `cartographer paths list`: it shows each key, the KBs citing it, what the KB's `paths.yaml`
+   says it points at and its declared default (D263). A key resolves from `placeholders.paths` in
+   `.cartographer.yaml` first, then (repo keys) from a clone under `placeholders.search_roots`, found by the
+   declared `remote` when there is one, then from the declared default if it exists on this
+   machine. Fix it with `cartographer paths set <kind>:<key> <path>` — or, for a repo, add a closer
+   `placeholders.search_roots` entry (the scan goes 4 levels down from each root; the defaults are `~/Documents`,
+   `~/src`, `~/code`, `~/projects`) — then `cartographer sync`. A key missing
+   from the KB's `paths.yaml` is fixed in the KB, not on the client: declare it there with a
+   `~/`-anchored default so every machine resolves it with no configuration.
+
+## Upgrade
+
+Use the channel the binary came from; installing over it from a different one is how two
+Cartographers end up on `PATH`.
+
+- macOS: `brew upgrade --cask beppetemp/tap/cartographer`. The next `cartographer sync` (every
+  agent session start runs one) replaces the running service with the new binary and re-syncs,
+  so **no follow-up command is needed**; run `cartographer upgrade-repair` to do it immediately.
+- Windows: `install.ps1 update`, from PowerShell:
+  `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/BeppeTemp/cartographer/main/install.ps1))) update`.
+  It verifies the checksum, swaps the binary even while the native service is running from it,
+  and runs `upgrade-repair` like the POSIX installer. Do not download or extract the zip by hand.
+- POSIX installer (Linux, macOS without Homebrew): `install.sh update`, which runs
+  `upgrade-repair` the same way.
+- Kubernetes: update the Cartographer image tag in the deployment manifest and push it, then
+  end on a **verified image**, not on a rollout. With the Helm chart the tag is the chart's
+  version: install the new one with
+  `helm upgrade <release> oci://ghcr.io/beppetemp/charts/cartographer --version <version>`, or change
+  the version wherever the release is pinned, and the same three steps follow:
+  1. Wait for the manifest to be applied to the cluster — immediately if you apply it yourself,
+     otherwise by the GitOps controller that owns the manifests repo, if there is one, which may
+     lag by its reconcile interval.
+  2. Verify the Deployment carries the new tag —
+     `kubectl get deploy/cartographer -o jsonpath='{.spec.template.spec.containers[0].image}'`
+     — for a chart release, whose Deployment is named after the release's full name, select it:
+     `kubectl get deploy -l app.kubernetes.io/instance=<release>,app.kubernetes.io/component=meridian -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'` —
+     **before** waiting for rollout. Until it does, `kubectl rollout status` returns success in
+     under a second, truthfully, about the old ReplicaSet that has nothing left to roll out.
+  3. Then wait for rollout, and confirm with the version the server reports: `cartographer status`
+     prints it as `server vX`.
+
+**Removing it has an order**, whatever the channel: `cartographer service sync-timer uninstall`,
+`cartographer service uninstall` and `cartographer disconnect` first, with the binary still in
+place, then the channel's own removal. `install.sh uninstall` and `install.ps1 uninstall` refuse
+while the service or the timer is installed; `brew uninstall` does not check, so a launchd agent
+would be left pointing at a missing executable.
+
+Only already-open agent sessions need restarting after an upgrade, so they reload the MCP
+configuration and the provisioned skills. Tell the user to do that — the agent cannot restart its
+own session.
+
+## Update notices
+
+A session can start with a line from `cartographer update notice` saying a newer release exists,
+or `cartographer status` / `kb_status` can report one (`update available`, `latest_version`).
+
+- Tell the user **once** per session, with the version and the command the notice names.
+- Offer to run that command; run it **only if** the user explicitly says yes. Never upgrade on
+  your own initiative, and never switch to a different channel than the one named.
+- After it succeeds: `cartographer upgrade-repair` (`install.sh` and `install.ps1` already run it),
+  `cartographer reconnect` only when the release notes ask for it, then tell the user to restart
+  their agent sessions.
+- A remote or cluster server is not yours to upgrade from a client: propose the procedure
+  (Kubernetes, above) to whoever operates it.
+- `cartographer client update --check=false` turns the check off (`update_check: false`). The
+  client never installs a release by itself. Change it only when the user asks.
+
+## Never do
+
+- Do not edit KB concept files directly: use Cartographer MCP tools so validation, git commits,
+  and synchronization invariants apply.
+- Do not run git in a KB's clone (`init`, `checkout`, `push`, …): the server owns it, and a
+  branch created there is how a KB forks on its remote. Report `sync_status` (not in `tools/list`) instead; the one
+  sanctioned rewrite of unpushed commits is `cartographer kb reauthor <kb>` (step 7).
+- Do not hand-edit provisioned MCP entries or `.cartographer.yaml`; use `connect`, `sync`, and
+  `disconnect` so Cartographer can track and safely prune its own files.
+
+## Further reading
+
+- https://github.com/BeppeTemp/cartographer/blob/main/docs/deployment.md
+- https://github.com/BeppeTemp/cartographer/blob/main/docs/configurator.md

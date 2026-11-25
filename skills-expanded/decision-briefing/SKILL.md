@@ -1,0 +1,299 @@
+---
+name: decision-briefing
+version: 1.4.0
+type: skill
+author: Lukas Geiger
+created: 2026-06-13
+updated: 2026-11-09
+description: "Use whenever several decisions are pending or have accumulated -- whether within a topic, project, document, or over the course of a session: inventory them, present a numbered briefing with options A/B/C/D and a marked recommendation, accept letter answers (including batches), record the results, and write them back into the source documents."
+
+standalone: true
+anthropic_compatible: true
+bach_compatible: false
+bach_origin: true
+category: utilities
+tags: [entscheidung, briefing, batch, decision-session, priorisierung, workflow]
+language: de
+status: active
+visibility: public
+dependencies: {'tools': [], 'services': [], 'protocols': [], 'python': []}
+provenance: {'origin': 'bach', 'origin_path': 'system/agents/_experts/decision-briefing/', 'origin_version': '1.0.0', 'origin_repo': 'github.com/ellmos-ai/bach', 'last_sync_from_origin': '2026-06-13', 'last_sync_to_origin': None, 'local_changes_since_sync': True}
+---
+
+<img src="banner.png" width="100%" alt="decision-briefing banner">
+
+# Decision-Briefing — Viele Entscheidungen eines Themas strukturiert abarbeiten
+
+> Aus einem Berg offener Entscheidungen wird ein nummeriertes Briefing mit Empfehlungen, das der User blitzschnell per Buchstaben beantworten kann — einzeln oder im Batch.
+
+---
+
+## Wann nutzen?
+
+**Immer, sobald mehrere Entscheidungen anstehen** — themenunabhängig. Typische Situationen:
+
+- In einem Bereich/Thema haben sich viele offene Entscheidungen angesammelt
+- Ein Dokument (Plan, TODO-Liste, Konzept) enthält mehrere unentschiedene Punkte
+- Im Gespräch sind nacheinander mehrere Entscheidungsfragen aufgelaufen
+- Der Agent hat selbst mehrere Rückfragen an den User — statt sie einzeln zu stellen, als Briefing bündeln
+- Der User will offene Punkte schnell und fundiert "wegarbeiten"
+
+**Trigger-Wörter:** offene Entscheidungen, Entscheidungs-Session, Briefing, abarbeiten, durchgehen, entscheiden wir das mal alles
+
+**Abgrenzung:** [decide](../decide/SKILL.md) liefert Frameworks für EINE Frage. `decision-briefing` koordiniert die Abarbeitung VIELER Entscheidungen eines Themas — und setzt `decide` bei komplexen Einzelfällen ein. Ist eine Entscheidung bereits getroffen/analysiert und soll nur noch als executive Kurzform (Pro/Contra, Talking Points, Empfehlung, Link zur Vollanalyse) weitergegeben werden, übernimmt [decision-shot](../decision-shot/SKILL.md) die Darstellung — kein Konkurrenzskill, sondern das Ausgabeformat danach.
+
+---
+
+## Kern-UX
+
+Das Herzstück ist das Briefing-Format. Jede Entscheidung wird so vorgelegt, dass die Antwort schnell und ohne kognitiven Ballast erfolgen kann:
+
+- **Sprechender Klartext-Titel** je Punkt (z. B. *„Hermes-Sprachunterstützung“*, *„Rettung alter Arbeitssitzungen“*)
+- **Alltagssprache in Ich-Form (Dreiklang):**
+  1. *Lage:* Was ist die Situation / das Problem?
+  2. *Ich mache ...:* Was plane/empfehle ich konkret zu tun?
+  3. *Rückfall:* Was passiert bei Fehlschlag oder was entscheidet der Nutzer danach?
+- **Keine technischen Kürzel im Fragetext:** Keine Ticketnummern (`T-...`), D-Kennungen, Git-Hashes oder Dateipfade im sichtbaren Text für den Menschen.
+- **Optionen als Buchstaben** A/B/C/D (2–4 Optionen, klar und verständlich formuliert)
+- **Markierte Empfehlung** in Ich-Form (z. B. `→ Ich empfehle Option A, weil ich damit ...`)
+- **Technische Referenztabelle nur im Anhang:** Stabile Nummern (`[E01]`, `[E02]`), Ticket-IDs und Zielregister werden am Ende in einer kompakten Tabelle geführt.
+
+**Antwortformate des Users:**
+
+```
+Per Buchstabe:   "E01: A"  oder  "1A"
+Batch:           "1A 2C 3B"
+Per Klartext:    "Bei der Hermes-Sprachunterstützung Option A"
+Vertiefen:       "E02: mehr Info"  oder  "2?"
+Vertagen:        "E03: später"
+Gesamtabnahme:   "Passt so, alle Empfehlungen umsetzen"
+```
+
+---
+
+## Workflow (4 Phasen)
+
+```
+Thema + vorliegende Entscheidungen
+     |
+     v
+Phase 1: ERFASSEN & INVENTARISIEREN
+     |
+     v
+Phase 2: BRIEFING AUFBEREITEN
+     |
+     v
+Phase 3: DECISION-SESSION
+     |
+     v
+Phase 4: PROTOKOLL & RÜCKSCHREIBEN
+```
+
+### Phase 1: Erfassen & Inventarisieren
+
+Quellen: Was der User nennt, ein vorliegendes Dokument oder der Gesprächskontext. Kein systemweiter Scan — nur das, was vorliegt.
+
+1. Alle offenen Entscheidungen als Liste aufstellen (je 1 Zeile: Kurztitel)
+2. **Duplikate** erkennen und zusammenführen (gleiche Frage, mehrfach formuliert)
+3. **Abhängigkeiten** markieren ("E04 hängt von E01 ab")
+4. **Reihenfolge** festlegen: Blocker zuerst (Entscheidungen, von denen andere abhängen), dann nach Dringlichkeit
+5. Liste dem User kurz zur Bestätigung zeigen ("Habe ich alle? Fehlt etwas?")
+
+### Phase 2: Briefing aufbereiten
+
+Pro Entscheidung:
+
+```
+[E01] <Sprechender Klartext-Titel>
+  Lage: <1 Satz: Was ist die Situation?>
+  Handlung: <1-2 Sätze in Ich-Form: Was schlage ich vor zu tun?>
+  Rückfall: <1 Satz: Was passiert bei Fehlschlag oder als nächster Schritt?>
+  A) <Option in Alltagssprache>
+  B) <Option in Alltagssprache>
+  → Meine Empfehlung: A — <Begründung in Ich-Form>
+```
+
+Am Ende des Briefings:
+```
+### Technische Referenztabelle (nur für Buchung & Audit)
+| Nummer | Klartext-Titel | Empfehlung | Ticket-ID / D-Nummer | Quelle / Pfad |
+|---|---|---|---|---|
+| E01 | Hermes-Sprachunterstützung | A | T-20260913-989062143 | hermes-agent |
+```
+
+Regeln für gute Optionen:
+
+- Optionen müssen sich gegenseitig ausschließen und das Spektrum abdecken
+- Bei Bedarf eine Option "Status quo behalten" oder "vertagen" mit aufnehmen
+- Die Empfehlung ist transparent begründet — nie versteckt suggestiv
+- Bei unklarer Faktenlage: erst klären (oder als offene Frage kennzeichnen), nicht raten
+
+### Phase 3: Decision-Session
+
+1. Briefing vorlegen — einzeln (eine Entscheidung pro Nachricht) oder als Batch (alle auf einmal); bei >5 Entscheidungen in Blöcken von 3–5
+2. Buchstaben-Antworten entgegennehmen und quittieren
+3. Bei "mehr Info"-Antwort: Entscheidung vertiefen (Methoden-Werkzeugkasten unten)
+4. Bei komplexen Einzelfällen (viele Kriterien, hohe Tragweite): an den [decide](../decide/SKILL.md)-Skill eskalieren (Weighted Scoring, Scenario Analysis)
+5. Vertagte Entscheidungen explizit als offen weiterführen — nicht stillschweigend fallen lassen
+
+### Phase 4: Protokoll & Rückschreiben
+
+1. **Ergebnis-Tabelle** erstellen:
+
+```
+| Nr.  | Entscheidung        | Gewählt | Status   |
+|------|---------------------|----------|----------|
+| E01  | <Kurztitel>         | A        | getroffen|
+| E02  | <Kurztitel>         | C        | getroffen|
+| E03  | <Kurztitel>         | —        | vertagt  |
+```
+
+2. Getroffene Entscheidungen in die **Quelldokumente/TODO-Dateien eintragen** — am Fundort der offenen Frage, z.B.:
+
+```
+ENTSCHEIDUNG: <Frage>
+  → GETROFFEN 2026-06-13: Option A (<Kurzfassung>)
+  → Nächste Aktion: <falls die Entscheidung eine Folgeaktion impliziert>
+```
+
+3. **Vertagtes explizit als offen führen** (im Quelldokument oder in der TODO-Liste), damit es beim nächsten Briefing wieder auftaucht
+
+---
+
+## Briefing als Formular (Bauanleitung)
+
+Statt Buchstaben im Chat zu tippen, kann die Nutzerin oder der Nutzer ein fertiges Briefing im Dokument selbst anklicken: Optionen wählen, je Posten eine Anmerkung, „Alles wie empfohlen“ (Massenabnahme), Speichern und Abschicken. Aus den Briefing-Daten (kleine JSON, Format `form.schema.json`) erzeugt der Generator `scripts/formular/build_form.py` des Skills [decision-draw](../decision-draw/SKILL.md) **ein selbstenthaltenes HTML-Formular** (nicht jedes Mal neu bauen; je Posten kurzer Kontext, Kosten/Aufwand, Risiko/rückgängig, Frist, Folge bei „Nein“, Längeres nur aufklappbar; dazu die Wahl „Rückfrage / mehr Info nötig“); die Antwortdatei (`ticket-master.decision-answers.v1`) enthält je Posten die gewählte Option und liefert damit die Spalte „Gewählt“ der Ergebnis-Tabelle aus Phase 4. Die vollständige Anleitung (zwei Wege, Antwortschema, anzupassende Stellen): [decision-draw/references/formular.md](../decision-draw/references/formular.md). Das Formular schreibt in kein Register; gebucht wird weiter nur in Phase 4.
+
+**Bild-Modi (`bilder_modus`):**
+- `serie` (Standard, 1–12 Bilder): Klassische Galerie/Serie.
+- `polaroid` (2–12 Bilder, genau 1 Bild je Option A, B, C...): Klickbare Variantenkarten mit Optionsbuchstaben im Polaroid-Stil für visuelle Design- und Layout-Entscheidungen (Auswahl per Klick oder Tastendruck `A`/`B`/`C`).
+- `swipe` (1–60 Bilder): Stapel-Entscheidungen nacheinander (Ja / Nein / Rückfrage per Button, Pfeiltasten oder Wischgeste) mit anschließender Übersicht und Bestätigung für Massenprüfungen (z. B. Belege, Rechnungen, Entwürfe).
+
+Pflichtregeln aus dem Vorfall vom 2026-11-07 (Begründungen in der Anleitung):
+
+1. Nichts vorausgewählt (oder ausdrücklich als vorausgewählt gekennzeichnet).
+2. Gesamtabnahme nur nach ausdrücklichem „Ja“ im Dokument-Dialog; bei der Wiederherstellung eines Zwischenstands nie übernehmen.
+3. Sensible Posten (rot, Geld, Löschung, Außenwirkung, Lizenz) vor dem Speichern auflisten.
+4. UI-Tests nur headless, nie über sichtbare Browser oder die Playwright-MCP-Werkzeuge (ein sichtbarer Testbrowser hat das Formular einmal selbst ausgefüllt).
+5. Zustellung erst nach unabhängiger Prüfung durch eine andere Instanz.
+6. Buchung nur über Phase 4; der Vergleich mit einer versiegelten Avatar-Prognose ist optional. Die Avatar-Vorhersage wird im Formular erst sichtbar, nachdem eine Wahl getroffen wurde.
+7. Speichern hängt nie von einem Dialog ab (Regel 9 der Anleitung): Download-Links, Text zum Kopieren und „Zwischenstand sichern“ stehen schon vor dem Ordnerdialog bereit und bleiben nach jedem Abbruch oder Fehler stehen; „gespeichert“ erst nach vollständigem Schreiben.
+8. Kurz und entscheidungsrelevant (Postenvorlage mit Grenzen und Pflichtfeldern, Längeres nur aufklappbar); die Wahl „Rückfrage / mehr Info nötig“ ist nie eine Zustimmung und blockiert die Gesamtabnahme. Im Kartenkopf steht der verständliche Klartext-Titel im `<legend>` an erster Stelle, das Kürzel dezent am Ende.
+
+Der Tk-Viewer von decision-draw ist nativ nicht abgenommen; er wird nur nach ausdrücklicher Zustimmung der Nutzerin oder des Nutzers geöffnet.
+
+---
+
+## Beispiel-Briefing (fiktiv)
+
+Thema: Relaunch einer Vereinswebsite — 3 offene Entscheidungen aus dem Projektplan.
+
+```
+[E01] Welches System für die neue Website?
+  Kontext: Aktuelle Seite ist handgepflegtes HTML; 2 Personen sollen künftig Inhalte pflegen.
+  A) Static-Site-Generator (schnell, sicher, Pflege via Git)
+  B) Klassisches CMS mit Admin-Oberfläche
+  C) Website-Baukasten (gehostet)
+  → Empfehlung: B — zwei nicht-technische Redakteure brauchen eine Oberfläche, kein Git.
+
+[E02] Wie wird gehostet?
+  Kontext: Budget ~10 EUR/Monat, kein eigener Admin im Verein.
+  A) Shared Hosting beim bestehenden Anbieter
+  B) Eigener kleiner VPS
+  C) Managed Hosting passend zum gewählten System
+  → Empfehlung: C — am wenigsten Wartungsaufwand ohne Admin; Konsequenz: hängt von E01 ab.
+
+[E03] Wann geht die neue Seite live?
+  Kontext: Inhalte sind zu 60% migriert; Vereinsjubiläum in 3 Monaten.
+  A) Sofort als Soft-Launch (Rest nachziehen)
+  B) Nach vollständiger Inhaltsmigration
+  C) Zum Jubilaeum als Stichtag
+  → Empfehlung: A — umkehrbar und liefert früh Feedback; finale Inhalte folgen.
+```
+
+User antwortet im Batch: **"1B 2C 3A"** → Ergebnis-Tabelle, dann werden die drei Entscheidungen im Projektplan als GETROFFEN eingetragen.
+
+---
+
+## Methoden-Werkzeugkasten (für "mehr Info" und Vertiefung)
+
+| Methode | Wann | Kurzbeschreibung |
+|---------|------|------------------|
+| **Pro/Contra-Matrix** | 2–3 Optionen, schneller Vergleich | Alle Optionen nebeneinander bewerten |
+| **Nutzwertanalyse** | Mehrere Kriterien | Gewichtete Kriterien, Punkte pro Option (quantitativ wenn möglich) |
+| **Second-Order Thinking** | Tragweite unklar | Was sind die Folgen der Folgen? |
+| **Prämortem** | Riskante Entscheidung | "Es ist schiefgegangen — warum?" Schwachstellen vorab finden |
+| **10/10/10-Methode** | Emotionale/zeitliche Verzerrung | Wie wirkt die Entscheidung in 10 Minuten / 10 Monaten / 10 Jahren? |
+
+---
+
+## Arbeitsprinzipien
+
+- **Keine Entscheidungen aufdrängen:** Informationen liefern, Empfehlung transparent begründen — der User entscheidet
+- **Bias-Erkennung:** Denkfehler ansprechen, wenn sie sichtbar werden (Confirmation Bias, Sunk Cost)
+- **Reversibilität beachten:** Umkehrbare Entscheidungen schnell entscheiden, finale gründlicher behandeln
+- **Zeitdruck berücksichtigen:** Schnelle Entscheidungen brauchen einfachere Methoden — nicht jede Frage verdient eine Nutzwertanalyse
+
+### Session-Provenienz bei erzeugten Artefakten
+
+Erstellt dieser Skill ein wichtiges neues, dauerhaft gespeichertes Briefing, einen Bericht,
+ein Handoff oder einen Receipt, endet das Artefakt mit genau einer Zeile:
+
+`session: <session-id> | <agent>@<host> | YYYY-MM-DD`
+
+- Quellenpriorität: explizite Laufzeit-/CLI-Angabe, dann autoritative Provider-Umgebung oder
+  Hook, sonst `unbekannt`. Werte nie erraten.
+- Ein Subagent verwendet die Session-ID seiner Elternsession.
+- Routine-Chat, konsultierte Quelldokumente, Policies, `CLAUDE.md`, READMEs und bloß
+  rückgeschriebene Entscheidungen erhalten keinen pauschalen Stempel. Altdateien werden nicht
+  blind nachgestempelt.
+
+---
+
+## Abgrenzung und Synergien
+
+| Funktion | `decide` | `decision-briefing` |
+|---|---|---|
+| Einzelne Entscheidung mit Framework strukturieren | ✓ | — |
+| Viele Entscheidungen eines Themas inventarisieren | — | ✓ |
+| Nummeriertes Briefing mit A/B/C-Optionen | — | ✓ |
+| Batch-Antworten ("1A 2C 3B") | — | ✓ |
+| Rückschreiben in Quelldokumente | — | ✓ |
+| Fertige Analyse zu einer einzelnen Frage als Kurzform weitergeben | — | — (siehe [decision-shot](../decision-shot/SKILL.md)) |
+
+**Synergie:** Bei komplexen Einzelfällen innerhalb einer Session wendet `decision-briefing` die Frameworks aus `decide` an (Weighted Scoring, Scenario Analysis). Für den größeren Denkprozess davor (Analyse → Ideen → Entscheidung) siehe [structured-thinking](../structured-thinking/SKILL.md).
+
+---
+
+## Changelog
+
+### 1.4.0 (2026-11-09)
+- Bild-Modi für Formular-Briefings dokumentiert (`bilder_modus` in `form.schema.json` / `build_form.py` von `decision-draw`): `serie` (Standard, 1–12 Bilder), `polaroid` (2–12 Bilder, exakt 1 Bild je Option mit Buchstaben A, B, C... für visuelle Variantenwahlen) und `swipe` (1–60 Bilder zur sequenziellen Ja/Nein/Rückfrage-Massenprüfung mit Bestätigungsübersicht).
+- Avatar-Vorhersage: Badge wird erst nach getroffener Wahl sichtbar (kein kognitiver Vorab-Anker).
+- Kürzel-Badge im Kartenkopf: Sprechender Klartext-Titel im `<legend>` zuerst, technisches Kürzel dezent rechtsbündig.
+- Vollständige DE/EN-Parität mit `SKILL.en.md` sichergestellt.
+
+### 1.3.0 (2026-11-07)
+- Formular aus Daten statt aus einem Dokumentgenerator (`build_form.py` in `decision-draw`): kurze Postenvorlage mit Kosten/Aufwand, Risiko/rückgängig, Frist, Folge bei „Nein“, Wahl „Rückfrage / mehr Info nötig“.
+- Abschnitt „Briefing als Formular (Bauanleitung)“: klickbares HTML-Formular statt Buchstaben im Chat, Verweis auf die Referenzimplementierung und die Anleitung in `decision-draw` (`references/formular.md`, `scripts/formular/`), Pflichtregeln aus dem Vorfall vom 2026-11-07. Buchung bleibt ausschließlich Phase 4.
+- Regel 9 „Speichern hängt nie von einem Dialog ab“ ergänzt (Download-Links, Text zum Kopieren, Zwischenstand, ehrliche Erfolgsmeldung); Referenzimplementierung und Tests in `decision-draw`.
+
+### 1.2.0 (2026-09-18)
+- Stilregel für verständliche Entscheidungstexte verankert (T-20260913-883789445, Nutzeranweisung 2026-09-13):
+  - Keine kryptischen Ticketnummern, D-Kennungen oder Pfade im sichtbaren Fragetext.
+  - Dreiklang in Ich-Form (Lage, „Ich mache …“, Rückfall) für Kontext und Empfehlung.
+  - Sprechende Klartext-Titel je Entscheidungspunkt; Antwortformate um Klartext und Gesamtabnahme erweitert.
+  - Technische Zuordnung (Kürzel, Ticket-IDs, Registerpfade) in Anhangstabelle am Briefingende verlegt.
+
+### 1.1.0 (2026-09-09)
+- P-018 ergänzt Session-Provenienz für wichtige neu erzeugte Briefings, Berichte, Handoffs und
+  Receipts; Quellenpriorität, Elternsession bei Subagenten und enge Ausschlüsse sind festgelegt.
+
+### 1.0.0 (2026-06-13)
+- Portiert aus dem BACH-Experten `decision-briefing` v1.0.0; Scanner-Komponente (scanner.py, sources.json, Marker-Scans) bewusst entfernt — Erfassung erfolgt leichtgewichtig aus dem vorliegenden Kontext
+
+---
+
+*Portiert aus BACH | Standalone-Version ohne Scanner*
+
+**Siehe auch:** [decide](../decide/SKILL.md) (Frameworks für eine einzelne Entscheidung) | [structured-thinking](../structured-thinking/SKILL.md) (Analyse → Ideen → Entscheidung als Meta-Workflow) | [decision-shot](../decision-shot/SKILL.md) (fertige Analyse als executive Kurzform mit Link zur Vollversion präsentieren)

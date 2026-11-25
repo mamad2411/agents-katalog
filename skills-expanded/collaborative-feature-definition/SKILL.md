@@ -1,0 +1,434 @@
+---
+name: collaborative-feature-definition
+description: >
+  Co-authoring Product Features and Tech Features through focused question-and-revision rounds. For
+  a Product Feature, separates the business definition from an optional engineering analysis owned
+  by an architect or senior engineer, including PoCs, ADRs, contracts, and engineering premises.
+  Use when an idea needs an agreed feature brief or an evidenced decision not to proceed, not
+  implementation. Accepted features go to feature-engineering for validation and execution planning.
+---
+
+# Collaborative Feature Definition
+
+## Purpose
+
+Turn an initial idea into an agreed, buildable Feature or Tech Feature without inventing missing
+intent or turning discovery into a one-shot questionnaire. The artefact is a living draft: each
+conversation round resolves the highest-impact gaps, updates the draft, and exposes what remains
+unknown.
+
+This skill stops at an accepted definition and, when required, its engineering-analysis companion,
+or an evidenced decision not to pursue the proposal. Discovery need not produce delivery work.
+`feature-engineering` owns the subsequent independent readiness validation, planning,
+implementation, progress, and completion review.
+
+## Classify the artefact
+
+- **Product Feature** — changes an outcome or behavior for a customer, user, operator, partner, or
+  business process. Its value must be stated in those terms. Its definition is product-owned;
+  engineering decisions are a separate, conditional stage.
+- **Tech Feature** — changes an engineering capability or system quality. Its value may be indirect,
+  but must be measurable: risk/cost reduction, reliability, security, operability, performance,
+  maintainability, developer productivity, or enablement of a named product outcome.
+
+If both apply, keep one parent objective and separate the product outcome from the enabling technical
+work. Do not hide a multi-feature initiative under one title.
+
+Identify both the artefact and the current stage. Read the matching template; consult another stage's
+template only when resolving a handoff or the impact of a change:
+
+- For the product-owned definition of a Product Feature, read
+  [Product Feature](references/product-feature.md).
+- For the later engineering analysis of an agreed Product Feature, read
+  [Engineering Analysis](references/engineering-analysis.md).
+- For a Tech Feature, read [Tech Feature](references/tech-feature.md).
+
+Do not collapse the two Product Feature stages. The person establishing product intent and business
+acceptance does not define engineering contracts, ADRs, PoC conclusions, or solution premises. Close
+the first stage, record the handoff, and resume the second with an identified architect or senior
+engineer. A new chat is not mandatory, but a distinct author and explicit stage transition are.
+
+## Choose proportional depth
+
+Choose the depth required by the highest evidenced driver, consistent with `feature-engineering`;
+state the choice and its drivers, and reassess when an answer changes risk or scope:
+
+| Depth        | Use when                                                                                                                                                                                                                              | Effect on the workshop                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Light**    | One local outcome, known behavior, one authority domain, reversible, no new dependency or boundary/schema change and no material choice                                                                                               | Few focused rounds; compact ledgers and direct verification  |
+| **Standard** | Several rules/components, compatible existing internal contract change, meaningful choice, or established and contained regulatory obligations                                                                                        | Explore boundaries, failures, ownership, and impact          |
+| **Deep**     | New runtime technology, infrastructure component or external integration, public/breaking contract, migration, material security/privacy/compliance consequence, costly reversal, decision-relevant PoC, or several authority domains | Require stronger evidence, options, traceability, and review |
+
+Depth changes how much evidence and challenge are warranted, not the quality gates. A small feature can
+be Deep because it is irreversible; a large description is not automatically complex. An unknown
+material driver prevents Light until resolved; record the uncertainty instead of treating missing
+evidence as low risk. Reusing an established security rule is not by itself a new security boundary.
+The user may request more depth. Reduce depth only when evidence removes a driver; accepting residual
+risk does not make the driver disappear.
+
+Use the stage template as a content contract, not a demand for empty headings. Light briefs may group
+applicable fields into a compact record; explain material inapplicability and keep ownership, criteria,
+open items, revision and handoff status explicit. Compact presentation never combines the two Product
+Feature stages or removes a convergence gate.
+
+## The collaboration loop
+
+### 1. Seed the living draft
+
+Reuse the request, supplied documents and accepted session decisions. Use `feature-discovery` to
+separate facts, assumptions, unknowns, and decisions, preserving each source's scope and authority.
+Mark missing mandatory content as `OPEN`; never fill it with plausible intent or approval.
+
+Locate the current working draft and any accepted baseline before creating another version. When the
+request includes updating a document, keep that document current after each resolved round; a chat
+summary is not the update. Preserve accepted snapshots and edit the working revision. A conversation-only
+workshop may keep its draft inline. If a source cannot be read or an update fails, state what is missing
+or unsaved and provide the proposed text; do not claim the document was checked or updated.
+
+Assign the shared lifecycle identifiers as items appear: `OBJ-*`, `F-*`, `A-*`, `U-*`, `BR-*`,
+`BAC-*`, `PF-*`, `TF-*`, `SC-*`, `Q-*`, `IMP-*`, `ED-*`, `EXP-*`, `CT-*`, `TC-*`, `RES-*`,
+`RISK-*`, `EV-*`, and `GAP-*`. Use the namespace in `feature-engineering`'s artefact contract.
+Do not reuse a prefix for another artefact type or renumber existing identifiers merely to
+tidy the document; add an explicit alias if an existing brief uses a different namespace.
+
+For each consequential decision, record the decision, accountable owner, consulted roles, status, and
+source. A participant can supply context without having authority to approve it. Keep the item `OPEN`
+when the accountable role is unknown or absent.
+
+Show the initial draft briefly, then name the most consequential gaps. The full polished document is
+not repeated after every answer unless the user asks.
+
+Examples illustrate intent; they do not establish every rule. Check whether omitted actors, permission
+boundaries, repeated actions or partial failure could defeat the stated outcome. Raise material gaps
+within the feature's scope without turning every possible concern into a new requirement.
+
+### 2. Ask one coherent round
+
+Use `feature-requirement-clarification` to select questions. There is no predetermined number of
+rounds. Size each round dynamically: ask one question when one answer determines the next direction,
+or two to three when the questions belong to the same decision area and can be answered together.
+Use these checks to choose a question; the labels need not appear in the conversation:
+
+```text
+Question       one missing fact or decision in language the user uses
+Why now        which section or decision it blocks
+Consequence    what changes between the likely answers
+Recommendation agent recommendation, when evidence supports one
+```
+
+When seeking evidence, ask neutrally about a concrete case, affected users, or observed behavior;
+do not embed a preferred solution in the question. When seeking a choice, explain viable options and
+their consequences, with a recommendation if supported. A stakeholder's preference is a decision
+input, not proof that users experience the claimed problem. Use follow-ups to resolve consequential
+ambiguity, adapting to the answer rather than replaying the outline. This applies the questioning
+technique in [GOV.UK's interview guidance](https://www.gov.uk/service-manual/user-research/using-in-depth-interviews),
+without treating a definition workshop as completed user research.
+
+Resolve terminology when different readings change an actor, state, eligibility, timing, or acceptance
+result. Check the applicable glossary, rules, and workflow examples first. If still ambiguous, ask about
+one case that separates the readings: for example, does cancelling a renewal end access now or at the
+paid-through date? If both behaviors exist, name them distinctly within their contexts. Do not force
+different concepts into one meaning, interrogate harmless synonyms, or require a project-wide glossary.
+
+Question order is adaptive, but normally moves through:
+
+1. problem, audience, outcome, value, and evidence;
+2. behavior, workflow, business rules, data, and failure cases;
+3. scope, exclusions, dependencies, constraints, and existing patterns;
+4. criteria and unresolved constraints appropriate to the current author's stage;
+5. acceptance criteria, decomposition, unresolved risks, and confirmation.
+
+Defer a dependent question while an earlier answer could make it irrelevant. Skip areas already
+settled by evidence; the order is not a gate on independent work.
+
+Use supplied answers and authoritative context before asking; a challenge already resolved
+by that evidence does not need to be asked again. Independent questions can proceed while
+one dependent area waits. An instruction to draft or revise authorizes that work, not a
+fabricated approval of the resulting definition.
+
+Before closing a stage, use at least one challenge question wherever the answer could expose false
+value, solution bias, excess scope, or a hidden invariant. Useful challenges include the counterfactual
+of doing nothing, the evidence for the problem, the smallest outcome that still creates value, behavior
+that must remain unchanged, and how the feature could fail while all written criteria pass. Do not ask
+all of them mechanically.
+
+### 3. Integrate and challenge
+
+After each answer:
+
+- map all resolved parts of the answer to their open items and check them against the current definition;
+- if it conflicts with accepted intent, state the competing readings and the affected decision;
+  clarify material ambiguity instead of silently treating the latest statement as an approved change;
+- record a resolved term's scoped meaning and source in the brief or link its existing authoritative
+  glossary entry; an inline definition beside the affected rule is enough. Preserve a distinguishing
+  example when it prevents the original ambiguity; resolving vocabulary does not authorize code renames;
+- update the affected behavior, rules, examples, criteria and decision/assumption ledger together,
+  preserving identifiers, source and authority. Close answered questions and replace dependent questions
+  made irrelevant by the answer; promote nothing from assumption to fact without a source;
+- reread the updated sections together: their actors, states, timing and expected outcomes must agree.
+  A note appended to the ledger does not repair a contradictory criterion left in the body;
+- show the consequential delta and choose the next highest-impact gap from the updated draft.
+
+Maintain bidirectional traceability as the draft grows:
+
+```text
+OBJ/BR -> BAC -> SC -> IMP -> ED/EXP/CT -> TC -> RES -> EV
+```
+
+Each downstream item names its upstream justification; each objective and rule names the criteria that
+demonstrate it. An item with no upstream reason is speculative. An upstream item with no downstream
+criterion is not yet verifiable. For Light depth this may be a few inline `Trace:` fields; use a matrix
+when Standard or Deep work would otherwise become hard to audit.
+
+This diagram spans the lifecycle, not a demand to create every item during definition.
+At the product stage, trace OBJ/BR to BAC and scope; add engineering links during analysis
+when applicable. An internal Tech Feature may trace OBJ directly to TC without inventing a BAC.
+Record a planned verification method for each criterion and distinguish it
+from executed `EV-*` evidence. Delivery resources and execution results belong to later
+authorized lifecycle work; their absence alone does not block a definition brief.
+
+Challenge scope or rules with a concrete consequence, not generic disagreement. When the user chooses
+against a recommendation, record the decision and its trade-off; do not keep relitigating it unless
+new evidence changes the choice.
+
+When an accepted baseline changes semantically, do not silently edit it. Create a change-impact entry containing the
+previous and new revision, changed statement and reason, affected rules/criteria/contracts/ADRs/PoCs/
+decomposition, owners who must reconsider, and validations to rerun. Follow direct and transitive
+dependencies; mark affected downstream conclusions stale until rechecked or reapproved. Preserve the
+old evidence and its conditions: it may still support unaffected claims. A clarification that confirms
+the existing meaning records its source without inventing a semantic revision or restarting unrelated
+questions. Using traceability to assess change impact is described in
+[NASA's requirements-change guidance](https://swehb.nasa.gov/spaces/7150/pages/16449679/SWE-053%2B-%2BManage%2BRequirements%2BChanges);
+its formal review-board process is not required here.
+
+### 4. Decide whether another round earns its cost
+
+After integrating each round, assess the current stage against its convergence gates and give one of
+three recommendations:
+
+- **Continue** — name the unresolved decision and the quality, scope, risk, or acceptance problem that
+  another round will resolve. Ask the next focused questions within the agreed workshop scope.
+- **Close the stage** — either the definition meets its convergence gates, or the accountable owner
+  has decided not to pursue the proposal. Reuse evidenced acceptance of the current revision or
+  closure decision; request only missing acceptance or a genuinely undecided handoff. Name optional
+  deepening without making it a prerequisite.
+- **Blocked** — name the missing owner, evidence, or decision and the dependent area it blocks. Ask for
+  the missing input and continue independent authorized work; do not offer unsupported advancement.
+
+When evidence shows that existing behavior meets the need, the value premise is refuted, or no viable
+change is justified within the constraints, recommend retaining the current solution or not pursuing
+this proposal. Check whether the evidence covers the affected users and conditions; an unanswered
+question or unavailable evidence alone does not refute value. Keep a recommendation distinct from an
+owner's decision. For an accepted closure, record `Not proceeding`, the proposal/revision, evidence,
+reason, accountable owner/source, remaining obligations, and a reopening condition if useful. Do not
+invent criteria, engineering analysis or a validation PASS for abandoned work. A mandatory obligation
+remains unresolved unless it is satisfied or legitimately changed; rejecting one solution does not
+waive the underlying requirement. This use of discovery to decide whether to continue is also
+described in the [GOV.UK discovery guidance](https://www.gov.uk/service-manual/agile-delivery/how-the-discovery-phase-works#how-you-know-discovery-is-finished);
+its government-specific process requirements are not imposed here.
+
+The user's instructions control the cadence, including an explicit pause. Answering the offered
+questions means continue; closing a definition being pursued triggers the stage gates; asking for
+more depth starts another round in the requested area. Do not ask permission to continue work already
+authorized. A request to prepare a draft is still not acceptance of the result.
+
+One round may be sufficient; five or ten may be appropriate when each produces new consequential
+information. Never continue merely to exhaust the topic, and never stop because a target number of
+rounds was reached.
+
+### 5. Inspect context when it can answer
+
+During engineering-owned work, use `feature-context-analysis` before asking about established
+technologies, conventions, contracts, or patterns. During product definition, inspect context only
+to clarify existing behavior or known dependencies; do not turn repository evidence into a product
+author's engineering decision. Implementation shows what exists; an applicable accepted policy,
+contract or decision can establish what is required. Cite its authority, scope and revision rather than
+promoting common code into a business rule or standard.
+
+Before a version-sensitive engineering recommendation, inspect the project's declared toolchain,
+dependencies and deployment constraints. Preserve that baseline; a proposed upgrade or new dependency
+is a separate choice, not implied by this workshop. If compatibility evidence is missing, keep the
+recommendation conditional and name the needed check. This skill imposes no Java or framework version.
+
+### 6. Write checkable criteria
+
+Use `requirements-and-acceptance` to separate ownership as well as criterion type:
+
+- **Business acceptance criteria** — observable behavior, business rule, outcome, or failure response;
+- **Technical criteria** — constraints the solution and delivery must satisfy, including compatibility,
+  security, performance scenarios, tests, telemetry, migration, deployment, and rollback where relevant.
+
+The product stage authors business acceptance and may record externally imposed constraints. The
+engineering stage authors technical criteria and contracts. A Tech Feature is engineering-owned and
+may define both its technical criteria and the service or product outcome it protects.
+
+Every criterion has an identifier and a verification method. Avoid criteria that only say “implemented,”
+“works,” “performant,” “secure,” or name a class/table/framework without an observable consequence.
+
+Separate delivery acceptance from a hypothesis about its benefit. A behavior or technical check does
+not by itself prove adoption, revenue, or productivity improved. Trace material value hypotheses to
+an appropriate outcome assessment, distinguishing evidence already obtained from planned measurement.
+Future outcome evidence is not required merely to finish defining the feature; preserve any explicit
+outcome-based acceptance obligation instead of silently replacing it with a delivery check.
+
+### 7. Test the size
+
+Use `feature-decomposition` when the definition contains several independently valuable or verifiable
+outcomes, independent release paths, different owners, or forced dependencies.
+
+A valid child feature is:
+
+- **valuable** — it produces a named product or engineering outcome;
+- **independent** — it can be decided, built, and accepted without an incomplete slice of another child;
+- **testable** — it has its own observable business and/or technical acceptance criteria.
+
+Do not split by controller/service/repository, frontend/backend/database, or analysis/build/test unless
+each slice independently meets those three properties. Technical work with no direct user value is a
+Tech Feature or implementation resource, not a fake user story.
+
+### 8. Close the correct stage
+
+These gates apply to a definition being submitted for further work. An accepted `Not proceeding`
+decision uses the closure record in step 4 instead.
+
+The product-definition stage may finish when:
+
+- the objective states one desired change and why it matters;
+- product value, beneficiary, behavior, rules, boundaries, failure cases, and exclusions agree;
+- business acceptance is observable and names verification;
+- assumptions, dependencies, risks, and unresolved product questions are visible;
+- the need for engineering analysis is recorded as `Required`, or `Not required` with an accountable
+  engineering owner and rationale;
+- the accountable product owner accepts the business definition and hands it off without supplying engineering
+  decisions on behalf of the later owner.
+
+Require engineering analysis when the feature introduces or materially changes an API, event, schema,
+integration, security boundary, architectural decision, migration, operational model, or significant
+non-functional target, or when feasibility must be proven. The engineer may also require it after
+initial review. Product cannot waive it alone.
+
+When analysis is required, the Product Feature is `Business definition agreed — engineering analysis
+pending`; it is not yet ready for final validation. The engineering-analysis stage may finish when:
+
+- its architect or senior-engineer owner and input feature revision are identified;
+- premises distinguish evidence, imposed constraints, proposals, and assumptions;
+- feasibility unknowns have a PoC or explicit resolution path, success condition, and owner;
+- consequential decisions have linked ADRs or a recorded reason why an ADR is unnecessary;
+- decision-relevant unknowns use `feature-feasibility-experiment` when evidence cannot settle them;
+- affected API, event, data, security, and operational contracts use
+  `feature-contract-definition` and are accepted or explicitly blocked;
+- technical criteria, migration, observability, rollout, rollback, and compatibility are addressed
+  where applicable;
+- every engineering decision traces to a product rule, acceptance criterion, risk, or stated technical
+  necessity;
+- engineering does not silently rewrite product intent. A conflict reopens the affected product
+  question with the product owner.
+
+A Tech Feature, or a Product Feature whose analysis is complete or accountably `Not required`, may
+converge when:
+
+- value and beneficiary are explicit, including engineering value for a Tech Feature;
+- detailed behavior or desired technical state, rules, boundaries, failure cases, and exclusions agree;
+- facts, assumptions, decisions, dependencies, constraints, and unresolved risks are visible;
+- applicable business acceptance and technical criteria are observable and name verification; an
+  internal Tech Feature need not invent a BAC, nor a Product Feature an unnecessary technical criterion;
+- every remaining `OPEN` item is explicitly accepted as non-blocking or deferred;
+- any decomposition produces valuable, independent, testable children;
+- the accountable owner confirms the resulting definition is acceptable.
+
+An unresolved item may become an accepted gap only when it records:
+
+```text
+GAP-ID       missing decision or evidence
+Reason       why resolving it now costs more than proceeding
+Consequence  credible failure or rework created by proceeding
+Owner        role authorized to accept that consequence
+Expiry       date, milestone, or condition after which acceptance is invalid
+Reopen       observable trigger and next action
+Blocks       phases/resources blocked, or none with a reason
+```
+
+The participant requesting progress is not automatically the risk owner. Missing authority, an unknown
+contract owner, or a mandatory security/compliance decision cannot be converted into acceptance by an
+unrelated role. Keep accepted gaps visible in the final artefact; `feature-engineering` may still judge
+one blocking.
+
+Closing a stage creates an immutable snapshot: artefact type, revision, date, status, accountable owner,
+accepted gaps, and approval. Engineering analysis names its Product Definition revision; validation
+names both. A later semantic change creates a new revision and applies the change-impact rule instead of
+rewriting history.
+
+Then use `feature-engineering` for a separate validation pass over the supplied revisions. Do not
+claim readiness only because either workshop converged. Incorporate validation findings through a
+focused loop with the owner of the affected stage. Owner acceptance creates a proposed `GAP-*`;
+the validation pass must still determine that it is valid and non-blocking for the next phase.
+If that skill or required reviewer is unavailable, return the package as `Ready for validation`
+with validation `Not run`; do not invent a PASS or imply a separate person reviewed it.
+
+Normalize that independent result to one status with reasons and affected IDs:
+
+- `PASS` — no blocking readiness gap;
+- `PASS WITH ACCEPTED GAPS` — only valid `GAP-*` items remain;
+- `RETURN TO PRODUCT` — product intent, value, rule, scope, or business acceptance must change;
+- `RETURN TO ENGINEERING` — feasibility, decision, contract, or technical criterion must change;
+- `DECOMPOSE BEFORE PROCEEDING` — the package is not independently deliverable/testable at its current size.
+
+Only the first two statuses may mark the package `Validated`. A return status reopens a focused round
+with the accountable role and creates a new snapshot when resolved.
+
+## Interaction rules
+
+- Ask from consequence, not from a universal questionnaire.
+- Never ask the user for facts available in the supplied repository or documents.
+- Never infer business rules, corporate standards, compliance, priority, or authority from code.
+- Prefer one recommended option plus its trade-off over a menu with no analysis.
+- Keep a visible `OPEN` list; unanswered blocking questions do not decay into assumptions.
+- Establish the participating role before engineering analysis from explicit session/document
+  evidence; ask only if still unknown. Never infer authority from technical fluency.
+- Preserve authorship and decision provenance when information crosses the product/engineering handoff.
+- Distinguish approval authority from participation; never record consensus merely because no one
+  objected.
+- Stage handoff names an artefact, owner and next action; it does not authorize messaging
+  that owner, publishing a ticket or spawning another agent. Use those actions only when
+  authorized by the user or applicable instructions. Local drafting can continue independently.
+- Do not optimize wording while semantics remain unresolved.
+- Respect “good enough” only after the convergence gates; do not prolong the loop for polish.
+- A bounded PoC may precede final validation during engineering-owned analysis when authorized;
+  use `feature-feasibility-experiment`. A request to design an experiment alone produces a plan,
+  not permission to run it or a feasibility result.
+- Production implementation, delivery tasks, estimates and staffing belong to subsequent
+  `feature-engineering` work after definition validation, within the user's authorized scope.
+  Reuse delivery authorization already supplied; a definition-only request does not grant it.
+
+## Working response shape
+
+Keep each reply proportional: the consequential update, remaining blocker or next decision, and the
+focused question when needed can fit in a short paragraph. Use the fields below when they help the
+reader follow a larger workshop; do not emit empty fields or repeat unchanged sections. After a
+material shift or on resumption, briefly restate the current objective, boundaries and accepted
+revision so accumulated deltas do not leave the understanding fragmented.
+
+```text
+Updated      <sections changed and decisions made>
+Open         <highest-impact unresolved items>
+Checkpoint   <Continue | Close the stage | Blocked, with reason>
+Next         <next focused subject or optional deeper area>
+Questions    <one coherent round of one to three questions, when needed to continue or unblock>
+Impact       <downstream items made stale by this change, or None>
+Draft        <only the affected excerpt, unless a full draft was requested>
+```
+
+For an accepted `Not proceeding` outcome, return the compact closure record above; it is a completed
+discovery disposition, not a feature ready for implementation or validation.
+
+At a product-stage handoff, return the agreed Product Feature, its revision, engineering-analysis
+requirement and status, and the unresolved items assigned to engineering. At final convergence, return
+the Product Feature plus required Engineering Analysis (or its accountable not-required rationale),
+or the Tech Feature, followed by accepted
+assumptions/risks, decision authority, traceability, accepted gaps, snapshot revisions, decomposition if
+any, and the normalized `feature-engineering` validation result.
+
+Return or link the coherent current document, not a chain of conversational deltas. Verify that it
+contains the resolved meanings, rules and criteria; previously answered questions must not remain
+`OPEN` unless new evidence reopened them. Keep approval and validation statuses tied to the revisions
+actually reviewed, including when the workshop ends with unresolved work.

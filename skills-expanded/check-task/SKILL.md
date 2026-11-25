@@ -1,0 +1,80 @@
+---
+name: check-task
+description: >
+  查看任务的当前状态和进度。
+  当想快速查看某个任务当前状态与进度时使用。
+  仅当对话包含可解析的任务引用时才可自动调用本技能。
+---
+
+# 查看任务状态
+
+## 行为边界 / 关键规则
+
+- 本技能是**只读**操作 —— 不修改任何文件
+- 机械数据（frontmatter 元数据、产物分组、Git/Platform 状态，以及跨 active、blocked、completed 三目录定位任务）一律委托给确定性的 `ai task status` 命令。本技能只负责 CLI 无法产出的语义层：工作流阶段解读和审查结论解析；下一步 action 直接使用 CLI 的 canonical recommendation。
+
+## 任务上下文解析
+
+> 入口可省略 task ref；显式 task scope 仅接受 `--task <ref>` 或 `-t <ref>`，不再解释位置 task ref。保留其余业务操作数后调用 `agent-infra-internal task-context resolve {task-scope}`；`{task-scope}` 为空或 task flag 之一。只读取结构化结果的 `taskId`，后续把 `{task-id}` 绑定为完整 `TASK-YYYYMMDD-HHMMSS`。解析失败时透传非零退出码，不自行扫描任务。
+
+> 解析任务引用，并确认任务位于本技能支持的状态或目录且存在 `task.md`；无法定位时按未找到任务处理并停止。
+
+## 执行步骤
+
+### 1. 通过 `ai task status` 收集事实
+
+运行确定性 CLI 收集全部机械数据，并以其 stdout 作为状态报告的事实基底：
+
+```bash
+ai task status --task {task-id}
+```
+
+该命令会跨 active、blocked、completed 三目录解析任务，并输出五段：任务头（`id`、短号、标题）、`Metadata`（frontmatter 字段）、`Artifacts`（按工作流阶段分组的产物）、`Git`（分支匹配、未提交数、ahead/behind）、`Platform`（Issue/PR 状态）。把该输出视为权威事实 —— 不要再手工复述其中任何内容。
+
+降级处理：
+- 若命令不可用（如 `ai` 不在 PATH 或 `dist/` 未构建）或非零退出，回退到降级读取：展示 `task.md` frontmatter 并 `ls` 任务目录，同时告知用户本次为降级输出（建议先构建或安装 CLI，如 `ai init`）。
+- 若在任何目录都未找到任务，提示 "Task {task-id} not found"。
+
+### 2. 解读工作流阶段与审查结论
+
+这是 CLI 不产出的语义层。基于步骤 1 的 `Artifacts` 分组与 `task.md` 的活动日志：
+
+- 把每个工作流阶段映射为状态指示器，并标注其最新产物与轮次：
+  - `[done]` - 步骤已完成
+  - `[current]` - 当前进行中
+  - `[pending]` - 尚未开始
+  - `[blocked]` - 被阻塞
+  - `[skipped]` - 已跳过
+- 对各阶段最新的审查产物（`review-analysis`、`review-plan`、`review-code`），读取报告正文并解析结论：总体结论（通过 / 需要修改 / 拒绝）与阻塞项 / 主要问题 / 次要问题计数。这些结论只用于阶段状态展示和解释，不得用于重算下一步 action。
+
+把工作流进度作为 CLI 输出之上的叠加层呈现，标注最新轮次与解析出的审查结论，例如：
+
+```
+工作流进度：
+  [done]       需求分析        analysis.md (Round 1, latest)
+  [done]       需求分析审查    review-analysis.md (Round 1, latest, 通过)
+  [current]    技术设计        plan.md (Round 1)
+  [pending]    技术方案审查
+```
+
+### 3. 展示 canonical recommendation
+
+只读取 `ai task status --task {task-id}` 输出中的 `Recommendation.action`，将其作为唯一下一步来源。不要根据 `current_step`、目录中的最新产物、审查正文或 Activity Log 再计算 action。
+
+当 action 非空时，仅做以下 action 到 skill 的字面转换，然后调用一次统一 helper：
+
+| Recommendation.action | next skill |
+|-----------------------|------------|
+| `analysis` | `analyze-task` |
+| `plan` | `plan-task` |
+| `code` | `code-task` |
+| 其他 action | 同名 skill |
+
+`action` 为空时不调用 helper，只说明当前没有可推荐的下一技能。渲染最终输出前先读取 `.agents/rules/next-step-output.md`；helper 命令为 `agent-infra-internal agent-client next-steps --skill {next-skill} --task-ref {task-ref}`，stdout 原样作为 `{next-step-commands}` 下一步命令。
+
+## 注意事项
+
+1. **只读**：本技能仅读取和报告 —— 不修改任何文件
+2. **CLI 委托**：机械数据（元数据、产物分组、Git/Platform 状态、多目录定位）来自 `ai task status`；本技能在其之上叠加语义解读
+3. **快速参考**：随时可以使用本技能检查任务在工作流中的位置
+4. **版本化产物**：`ai task status` 已按实际轮次分组产物；语义层仍需报告 `review-analysis`、`review-plan`、`review-code` 的最新审查结论

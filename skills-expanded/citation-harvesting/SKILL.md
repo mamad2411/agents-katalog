@@ -1,0 +1,161 @@
+---
+name: citation-harvesting
+description: >-
+  Builds backlinks and brand citations through digital PR: expert-source
+  platforms (Qwoted, Muck Rack), source-blogger outreach, and data-driven PR
+  assets. Use when the user needs authoritative links or press mentions, wants
+  to answer journalist requests, or is planning a link-building campaign.
+  Triggers on: "citation harvesting", "backlink building", "digital PR", "link
+  building", "get featured in publications".
+license: MIT
+compatibility: Claude Code, Codex, GitHub Copilot, Cursor, Gemini CLI, OpenCode, Goose, Hermes, Windsurf, Zed
+metadata:
+  version: "1.0.0"
+  author: LeadMagic
+  category: content-seo
+  tags: [content-seo, citations, backlinks, digital-pr, link-building]
+  frameworks:
+    - "Moz — Beginner's guide to link building"
+    - "Google Search Central — SEO Starter Guide"
+    - "Google Search Central — Spam policies (link schemes)"
+---
+
+# Citation Harvesting & Link Building
+
+## Overview
+
+Citation harvesting is the most efficient link building strategy for B2B SaaS:
+respond to journalist and blogger source requests with expert commentary, and
+earn backlinks from high-authority publications. This skill covers the full
+citation harvesting motion.
+
+## Authoritative Foundations
+- **Moz — Beginner's guide to link building** — Prioritize relevant, authoritative referring domains and evaluate each link opportunity for quality before volume.
+- **Google Search Central — SEO Starter Guide** — Earn links with genuinely useful content and expertise; links should be a byproduct of being worth citing.
+- **Google Search Central — Spam policies (link schemes)** — Never buy or trade links for ranking; mark paid or sponsored placements with rel=sponsored.
+
+## When to Use
+
+- "Build backlinks"
+- "Citation harvesting"
+- "Get featured in publications"
+- "Digital PR for links"
+- "Get cited by journalist sources"
+
+## Step-by-Step Process
+
+### Phase 1: Source Request Monitoring
+
+Monitor these platforms for source requests in your domain:
+
+- **Qwoted:** Journalist source request platform — high-quality requests, verified journalists
+- **Muck Rack:** PR platform for finding journalists by beat, monitoring coverage, and building media lists
+- **Help a B2B Writer:** Slack community for B2B writers seeking expert sources
+- **SourceBottle:** Free source request platform with daily digests for expert opportunities
+- **Twitter/X:** Search "[your topic] + seeking sources" or "journo request"
+- **LinkedIn:** Follow journalists and editors in your industry
+- **Connectively (formerly HARO):** The original, still high volume
+- **Help a B2B Writer:** Slack community for B2B writers seeking sources
+- **Twitter/X:** Search "[your topic] + seeking sources" or "journo request"
+- **LinkedIn:** Follow journalists and editors in your industry
+- **Subreddit:** r/Journalism, r/PR, r/HARO
+
+### Phase 2: Response Strategy
+
+Respond within 2-4 hours of request posting. Journalists work on deadlines.
+
+**Response template:**
+
+```
+Subject: Re: [Their subject line]
+
+Hi [Name],
+
+[Direct answer to their question in 2-3 sentences — lead with the quote]
+
+[A bit more context or data to support your answer — 1-2 sentences]
+
+About me: [Full name], [Title] at [Company]. [One sentence on why you're
+qualified to speak on this topic — relevant experience, data, or perspective].
+
+Happy to provide more detail or data if helpful.
+
+[Your name]
+[Your title + company]
+[Link to your website or LinkedIn]
+```
+
+**Rules:**
+
+- Lead with the answer. They don't care about you — they care about the quote.
+- Be specific. "According to our data, 67% of..." > "I think it's important..."
+- Be concise. 3-5 sentences total. They're skimming 50 responses.
+- Include credentials. Why should they quote you?
+- Never pitch your product. This is about being a source, not a vendor.
+
+### Phase 3: Data-Driven PR
+
+Create original data that journalists want to cite:
+
+- **Industry surveys:** "2026 State of [Industry] — Survey of 500 [ICP]"
+- **Data studies:** "We analyzed 10,000 [X] and found..."
+- **Benchmark reports:** "Average [metric] by [segment]"
+- **Trend analysis:** "The 3 trends shaping [industry] in 2026"
+
+Publish the data on your site. Then proactively pitch it to journalists covering
+your industry. "I have data on [topic] — would it be useful for your piece?"
+
+### Phase 4: Expert Commentary Database
+
+Build a database of your internal experts and their topics:
+
+- **CEO/Founder:** Industry trends, startup/scale-up, fundraising
+- **CTO/VP Engineering:** Technical architecture, engineering culture, scaling
+- **CRO/VP Sales:** Sales methodology, GTM strategy, pipeline metrics
+- **Product leader:** Product development, UX, customer feedback
+- **Customer success:** Retention, onboarding, customer health
+
+When a request comes in that matches an expert, route it to them with a
+pre-written response draft they can customize in 5 minutes.
+
+### Phase 5: Measurement & ROI
+
+- **Citations earned:** Total mentions and backlinks per month
+- **Domain authority of linking sites:** Weighted by DA/DR
+- **Referral traffic:** Visitors from earned links
+- **SEO impact:** Keyword ranking improvements from new backlinks
+- **Pipeline:** Deals influenced by PR mentions (ask: "How did you hear about us?")
+- **Cost:** Time spent (5-10 hours/week) + any tools (Qwoted, monitoring)
+
+## Output Format
+
+Citation harvesting playbook with: source monitoring setup, response templates,
+data-driven PR calendar, expert database, and measurement dashboard.
+
+## Quality Check
+
+Before delivering, verify:
+
+- [ ] All required sections are complete
+- [ ] Output matches the user's stated need
+- [ ] Named frameworks are cited for key recommendations
+- [ ] No vague claims — every recommendation has a specific action
+- [ ] Deliverable is ready for operational use, not just conceptual
+
+## Common Pitfalls
+
+1. **Writing for search engines, not humans.** Keyword-stuffed content that reads like a robot wrote it. Fix: write for your ICP first, optimize for search second.
+2. **Publishing and praying.** Creating content without a distribution plan. Fix: every piece gets a 30-day promotion calendar across email, social, and paid.
+3. **Ignoring content freshness.** 2-year-old content with outdated data and examples still ranking. Fix: quarterly content audit — update or retire stale pieces.
+
+## Execution Artifacts
+
+- `references/framework-notes.md` — B2B link tactics, HARO ops, data PR, Pattern 25 routing
+- `templates/output-template.md` — Deliverable shell for agent output
+- `scripts/check-output.py` — Lightweight deliverable validator
+- `references/seo-strategy-playbook.md` — Repo root: §6 link building, §8 LLM citations
+- the `using-gtm-skills` skill — Pattern 25: B2B SEO Stack (step 5)
+
+## Related Skills
+
+- seo-strategy, content-marketing, social-media-strategy, founder-brand, podcast-gtm

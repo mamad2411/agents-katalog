@@ -1,0 +1,744 @@
+---
+name: crow-workspace
+description: >-
+  Orchestrate a Crow work session — set up a git worktree, create a crow
+  session with auto-launched Claude Code, and capture ticket metadata. Supports
+  multiple organizations/workspaces with different Git providers. Use when the
+  user invokes /crow-workspace or asks to "set up a crow workspace" or "start
+  working on" a feature in Crow.
+---
+
+# Crow Workspace Setup Skill
+
+## Purpose
+
+Orchestrates work sessions in **Crow** by setting up git worktrees and creating a crow session with auto-launched Claude Code and ticket metadata. Supports multiple organizations/workspaces with different Git providers.
+
+## Important: Sandbox Bypass
+
+All `crow`, `gh`, `glab`, and `git worktree` commands require `dangerouslyDisableSandbox: true` because they communicate via Unix socket, need network/TLS access, or write outside the sandbox-allowed directories. Sandboxed Cursor (and similar harnesses) can still run `crow` without that: the CLI falls back to loopback `POST /rpc` when `crow.sock` is unreachable (CROW-1220). `gh`/`glab`/`git` still need network.
+
+## Activation
+
+This skill activates when:
+- User invokes `/crow-workspace` command
+- User invokes `/crow-workspace --explore <url>` (exploration / bootstrap-only session)
+- User asks to "set up crow workspace" or "start working on" a feature in Crow
+- User asks to "start exploring" a ticket in Crow
+
+## Explore mode (`--explore`)
+
+When the invocation includes `--explore` (the board's **Start Exploring**,
+`crow explore-issue`, or a `crow:explore` auto-pickup), run the **same**
+worktree / session / terminal setup as a normal workspace, but:
+
+1. **Seed prompt** — use the **Explore Prompt Template** below, *not* the
+   implement/build First Prompt Template. The agent maps and explains the
+   ticket area and **stops**. No edits, no commits, no push, no PR.
+2. **Pass `--explore` to `setup.sh`** — that stamps the session `isExplore`
+   (the board/sidebar "Exploring" badge) and skips auto-assign + In Progress
+   board transitions. Exploring is not claiming the ticket as work.
+3. **Distinct worktree/branch/session names** so a later **Start Working** on
+   the same ticket can still create the normal feature branch:
+   - Worktree: `{devRoot}/{workspace}/{repo}-{ticket_number}-explore-{brief_slug}`
+   - Branch: `feature/{repo}-{ticket_number}-explore-{brief_slug}`
+   - Session name: `{repo}-{ticket_number}-explore-{slug}`
+4. **Do not attach to an existing PR's branch.** If a PR already exists, mention
+   it in the prompt as context only. A throwaway explore branch from
+   `{base_branch}` keeps the real PR branch free for a later work session.
+5. **Do not** pass `--pr-number` / `--pr-url` / `--pr-branch` to `setup.sh` in
+   explore mode.
+
+`--explore` is a launch **mode**, not a new session kind. The session is still
+`kind=work`.
+
+## Configuration
+
+Configuration is at `{devRoot}/.claude/config.json` (managed by the Crow app). The format is:
+
+```json
+{
+  "devRoot": "/Users/name/Dev",
+  "workspaces": {
+    "Corveil": {
+      "provider": "github",
+      "cli": "gh",
+      "customInstructions": "Always run `npm test` before committing."
+    },
+    "MyGitLab": {
+      "provider": "gitlab",
+      "cli": "glab",
+      "host": "gitlab.example.com",
+      "alwaysInclude": [],
+      "customInstructions": null
+    }
+  },
+  "defaults": {
+    "provider": "github",
+    "cli": "gh",
+    "worktreePattern": "{repo}-{feature}",
+    "branchPrefix": "feature/",
+    "excludeDirs": ["node_modules", ".git", "vendor", "dist", "build", "target"],
+    "keywordSources": ["CLAUDE.md", "README.md", "package.json", "Cargo.toml", "pyproject.toml", "go.mod"]
+  }
+}
+```
+
+### Commit Attribution Trailers
+
+By default, `setup.sh` writes a per-worktree `.claude/settings.local.json` that overrides Claude Code's `attribution.commit` so commits include a `Crow-Session: <uuid>` trailer alongside the standard `Co-Authored-By: Claude` line. The trailer is a stable handle back to session metadata via `crow get-session <uuid>`. To opt out globally, set `"attributionTrailers": false` at the top level of `{devRoot}/.claude/config.json` (also surfaced in Settings → Automation → Attribution).
+
+The worktree's settings.local.json is added to that worktree's per-worktree git exclude list, so it stays local even when the repo's tracked `.gitignore` does not already cover it.
+
+**When authoring commits by hand** (`git commit -m "…"`, heredoc, `git commit --amend`), include both `Crow-Session: <session-uuid>` and `Co-Authored-By: Claude <noreply@anthropic.com>` as trailers at the end of the message. `attribution.commit` only fires for Claude Code's built-in commit flow; hand-rolled commits bypass it. `setup.sh` also installs a per-worktree `prepare-commit-msg` hook (CROW-518) that idempotently appends both trailers when missing — treat that hook as a safety net, not the primary path. Both trailers must be line-anchored at the end of the message; the `crow:merge` auto-merge gate parses `^Crow-Session:\s*<uuid>\s*$` (see `IssueTracker.crowSessionTrailerPattern`).
+
+### Per-Session Environment Injection (CROW-543)
+
+A workspace can bake arbitrary environment variables into every new session's per-worktree `.claude/settings.local.json .env`. Crow stays domain-agnostic: each workspace declares what it needs. Variables land in the same `.env` block that carries the AI gateway settings, so a session's `claude` (and its hooks) inherit them.
+
+Declare a `sessionEnv` map on the workspace's `config.json` entry (peer of `gateway` / `taskProvider` / `customInstructions`). Values may use template tokens (see below):
+
+```jsonc
+{
+  "name": "SecurityScorecard",
+  "provider": "github",
+  "sessionEnv": { "COORD_SESSION_NAME": "{{session_name}}" }
+}
+```
+
+The example above lets the SecurityScorecard coordination layer's SessionStart `session-namer` hook read `COORD_SESSION_NAME` to auto-name the session — a workspace-only concern, expressed in one config line.
+
+`setup.sh` also accepts a repeatable `--session-env KEY=VALUE` flag. Flag pairs are merged **on top of** the config map, so a flag wins for a key that also appears in `sessionEnv`. Flag values support the same template tokens.
+
+**Template tokens** (resolved from setup.sh's per-session vars): `{{session_name}}`, `{{slug}}`, `{{branch}}`, `{{ticket_number}}`, `{{repo}}`, `{{workspace}}`, `{{worktree_path}}`, `{{ticket_url}}`. Unknown tokens are left untouched.
+
+When `SESSION_ID` is set, `setup.sh` always writes `CROW_SESSION_ID` into the `.env` block so the coder prompt's `crow add-link --session "$CROW_SESSION_ID"` works even if tmux extraEnv does not reach a sandboxed harness (CROW-1220). Gateway, attribution, and `CROW_SESSION_ID` keys are never clobbered by a same-named session-env key. The file is `chmod 600` and stays in the worktree's git exclude list. Note that `sessionEnv` is **not** a credential store: unlike a gateway header, its values are kept as plaintext in `config.json`, are not stripped by `SettingsSecrets`, and are readable through the remote `workspace-list` / `workspace-get` RPCs. Put tokens in a workspace gateway header (`crow gateway set`) instead — the `chmod 600` here is defence in depth, not a reason to store one.
+
+## Multi-Workspace Discovery
+
+### Step 1: Enumerate Workspaces
+
+```bash
+ls -d {devRoot}/*/
+```
+
+For each workspace: check if it has explicit config, otherwise apply defaults.
+
+### Step 2: Scan Each Workspace for Repos
+
+```bash
+for dir in {workspace}/*/; do
+  if [ -d "$dir/.git" ]; then
+    echo "$dir"
+  fi
+done
+```
+
+### Step 3: Build Global Repo Index
+
+Match repos to input by: direct name match (+10), workspace mention (+5), keyword match (+2 per).
+
+## Git Provider Commands
+
+### GitHub (gh)
+```bash
+gh issue view {url} --json title,body,labels
+gh pr view {url} --json title,body,labels
+```
+
+### GitLab (glab)
+```bash
+GITLAB_HOST=gitlab.example.com glab issue view {number} --repo {org/repo} --comments
+GITLAB_HOST=gitlab.example.com glab mr view {number} --repo {org/repo} --comments
+```
+
+### Jira (`jira` MCP)
+Jira work items are driven via the **`jira` MCP server** (`sooperset/mcp-atlassian`),
+not `acli` (CROW-528). The `jira` server is configured globally in `~/.claude.json`,
+so it's available and trusted in every launched session — Crow injects nothing.
+Call `jira_get_issue` for the full key (`PROJ-NNN`, e.g. `MAXX-6859`); the `summary`
+field is the `{ticket_title}`. Use the sibling `jira_*` tools for any
+create/assign/update — `jira_create_issue`, `jira_update_issue` (assignee/edits),
+`jira_add_comment`, `jira_get_user_profile` — and the two-step transition flow below.
+
+**Transitioning (CROW-523):** `jira_transition_issue` takes a numeric
+`transition_id`, not a status name, and Jira workflow status names are configurable
+per project. So: (1) consult this workspace's `jiraStatusMap` in
+`{devRoot}/.claude/config.json` — it maps Crow's pipeline states
+(`Backlog` / `Ready` / `In Progress` / `In Review` / `Done`) to this project's actual
+status names; fall back to the Crow default (`Ready` → `To Do`, all others verbatim)
+for any unmapped state. (2) Call `jira_get_transitions {key}` and pick the transition
+whose target status matches that mapped name. (3) Call `jira_transition_issue` with
+that `transition_id`.
+
+### Provider Detection from URL
+
+| URL Contains | Provider | CLI | GITLAB_HOST |
+|---|---|---|---|
+| `github.com` | github | gh | - |
+| `atlassian.net` / `/browse/` / bare `PROJ-123` | jira | `jira` MCP | - |
+| `gitlab.example.com` | gitlab | glab | gitlab.example.com |
+| `gitlab.com` | gitlab | glab | gitlab.com |
+| `gitlab-il2.example.com` | gitlab | glab | gitlab-il2.example.com |
+
+**Jira is task-only** (no code/VCS surface): the ticket lives in Jira while code
+lands in the workspace's configured GitHub/GitLab repo. Detect it *before* the
+loose GitLab match. The Jira key is `PROJ-NNN` (e.g. `MAXX-6859`).
+
+**Resolving `{ticket_number}` for Jira:** Jira keys have no standalone numeric
+id, so use the **numeric suffix** of the key — `MAXX-6859` → `6859`. Pass that as
+`--ticket-number`, the full Atlassian browse URL as `--ticket-url`
+(`https://<site>.atlassian.net/browse/MAXX-6859`), and the summary as
+`--ticket-title`. The worktree/branch/session slug uses the full lowercased key,
+e.g. `{repo}-maxx-6859-{brief_slug}`.
+
+## PR Detection
+
+Before creating a worktree, check if the issue already has an open PR. If so, use the PR's branch instead of creating a new one.
+
+### GitHub
+```bash
+gh pr list --repo {owner}/{repo} --search "{issue_number}" --state open \
+  --json number,title,headRefName,url --limit 5
+```
+
+### GitLab
+```bash
+GITLAB_HOST={host} glab mr list --repo {org/repo} --search "{issue_number}" --state opened --output-format json
+```
+
+### Selection Logic
+
+If multiple PRs are found, prefer the one whose `headRefName` contains the issue number. If exactly one PR is returned, use it. If none are found, proceed with the normal new-branch flow.
+
+When a PR is found, capture:
+- `pr_number` — the PR/MR number
+- `pr_url` — the full URL to the PR/MR
+- `pr_branch` — the `headRefName` (branch name)
+
+These values are used in worktree creation, session linking, and the prompt template below.
+
+## Worktree Management
+
+### Naming Convention
+
+**CRITICAL: Worktrees go DIRECTLY under the workspace folder, at the same level as the main repo clone. NOT in a subfolder.**
+
+**This is enforced (CROW-1396).** `setup.sh` refuses a `--worktree-path` that is not exactly `{devRoot}/{workspace}/{dir}` — `{workspace}` a configured workspace (case-insensitive) that matches `--workspace` — or `{devRoot}/crow-reviews/{dir}`, before `git worktree add` runs, with `"step": "validate_worktree_path"`. `crow add-worktree` applies the same rule in the daemon. Crow derives a session's workspace from this path alone, so a worktree anywhere else would silently lose its gateway, custom instructions and session-log upload. If you hit it, fix the path; if the folder really is a workspace that isn't configured, the operator adds it with `crow workspace add --name <folder>` — don't work around it.
+
+**For ticket URLs (no existing PR):**
+```
+{devRoot}/{workspace}/{repo}-{ticket_number}-{brief_slug}
+```
+Branch: `feature/{repo}-{ticket_number}-{brief_slug}`
+
+The brief slug is 2-4 key words from the ticket title.
+
+**Concrete example with full paths:**
+Given: devRoot=`/Users/jane/Dev`, workspace=`Corveil`, repo=`acme-api` (cloned at `/Users/jane/Dev/Corveil/acme-api`), ticket #197 "Fix tab URL hash routing"
+
+```
+Worktree path: /Users/jane/Dev/Corveil/acme-api-197-fix-tab-url-hash
+Branch:        feature/acme-api-197-fix-tab-url-hash
+Git command:   git -C /Users/jane/Dev/Corveil/acme-api worktree add /Users/jane/Dev/Corveil/acme-api-197-fix-tab-url-hash -b feature/acme-api-197-fix-tab-url-hash --no-track origin/main
+```
+
+More examples:
+```
+web-app #252 "Update deployment-guide.md"    → {devRoot}/MyGitLab/web-app-252-update-deploy-docs
+acme-api #45 "Add JWT validation endpoint"   → {devRoot}/Corveil/acme-api-45-jwt-validation
+```
+
+**For ticket URLs with an existing PR:**
+
+Use the PR's `headRefName` as the branch — do NOT generate a new name. Derive the worktree directory from the branch name.
+
+```
+{devRoot}/{workspace}/{repo}-{pr_branch_slug}
+```
+
+Where `{pr_branch_slug}` is the `headRefName` with any `feature/` prefix stripped. For example, if the PR branch is `feature/acme-api-45-jwt-validation`, the worktree path is `{devRoot}/Corveil/acme-api-45-jwt-validation`.
+
+**WRONG — do NOT create subdirectories:**
+```
+WRONG: {devRoot}/{workspace}/{repo}-worktrees/{feature}
+WRONG: {devRoot}/{workspace}/worktrees/{repo}-{feature}
+```
+
+**For natural language (no ticket):**
+```
+{devRoot}/{workspace}/{repo}-{feature-slug}
+```
+Branch: `feature/{feature-slug}`
+
+### Git Commands
+
+Git worktree creation is handled by `setup.sh`. The script automatically selects the correct flags:
+- **PR branch**: `--track origin/{pr_branch}`
+- **Existing remote branch**: `--track origin/{branch}`
+- **New branch**: `--no-track origin/main`
+
+Always uses `-b` to create a local branch (avoids detached HEAD). If the branch already exists locally, the script deletes it and retries.
+
+**Important:** Always use `--no-track` for new branches to prevent accidental push to main.
+
+## crow Session Creation
+
+All `crow` and `git worktree` commands require `dangerouslyDisableSandbox: true`.
+
+### Session Naming Convention
+
+The session name **MUST** match the worktree directory name (which is the branch slug without the `feature/` prefix):
+
+- **Ticket-based:** `{repo}-{ticket_number}-{slug}` (e.g., `crow-51-drag-drop-photo`)
+- **PR-based:** `{repo}-{pr_branch_slug}` (e.g., `acme-api-45-jwt-validation`)
+- **Natural language:** `{repo}-{feature-slug}` (e.g., `acme-api-update-auth`)
+
+This keeps session names, worktree paths, and branch names consistent.
+
+### Complete Step-by-Step Flow
+
+After the LLM resolves names (slug, branch, worktree path, session name), detects any existing PR, and composes the prompt content, the setup is executed by calling `setup.sh`.
+
+> **IMPORTANT:** All `crow`, `gh`, `glab`, and `git` commands require `dangerouslyDisableSandbox: true`. The `setup.sh` call itself must use `dangerouslyDisableSandbox: true` since it runs these commands internally.
+
+#### Step 0: Pre-fetch ticket (and PR) content
+
+Before writing the prompt file, fetch the ticket title, body, and comments so they can be embedded directly into the `## Ticket` section. This avoids the launched Claude Code session sitting on a `dangerouslyDisableSandbox` permission prompt at startup when it tries to run `gh issue view` itself (issue #295).
+
+Use `dangerouslyDisableSandbox: true` for all of these fetches. Issue each as a **single, clean invocation** — one `gh`/`git` command per Bash call, with no `cd …`/`echo`/`find` prefix and no `| head`/`| tail` pipe. The permission allowlist prefix-matches the *whole* command, so bundling defeats the `Bash(gh issue view:*)` / `Bash(gh api:*)` rules and forces a prompt (see CLAUDE.md → "Fetching Ticket / PR Data").
+
+**GitHub:**
+```bash
+gh issue view {ticket_url} --comments
+# Fallback if the above returns empty output (see issue #295):
+gh api repos/{owner}/{repo}/issues/{number}
+gh api repos/{owner}/{repo}/issues/{number}/comments
+```
+
+**GitLab (non-default host):**
+```bash
+GITLAB_HOST={host} glab issue view {number} --repo {org/repo} --comments
+```
+
+**Jira (`jira` MCP — task-only):**
+Fetch the work item via the `jira` MCP server: call `jira_get_issue` for `{key}`
+(full key, e.g. `MAXX-6859` — not the numeric suffix). Use the work item's `summary`
+as `{ticket_title}`. The code provider/PR detection below still runs against the
+workspace's configured GitHub/GitLab repo, not Jira.
+
+**If an existing PR was detected for this ticket**, also fetch the PR view so it can be embedded:
+```bash
+gh pr view {pr_url} --comments
+# Fallback:
+gh api repos/{owner}/{repo}/pulls/{pr_number}
+gh api repos/{owner}/{repo}/issues/{pr_number}/comments
+```
+
+**Also detect the repo's default branch** so the worktree base ref and the prompt template's PR/MR commands aren't pinned to `main` (issue #397). One clean call per repo:
+
+```bash
+gh repo view {owner}/{repo} --json defaultBranchRef --jq .defaultBranchRef.name
+# GitLab equivalent:
+glab repo view {org}/{repo} -F json | jq -r .default_branch
+```
+
+Store the result as `{base_branch}` for substitution into Step 2 and into the prompt template. `setup.sh` will auto-detect from `origin/HEAD` if you omit the flag, but passing it explicitly avoids the round-trip and keeps the prompt template accurate.
+
+Render the fetched content into the prompt template per the formatting rules in **First Prompt Template** below.
+
+**Resolve custom instructions (required before writing the prompt).** Read the
+**matched** workspace's entry in `{devRoot}/.claude/config.json` —
+`workspaces["{workspace}"].customInstructions`, where `{workspace}` is the same
+value passed to `setup.sh --workspace` — and store it as `{custom_instructions}`.
+This must be the matched workspace's own field: **do not** read `defaults`, **do
+not** use another workspace's value, and **do not** copy the example strings shown
+in the config sample above (`"Always run …"` / `null`). If the field is `null`,
+absent, or empty after trimming, treat `{custom_instructions}` as empty (no
+section). This value feeds the `## Custom Instructions` block of the prompt
+template (see **First Prompt Template** below).
+
+#### Step 1: Write the prompt file
+
+The LLM writes the prompt content (see template below — with the pre-fetched ticket/PR content embedded) to a file:
+
+```bash
+mkdir -p {devRoot}/.claude/prompts
+cat > {devRoot}/.claude/prompts/crow-prompt-{session_name}.md << 'PROMPT'
+{prompt content — see template below}
+PROMPT
+```
+
+#### Step 2: Run setup.sh
+
+`setup.sh` resolves the coding agent automatically from `{devRoot}/.claude/config.json`: it prefers `agentsByKind["work"]`, falls back to `defaultAgentKind`, and finally to `claude-code`. Pass `--agent-kind <claude-code|cursor|codex>` only if you need to override the configured choice for a single invocation (e.g. for testing). The binary is looked up on PATH and in the standard install locations for the selected agent — pass `--agent-binary <path>` to pin it explicitly.
+
+```bash
+.claude/skills/crow-workspace/setup.sh \
+  --dev-root "{devRoot}" \
+  --workspace "{workspace}" \
+  --repo "{repo}" \
+  --repo-path "{repo_path}" \
+  --slug "{slug}" \
+  --branch "{branch}" \
+  --worktree-path "{worktree_path}" \
+  --base-branch "{base_branch}" \
+  --session-name "{session_name}" \
+  --provider "{provider}" \
+  --cli "{cli}" \
+  --ticket-url "{ticket_url}" \
+  --ticket-title "{ticket_title}" \
+  --ticket-number {ticket_number} \
+  --prompt-content "{devRoot}/.claude/prompts/crow-prompt-{session_name}.md" \
+  --primary
+```
+
+**Explore mode** — add `--explore` (implies skip-assign + skip-project-status):
+
+```
+  --explore
+```
+
+If an existing PR was detected **and this is not explore mode**, also pass:
+```
+  --pr-number {pr_number} \
+  --pr-url "{pr_url}" \
+  --pr-branch "{pr_branch}"
+```
+
+For GitLab, also pass:
+```
+  --host "{gitlab_host}"
+```
+
+#### Step 3: Parse the result
+
+The script outputs JSON to stdout. On success:
+```json
+{
+  "status": "ok",
+  "session_id": "uuid",
+  "terminal_id": "uuid",
+  "worktree_path": "/path/to/worktree",
+  "branch": "feature/name"
+}
+```
+
+On failure:
+```json
+{
+  "status": "error",
+  "step": "git_worktree_add",
+  "message": "error details",
+  "partial": { "session_id": "uuid-if-created" }
+}
+```
+
+If the script fails, read the error message and apply error handling (see below).
+
+#### Multi-Repo Flow
+
+For cross-workspace setups with multiple repos, call `setup.sh` once per repo:
+
+1. **First repo** (primary): Use `--primary` flag. Capture `session_id` from output.
+2. **Additional repos**: Pass `--session-id {uuid}` from the first call's output and use `--skip-launch` (Claude only launches once, in the primary worktree).
+
+Detect each secondary repo's default branch with the same `gh repo view --json defaultBranchRef` call from Step 0 — each repo has its own (bigbang uses `master`, others use `main`).
+
+```bash
+# Secondary repo (no launch, attach to existing session):
+.claude/skills/crow-workspace/setup.sh \
+  --session-id "{session_id_from_first_call}" \
+  --dev-root "{devRoot}" \
+  --workspace "{other_workspace}" \
+  --repo "{other_repo}" \
+  --repo-path "{other_repo_path}" \
+  --slug "{slug}" \
+  --branch "{other_base_branch}" \
+  --base-branch "{other_base_branch}" \
+  --worktree-path "{other_repo_path}" \
+  --session-name "{session_name}" \
+  --provider "{provider}" \
+  --cli "{cli}" \
+  --skip-launch
+```
+
+## First Prompt Template
+
+IMPORTANT: Always use full absolute paths, never abbreviated (`...`) or home-relative (`~`) paths.
+
+The prompt is written to `{devRoot}/.claude/prompts/crow-prompt-{session_name}.md`. The permission mode is set by the `--permission-mode` flag in `setup.sh`'s launch command — plan mode by default, or auto-accept when the Settings → Automation "Launch new coder views in auto permission mode" toggle is on (#586). Do not prepend `/plan` to the prompt body (it would be parsed as a slash command by the receiving session). See issue #313.
+
+**Repo descriptions for the prompt table:**
+
+Extract dynamically from first non-heading line of CLAUDE.md or README.md. If no description is found, leave the Description column empty.
+
+~~~markdown
+# Workspace Context
+
+| Repository | Path | Branch | Description |
+|------------|------|--------|-------------|
+| my-app | /Users/name/Dev/MyOrg/my-app-45-jwt | feature/my-app-45-jwt-validation | Auth gateway service |
+| my-project | /Users/name/Dev/MyGitLab/my-project | main | Infrastructure chart |
+| my-config | /Users/name/Dev/MyGitLab/my-config | - | Configuration overrides |
+
+## Ticket
+
+**{ticket_title}** — {ticket_url}
+
+{ticket_body_verbatim}
+
+### Comments
+
+{rendered_comments_or_no_comments_marker}
+
+---
+
+If you need fresher ticket data later, re-fetch with (all gh/glab commands MUST use dangerouslyDisableSandbox: true — they will fail with TLS certificate errors otherwise, and will prompt for approval):
+
+```bash
+gh issue view {ticket_url} --comments
+# Fallback if the above returns empty output (see issue #295):
+gh api repos/{owner}/{repo}/issues/{number}
+gh api repos/{owner}/{repo}/issues/{number}/comments
+```
+
+## Instructions
+1. Study the ticket above — it has been pre-fetched and embedded. Only re-run gh/glab if you need fresher data; those calls use dangerouslyDisableSandbox: true and will prompt for approval.
+2. Create an implementation plan
+3. Implement the plan
+4. Commit the changes with a descriptive message
+5. Push the branch to origin
+6. Open a pull request linked to the ticket:
+
+```bash
+gh pr create --title "<summary>" --body "Closes #{number}" --base {base_branch}
+```
+
+7. Register that PR with the Crow session **once**. `add-link --type pr` is idempotent (skips if a `.pr` link already exists, or if this URL is already linked — do not stack extras; automation uses the first `.pr`):
+
+```bash
+# $CROW_SESSION_ID is in the environment (tmux + settings.local.json env)
+gh pr view --json url,number
+crow add-link --session "$CROW_SESSION_ID" --label "PR #<number>" --url "<pr-url>" --type pr
+```
+
+## Custom Instructions
+
+{custom_instructions}
+~~~
+
+Fill the `## Custom Instructions` block with `{custom_instructions}` — the
+**matched** workspace's `customInstructions` resolved above — included **verbatim**
+(preserve markdown, code fences, line breaks; do not summarize, reword, or
+substitute `defaults` or another workspace's text). If `{custom_instructions}` is
+empty, `null`, or absent, **omit the entire `## Custom Instructions` heading and
+body** so the prompt has no such section.
+
+## Explore Prompt Template
+
+Use this template **instead of** First Prompt Template when `--explore` is set.
+Same Workspace Context table, Ticket block, comment embedding, and Custom
+Instructions rules as above. The Instructions section is the difference:
+
+~~~markdown
+# Workspace Context
+
+| Repository | Path | Branch | Description |
+|------------|------|--------|-------------|
+| my-app | /Users/name/Dev/MyOrg/my-app-45-explore-jwt | feature/my-app-45-explore-jwt-validation | Auth gateway service |
+
+## Ticket
+
+**{ticket_title}** — {ticket_url}
+
+{ticket_body_verbatim}
+
+### Comments
+
+{rendered_comments_or_no_comments_marker}
+
+---
+
+If you need fresher ticket data later, re-fetch with (all gh/glab commands MUST use dangerouslyDisableSandbox: true — they will fail with TLS certificate errors otherwise, and will prompt for approval):
+
+```bash
+gh issue view {ticket_url} --comments
+# Fallback if the above returns empty output (see issue #295):
+gh api repos/{owner}/{repo}/issues/{number}
+gh api repos/{owner}/{repo}/issues/{number}/comments
+```
+
+## Instructions
+
+This is an **exploration** session. Map and explain the codebase against the ticket, then stop. Do **not** edit files, do **not** commit, do **not** push, and do **not** open a pull request. Leave the working tree clean.
+
+1. Study the ticket above — it has been pre-fetched and embedded. Only re-run gh/glab if you need fresher data; those calls use dangerouslyDisableSandbox: true and will prompt for approval.
+2. Locate the code, tests, and surrounding modules the ticket would touch.
+3. Explain how the current implementation works, what would need to change to satisfy the ticket, and any risks, gaps, or open questions.
+4. Stop when you have a clear map. No build output is expected.
+
+## Custom Instructions
+
+{custom_instructions}
+~~~
+
+If an existing PR was found for this ticket, add an **Existing Pull Request**
+section (same embedding rules as the work template) **between** Ticket and
+Instructions, and note that this explore session is **not** checked out on that
+branch — inspect it with `gh pr diff` / `gh pr view` rather than committing onto
+it.
+
+On step 6, substitute the real ticket number into `{number}` in the PR body (same substitution as `{base_branch}`) so the body reads e.g. `Closes #654` — the closing keyword with the real number is what makes GitHub link the PR to the issue and auto-close it on merge into the default branch. When no ticket number is available, drop the `--body` and fall back to `gh pr create --fill`.
+
+After a successful `gh pr create`, always run step 7 (`gh pr view --json url,number` then `crow add-link --session "$CROW_SESSION_ID" … --type pr`). Crow does **not** learn about the PR from GitHub's `Closes #N` keyword; the issue-tracker poller only attaches a `.pr` when a registered worktree branch matches. The coder must register the URL once. `add-link --type pr` is idempotent.
+
+For GitLab tickets, substitute `glab mr create --title "<summary>" --description "Closes #{number}" --target-branch {base_branch}` on step 6 (use "merge request" instead of "pull request"). When no ticket number is available, drop the description and fall back to `glab mr create --fill`. On step 7 use `glab mr view --output json` (or the MR URL printed by `glab mr create`) with the same `crow add-link --type pr` call.
+
+### Embedding pre-fetched content
+
+Render the content pre-fetched in **Step 0** directly into the template:
+
+- **Ticket body**: insert verbatim — preserve markdown, code fences, line breaks. Do not summarize or reformat.
+- **Comments**: for each comment, render as `**@{login}** ({created_at}):` followed by the comment body, separated by `---` between comments. If there are zero comments, write `_No comments._` in the `### Comments` block.
+- **PR body / PR review comments** (existing-PR variant): same rules as ticket body/comments.
+
+If the pre-fetch fails (network, auth, rate limit), fall back to the prior behavior: leave a short `_(Ticket pre-fetch failed — run the gh command below to retrieve.)_` note in place of the embedded body and proceed. The launched Claude can re-fetch with the documented commands.
+
+**When an existing PR was detected**, add this section to the prompt between `## Ticket` and `## Instructions` (with PR content also pre-fetched in Step 0 and embedded):
+
+~~~markdown
+## Existing Pull Request
+
+**{pr_title}** — {pr_url}
+
+{pr_body_verbatim}
+
+### PR Comments
+
+{rendered_pr_comments_or_no_comments_marker}
+
+---
+
+This workspace is checked out on the PR's branch. Review existing changes with `git log origin/{base_branch}..HEAD` before adding new work.
+
+If you need fresher PR data later, re-fetch with (dangerouslyDisableSandbox: true):
+
+```bash
+gh pr view {pr_url} --comments
+# Fallback if the above returns empty:
+gh api repos/{owner}/{repo}/pulls/{pr_number}
+gh api repos/{owner}/{repo}/issues/{pr_number}/comments
+```
+~~~
+
+And update the Instructions section to:
+
+~~~markdown
+## Instructions
+1. Review the existing PR and ticket above — both have been pre-fetched and embedded. Use `git log origin/{base_branch}..HEAD` to see the current branch's changes. Only re-run gh/glab if you need fresher data; those calls use dangerouslyDisableSandbox: true and will prompt for approval.
+2. Create an implementation plan that builds on the existing work
+3. Implement the plan
+4. Commit the changes with a descriptive message
+5. Push the branch — this updates the existing PR automatically; do NOT open a new one
+6. Ensure Crow has this PR on the session (`add-link --type pr` is idempotent — skip if a `.pr` already exists):
+
+```bash
+crow add-link --session "$CROW_SESSION_ID" --label "PR #{pr_number}" --url "{pr_url}" --type pr
+```
+~~~
+
+For MyGitLab, add: `7. If any changes to my-project are required, create a new worktree with a feature branch before making modifications`
+
+### CLI Commands for Fetching Issues
+
+The manager uses these in **Step 0** to pre-fetch ticket and PR content. They are also documented in the prompt so the launched Claude can re-run them for fresher data.
+
+**GitHub:**
+```bash
+gh issue view {url} --comments
+gh pr view {url} --comments
+# Fallbacks if the above return empty (see issue #295):
+gh api repos/{owner}/{repo}/issues/{number}
+gh api repos/{owner}/{repo}/issues/{number}/comments
+gh api repos/{owner}/{repo}/pulls/{pr_number}
+```
+
+**GitLab (non-default host like gitlab.example.com):**
+```bash
+GITLAB_HOST=gitlab.example.com glab issue view {number} --repo {org/repo} --comments
+GITLAB_HOST=gitlab.example.com glab mr view {number} --repo {org/repo} --comments
+```
+
+## Error Handling and Self-Correction
+
+If `setup.sh` returns a JSON error (`"status": "error"`):
+1. Read the `step` and `message` fields to understand what failed
+2. If the error indicates a usage problem (wrong arg format, missing param), fix the invocation and retry
+3. If `partial.session_id` is present, the session was created before the failure — you can pass `--session-id` to retry without recreating the session. A retry must still run `add-worktree` successfully before launch (CROW-1218); do not skip to `new-terminal`.
+4. If the error is in `git_worktree_add`, the branch may already exist — try with a different slug
+5. Append a one-line correction to `{devRoot}/CLAUDE.md` under "## Known Issues / Corrections"
+
+| Error | Response |
+|-------|----------|
+| `parse_args` — Missing required arguments | Check that all required flags are provided |
+| `git_fetch` — git fetch failed | Check repo path exists and has remote configured |
+| `git_worktree_add` — worktree creation failed | Branch may exist; script auto-retries after cleanup |
+| `new_session` — crow new-session failed | Crow app may not be running. Inform user. |
+| `set_ticket` — crow set-ticket failed | Ticket metadata is required. Read `message` for the RPC error; retry with `--session-id` from `partial.session_id`. A ticket link is not a substitute — do not continue. |
+| `add_worktree` — crow add-worktree failed | Worktree registration is required for PR auto-link. Read `message` for the RPC error; retry with `--session-id`. A git checkout is not a substitute — do not continue into `new-terminal` / launch. |
+| `launch_agent` — no registered worktree | `crow list-worktrees` was empty. Call `crow add-worktree` (the first worktree is primary even without `--primary`) and re-run setup with `--session-id`. Do not launch. |
+| `new_terminal` — crow new-terminal failed / could not create window | Session may not exist (check session_id), or tmux couldn't spawn a window under load |
+| `write_prompt` — prompt file not found | Verify prompt was written before calling setup.sh |
+
+## crow CLI Reference
+
+```
+crow new-session --name "name"
+crow rename-session --session <uuid> "name"
+crow select-session --session <uuid>
+crow list-sessions
+crow get-session --session <uuid>
+crow set-status --session <uuid> active|completed|archived
+crow delete-session --session <uuid>
+crow set-ticket --session <uuid> --url "..." [--title "..."] [--number N]
+crow add-worktree --session <uuid> --repo "name" --repo-path "/main/repo/path" --path "/worktree/path" --branch "..." [--primary]
+crow list-worktrees --session <uuid>
+crow new-terminal --session <uuid> --cwd "/..." [--name "..."] [--command "..."]
+crow list-terminals --session <uuid>
+crow send --session <uuid> --terminal <uuid> "text"
+crow add-link --session <uuid> --label "..." --url "..." --type ticket|pr|repo|custom
+crow list-links --session <uuid>
+crow remove-link --session <uuid> --id <link-uuid> | --url "..."
+crow edit-link --session <uuid> --id <link-uuid> | --url "..." [--label "..."] [--new-url "..."] [--type ticket|pr|repo|custom]
+```
+
+All commands return JSON. `$CROW_SESSION_ID` is set in every Crow-launched agent terminal (and in `.claude/settings.local.json` `env`); prefer it over copying a UUID. `add-link --type pr` is idempotent. Prefer the Unix socket at `crow.sock`; when that connect fails (Cursor sandbox), `crow` retries over loopback `POST /rpc`. `gh`/`glab`/`git worktree` still need `dangerouslyDisableSandbox: true` for TLS / paths.
+
+**Do not assemble a work session with raw CLI and skip `add-worktree`.** Prefer `setup.sh`. If you must hand-roll, `crow add-worktree` must succeed (the first worktree is primary even without `--primary`) and `crow list-worktrees` must be non-empty before `crow new-terminal --managed --command`. A git checkout Crow does not know about will never auto-link the PR.
+
+## Examples
+
+### GitHub Issue URL
+```
+/crow-workspace https://github.com/corveil/acme-api/issues/45
+```
+→ Fetches issue #45, matches acme-api in Corveil
+→ Creates worktree at ~/Dev/Corveil/acme-api-45-jwt-validation
+→ Creates crow session with ticket metadata + worktree + Claude Code terminal
+
+### Natural Language
+```
+/crow-workspace "update acme-api authentication"
+```
+→ Scans repos, matches acme-api by keyword
+→ Creates worktree with feature slug
+→ Creates crow session with Claude Code terminal
+
+### Cross-Workspace
+```
+/crow-workspace "integrate my-project with acme-api gateway"
+```
+→ Matches my-project (MyGitLab) + acme-api (Corveil)
+→ Creates worktrees for both, one crow session
+→ Claude launches in highest-scoring repo

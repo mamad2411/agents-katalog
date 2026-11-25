@@ -1,0 +1,245 @@
+---
+model_tier: inherit
+name: corpus-grounding
+description: "Shared corpus-grounding engine — BM25 + structured filters + decision rules over CSV corpora via a domain manifest. Use when a skill needs grounded pre-action option-space constraints."
+domain: engineering
+workspaces:
+  - engineering
+packs:
+  - engineering-base
+trust:
+  level: professional
+install:
+  removable: true
+scope:
+  write: []
+  verification_reason: "execution declares no handler, so this skill runs nothing of its own — every write is the calling agent's, under the rules that govern it. No command can prove a scope the skill never executes."
+execution:
+  type: manual
+---
+
+# corpus-grounding
+
+> The reusable grounding layer from ADR-061: one pure-stdlib engine
+> (BM25 retrieval + structured pre-filters + decision-rule evaluation)
+> that any domain plugs into via a **manifest** — frontend design is its
+> first consumer ([`design-intelligence`](../design-intelligence/SKILL.md)).
+> A corpus **grounds** (pre-action, constrains the option space); it never
+> replaces mid-action reference (RAG), post-action validation (rules), or
+> the method itself (a framework skill).
+
+Engine provenance: ported from `nextlevelbuilder/ui-ux-pro-max-skill`
+@ `b7e3af80f6e331f6fb456667b82b12cade7c9d35` (MIT, last checked
+2026-06-07) — BM25 de-duplicated, slide-only paths stripped, every
+frontend-hardcoded axis moved into the manifest. The obligations split by what
+ships where: the MIT notice for the **engine sources under `scripts/`** travels
+with this skill, in [`ATTRIBUTION.md`](ATTRIBUTION.md) beside it, so an install
+that takes `engineering-base` without `frontend-design` still carries the
+notice its code is under. The vendored **corpus** and the Apache-2.0
+`ui-styling` material travel with `frontend-design`, in
+[`design-intelligence/ATTRIBUTION.md`](../design-intelligence/ATTRIBUTION.md),
+which remains the full record.
+
+## When to use
+
+- A skill needs **pre-action selection** grounded in curated knowledge
+  ("which layout pattern / threat class / index strategy applies here").
+- You are authoring a **new domain corpus** — write a manifest + CSVs,
+  validate with the grounding CLI (`ground validate` via node),
+  never fork the engine.
+- You need stack-scoped Do/Don't guidance (`--stack react …`).
+
+## Do NOT
+
+- Do NOT use the corpus for mid-task fact lookup — that is reference
+  (`references/` docs / RAG).
+- Do NOT use it for output validation — write a rule/linter.
+- Do NOT build a corpus that fits in 5 lines of an always-on rule.
+- Do NOT fork the engine per domain — plug in via a manifest.
+- Do NOT merge a manifest without owner + refresh cadence (validator
+  refuses it anyway).
+
+## Procedure: Consult a corpus
+
+1. Locate the domain manifest (`<domain-skill>/data/manifest.json`).
+2. Run `search` (one domain / stack axis) or `ground` (reasoning plan).
+3. Read `confidence` + `evidence_gap` before trusting any row.
+4. Propose grounded options; the human confirms (Tier-1 default).
+
+### Invocation (consumer runtime)
+
+Scripts resolve all paths **skill-relative** (per
+[`docs/contracts/skill-bundled-assets.md`](../../docs/contracts/skill-bundled-assets.md))
+— they work from any cwd:
+
+```bash
+node <skills-root>/corpus-grounding/scripts/ground.mjs search \
+  --manifest <skills-root>/<domain-skill>/data/manifest.json \
+  "fintech dashboard" [--domain style] [--stack react] \
+  [--filter "Severity=HIGH"] [--max-results 3] [--json]
+
+node <skills-root>/corpus-grounding/scripts/ground.mjs ground \
+  --manifest <skills-root>/<domain-skill>/data/manifest.json \
+  "luxury e-commerce" [--context '{"data_heavy": true}'] [--persist DIR] \
+  [--variance 1-10] [--motion 1-10] [--density 1-10]
+
+node <skills-root>/corpus-grounding/scripts/ground.mjs validate --manifest …
+```
+
+`<skills-root>` is wherever skills are deployed (`~/.claude/skills/` for
+Claude Code installs; `src/skills/` inside this repo).
+
+**The three `ground` dials are optional 1-10 preferences, and unset means
+unset** — a dial you do not pass changes nothing, so the no-flag result is
+byte-identical to what it was before they existed. `--variance` biases which
+style is **selected** from the rows the corpus returned (never which rows come
+back), and when it changes the pick away from the grounding rule's own choice
+the run says so in its evidence gaps. `--motion` needs a `gsap` domain in the
+manifest and reports when a tier matches nothing. `--density` overrides the
+spacing scale. All three render in the text output and in a persisted
+`MASTER.md`, not only under `--json`.
+
+## Output format
+
+**Interface contract v1 — stability promise.** Per ADR-061 §2 ("Opus
+condition"), this interface is **versioned**; domains may depend on it. Breaking any item below requires a major bump
+(`manifest_version: 2`), a migration note here, and updates to every
+consuming skill in the same PR. Additive fields are allowed anytime.
+
+Stable v1 surface:
+
+1. **Modules + public names** — `bm25_search.{BM25, load_csv, apply_filters,
+   search_rows, RETRIEVERS}`, `decision_engine.{detect_domain, search_domain,
+   search_stack, evaluate_rules, ground, persist_grounding}`,
+   `schema_validator.{load_manifest, validate_manifest, resolve_data_path,
+   ManifestError, MANIFEST_VERSION, TIERS}`.
+2. **CLI** — the grounding CLI (`ground {search|ground|validate}` via
+   node) with the flags shown above.
+3. **Result shape** — search: `{domain|stack, query, file, count, results,
+   scores, filtered_from, confidence{label,score}, evidence_gap[]}`;
+   ground: `{domain, query, category, rule, rules_evaluation{matched,
+   unmatched}, selections{<domain>: {best, alternatives, confidence}},
+   confidence{label,score}, evidence_gap[]}`.
+4. **Contract invariants** — every output carries `confidence` **and**
+   `evidence_gap`; retrievers are name-selected (`bm25` default,
+   `structured`, `hybrid`); no network, no subprocess, read-only except
+   the opt-in `--persist DIR`.
+
+## Manifest contract (schema-agnostic plug-in)
+
+Each domain ships `data/manifest.json` beside its CSVs — declaring its
+**own** axes; the engine never assumes the frontend schema:
+
+```json
+{
+  "manifest_version": 1,
+  "domain": "frontend-design",
+  "tier": "conditional-grounding",
+  "data_dir": ".",
+  "retriever": "bm25",
+  "default_domain": "style",
+  "domains": {
+    "style": {
+      "file": "styles.csv",
+      "search_cols": ["Style Category", "Keywords"],
+      "output_cols": ["Style Category", "Best For"],
+      "max_results": 3,
+      "filters": {}
+    }
+  },
+  "detect": { "style": ["minimalism", "glassmorphism"] },
+  "stacks": { "react": "stacks/react.csv" },
+  "stack_cols": { "search_cols": ["…"], "output_cols": ["…"] },
+  "reasoning": {
+    "file": "ui-reasoning.csv",
+    "category_domain": "product",
+    "category_column": "Product Type",
+    "match_column": "UI_Category",
+    "rules_column": "Decision_Rules",
+    "priority_column": "Style_Priority",
+    "priority_domain": "style",
+    "name_columns": { "style": "Style Category" },
+    "plan": { "style": 3, "color": 2 },
+    "rules_module": "rules.ts"
+  },
+  "owner": "package-maintainer",
+  "refresh_cadence": "quarterly",
+  "upstream": { "repo": "…", "sha": "…", "last_checked": "YYYY-MM-DD" }
+}
+```
+
+- `tier` ∈ `lookup-only | conditional-grounding | constraint-emission`;
+  `reasoning` is only legal above lookup-only.
+- `owner`, `refresh_cadence`, `upstream{repo,sha,last_checked}` are
+  **required** — provenance discipline per ADR-061 §6; an unowned corpus
+  is not merged.
+- `rules_module` (optional TypeScript escape hatch where JSON rules cap
+  out — a module exposing `evaluate(rules, query, context)`; a legacy
+  `.py` name in a manifest is remapped to its `.ts`/`.js` twin) must live
+  beside the manifest — absolute paths and `..` are refused.
+- `composite_min_score` (optional number in `reasoning`): with it set, every
+  other category whose row in `category_domain` scores at least this much is
+  named in the evidence gap as dropped, so a description spanning two
+  categories never reports `none`. The manifest sets it because only the
+  corpus knows which score separates a second real match from a shared word.
+- `category_floor` (optional object in `reasoning`, domain → class column):
+  when the grounded category has no row among a planned domain's results, that
+  class's best row takes the last slot and the evidence gap says so — a
+  correctly grounded surface never ships with only another class's threats.
+- Decision rules are surfaced as `matched` **and** `unmatched` — the full
+  rule space stays auditable, never a hidden gate.
+
+## Procedure: Author a new domain corpus
+
+1. Pass the qualification rubric (ADR-061 §5): decision-rule utility beats
+   row count; grounding must happen **before** action; "fits in 5 lines →
+   it's a rule, not a corpus".
+2. Write `data/manifest.json` + CSVs in your domain skill; run
+   the grounding CLI (`ground validate` via node).
+3. Name an owner + refresh cadence in the manifest, pin the upstream SHA.
+4. Cite this skill from your domain skill; consult via the CLI (Tier-1
+   consultation default — propose grounded options, human confirms).
+
+## Gotchas
+
+- An empty result is a legitimate outcome — surface the evidence gap and
+  proceed on priors; never silently widen filters to force a hit.
+- The structured `filters` pre-filter matches case-insensitive
+  substrings; an over-specific value silently filters everything out —
+  check `filtered_from` vs `count` when results look thin.
+- `detect` keyword routing falls back to `default_domain`; product-shaped
+  queries route best ("fintech dashboard"), generic words land on the
+  default.
+- BM25 tokenizer drops tokens ≤2 chars — "UI", "a11y" style queries need
+  longer companions.
+
+## Security constraints (Step 1.6 runtime-safety record)
+
+Four scripts ship under `scripts/`: `ground.ts` (CLI), `bm25_search.ts`,
+`decision_engine.ts`, `schema_validator.ts`.
+
+- **What they may touch** — corpus CSVs and the manifest under the
+  manifest's own directory. `resolve_data_path` refuses absolute paths and
+  `..` escapes, so the manifest directory is the read boundary.
+- **What they must never do** — read outside that directory, reach the
+  network, or spawn a subprocess. Embeddings and remote retrievers are
+  intentionally not implemented (ADR-061 §2), and that is a containment
+  decision, not a missing feature.
+- **Default invocation** — read-only. The single write surface is opt-in
+  `--persist DIR`, which writes `MASTER.md` (and `pages/<page>.md` when
+  `--page` is given) under `DIR/design-system/<project-slug>/`. Nothing
+  else writes.
+- **Outbound** — nothing. No network access at all.
+
+One qualified exception: `rules_module` executes a manifest-adjacent
+TypeScript module via dynamic `import()`. That is the same trust domain as
+the skill shipping the manifest, and its containment is `resolve_data_path`.
+
+## See also
+
+- [`design-intelligence`](../design-intelligence/SKILL.md) — first consumer
+  (frontend corpus + manifest).
+- [ADR-061](../../../docs/decisions/ADR-061-corpus-grounding-layer.md) —
+  architecture, qualification rubric, fork resolutions.
+- [`docs/contracts/skill-bundled-assets.md`](../../docs/contracts/skill-bundled-assets.md)
+  — how bundled `scripts/` + `data/` reach consumer runtime.

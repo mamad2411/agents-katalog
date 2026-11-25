@@ -1,0 +1,528 @@
+---
+name: chorus-openspec-aware
+description: OpenSpec-mode authoring for Chorus PM workflows in Kiro CLI. The default whenever OpenSpec is usable; consumes the resolved `## Spec Mode` (never re-detects). Scaffolds `openspec/changes/<slug>/` on disk, and mirrors Markdown files into Chorus document drafts via `chorus mcp call --arg-file` (bash `chorus-api.sh` wrapper as fallback). Required reading for the chorus-proposal, chorus-develop, and chorus-yolo skills. When OpenSpec is not the resolved mode, this skill no-ops and the caller follows the resolved mode (spec-lite or free-form).
+license: AGPL-3.0
+metadata:
+  author: chorus
+  version: "0.24.0"
+  category: project-management
+  mcp_server: chorus
+---
+
+# OpenSpec-aware Authoring (Kiro CLI plugin)
+
+This skill is a **shared sub-procedure** invoked by the Chorus stage skills (`/chorus-proposal`, `/chorus-develop`, `/chorus-yolo`) for spec-driven authoring through the [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec). It is the **default whenever OpenSpec is usable**, and a no-op otherwise:
+
+- Activates when the resolved spec mode is a **usable OpenSpec** (see §1): `CHORUS_SPEC_MODE=openspec` *or* unset, **and** `CHORUS_OPENSPEC_MODE` not `off`, an `openspec/` directory at the project root, and the `openspec` CLI on `PATH`.
+- Otherwise the calling skill follows the resolved `SPEC_MODE` — **spec-lite** (the default when OpenSpec isn't usable) or free-form (`=off`).
+
+> **See also — `chorus-spec-lite` (the lightweight fallback):** OpenSpec (this skill) stays the default whenever usable. When OpenSpec is absent or disabled — or `CHORUS_SPEC_MODE=lite` — the mode resolves to **spec-lite**: a durable local `.chorus/specs/<slug>/spec.md` (never synced) + per-change dated folders `<slug>/<YYYY-MM-DD>-<change-slug>/` of Chorus-typed docs mirrored 1:1 into Chorus via the same `--arg-file` transport. See `/chorus-spec-lite`.
+
+When you reach a point in proposal / develop / yolo where this skill is referenced, **read the resolved mode from the `## Spec Mode` section** (see §1) and branch on it.
+
+---
+
+## §1. Detection
+
+The Chorus `chorus` main agent's `agentSpawn` hook resolves the spec mode once at spawn (via the shared `bin/resolve-spec-mode.sh`) and writes a `## Spec Mode` section into your startup context; when the resolved mode is a usable OpenSpec it also carries a `CHORUS_OPENSPEC_ACTIVE=1` line. If you see that section, use it; otherwise run the manual fallback below. That line is present only when `CHORUS_SPEC_MODE` is `openspec` **or unset**, **and all three** of these hold:
+
+1. `CHORUS_OPENSPEC_MODE` is **not** set to `off` (explicit opt-out wins).
+2. The project root contains an `openspec/` directory (i.e. someone ran `openspec init` here).
+3. The `openspec` CLI is on `PATH`.
+
+Both signals (2) and (3) are required because the OpenSpec authoring path needs the working directory **and** the CLI — having one without the other leaves the workflow unrunnable. If signal (2) holds but (3) does not, surface a "OpenSpec repo detected — install with: `npm i -g @fission-ai/openspec`" hint to the user rather than silently choosing free-form.
+
+### How to read the value
+
+If your `agentSpawn` context includes it, you will see something like:
+
+```
+## Spec Mode
+
+CHORUS_SPEC_MODE=openspec (default — openspec/ directory + openspec CLI both present)
+
+CHORUS_OPENSPEC_ACTIVE=1 (openspec/ directory + openspec CLI both present)
+```
+
+or (resolved to lite / off — no `CHORUS_OPENSPEC_ACTIVE=1` line):
+
+```
+## Spec Mode
+
+CHORUS_SPEC_MODE=lite (default — OpenSpec not usable: no openspec/ directory at /path/to/repo/openspec)
+```
+
+Branch:
+
+- `CHORUS_OPENSPEC_ACTIVE=1` line present → follow §3 (OpenSpec authoring).
+- No `CHORUS_OPENSPEC_ACTIVE=1` line → this skill is a no-op; return to the caller, which follows the resolved `SPEC_MODE` (**spec-lite** or free-form). **Do not** scaffold `openspec/changes/`. **Do not** add the slug line to the proposal description.
+
+### Manual fallback
+
+If you did not see a `## Spec Mode` section (e.g. the `agentSpawn` hook did not inject it, or you are a subagent), **do not hand-roll the detection** — source the *same* resolver the hook uses, so there is one computation of the mode. `chorus init` installs it at `<KIRO_DIR>/chorus-bin/resolve-spec-mode.sh` (`<KIRO_DIR>` is normally `.kiro/` at the project root), which is the exact path substituted into the main agent's hook `command`:
+
+```bash
+# The installed resolver, next to the other Chorus hooks. Run from the project root.
+CHORUS_BIN=".kiro/chorus-bin"
+# Not there? Take the directory of the agentSpawn hook command itself — `chorus
+# init` substituted the absolute chorus-bin path into it, and the resolver is
+# the file that hook sources.
+[ -f "$CHORUS_BIN/resolve-spec-mode.sh" ] || CHORUS_BIN=$(dirname "$(
+  grep -o '"command": *"[^"]*on-agent-spawn\.sh"' .kiro/agents/chorus.json 2>/dev/null |
+    head -1 | sed 's/.*"command": *"//; s/"$//'
+)")
+. "$CHORUS_BIN/resolve-spec-mode.sh"   # same file the agentSpawn hook sources
+# sets SPEC_MODE (lite|openspec|off), SPEC_FAIL (non-empty ⇒ halt), CHORUS_OPENSPEC_ACTIVE (1 only for a usable openspec)
+```
+
+Then: if `SPEC_FAIL` is non-empty, halt and surface it; if `CHORUS_OPENSPEC_ACTIVE=1` follow §3; otherwise no-op — return to the caller per the resolved `SPEC_MODE`. **Never re-derive the rule inline.** If neither path locates the helper, set `CHORUS_SPEC_MODE` explicitly and relaunch rather than guessing.
+
+---
+
+## §2. ⛔ Two non-negotiable rules
+
+Both are enforced at review time. Both have caused incidents in past releases.
+
+### Rule 1 — Fill `content` from the file (CLI preferred, bash-wrapper fallback); never re-type document content from agent output
+
+Document/draft mirror calls (`chorus_pm_add_document_draft`, `chorus_pm_update_document_draft`, `chorus_pm_update_document`) **MUST** fill the `content` field from the local file's bytes, never from a hand-typed body. Calling these tools directly from the agent's MCP harness with a hand-typed `content` field is a **protocol violation** for OpenSpec mode and will fail review. Use whichever transport is available, preferred first:
+
+- **Primary — the `chorus` CLI:** `chorus mcp call <tool_name> '<json-without-content>' --arg-file content=<file>`. `--arg-file content=<path>` reads the file's raw bytes and injects them as the JSON `content` string, byte-exact — the CLI's built-in replacement for `json_encode_file`, so no helper is needed. See §3.6. **Requires chorus >= 0.17.0** (the `chorus mcp` subcommand was added then; an older CLI errors with "unknown command"); on any version or unknown-command failure, upgrade with `npm install -g @chorus-aidlc/chorus`.
+- **Fallback — the `chorus-api.sh` wrapper, when `chorus` is not on `PATH`:** build `$PAYLOAD` with the `json_encode_file` helper and call `chorus-api.sh mcp-tool <tool_name> "$PAYLOAD"` (`chorus-api.sh` is installed alongside the hook scripts under the Kiro `chorus-bin/` directory and is on `PATH` — call it by name). Defined in the §3.6 fallback block.
+
+> **New to the `chorus` CLI?** See the **`chorus-cli`** skill for install, configuring agents (`chorus agents add|remove|list`), the connection env vars, and `chorus mcp` basics.
+
+> **Acting identity — which agent the call acts as.** `chorus mcp call` resolves the agent from, in order: `CHORUS_AGENT_PROFILE` (a name or UUID) → `CHORUS_URL` + `CHORUS_API_KEY` in the environment → the single agent configured in `~/.chorus/daemon.json`. A daemon-woken session already has `CHORUS_AGENT_PROFILE` set. If a mirror call fails with `Multiple agents … specify --agent` (several agents configured and no profile/creds in the env), pass your own identity explicitly: `chorus mcp call <tool> … --agent <your-agentUuid>` — your UUID is in your `chorus_checkin` result, and `chorus agents` lists every configured name/UUID.
+
+Reasons (they apply to both paths):
+
+1. **Token cost.** Re-typing a multi-thousand-line markdown body through the LLM burns input + output tokens for every draft. Both the CLI's `--arg-file` and the fallback's `json_encode_file` stream the file's bytes into the JSON string — content never enters LLM context. A typical 3-doc proposal mirror costs roughly zero content-tokens this way; via direct MCP with a re-typed body it routinely costs 20k+.
+2. **Byte-equality.** A file-fill path (CLI `--arg-file`, or the fallback's `jq -Rs '.'`) is a byte-faithful encoder: backslashes, quotes, newlines, code-fence content, zero-width chars all survive. LLM re-emission has a non-zero failure rate on long markdown — table alignment drifts, fence escapes get "fixed", long URLs wrap. The exact byte-equality guarantee holds **only** on a file-fill path, never on LLM re-emission.
+3. **Single source of truth.** With a file-fill mirror, the local `openspec/changes/<slug>/*.md` is authoritative and Chorus is a mirror. With agent re-typing, authority splits between local file and whatever the LLM happened to output — a future diff cannot tell which one is correct.
+
+### Rule 2 — Halt on error via `chorus_check_response`
+
+Every wrapper call must check three signals: wrapper exit code, `"error":` in body, empty body. Bare `RC=$?` is **insufficient** — the wrapper exits 0 on HTTP 401 (auth failure) with empty body, so a single-signal check silently misses the most common runtime failure. See §6 for the helper definition.
+
+---
+
+## §3. OpenSpec mode authoring
+
+### 3.1 Pick a slug
+
+`openspec/changes/<slug>/` is the local change folder. The slug must be:
+
+- kebab-case (`add-export-csv`, not `addExportCsv` or `add_export_csv`),
+- derived from the source Idea title,
+- unique within `openspec/changes/`.
+
+Record it for later steps:
+
+```bash
+SLUG="add-export-csv"
+```
+
+### 3.2 Scaffold the change folder
+
+```bash
+openspec new change "$SLUG" --description "<one-line idea summary>"
+```
+
+This creates `openspec/changes/$SLUG/` with `README.md` and `.openspec.yaml`. Then author by hand:
+
+| Local file | Purpose | Mirror as `Document.type` |
+|---|---|---|
+| `proposal.md` | Why + What Changes + Capabilities + Impact | `prd` |
+| `design.md` | Architecture, contracts, risks | `tech_design` |
+| `specs/<capability>/spec.md` | Delta spec (`## ADDED Requirements` + Scenarios) | `spec` (one draft per capability) |
+| `tasks.md` | OpenSpec tasks list | _(not mirrored — Chorus task drafts are source of truth)_ |
+
+Use `openspec instructions <artifact> --change "$SLUG"` (artifacts: `proposal`, `specs`, `design`, `tasks`) for templates.
+
+### 3.3 Spec file shape (verified against `openspec instructions specs`)
+
+A delta spec lists one or more block headers — `## ADDED Requirements`, `## MODIFIED Requirements`, `## REMOVED Requirements`, `## RENAMED Requirements` — and within each, `### Requirement:` entries. Mix freely in the same file; only include the blocks you actually need.
+
+#### `## ADDED Requirements`
+
+Append a brand-new Requirement to the long-term spec.
+
+```
+## ADDED Requirements
+
+### Requirement: <name>
+<requirement text — use SHALL / MUST for normative behavior>
+
+#### Scenario: <name>
+- **WHEN** <condition>
+- **THEN** <expected outcome>
+```
+
+#### `## MODIFIED Requirements`
+
+**Whole-block replacement, not merge.** Whatever you write here completely replaces the existing same-named Requirement in the long-term spec — title, description, and *all* scenarios. Half-writing it deletes the rest.
+
+```
+## MODIFIED Requirements
+
+### Requirement: <existing name>
+<full updated requirement text>
+
+#### Scenario: <name>
+- **WHEN** <condition>
+- **THEN** <expected outcome>
+
+#### Scenario: <other name>
+- **WHEN** <condition>
+- **THEN** <expected outcome>
+```
+
+Always include every scenario you want the post-archive spec to have, even ones that were already present and unchanged.
+
+#### `## REMOVED Requirements`
+
+Delete a Requirement from the long-term spec. The block under the heading is just the requirement name(s) you're removing — no scenarios needed.
+
+```
+## REMOVED Requirements
+
+### Requirement: <existing name>
+```
+
+#### `## RENAMED Requirements`
+
+Rename a Requirement's title. Body and scenarios are preserved as-is in the long-term spec; use `MODIFIED` instead if you need to change anything besides the title.
+
+```
+## RENAMED Requirements
+
+### Requirement: <old name> -> <new name>
+```
+
+**Critical formatting rules (verified):**
+
+- Scenarios MUST use **exactly 4 hashtags** (`#### Scenario:`). 3 hashtags or a bullet list silently fail validation.
+- Every `### Requirement:` under `ADDED` or `MODIFIED` MUST have at least one `#### Scenario:`.
+- `MODIFIED` blocks MUST include the **full updated content** — they overwrite, not patch.
+- Use `SHALL` / `MUST` for normative requirements; avoid `should` / `may`.
+- The merge into `openspec/specs/<capability>/spec.md` happens at `openspec archive` time (§3.9), not at proposal time. While the proposal is in flight, Chorus only sees the delta file as one `spec` Document — there is no half-merged state for the skill to reason about.
+
+Optional:
+
+```bash
+openspec validate "$SLUG"
+```
+
+### 3.4 Filling the `content` field byte-exact
+
+The document `content` must be inserted **byte-for-byte** from the local file — never re-typed by the LLM. Two mechanisms, preferred first:
+
+- **Primary — `chorus mcp call … --arg-file content=<path>`** (§3.6). The CLI reads the file's raw bytes and injects them as the JSON `content` string. This is the byte-faithful replacement for `json_encode_file`, so on the CLI path **no helper is needed** — pass the base JSON without a `content` field and let `--arg-file` fill it.
+- **Fallback — `json_encode_file`** (defined in the §3.6 fallback block, used only when `chorus` is not on `PATH`). With `jq` available it streams the file through `jq -Rs '.'`; the pure-shell branch matches `chorus-api.sh`'s own escaping when `jq` is missing.
+
+Round-trip verification is exact: a trailing newline difference is real drift and MUST NOT be normalized or ignored.
+
+### 3.5 Create the proposal container with the slug provenance line
+
+Use the regular `chorus_pm_create_proposal` MCP tool (no wrapper required for this single call — the description is short, the LLM-emitted version is fine). The description **must** carry exactly one line:
+
+```
+OpenSpec change slug: <slug>
+```
+
+- on its own line (no other text on that line),
+- literal prefix `OpenSpec change slug: ` (capital O, capital S, single space after colon),
+- no trailing punctuation,
+- value matches the slug passed to `openspec new change`.
+
+This line is machine-grep-able by future runs of this skill and by the §3.9 archive trigger.
+
+### 3.6 Mirror each document draft (CLI primary, wrapper fallback)
+
+> **Rule 1 reminder:** `content` comes from the file's bytes, never a hand-typed body. The agent must not retype the document body.
+
+Define the halt-on-error helper from §6 once at the top. **Primary path — the `chorus` CLI:** pass the base JSON *without* a `content` field and let `--arg-file content=<file>` fill it byte-exact. One call per file:
+
+```bash
+# PRD draft — --arg-file fills content byte-exact from the file; no json_encode_file needed.
+RESULT=$(chorus mcp call chorus_pm_add_document_draft \
+  "{\"proposalUuid\":\"$PROPOSAL_UUID\",\"type\":\"prd\",\"title\":\"PRD: $HUMAN_TITLE\"}" \
+  --arg-file content="openspec/changes/$SLUG/proposal.md")
+RC=$?
+chorus_check_response "chorus_pm_add_document_draft (prd)" "$RC" "$RESULT"
+PRD_DRAFT_UUID=$(printf '%s' "$RESULT" | grep -o '"draftUuid"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+```
+
+Repeat with `type: "tech_design"` for `design.md`, and one call per capability with `type: "spec"` for each `specs/<capability>/spec.md`. Do **not** mirror `tasks.md` — Chorus task drafts (created via the `chorus_pm_add_task_draft` MCP tool, no wrapper needed) are the source of truth for tasks.
+
+> Why parsing uses `printf '%s' "$RESULT" | grep` not `echo "$RESULT" | jq`: `echo` interprets backslash sequences inside the captured JSON, turning embedded `\n` into a real newline. `jq` then aborts with `Invalid string: control characters from U+0000 through U+001F must be escaped`. `printf '%s'` emits the captured bytes verbatim. Same pattern applies to all wrapper-result parsing in this skill.
+
+#### Fallback — when the `chorus` CLI is not on `PATH`
+
+If `command -v chorus` fails, mirror through the bundled `chorus-api.sh` wrapper instead. Define `json_encode_file` here (it is used **only** on this fallback path), then build `$PAYLOAD` with an embedded `content` and call the wrapper. The `chorus_check_response` halt-on-error check applies exactly as on the primary path.
+
+```bash
+# Define once, fallback-only: byte-faithful file → JSON string.
+json_encode_file() {
+  local _path="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -Rs '.' < "$_path"
+  else
+    local _content
+    _content=$(cat "$_path")
+    _content=${_content//\\/\\\\}
+    _content=${_content//\"/\\\"}
+    _content=${_content//$'\n'/\\n}
+    printf '"%s"' "$_content"
+  fi
+}
+
+# chorus-api.sh is on PATH — no absolute path needed.
+# PRD draft
+CONTENT=$(json_encode_file "openspec/changes/$SLUG/proposal.md")
+PAYLOAD=$(cat <<JSON
+{
+  "proposalUuid": "$PROPOSAL_UUID",
+  "type": "prd",
+  "title": "PRD: $HUMAN_TITLE",
+  "content": $CONTENT
+}
+JSON
+)
+RESULT=$(chorus-api.sh mcp-tool chorus_pm_add_document_draft "$PAYLOAD")
+RC=$?
+chorus_check_response "chorus_pm_add_document_draft (prd)" "$RC" "$RESULT"
+PRD_DRAFT_UUID=$(printf '%s' "$RESULT" | grep -o '"draftUuid"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+```
+
+### Task drafts: classification and validation
+
+Tasks remain in Chorus, separate from document mirroring. For a scope requiring implementation, add a real task draft:
+
+```
+chorus_pm_add_task_draft({
+  proposalUuid: "<proposal-uuid>",
+  title: "Implement the scoped module",
+  kind: "implementation",
+  description: "Build the behavior required by the proposal and its specification.",
+  acceptanceCriteriaItems: [
+    { description: "The module satisfies the specified behavior and its regression checks pass", required: true }
+  ]
+})
+```
+
+**Task kind:** `implementation`, `verification`, `docs`, or `other`. Set `kind` on each draft to describe its actual purpose. Both `chorus_pm_add_task_draft` and `chorus_pm_update_task_draft` accept it; omitting `kind` on update preserves the existing value. It is optional for compatibility with older proposals. Kind is draft-only metadata, visible in `taskDraftIndex`, and is not copied to materialized Tasks; do not add it to `chorus_create_tasks` or `chorus_update_task`.
+
+Dependency errors block submission. Repair drafts while the proposal is in `draft`; if it is pending, use the normal authorized `chorus_pm_reject_proposal` revision flow first.
+
+- `E-DEP-UNKNOWN`: replace unknown or foreign dependencies with task-draft UUIDs returned by `chorus_pm_add_task_draft` in this same proposal (confirm with `chorus_get_proposal`, `section: "tasks"`), or remove invalid edges. Do not use materialized Task UUIDs.
+- `E-DEP-SELF`: remove the current draft's own UUID from its `dependsOnDraftUuids`.
+- `E-DEP-CYCLE`: inspect the reported cycle path and remove or redirect edges to match the real execution order; reordering the displayed task list does not break a cycle.
+
+Replace the affected dependency list with `chorus_pm_update_task_draft`, retaining valid edges (use `[]` if none remain). This update deliberately omits `kind`, preserving its existing value:
+
+```
+chorus_pm_update_task_draft({
+  proposalUuid: "<proposal-uuid>",
+  draftUuid: "<affected-draft-uuid>",
+  dependsOnDraftUuids: ["<valid-same-proposal-draft-uuid>"]
+})
+chorus_pm_validate_proposal({ proposalUuid: "<proposal-uuid>" })
+```
+
+Revalidate after repairs and resolve all errors before `chorus_pm_submit_proposal`.
+
+Kind checks are advisory: `I-KIND` means no draft declares a kind, so classification-based implementation coverage cannot be checked; `W-IMPL` means at least one kind is declared but none is `implementation`. Neither advisory blocks submission. Inspect the actual requested scope, existing repository work, task descriptions and AC rather than trusting labels alone. Add or correct real implementation coverage when required by that scope. A justified docs-only or verification-only proposal is valid: record why no new implementation is needed in its description or review context; never fabricate implementation tasks or relabel unrelated work merely to silence an advisory.
+
+### 3.7 Editing a draft after the first mirror
+
+Local file changes propagate via `chorus_pm_update_document_draft` — same primary/fallback split as §3.6, same halt check. Primary (CLI):
+
+```bash
+RESULT=$(chorus mcp call chorus_pm_update_document_draft \
+  "{\"proposalUuid\":\"$PROPOSAL_UUID\",\"draftUuid\":\"$PRD_DRAFT_UUID\"}" \
+  --arg-file content="openspec/changes/$SLUG/proposal.md")
+RC=$?
+chorus_check_response "chorus_pm_update_document_draft" "$RC" "$RESULT"
+```
+
+Fallback (no `chorus` on `PATH`) — `json_encode_file` from the §3.6 fallback block:
+
+```bash
+CONTENT=$(json_encode_file "openspec/changes/$SLUG/proposal.md")
+PAYLOAD=$(cat <<JSON
+{
+  "proposalUuid": "$PROPOSAL_UUID",
+  "draftUuid": "$PRD_DRAFT_UUID",
+  "content": $CONTENT
+}
+JSON
+)
+RESULT=$(chorus-api.sh mcp-tool chorus_pm_update_document_draft "$PAYLOAD")
+RC=$?
+chorus_check_response "chorus_pm_update_document_draft" "$RC" "$RESULT"
+```
+
+### 3.8 Editing a Document after proposal approval
+
+Once the proposal is approved, drafts materialize into Documents with their own UUIDs. To keep `openspec/changes/$SLUG/` and the Chorus Document in sync, mirror file edits via `chorus_pm_update_document`. Primary (CLI):
+
+```bash
+RESULT=$(chorus mcp call chorus_pm_update_document \
+  "{\"documentUuid\":\"$SPEC_DOCUMENT_UUID\"}" \
+  --arg-file content="openspec/changes/$SLUG/specs/<capability>/spec.md")
+RC=$?
+chorus_check_response "chorus_pm_update_document" "$RC" "$RESULT"
+```
+
+Fallback (no `chorus` on `PATH`) — `json_encode_file` from the §3.6 fallback block:
+
+```bash
+CONTENT=$(json_encode_file "openspec/changes/$SLUG/specs/<capability>/spec.md")
+PAYLOAD=$(cat <<JSON
+{
+  "documentUuid": "$SPEC_DOCUMENT_UUID",
+  "content": $CONTENT
+}
+JSON
+)
+RESULT=$(chorus-api.sh mcp-tool chorus_pm_update_document "$PAYLOAD")
+RC=$?
+chorus_check_response "chorus_pm_update_document" "$RC" "$RESULT"
+```
+
+To re-derive `$SPEC_DOCUMENT_UUID` from a fresh shell, look it up via `chorus_get_documents` for the proposal's project and match by `title` + `type`. Re-derive `$SLUG` by grepping the proposal's `description` for `^OpenSpec change slug: `.
+
+### 3.9 Archive after the last task is verified
+
+When the **LAST** task of an OpenSpec-mode idea is admin-verified via `chorus_admin_verify_task`, the `chorus` main agent's `postToolUse` hook injects a reminder containing the literal substring `openspec archive <slug>` so you can act without re-reading the slug.
+
+The hook is read-only; you (the agent) perform the archive:
+
+1. **Run archive locally.** Use `--yes` for non-interactive mode. Do NOT pass `--skip-specs` (defeats the mirror-back) or `--no-validate` (lets malformed deltas corrupt cumulative specs).
+
+   ```bash
+   openspec archive "$SLUG" --yes
+   ```
+
+   This moves `openspec/changes/$SLUG/` under `openspec/changes/archive/<date>-<slug>/` and emits/updates `openspec/specs/<capability>/spec.md` for each capability. (Run `openspec archive --help` against your installed version to confirm the current flag set — flags can drift between releases.)
+
+2. **Mirror each updated `openspec/specs/<capability>/spec.md` back** to the matching post-approval Chorus Document (§3.8 contract). `chorus_get_documents` only supports `projectUuid` + `type` server-side filters; filter by title client-side. One `chorus_pm_update_document` call per capability.
+
+3. **Halt on any error** from `openspec archive` or `chorus_pm_update_document`. Print stderr verbatim, post a comment on the proposal recording the failure (`chorus_add_comment` with `targetType: "proposal"`, `targetUuid: <proposalUuid>`), then stop. No retry. Matches §6 "no silent errors." (Comment on the proposal, not the idea: the failure is in archiving proposal-derived specs, and proposals can be `inputType: "document"` with no idea attached.)
+
+4. **Confirm success.** Resolve each matching Document UUID and run
+   `verify-document-roundtrip.sh <local-spec-path> <document-uuid>`. This
+   performs exact-byte comparison and metadata-only mismatch diagnostics. Do
+   not replace it with recursive `jq`, `head`, command substitution, or newline
+   normalization.
+
+**Strict opt-in:** if the verified task is not the last of its idea, OR the proposal description carries no `OpenSpec change slug: <slug>` line, OR the local shell has no `openspec` CLI, the hook exits 0 silently and no archive reminder is injected. Existing free-form behavior is preserved.
+
+---
+
+## §4. Fallback authoring (no openspec)
+
+When the resolved mode is not a usable OpenSpec (no `CHORUS_OPENSPEC_ACTIVE=1` line), this skill is a **no-op** — return to the calling skill, which follows the resolved `SPEC_MODE`: **spec-lite** (the default when OpenSpec isn't usable) or free-form (`=off`). From this skill's side:
+
+- No `openspec/changes/` folder is created or referenced.
+- No `OpenSpec change slug: …` line is added to the proposal description.
+- Document drafts are authored via direct MCP `chorus_pm_add_document_draft` calls with inline `content` — same as before this skill existed.
+- Rule 1 (wrapper-only mirror) does not apply — there is no local file source of truth.
+- The §3.9 archive hook does nothing (no slug → silent exit).
+
+---
+
+## §5. Document type mapping (reference table)
+
+| Local file | Chorus `Document.type` | Mirrored? |
+|---|---|---|
+| `openspec/changes/<slug>/proposal.md` | `prd` | yes |
+| `openspec/changes/<slug>/design.md` | `tech_design` | yes |
+| `openspec/changes/<slug>/specs/<capability>/spec.md` | `spec` | yes (one draft per capability) |
+| `openspec/changes/<slug>/tasks.md` | _(not mapped)_ | **no** — Chorus task drafts are source of truth |
+
+`prd`, `tech_design`, `spec` are pre-existing valid `Document.type` values — no schema change required.
+
+---
+
+## §6. Failure visibility — the `chorus_check_response` helper
+
+This helper guards **both** the primary CLI path and the fallback wrapper path. On the fallback path there is a known wrapper edge case: when the server returns HTTP 4xx (e.g. 401 from a bad `CHORUS_API_KEY`), `chorus-api.sh mcp-tool` captures the JSON-RPC error body internally, pipes it through a `.result.content[]?` jq filter that produces no output when `.result` is absent, and exits 0 with empty stdout. A bare `RC=$?` check would not halt on this — the most common runtime failure mode would be invisible. (`chorus mcp call` exits non-zero on tool/transport errors, so `RC` is reliable on the primary path — but run the same three-signal check on both, as defense in depth.)
+
+Define this helper **once** at the top of the authoring session and use it after every mirror call (CLI or wrapper):
+
+```bash
+chorus_check_response() {
+  local _tool="$1"
+  local _rc="$2"
+  local _body="$3"
+  local _has_error=0
+  local _is_empty=0
+
+  local _trimmed
+  _trimmed=$(printf '%s' "$_body" | tr -d ' \t\n\r')
+  [ -z "$_trimmed" ] && _is_empty=1
+
+  if [ "$_is_empty" -eq 0 ]; then
+    if command -v jq >/dev/null 2>&1; then
+      if printf '%s' "$_body" | jq -e 'try ([.. | objects | has("error")] | any) catch false' >/dev/null 2>&1; then
+        _has_error=1
+      fi
+    else
+      printf '%s' "$_body" | grep -qE '"error"[[:space:]]*:' && _has_error=1
+    fi
+  fi
+
+  if [ "$_rc" -ne 0 ] || [ "$_has_error" -eq 1 ] || [ "$_is_empty" -eq 1 ]; then
+    echo "ERROR: $_tool failed (exit=$_rc, error_in_body=$_has_error, empty_body=$_is_empty)" >&2
+    echo "Output: $_body" >&2
+    [ "$_rc" -ne 0 ] && exit "$_rc" || exit 1
+  fi
+}
+```
+
+**Anti-patterns** — do **not**:
+
+- Collapse to `|| true`.
+- Redirect stderr to `/dev/null`.
+- Bury the wrapper call inside a pipeline (masks `$?`).
+- Skip capturing `$RESULT` into a variable; the helper needs the body.
+- Use only `if [ "$RC" -ne 0 ]; then ...` — that misses the HTTP-error path.
+
+**Minimal call site shape (both paths):**
+
+```bash
+# Primary — chorus CLI:
+RESULT=$(chorus mcp call <tool_name> '<json-without-content>' --arg-file content=<file>)
+RC=$?
+chorus_check_response "<tool_name>" "$RC" "$RESULT"
+
+# Fallback — chorus-api.sh wrapper (chorus not on PATH):
+RESULT=$(chorus-api.sh mcp-tool <tool_name> "$PAYLOAD")
+RC=$?
+chorus_check_response "<tool_name>" "$RC" "$RESULT"
+# ...if we reach here, the call succeeded; parse RESULT and continue.
+```
+
+This is project-wide policy: no silent errors.
+
+---
+
+## §7. Quick reference checklist
+
+When invoked from a stage skill (`/chorus-proposal` / `/chorus-develop` / `/chorus-yolo`):
+
+1. Read the `## Spec Mode` section in your `agentSpawn` context (§1) — proceed only if it carries the `CHORUS_OPENSPEC_ACTIVE=1` line. If it isn't there, use the manual fallback (source the shared resolver) in §1.
+2. If there's no `CHORUS_OPENSPEC_ACTIVE=1` line → no-op; return to the caller per the resolved `SPEC_MODE` (spec-lite or free-form) — see §4.
+3. Otherwise:
+   a. Pick `$SLUG` (§3.1).
+   b. `openspec new change "$SLUG"` (§3.2).
+   c. Author `proposal.md`, `design.md`, `specs/<capability>/spec.md` (§3.2–§3.3). Mix `ADDED` / `MODIFIED` / `REMOVED` / `RENAMED` blocks as needed; remember `MODIFIED` overwrites the whole Requirement.
+   d. Optional: `openspec validate "$SLUG"`.
+   e. `chorus_pm_create_proposal` (direct MCP) with the `OpenSpec change slug: $SLUG` line in description (§3.5).
+   f. Define the `chorus_check_response` helper. Prefer `chorus mcp call … --arg-file content=<file>` for mirrors (§3.6) — no `json_encode_file` needed on that path; define `json_encode_file` only when falling back to the wrapper because `chorus` is not on `PATH`. (`chorus-api.sh` is on PATH — no `$API` variable needed.)
+   g. For each row in §5 with "yes" — mirror via `chorus mcp call chorus_pm_add_document_draft … --arg-file content=<file>` (§3.6; fallback = `chorus-api.sh mcp-tool`). Record each `$DRAFT_UUID`.
+   h. On any failed `chorus_check_response` — halt, surface the error, do NOT proceed.
+4. Edits before approval → §3.7. Edits after approval → §3.8.
+5. Last task verified → hook fires → run §3.9 archive flow.

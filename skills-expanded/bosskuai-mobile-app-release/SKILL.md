@@ -1,0 +1,95 @@
+---
+name: bosskuai-mobile-app-release
+description: "Use when releasing a mobile app to Apple App Store or Google Play, including signing, EAS or Fastlane, TestFlight and Play tracks, review rejections, privacy forms, staged rollout, OTA policy, versioning, crash monitoring, and launch-day operations."
+---
+
+# BosskuAI Mobile App Release
+
+Use this skill when an app must reach the App Store or Google Play, or when an existing release process needs to be made repeatable and safe.
+
+## How this differs from nearby skills
+
+- **`aso`** (marketingskills): listing copy, screenshots, keywords, conversion; this skill gets the binary approved and rolled out.
+- **`bosskuai-expo-react-native`**: builds the app; this skill ships it.
+- **`bosskuai-ci-cd-pipelines`**: generic pipeline design; this skill defines the mobile-specific stages and gates.
+- **`bosskuai-launch-commercialization`**: go-to-market; this skill is the engineering release path inside that plan.
+
+## Mindset
+
+- Store review is a gate you cannot hotfix around; plan for 24–72 hours and for one rejection.
+- Every release needs a rollback path before it ships: halt the rollout, or push a JS-only fix, or submit a fixed build.
+- The first version's privacy answers, bundle id, and account ownership are expensive to change. Get them right once.
+- The company owns the developer accounts and signing keys, never an individual's Apple ID.
+
+## Release readiness gate (P0 before submission)
+
+- Crash-free sessions ≥ 99.5% on the beta track; no ANRs on the test devices; cold start under ~2s on a mid-range Android.
+- In-app account deletion for any app with sign-up (Apple 5.1.1(v), Google account deletion policy); privacy policy URL live.
+- Every permission has a purpose string and is requested in context; no unused permissions declared.
+- If a third-party or social login is offered, also offer an equivalent login that limits data to name and email, lets users keep their email private, and does no ad tracking without consent (Sign in with Apple qualifies) - guideline 4.8.
+- Digital goods: IAP / Play Billing by default. US-storefront iOS apps may also link or button out to external purchase (3.1.1(a)); other storefronts need Apple's entitlement. Disclose subscription terms and price on the paywall.
+- Demo account and review notes prepared when login is required.
+- Deep links, push notifications, and payments tested on physical devices with production credentials.
+- Crash reporting (Sentry/Crashlytics) and analytics tagged with the release version; source maps uploaded.
+- Version bumped, build number monotonic, changelog written, screenshots taken from this build at the sizes each store asks for at work time.
+- Upgrade test: install the oldest supported build on a device, upgrade it to this build with a copy of production data, and check local data migrates and the main flows still work. A fresh install does not test this.
+- Oldest supported version: the oldest version still in use (from analytics) works with the API it calls. A removed or renamed field is a blocker. A minimum-version check tells old users to update.
+
+## Credentials and signing
+
+- Apple: Distribution certificate + App Store provisioning profile, App Store Connect API key for CI; store in EAS credentials or the CI secret store.
+- Google: upload key (Play App Signing holds the app signing key), service account JSON with release permission scoped to the app.
+- Never in the repo, never in chat; rotate on team changes; document who can restore access.
+
+## Pipeline
+
+1. Release branch or tag → CI builds with the production profile (`eas build --profile production` or Fastlane `gym`/`gradle`), build number auto-incremented.
+2. Auto-submit (`eas submit`, Fastlane `pilot`/`supply`) to TestFlight and the Play internal track.
+3. QA sign-off on the beta build against the readiness gate; regression on the device matrix. Run it against staging with a masked copy of production data (accounts with many records, old-format rows, soft-deleted rows). Mask personal data before the copy is loaded, and switch off outbound email, SMS and push first; confirm that no real user can be messaged.
+4. Submit for review with notes and demo credentials; Google: complete Data safety, target API, content rating.
+5. Release: Apple phased release (7 days, pausable) and Play staged rollout (5% → 20% → 50% → 100%, haltable).
+6. Watch for 24–48h: crash rate, ANR rate, 1-star review spikes, backend error rates from the new version.
+
+## Common rejections and how to avoid them
+
+- Apple 2.1 (crashes/incomplete), 2.3 (metadata mismatch), 4.2 (minimum functionality: a wrapped website), 5.1.1 (data collection without purpose), 3.1.1 (external payment for digital goods outside the US-storefront allowance), missing demo account, login walls without value preview.
+- Google: Data safety form contradicting SDK behavior, missing target API level, sensitive permission declarations (SMS, call log, background location) without a form, deceptive behavior, broken links in the listing.
+- Both: age rating answers, export compliance (encryption) declaration, privacy policy reachable without login.
+
+## Rollout, OTA, and rollback
+
+- OTA via EAS Update only for JS/asset changes and only to builds with the same `runtimeVersion`; map channels to production/preview; keep the previous update to republish as rollback.
+- Native changes (new modules, permissions, SDK upgrades) always need a store build.
+- Halting a staged rollout stops new installs, not existing ones; a bad build already at 100% needs a fixed build fast-tracked with an expedited review request (Apple) and a full rollout (Google).
+- Watch Play Core Vitals thresholds (user-perceived crash ~1.09%, ANR ~0.47%); breaching them hurts discoverability.
+
+## Versioning
+
+- Marketing version follows semver; iOS build number and Android `versionCode` strictly increase and never reuse. Check the last store build numbers before each release. If `cli.appVersionSource` in `eas.json` is `remote`, EAS stores the build numbers, so read them from EAS (see https://docs.expo.dev/build-reference/app-versions/), not from the native files. If it is `local`, or you do not use EAS, read `versionCode` and `versionName` in the Android app module's `build.gradle` (or `.kts`) and `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in the iOS `project.pbxproj`, and compare them with the last store build. Check `targetSdk` against Google Play's current target API rule; it is not a version to bump.
+- `runtimeVersion` policy: `appVersion` when every native change ships with a version bump, `fingerprint` when native drift must be detected automatically.
+
+## Guardrails
+
+- Do not submit a build that has not run on physical iOS and Android devices.
+- Do not change the bundle id or package name after the first release.
+- Do not ship native changes through OTA.
+- Do not answer privacy forms from memory; enumerate SDKs and endpoints first.
+- Do not keep signing material outside the CI secret store or EAS credentials.
+
+## Output format
+
+```text
+Release: [app, version, build] - Platforms: [iOS/Android] - Pipeline: [EAS | Fastlane]
+Readiness gate: [pass | blockers listed]
+Credentials: [where stored, owner]
+Rollout plan: [phased/staged steps, watch metrics, halt criteria]
+Rollback: [OTA republish | build resubmit | halt]
+Review notes prepared: [yes/no, demo account]
+```
+
+## References
+
+- `../../references/checklists/mobile-app-release-checklist.md`
+- `../../references/checklists/expo-react-native-checklist.md`
+- `../../references/checklists/launch-commercialization-checklist.md`
+- `../../references/checklists/engineering-quality-bar.md`

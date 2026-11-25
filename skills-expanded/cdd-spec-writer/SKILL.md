@@ -1,0 +1,85 @@
+---
+name: cdd-spec-writer
+description: Independent spec-writer -- Node-anchored flow with digraph as single control-flow source of truth. Consumes the /superpowers:brainstorming（pi：/skill:brainstorming） (writing-spec) design flow inline as this session's baseline, then authors the target spec (single-spec / phase-spec / overall — one parameterized flow), commits it before the review-fix loop, and runs the loop following the engine's next face — the engine's next directive carries the pipeline continuation. Callable standalone; invoke as kairos:cdd-spec-writer（pi：/skill:cdd-spec-writer）.
+---
+
+# Kairos CDD-Spec-Writer
+
+Writes the target spec from the writing-spec import — single-spec / phase-spec / overall under one parameterized flow (the schema target + scope gates + authoring differ by variant; the review-fix rhythm and the Invariants are the single shared skeleton) — commits it before reviewing under the cdd spec contract; on closure the engine's `next:` face carries the pipeline continuation.
+
+**Invocation discipline** — every engine command runs as a background dispatch: launch it in the background and await the completion notification — never poll — then read the full output (stdout/stderr). Output filtering is forbidden — no piping to `tail`/`head`, no `2>&1 |`, no `EXIT=$?` capture. **Dispatch boundary** — the obligation runs both ways: a dispatched child carries every verification / build command to completion inside its own turn, never ending that turn to await a background task it launched itself — ending the turn terminates the child, so the awaited notification never arrives and the round dies half-finished while still looking successful; the launching side certifies success by the terminal contract (a clean working tree and the target action actually completed), never by exit code 0. **Round rhythm** — one review pass per dispatch; a fix round re-enters the review while the route is not done; commit the authored spec before the first review round; ensure the working tree is clean before entering review (dirty → BLOCKED; the orchestrator writes no tree during dispatch). **Approval gate** — before the first NEXT-LOOP dispatch, submit the authored spec together with this self-check's conclusion to the author and stop; dispatch only after an explicit approval, and a dispatch without one is a violation — the submitted line declares its authorship plainly: `this document was written by the orchestrator in this session`. **Write authority** — authoring the spec stays the orchestrator's: the document is written in this session from the generated skeleton, never handed wholesale to a subagent. A dispatched implement or fix round may amend the spec's content face (facts, file lists, steps, acceptance detail, cited line numbers); its structure face (the generated section skeleton) stays as generated — the orchestrator alone reshapes it. **Failure face** — cross-node failure handling lives in the Failure Modes table below (the single source); node `Fail` entries keep only local behavior.
+
+## Flow Digraph
+
+```mermaid
+flowchart TD
+  A[run-writing-spec-session] --> B[author-spec]
+  A --> Z1((BLOCKED: upstream plugin missing))
+  B --> S[self-review]
+  S --> C[commit-spec]
+  C --> L[NEXT-LOOP]
+  L -->|until next is terminal| L
+  L -->|no next| Z2((BLOCKED))
+```
+
+## Node Definitions
+
+### `run-writing-spec-session`
+
+- **Do**: Import `/superpowers:brainstorming`（pi：/skill:brainstorming） (writing-spec import); it lands the design decisions this target spec will capture. The target (single-spec / phase-spec / overall) is the session parameter: it selects the schema target, the scope gates and the handoff of the flow
+- **Read**: nothing before the import; the import lands the design + the target
+- **Exit**: Import landed → `author-spec`
+- **Fail**: Upstream superpowers plugin missing → BLOCKED (no downgrade, no skip, no inline restatement)
+
+### `author-spec`
+
+- **Do**: Write the target spec document from the session output — `overall` lands in `docs/kairos/overalls/`, `phase-spec` and `single-spec` in `docs/kairos/specs/` — generate the canonical skeleton first for the target type (`npx -y @oscaner-skills/cdd-engine@latest schema get <overall|phase-spec|single-spec> --output skeleton <target path>`) and fill its slots in place; the structure stays as generated. The landed document carries its identity in the front-matter `slug:` key (the engine keys the workspace and the board on it, never on the file name); a **phase-spec** additionally carries `program:` — the parent overall's `slug:`, the phase's attribution to its program. Per the target variant:
+  - **single-spec** — the free-form spec form; the docs-lane doc-contract gate asserts the version-lineage on every reviewed spec
+  - **phase-spec** — the phase scope is an increment only: when the phase scope changed vs the parent overall, sync the parent overall (Issue/Phase inventory + Dependency graph + version bump + change history) BEFORE writing (the four-table sync ordering; the sync is the registration gate, never a silent skip)
+  - **overall** — the phase registration for a new phase is the parent's own table sync (see run-cdd-design's `run-cdd-charter · sync`)
+
+  State the condition, never a snapshot of today's tree — three claim shapes, one line each:
+  - **pin** — a behavior claim cites a colocated pin by module path + symbol name; a line number is not a pin
+  - **count** — "N places" · "N rows" · "N modules" is stated as pinned by the named guard or test; the guard maintains the number
+  - **narrative** — a present-tense description of today's shape belongs to the plan; restate it as the condition that must hold
+- **Read**: Session output + the target's structural contract (phase-spec/overall variants also read the parent overall)
+- **Exit**: File written → `self-review`
+- **Fail**: Session output unusable or write error → BLOCKED (missing design input)
+
+### `self-review`
+
+- **Do**: Review the just-written spec before committing — run five checks, substance first: (1) **capture** — every design decision the session landed is in the spec, every ruling recorded; (2) **sufficiency** — could the downstream plan author act without guessing? Name each place where a wrong guess would change what gets built; (3) **consistency** — doc-type / naming / cross-references agree; (4) **failure modes** — the design addresses the failure modes and edge conditions it implies; (5) **proportion** — the spec carries decisions, not a transcript of the work. Then the mechanical tail: zero leftover `:::fill` markers, zero angle-bracket literals outside link-anchor slots (cheap hygiene the doc-contract gate would otherwise flag). Issues found are fixed inline on the same file; this is a pre-commit self-check inside this flow, not a review round (no `next:` dispatch, no findings carrier). The four self-review questions every authoring flow holds itself to are registered once in the skill-anatomy contract's `SELF_REVIEW_OBLIGATIONS` — apply all four; this file does not restate them.
+- **Read**: the written spec document + the session output it was authored from
+- **Exit**: Self-check clean (issues fixed inline) → `commit-spec`
+- **Fail**: Unresolvable defect needing upstream design input → BLOCKED (missing design input)
+
+### `commit-spec`
+
+- **Do**: `git add` the spec + conventional commit.
+- **Read**: The committed spec file path
+- **Exit**: Commit complete → `NEXT-LOOP`
+- **Fail**: Git error → report + fail-open (do not block user spec review)
+
+### `NEXT-LOOP`
+
+- **Do**: Run the review-fix rhythm for the authored spec — one review pass per dispatch. Dispatch the review round on the current ref, `--type` naming the session target's own word — `npx -y @oscaner-skills/cdd-engine@latest review --type <single-spec|phase-spec|overall> --spec <path>` (a fixed word would have this skill author one kind and review another); every later hop follows the engine's `next:` face. Fixes dispatch via the fix round — never an in-place edit as a substitute; a BLOCKED/TIMEOUT round's carried reason is reported, never overridden.
+- **Read**: the full stdout — the review conclusion, the findings handoff path, and the engine's `next:` face
+- **Exit**: each fix pass re-enters this hub while that route keeps the loop alive (the `until next is terminal` self-loop); a route that leaves the loop ends this skill's flow
+- **Fail**: Re-running a review after a closure conclusion → violates Review Convergence (stop + report)
+
+## Invariants
+
+| # | Invariant |
+|---|---|
+| I1 | **Review Convergence** — a review closes by its conclusion (APPROVED / CHANGES_REQUESTED / REVIEW_FIX); the loop advances by the engine's `next:` face, never by orchestrator guesswork. A mid-backfill or a user adjudication that lands governs over the suggestion (current world state wins). Fixes always dispatch via the fix round; the orchestrator must not edit in place as a substitute; a fix commit opens a new review, never a re-run of a closed one |
+| I2 | **Spec commit discipline** — the authored spec commits before the first review round; each fix round commits its own changes — approval closes the loop on a committed state; do not wait for dev merge |
+| I3 | **Mid-Flight Backfill** — a user-raised backfill of overall/spec/plan docs surfaced while a dispatch is in flight lands through four ordered steps on the current call's return: (1) **land immediately** — hot context, no deferral; (2) **commit on its own** — a standalone change, never mixed with implementation commits; (3) **pause the loop until clean** — an uncommitted backfill trips the next review's entry gate (dirty → BLOCKED); (4) **audit in-band on resume** — the next review audits the backfill in-band; a backfill rewriting the current task's own plan/spec text routes through the orchestrator's plan write authority |
+
+## Failure Modes
+
+| failure | behavior | reason |
+|---|---|---|
+| Upstream superpowers plugin missing | BLOCKED (install superpowers — see the kairos README's installation table) | Block policy: no silent fallback |
+| review re-run after a closure conclusion (REVIEW_FIX / APPROVED) | Violates I1 (Review Convergence) — stop + report to user | A fix commit opens a new review, never a re-run of a closed one |
+| Git commit error | report + fail-open | Do not block user spec review |
+| Completed round with no `next:` line (not BLOCKED/TIMEOUT) | HARD_ERROR — report the carried reason, re-run the same command to continue | No dispatchable next |

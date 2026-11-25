@@ -1,0 +1,139 @@
+---
+name: complete-manual-validation
+description: >
+  标记 PR 人工验证已完成，并原地更新 PR 摘要评论中的人工校验段落。
+  当维护者已完成真实环境或权限相关人工验证、需要统一收尾 PR 摘要时使用。
+  仅当对话包含可解析的任务引用时才可自动调用本技能。
+---
+
+# 完成人工验证
+> `--agent` 取值见 `.agents/rules/task-management.md`「合作者 token 规范」。
+
+事务协调器统一追加 lifecycle 事件和 PR 摘要最终状态。维护者提供的验证说明和 PR 摘要留言就是人工验证依据；事务回执负责保证状态转换和恢复一致性。
+
+
+## 行为边界 / 关键规则
+
+### 持久化报告证据
+
+生成验证完成报告时，先读取 `.agents/rules/evidence-reporting.md`。状态核对和同步结果记录命令、范围、结构化结果、实际结论和未覆盖部分；继续遵守人工验证的 basename-only 与 sanitized result 脱敏边界。
+
+- 本技能用于收尾已有 PR 摘要评论中的人工校验状态，不创建并行的普通验证留言。
+- 必须写入 `manual-validation.md` 或 `manual-validation-r{N}.md`，让后续 PR 摘要刷新可复用人工验证结果。
+- 找不到 `sync-pr` 摘要评论时失败，不创建部分摘要兜底；receipt、通过日志和 final summary 未全部提交前，远端只允许 pending/non-pass 状态。
+- 生成会由 task 评论和 PR 摘要引用的人工验证 artifact Markdown 前，先读取 `.agents/rules/sync-content-generation.md` 并遵循其中的生成端约束；人工验证 artifact 保留在本地，不发布为 Issue artifact 评论。
+- 执行本技能后必须立即更新 `task.md`。
+
+版本戳规则：创建或更新 `task.md` frontmatter 时，先读取 `.agents/rules/version-stamp.md`，并写入或刷新 `agent_infra_version`。
+
+## 第 0 步：状态核对（执行前硬约束）
+
+在加载 workflow / skill / rules 指令之后、做任何任务状态判断或用户可见结论之前，必须先执行状态核对。指令类文件读取不算对外动作或结论。
+
+运行以下命令，并在本轮产物的 `## 状态核对` 段记录任务/产物范围、关键结果和未覆盖部分；正常成功不粘贴完整目录清单或 `task.md` 尾部。失败、阻塞、身份不一致或争议时，附决定性原文行：
+
+```bash
+agent-infra-internal task-snapshot {task-id} --format text
+```
+
+## 任务上下文解析
+
+> 入口可省略 task ref；显式 task scope 仅接受 `--task <ref>` 或 `-t <ref>`，不再解释位置 task ref。保留其余业务操作数后调用 `agent-infra-internal task-context resolve {task-scope}`；`{task-scope}` 为空或 task flag 之一。只读取结构化结果的 `taskId`，后续把 `{task-id}` 绑定为完整 `TASK-YYYYMMDD-HHMMSS`。解析失败时透传非零退出码，不自行扫描任务。
+
+> 解析任务引用，并确认任务位于本技能支持的状态或目录且存在 `task.md`；无法定位时按未找到任务处理并停止。
+
+## 执行步骤
+
+### 1. 解析入参
+
+输入格式：
+
+```text
+complete-manual-validation [--task <ref> | -t <ref>] [{pr-ref}] {verification-summary}
+```
+
+- task scope 可省略；显式 scope 只接受 `--task <ref>` 或 `-t <ref>`。
+- `{pr-ref}` 可选，支持 `#NN`、`NN` 或完整 PR URL。
+- `{verification-summary}` 必填。若缺失，立即停止并提示补充验证说明；不写产物、不更新 PR。
+
+### 2. 验证前置条件
+
+检查：
+- `<task-workspace>/active/{task-id}/task.md`
+- 有效 PR：优先使用显式 `{pr-ref}`，否则读取 task.md frontmatter 的 verified `pr_delivery_fact.identity.number`
+
+如果任务不存在、验证说明缺失，或无法解析有效 PR，立即停止。
+
+### 3. 解析产物上下文
+
+运行 `agent-infra-internal task-artifact {task-id} inspect --family manual-validation`。仅当结果为 `ready` 时继续；从 `next.round` / `next.name` 取得本轮 round 与 `{manual-validation-artifact}`。不得自行扫描轮次或拼装文件名。事务协调器负责 started 事件。
+
+### 4. 登记人工验证开始
+
+在创建任何人工验证 artifact 前，先从 `platform-pr summary-context` 取得 canonical 摘要正文，然后调用事务协调器的 prepare 模式：
+
+```bash
+agent-infra-internal manual-validation transaction {task-id} --prepare \
+  --artifact {manual-validation-artifact} \
+  --summary-file {summary-body-file} --agent {standard-agent-token}
+```
+
+prepare 必须先幂等登记 `manual-validation.started`，再写入 prepared transaction；失败时停止，不创建 artifact。
+
+### 5. 创建人工验证产物
+
+执行此步骤前，先读取 `reference/report-template.md`。在 started 已登记后创建 `{manual-validation-artifact}`，记录状态核对、验证结论、验证范围、验证详情和预期 PR 摘要同步结果；事务协调器将在后续步骤校验并提交这份 artifact。
+
+### 6. 更新 PR 摘要
+
+执行此步骤前，先读取：
+- `.agents/rules/issue-sync.md`
+- `.agents/rules/pr-sync.md`
+- `reference/summary-update.md`
+
+按 `reference/summary-update.md` 校验 PR 绑定，从 `platform-pr summary-context` 取得 canonical 输入，并调用一次 transaction coordinator：
+
+```bash
+agent-infra-internal manual-validation transaction {task-id} \
+  --artifact {manual-validation-artifact} \
+  --summary-file {summary-body-file} --change-report-file <task-workspace>/active/{task-id}/pr-change-report.json \
+  --agent {standard-agent-token} --result no_op
+```
+
+coordinator 负责 pending summary、receipt、通过日志、final promotion 和 post-write verification；内部受控调用 `agent-infra-internal task-event {task-id}`，不要分别调用 final `summary-sync` 或 `manual-validation.completed`。不要求调用方提供其他主机上的原始 evidence 文件。
+
+### 7. 更新 task.md
+
+transaction coordinator 成功后，核心已使用同一 transaction/receipt/head identity 原子登记 `manual-validation.completed`；不要手工补写 Activity Log。
+
+如任务存在有效 `platform_issue_identity`，仅调用 `agent-infra-internal platform-comment sync {task-id} --kind task --agent {standard-agent-token}`。人工验证 artifact 继续作为本地证据和 PR 摘要输入，不发布为 Issue 评论。
+
+### 8. 完成校验
+
+运行完成校验：
+
+```bash
+agent-infra-internal task-verify {task-id} manual-validation.completed --artifact {manual-validation-artifact} --format text
+```
+
+处理结果：
+- 退出码 0 -> 告知用户
+- 退出码 1 -> 修复问题后重新运行
+- 退出码 2（阻塞）-> 保留未完成状态并检查当次摘要；不得伪造人工验证证据。若仍需真实环境或权限验证，说明具体待验证项，等待授权人员完成后再重试。
+
+### 9. 告知用户
+
+输出：
+- 产物路径
+- PR 摘要同步结果
+- 按 `.agents/rules/validation-output.md` 展示当次完成校验摘要
+- 下一步建议：进入最终收尾流程，运行 /complete-task --task {task-ref}
+
+
+## 完成检查清单
+
+- [ ] 已读取 `reference/summary-update.md`
+- [ ] 已创建人工验证产物
+- [ ] 已更新同一条 PR 摘要评论，或按失败语义停止
+- [ ] 已更新 task.md 并追加 Activity Log
+- [ ] 已运行完成校验

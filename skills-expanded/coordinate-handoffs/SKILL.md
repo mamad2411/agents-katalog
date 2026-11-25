@@ -1,0 +1,153 @@
+---
+name: coordinate-handoffs
+description: Validate sub-agent handoff artefacts, sequence phase transitions, and manage retry and escalation logic. Activate after each sub-agent terminates to determine next action.
+license: ELv2
+compatibility: Works with any filesystem-based AI coding agent
+metadata:
+  author: gaai-framework
+  version: "1.0"
+  category: delivery
+  track: delivery
+  id: SKILL-DEL-009
+  updated_at: 2026-02-18
+  status: stable
+inputs:
+  - contexts/artefacts/plans/{id}.execution-plan.md       (after Planning phase)
+  - contexts/artefacts/impl-reports/{id}.impl-report.md   (after Implementation phase)
+  - contexts/artefacts/qa-reports/{id}.qa-report.md       (after QA phase)
+  - contexts/artefacts/delivery/{id}.micro-delivery-report.md  (Tier 1)
+  - contexts/artefacts/plans/{id}.plan-blocked.md         (on Planning failure)
+outputs:
+  - next-action decision (inline — to Orchestrator)
+---
+
+# Coordinate Handoffs
+
+## Purpose / When to Activate
+
+Activate after each sub-agent writes its handoff artefact and terminates.
+
+The Orchestrator cannot proceed to the next phase until it has validated the current phase's output. This skill validates artefact structure, interprets verdicts, and returns a clear next-action decision.
+
+---
+
+## Process
+
+### After Planning Sub-Agent terminates
+
+1. Check: does `{id}.execution-plan.md` exist?
+   - No → check for `{id}.plan-blocked.md`
+     - If blocked artefact exists: **ESCALATE** with block reason
+     - If neither exists: **RE-SPAWN** Planning Sub-Agent (attempt 2)
+2. Check: does the execution plan contain required sections? (Implementation Sequence, Edge Cases, Test Checkpoints, Risk Register)
+   - No → **RE-SPAWN** Planning Sub-Agent with validation failure noted (attempt 2)
+   - After 2 failed attempts: **ESCALATE**
+3. Valid artefact: → **PROCEED to Implementation phase**
+
+### After Implementation Sub-Agent terminates
+
+1. Check: does `{id}.impl-report.md` exist?
+   - No: **RE-SPAWN** (attempt 2), then **ESCALATE**
+2. Check: does impl-report contain required sections? (changes made, criteria mapping, rules applied)
+   - No: **RE-SPAWN** with validation failure noted
+3. Check: impl-report notes any blocking failures?
+   - Yes: **RE-SPAWN** with enriched context (add failure details to bundle)
+   - Note: implementation self-reported blocking failures (from impl-report) count as the first attempt. A single RE-SPAWN with enriched context is allowed. If the second attempt also reports blocking failures, escalate — do not enter QA.
+4. Valid artefact: → **PROCEED to QA phase**
+
+### After QA Sub-Agent terminates
+
+1. Read verdict from `{id}.qa-report.md`:
+   - **PASS**: → **PUBLISH, HOLD & OBSERVE Story**:
+     1. **Rebase on staging** (in worktree): `git merge staging` into story branch
+     2. **Verify build**: `npx tsc --noEmit` in worktree
+        - If fails with errors **introduced by this story** → fix and re-commit
+        - If fails with **pre-existing errors only** → proceed (not this story's problem)
+        - If unclear → **ESCALATE** with error list
+     3. **Verify tests**: `npx vitest run` in worktree
+        - Same triage: story-introduced failures → fix; pre-existing → proceed; unclear → **ESCALATE**
+     3b. **Pre-push validation** (project-defined commands): detect worker directories with changed source or config files in the story worktree diff, then for each affected worker execute the project-defined pre-push validation commands (see the project's delivery-validation rules in `.gaai/project/contexts/rules/infrastructure.rules.md`).
+         - **Skip condition**: if `git diff staging --name-only` yields no files under any worker directory → skip with log note: `no worker changes — skipping pre-push validation`. A story modifying both `.gaai/` files AND any worker file does NOT qualify for the skip — run validation for the affected worker(s).
+         - **Affected workers**: collect unique worker root directories from the diff (any path under a `workers/` subdirectory). For each directory: execute the project-defined validation commands from `<worktree-root>/<worker-dir>/`.
+         - **Triage logic** (same as steps 2–3):
+           - Failure **introduced by this story** → fix in worktree and re-commit before proceeding to step 4.
+           - Failure **pre-existing** (reproducible on staging HEAD without this story's changes) → proceed without blocking. To verify: stash the story's changes, re-run the validation commands from the same worker directory, then pop the stash. If staging HEAD also fails → pre-existing; if only story HEAD fails → story-introduced.
+           - Failure where provenance is **unclear** → **ESCALATE** with full error output; do not proceed to step 4.
+         - **Credential requirement**: the project-defined validation commands MUST NOT require external API credentials. If any validation command requests credentials at runtime, **ESCALATE** immediately (project deploy-credential boundary); do not supply the credential.
+     4. Push the exact locally admitted Story head to origin.
+     5. Create or reuse the PR to the configured Delivery target, then bind its repository, PR,
+        head and base identities to that exact admitted candidate.
+     6. Immediately persist `status: in_progress`, `phase_status: qa_passed` and
+        `pr_status: pending_review`, before any hosted observation.
+     7. Invoke `ci-watch-and-fix` against the exact bound PR/head/base/run identity.
+        - `WAIT` → keep the pending-review hold and continue deterministic observation.
+        - `QUALIFIED` → preserve the pending-review hold; hosted success is evidence, not merge
+          authority.
+        - `REMEDIATE` → apply only the bounded remediation path, then obtain fresh local admission,
+          publication binding and pending-review persistence for the new exact head.
+        - `BLOCKED` → preserve the branch, PR, worktree and typed evidence, then **ESCALATE** without
+          a retry, push or lifecycle mutation.
+     8. Wait for an external authority to merge the exact current admitted head. Delivery must not
+        enable auto-merge, invoke a provider merge mutation or use an admin fallback.
+     8b. The configured-target watcher verifies that the exact current head landed, then projects
+         `status: done`, `phase_status: done`, `pr_status: merged` and `completed_at`. An open or
+         closed PR, a hosted PASS, local ancestry or remote-branch absence is not terminal evidence.
+     9. If `{id}.memory-delta.md` exists in `contexts/artefacts/memory-deltas/`, validate that the file contains `artefact_type: memory-delta` in YAML frontmatter AND at least one of the canonical structural sections `## Confirmed Entries`, `## Contradicted Entries`, `## New Knowledge Candidates`. If any check fails: **SCHEMA_INVALID** — RE-SPAWN QA Sub-Agent with the schema failure appended to the context bundle, up to 2 attempts, then ESCALATE. On ESCALATE after 2 RE-SPAWN attempts: the ESCALATE message MUST include (a) delta path `contexts/artefacts/memory-deltas/{id}.memory-delta.md`, (b) which check(s) failed — missing `artefact_type: memory-delta` frontmatter and/or which of the three canonical sections (`## Confirmed Entries`, `## Contradicted Entries`, `## New Knowledge Candidates`) were absent, (c) a reference to `memory-alignment-check/SKILL.md` Outputs section as the canonical schema authority. On PASS: flag the delta in the completion report for Discovery to action via `memory-ingest`.
+     9b. (Autonomous triage — daemon wrapper) The daemon wrapper also spawns a bounded Discovery subprocess in draft mode to pre-triage the delta. A new section `Memory-Delta Triage (autonomous draft mode)` is appended to the wrapper completion output (visible in the delivery log). Fields: `drafts_produced`, `escalated_in_draft`, `circuit_breaker_tripped` (boolean), `autonomous_triage_failed` (count). If no delta exists or circuit breaker is tripped, the section shows `no triage — reason: {no_delta | circuit_breaker_tripped}`. This section is additive — it does not replace step 9.
+    10. Only after the watcher has durably projected the terminal merge may cleanup remove the
+        worktree or branch. Before then, preserve all resumable state.
+
+     **NEVER invoke a merge mutation. NEVER treat hosted PASS as merge permission.**
+   - **FAIL**: spawn count < 2? → **RE-SPAWN** Implementation Sub-Agent with qa-report, then re-spawn QA Sub-Agent
+   - **FAIL** after 2 cycles: → **ESCALATE**
+   - **ESCALATE**: → **ESCALATE** (pass QA's escalation reason to human)
+
+### After MicroDelivery Sub-Agent terminates (Tier 1)
+
+1. Read verdict from `{id}.micro-delivery-report.md`:
+   - **PASS**: → **COMPLETE Story**
+   - **FAIL** (attempt 1): → **RE-SPAWN** MicroDelivery Sub-Agent (max 1 retry)
+   - **FAIL** (attempt 2): → **ESCALATE**
+   - **ESCALATE** (complexity escalation): → **RE-EVALUATE** Story as Tier 2 and re-run with Core Team
+
+---
+
+## Retry Limits
+
+| Phase | Max re-spawns |
+|-------|--------------|
+| Planning Sub-Agent | 1 retry (2 total) |
+| Implementation Sub-Agent | 1 retry per QA cycle (2 total) |
+| QA Sub-Agent | Re-runs after each Implementation retry |
+| QA FAIL cycles | 2 (before ESCALATE) |
+| MicroDelivery Sub-Agent | 1 retry (2 total) |
+
+---
+
+## Escalation Package
+
+When escalating, the Orchestrator surfaces to the human:
+- Story ID and title
+- Phase where escalation occurred
+- Handoff artefact path (for full context)
+- Specific failure reason
+- Recommended next action (back to Discovery / manual fix / scope clarification)
+
+---
+
+## Non-Goals
+
+This skill must NOT:
+- Make product decisions about what to implement
+- Modify acceptance criteria
+- Skip QA validation even under time pressure
+- Delete worktrees containing uncommitted work without confirmation
+
+---
+
+## Quality Checks
+
+- No phase transition occurs without a validated handoff artefact
+- Retry counts are tracked across the full Story lifecycle (not reset between phases)
+- Escalation always includes a specific, actionable failure reason
+- PASS is never issued unless `{id}.qa-report.md` contains explicit PASS verdict

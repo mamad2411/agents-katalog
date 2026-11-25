@@ -1,0 +1,217 @@
+---
+name: debug-ui
+description: Drive and visually QA the dev-3.0 UI in a real browser (headless Chromium via agent-browser). Use when verifying a UI/UX change, reproducing a visual bug, taking screenshots of the running app, or self-QA before review. Triggers — "check the UI", "screenshot the app", "does this render", "QA this screen", "verify the UI change in a browser", "drive the app".
+---
+
+# debug-ui — QA the dev-3.0 UI in a real browser
+
+See and drive the running dev-3.0 UI in headless Chromium — click, type, screenshot, read
+console errors — instead of guessing whether a UI change works. No desktop/native dependency;
+it works the same in a plain terminal session.
+
+This is **dev-internal tooling for the dev-3.0 repo** — NOT one of the skills dev3 ships to
+its users (those live in `src/bun/agent-skills.ts`).
+
+## Prerequisite: `agent-browser` on PATH
+
+Check with `agent-browser --version`. If it is missing, install it once per machine, not in the
+project `setupScript` (that runs for every new worktree):
+
+```bash
+bun add -g agent-browser        # or: npm i -g agent-browser
+agent-browser install           # downloads Chromium; on Linux add --with-deps for system libraries (needs sudo)
+```
+
+## One rule before the flow: the app starts through `dev3 dev-server`, nothing else
+
+Every QA run in this skill boots the app with `dev3 dev-server start` and takes it down with
+`dev3 dev-server stop`. **Never start the app any other way** — not a bare `bun run dev`, not
+`bun run dev --qa`, and not `dev3 pane run "bun run dev …"`. A pane run looks like a shortcut
+and costs you everything the dev-server owns: the port wait (`--wait`), `status` with its port
+conflicts, a verified stop that frees `DEV3_PORT0`, the Dev Server button in the task UI that
+shows the user what is running, and the `show-image` / `attention` routing rules below. If you
+need the app to behave differently (a throwaway board, an env flag), change what the dev-server
+runs — see "Scoped QA" — do not route around it.
+
+## The whole flow
+
+This task's dev-server **is** the web UI: `bun run dev` serves the full app in local remote
+mode at a stable per-machine token and a CLI-derivable port — no separate `dev3 remote`. The
+loop is always the same four beats: **values → server → browser → clean up.**
+
+```bash
+# 1. Values. AGENT_BROWSER_SESSION isolates THIS task's browser from every other agent's —
+#    without it all agents share one global "default" session and stomp each other (see
+#    Gotchas). Derived from the always-present $DEV3_TASK_ID, so this exact line is
+#    copy-paste-safe at the top of ANY block that calls agent-browser.
+export AGENT_BROWSER_SESSION="dev3-${DEV3_TASK_ID%%-*}"
+CODE=$(cat "$HOME/.dev3.0/dev-web-access-code" 2>/dev/null || bun scripts/dev-web-code.ts)
+PORT=${DEV3_PORT0:-$(dev3 dev-server status | grep -oE 'DEV3_PORT0=[0-9]+' | cut -d= -f2)}
+
+# 2. Start a FRESH dev-server and wait for it to come up. (Skip the start only if one is
+#    already running for THIS task — but see the build-snapshot gotcha: stale code needs a
+#    restart, so when in doubt restart.)
+dev3 dev-server start
+until curl -sf "http://localhost:$PORT/?token=$CODE" >/dev/null; do sleep 2; done
+
+# 3. Drive it. Every agent-browser call inherits AGENT_BROWSER_SESSION, so it all runs in
+#    this task's own session. (Load /agent-browser for the full command set.) The screenshot
+#    path is task-scoped too, so parallel agents never overwrite each other's PNG.
+#    `&streamer=on` is MANDATORY: it enables streamer mode (privacy masking), so screenshots
+#    can't leak the developer's real emails/accounts/paths/tunnel URLs (see Gotchas).
+#    Keep `set viewport` BEFORE `open`, and keep the width ≥ 1024 for desktop QA — the app's
+#    mobile gate reads `screen.width` (see Gotchas).
+agent-browser set viewport 1440 900
+agent-browser open "http://localhost:$PORT/?token=$CODE&streamer=on"
+agent-browser wait --load networkidle
+sleep 2                                       # networkidle can still land mid-render — let it settle
+agent-browser snapshot -i -d 6                # prove it's DRIVABLE, not just screenshot-able
+agent-browser screenshot "/tmp/dev3-ui-${DEV3_TASK_ID%%-*}.png"   # then Read it back to look
+agent-browser errors                          # confirm no console errors
+
+# 4. Always clean up what you started. `close` closes only THIS session's browser.
+agent-browser close
+dev3 dev-server stop          # the port frees a second or two later (graceful shutdown)
+```
+
+That's it. `DEV3_REMOTE_PORT=${DEV3_PORT0:-0}` is wired into the repo's `dev` script and
+`portCount: 1` is committed in `.dev3/config.json`, so the dev app binds the exact port shown
+above (see [decision 093](../../../decisions/2026/06/30/dev-remote-port-from-pool.md)).
+
+## Linux without a display: the dev-server goes headless
+
+On Linux with no `DISPLAY`/`WAYLAND_DISPLAY`, or without `libwebkit2gtk-4.1` (WSL without WSLg,
+SSH, containers), the desktop window cannot open. `bun run dev` detects that and serves the same
+UI through `dev3 remote`, run from source, on the same port and access code. The flow above does
+not change: `agent-browser` only ever talked to the web server. The pane prints
+`[dev] headless (<reason>)` when this happens.
+
+- **Headless defaults to the scoped `seeded` board**, because the real `~/.dev3.0` usually
+  belongs to an installed `dev3 remote` on the same machine. `--env DEV3_QA_SCOPE=0` opts back
+  into the real board.
+- **Headless on request** where the window could open:
+  `dev3 dev-server start --wait --env DEV3_DEV_HEADLESS=1`.
+- **What it cannot show:** the native window, the application menu and OS notifications.
+  Everything rendered in the page is the same code.
+
+## Scoped QA: a throwaway board instead of the real one
+
+`dev3 dev-server start` boots a full dev3 instance on **your real board** — another task's
+"Branch Merged — mark completed?" dialog is live and clickable in your browser, and another task's
+terminal is reachable by navigation. It stays the default anyway, because it is the build the user
+runs; reach for the scoped board when the QA would touch real tasks, real accounts, or a live dialog
+— creating or launching a task from the New Task dialog counts.
+
+The switch is an env var the `dev` script reads (`DEV3_QA_SCOPE`, see `scripts/dev.ts` and
+`scripts/qa-scope.ts`), and the dev-server passes caller-supplied variables straight through. So
+the scoped board is **the same dev-server**, one flag longer:
+
+```bash
+dev3 dev-server start --wait --env DEV3_QA_SCOPE=seeded    # or virgin
+```
+
+`seeded` = one fixture project, zero tasks; `virgin` = completely empty home, the first-run state.
+Steps 1, 3 and 4 of the flow above are unchanged — same port, same access code, same `stop`. The
+dev-server pane prints the scoped `DEV3_HOME` and an `rm -rf` reset line; the scoped root is stable
+per worktree, so the board survives a restart.
+
+**Switching a board view on the real board writes the user's real view choice.** The view picked in
+the board's view dropdown (and its layout) is saved to `~/.dev3.0/data/<slug>/board-views.json`
+(spaces: `space-board-views/<id>.json`), which every other dev3 instance on the machine reads. QA
+that picks a view other than Kanban therefore goes on the scoped board; on the real board, put the
+original view back before you finish.
+
+Three things worth knowing about the flag:
+
+- **A plain `dev3 dev-server restart` stays on the scoped board** — a restart with no `--env`
+  reuses the last start's env, which is also what the Dev Server button in the task UI does.
+- **A plain `dev3 dev-server start` goes back to the real board.** A start defines its
+  configuration whole, and a `stop` clears the remembered env — so there is nothing to delete
+  and nothing left to forget about.
+- **`dev3 dev-server status` names the extra keys** (names only, never values), so you can see at
+  a glance which board the running server is on.
+
+Do **not** put `DEV3_QA_SCOPE` in `.dev3/config.local.json`. That was the old recipe and its trap
+is exactly what the flag removes: the file also reaches the agent sessions of this worktree, and a
+forgotten one silently boots the next QA run on the throwaway board.
+
+**What it does NOT isolate** — name these rather than assuming a clean room: the tmux socket
+directory (only `TMUX_TMPDIR` moves it, and dev3 sets it nowhere), the PowerShell history file on
+Windows, the user's own `~/.codex` / `~/.claude` agent configs, and `dev3` CLI commands run from
+inside a REAL worktree (cwd-based task detection outranks `$DEV3_HOME` by design).
+
+## Gotchas
+
+- **The browser is a machine-global singleton — isolate per task or agents stomp each other.**
+  Every `agent-browser` call with no session lands in one shared `"default"` session: one
+  browser process, one global viewport. When two task agents QA at the same time they collide
+  — agent B's `open` silently replaces agent A's page, so A's next `screenshot` captures B's
+  UI. The fix is step 1: `export AGENT_BROWSER_SESSION="dev3-${DEV3_TASK_ID%%-*}"` gives each
+  task its own isolated session/profile (verify with `agent-browser session` / `session
+  list`), and `agent-browser close` then closes only your session. **The Bash tool
+  reinitializes the shell per call, so an `export` does not carry across separate
+  invocations** — the line derives from the always-present `$DEV3_TASK_ID`, so just repeat it
+  at the top of each block, or pass `--session "dev3-${DEV3_TASK_ID%%-*}"` on every command.
+  (If you ever must share one browser machine-wide instead, serialize QA across agents so only
+  one drives at a time.)
+- **The dev-server is a build snapshot — no watch/HMR.** Your code only appears after a
+  (re)start. After changing code, `dev3 dev-server restart`, re-wait for the port, then
+  `agent-browser reload` — a bare reload re-serves the *old* bundle. Don't keep a stale server
+  around; never hand-run `vite build`.
+- **Is the running build actually yours?** An already-running app/remote is often production or
+  *another* worktree — it won't have your changes. (Re)start THIS task's dev-server and confirm
+  with `dev3 --version` (commit hash should match `git log -1`) + that your change actually
+  renders. Don't assume.
+- **Tell the user before you start the app any way at all** (visible side effect), and stop it
+  after (step 4) unless they want it kept.
+- **`dev3` says `app not running`? Stop and tell the user.** Every route in this skill needs the
+  CLI, so there is nothing to fall back to. Never launch the app yourself — a bare `bun run dev`
+  (with or without `--qa`, in your shell or in a `dev3 pane run`) opens a native window on the
+  user's screen that no dev-server owns, so nothing can `status` or `stop` it for you.
+- **No `DEV3_PORT0`?** (portCount 0, or an older worktree where it was never allocated) — run
+  your own fixed-port server instead:
+  `dev3 remote --no-detach --no-tunnel --static-code $CODE --port 47823` → `:47823/?token=$CODE`.
+- **Every screenshot in streamer mode — no exceptions by default.** The app shows the
+  developer's REAL identity (account emails, orgs, home-dir paths, tunnel URLs, QR codes), and
+  a QA screenshot easily ends up in a PR/issue/recording. `&streamer=on` in the URL forces the
+  privacy masking on for the whole session (it persists in this session's localStorage;
+  `&streamer=off` forces it back off). The masking is CSS blur on `.streamer-private` elements
+  — see `src/mainview/streamer-mode.tsx` and decision 161. Only capture unmasked when the task
+  is explicitly about those values (e.g. testing the accounts UI itself), and say so when
+  presenting the image.
+- **App renders but nothing clicks? That's the mobile gate, not the tooling.** The app decides
+  mobile from the *physical* `screen.width` (`< 1024` → mobile; `src/mainview/hooks/useMobile.tsx`,
+  deliberately not `innerWidth`), and a mobile device held in landscape gets
+  `MobilePortraitGate`: a "rotate your device" overlay plus `inert` on the whole app — screenshots
+  still work, clicks do nothing. `agent-browser` 0.6.0 emulated `screen.*` together with the
+  viewport, so `set viewport 1440 900` before `open` was enough. **0.34.0 does not** — `screen`
+  stays at the headless display's 800×600 no matter the viewport (`--window-size` in `--args`
+  does not move it either), so every desktop QA run lands in the gate. Override it with an init
+  script instead, registered before the first navigation:
+
+  ```bash
+  printf 'for (const k of ["width","availWidth"]) Object.defineProperty(screen, k, { get: () => 1600, configurable: true });\nfor (const k of ["height","availHeight"]) Object.defineProperty(screen, k, { get: () => 1000, configurable: true });\n' > /tmp/screen-desktop.js
+  agent-browser close                      # a running session keeps its old init scripts
+  agent-browser set viewport 1600 1000
+  agent-browser open "http://localhost:$PORT/?token=$CODE&streamer=on" --init-script /tmp/screen-desktop.js
+  ```
+
+  With that, `screen.width` reports 1600 and the gate stays off. You otherwise only hit the gate
+  by asking for a phone-sized landscape viewport — that is the app working as designed.
+  Measured across the common sizes: `2560×1440`, `1920×1080`, `1600×900`, `1440×900`, `1366×768`,
+  `1280×720`, `1024×768`, `768×1024` and phone portrait `390×844` all render and click fine
+  (`screen.width` always equals the requested width); only landscape `844×390` shows the gate, goes
+  `inert`, and reports **zero** interactive elements in `snapshot -i` — that count is the fastest
+  tell. Diagnose in one call:
+  `agent-browser eval "JSON.stringify({sw:screen.width,gate:!!document.querySelector('[data-testid=\"mobile-portrait-gate\"]'),inert:!!document.querySelector('[inert]')})"`.
+  If a future browser tool pins `screen.*` to the real headless display and desktop QA goes inert,
+  that's the moment to add an escape hatch to the app — not before (see
+  [the headless-QA decision](../../../decisions/2026/08/14/headless-qa-mobile-gate-stays-as-is.md)).
+- **No native dialogs** in browser mode. If a confirm/file-picker flow silently no-ops, that's
+  an app bug, not a tooling problem — report it.
+- **Show images to the user AFTER you stop this dev-server, not while it runs.**
+  `dev3 show-image` (and `dev3 attention` / `dev3 notify`) route to the app instance that owns
+  the task — and this QA dev-server is itself a full dev3 instance. While it's up, those
+  UI-attention calls can land in *it* (the browser only you see) instead of the user's main
+  app, so the user never sees the image. Screenshots persist on disk, so the correct order is
+  **capture → `dev3 dev-server stop` (confirm `State: stopped`) → `dev3 show-image`**.

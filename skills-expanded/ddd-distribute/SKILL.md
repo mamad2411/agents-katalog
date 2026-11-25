@@ -1,0 +1,84 @@
+---
+name: ddd-distribute
+description: "Package a DDD as an Open-Plugins plugin and/or an internal package (e.g. AIM) within its declared reach. TRIGGER: \"distribute this ddd\", \"package ddd\", \"make a plugin from this ddd\". NOT FOR: creating a DDD (s_project-manager)."
+tier: lazy
+---
+# DDD Distribute (s_ddd-distribute) — the distribution step of the DDD lifecycle
+
+Render a **grown DDD** into a **distributable capability package** so another agent
+host (Claude Code, Kiro, a public consumer, ...) can install and use it: an **Open-Plugins
+plugin** (target `open-plugin`) and/or a package for an internal package manager (e.g. AIM)
+(target `aim-capabilities`).
+
+This skill is a **thin human-in-the-loop wrapper** — all packaging logic lives in
+`core/ddd_packager.py` and the reach policy in `core/ddd_distribution_policy.py`.
+The skill's job is: read the declaration → confirm the target subset with the human
+→ call the packager → surface warnings and the built path.
+
+## The reach model (READ BEFORE RUNNING)
+
+A DDD declares its own reach in its `aim.json`:
+
+```json
+"distribution": {
+  "targets": ["open-plugin", "aim-capabilities"],   // the CEILING (0..2)
+  "visibility": "internal"                            // internal | external
+}
+```
+
+- **The declaration is the ceiling.** You may emit a SUBSET of the declared targets;
+  you may NEVER add an undeclared target or raise visibility. To widen reach, the
+  DDD *owner* edits the declaration first (a separate, deliberate change).
+- **Fail-closed.** An absent / malformed declaration → `targets:[]` = not
+  distributable. Nothing leaves by inference.
+- **Emit ≠ publish.** A `visibility:internal` DDD may EMIT an open-plugin tree for a
+  private install, but the public-publish step is refused until visibility is
+  explicitly `external` (a human-gated change).
+
+## Workflow (HITL)
+
+1. **Locate the DDD** — resolve `<workspace>/Projects/<name>/` (the DDD dir).
+2. **Read the declaration** — call the packager's policy; show the human the
+   declared `targets` + `visibility` + any warnings (e.g. an unknown target token).
+3. **Confirm the subset** — ask the human WHICH declared target(s) to emit now, and
+   whether this is an emit-only pass or an external publish. Never propose a target
+   the DDD didn't declare.
+4. **Render** — run `scripts/distribute.py` with the confirmed subset. The packager:
+   emits each target tree, runs the content-safety scan over the EMITTED tree, and
+   aborts (fail-closed) on any secret / host-path (any target) or internal-string
+   (external publish).
+5. **Return the path(s)** — report the built package dir(s) + any scan warnings +
+   which skills were included (class-B domain) vs excluded (class-A enablement /
+   unclassified). Point the human at the install command:
+   - external → push to the public code host, then `bash install.sh` (or the agent host's
+     plugin install command)
+   - internal → a code review / PR into the internal package, then the internal package
+     manager's install command (e.g. `aim plugins install <Pkg>`)
+
+## Invocation
+
+```bash
+# Read-only staleness check — run this FIRST when a package already exists:
+"$SWARM_BACKEND_BIN" py scripts/distribute.py --ddd <path/to/Projects/NAME> --out <out_dir> --check-stale
+
+# Emit:
+"$SWARM_BACKEND_BIN" py scripts/distribute.py --ddd <path/to/Projects/NAME> --out <out_dir> \
+  [--targets open-plugin,aim-capabilities] [--publish]
+```
+
+- `--targets` omitted → emit the full DECLARED set (subset-only still enforced).
+- `--publish` → run the external-publish gate (refused unless visibility=external).
+- `--check-stale` → **do NOT emit; answer "did the source move since we last packaged?"**
+  Exit codes: **0** = at least one target checked and all fresh · **1** = at least one target
+  is stale (re-emit) · **2** = nothing was checked (no emitted target under `--out`, or a
+  typo'd path — deliberately NOT 0, so a CI/job cannot read "checked nothing" as green).
+  Run it before emitting: a package built before a source fix stays wrong indefinitely and
+  nothing else reports it — that silence is the failure this flag exists to break.
+- The script only ORCHESTRATES — it never contains packaging logic.
+
+## What this skill does NOT do
+
+- It does not run the package manager, `git`, or `gh` — building/committing/pushing the emitted
+  package is the human's step (crosses auth + build-duration walls).
+- It does not backfill a DDD's `distribution` block — that is the owner's declaration.
+- It does not widen reach, ever.

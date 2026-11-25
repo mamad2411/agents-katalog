@@ -1,0 +1,230 @@
+---
+name: cartographer-kb-create
+description: Operator procedure to declare and provision a new Knowledge Base GitOps-style, so it survives pod restarts; also covers authoring the KB's artifacts (skills, subagents, hooks, MCP descriptors) and the SOPS encryption flow.
+version: "3.3"
+---
+# KB Create — Skill
+
+## Purpose
+
+Guide an **operator** through creating a new Knowledge Base (KB) the persistent, GitOps way: a
+Gitea repo as source of truth, declared in the server's config (ConfigMap), rolled out, then
+verified and connected. A KB that only exists as an ad-hoc runtime mount on an emptyDir is **not
+durable**.
+
+> **WARNING — data loss risk.** A KB mounted on an `emptyDir` volume that is not declared in the
+> Deployment's ConfigMap (`kbs:` entry + `remote:`) dies with the pod: on the next reschedule /
+> rollout the directory is recreated empty and every concept written to it is gone. The
+> ConfigMap + Gitea repo declaration is what makes the KB persistent and reconstructible — the
+> server clones it fresh on every pod start ([deployment.md §Bootstrapping a KB from a git remote](https://github.com/BeppeTemp/cartographer/blob/main/docs/deployment.md)).
+
+> **Local/native-service topology.** On a single machine served by the local service, the
+> equivalent one-liner is `cartographer kb create <name> --remote <url>`: it scaffolds the KB and
+> pushes it to the empty repository (or one holding only a forge's initial commit, which is kept: README/LICENSE/.gitignore) that becomes its `origin` (the remote is mandatory there too,
+> D134). A token with `rw` scope on the KB can write its instructions, templates and skills: there is no setting to turn on. This skill remains the procedure for the GitOps/Kubernetes topology below, where the KB
+> also has to be declared in the server's ConfigMap.
+
+## Reference Files
+
+Two tasks have a full procedure of their own. Read **only** the file that matches
+what you are doing — not all of them upfront.
+
+| Task | File |
+|---|---|
+| Put a skill, subagent, hook, MCP descriptor or instructions block into the KB | `references/artifacts.md` |
+| Store an encrypted value the KB can resolve (age key, `.sops.yaml`, `Service` concept, `secret_refs`) | `references/secrets.md` |
+
+## Steps
+
+### 1. Create the Gitea repo and the per-KB service user
+Create an empty repo `<nome>.git` on Gitea (for the CLI path `kb create` also accepts a forge's initial README/LICENSE commit). The **KB name** is the `name:` field of its `kbs:`
+entry (D53) — set it explicitly; if omitted it falls back to the repo basename. The name is used everywhere downstream: token scopes
+(`kb:<nome>:rw`/`kb:<nome>:r`), the `?kb=<nome>` query param on multi-KB HTTP, and the
+`<nome>.token`/`<nome>.age` per-KB file conventions below. Choose it accordingly (kebab-case).
+
+Then create a dedicated Gitea **service user** for the KB (convention: `kb-<nome>`), add it as a
+collaborator with **write** permission on the repo only, and generate an access token for it
+(scope `write:repository`). This token is the KB's git credential (one user per KB = per-repo
+isolation; Gitea tokens are per-user, not per-repo).
+
+### 2. Generate the KB skeleton and push it
+On any machine with the `cartographer` binary and git access to the new repo, one command
+scaffolds the KB, attaches the remote and pushes the first commit:
+
+```
+cartographer kb create <name> --remote <gitea-repo-url>
+```
+
+`<name>` accepts letters, digits, `-` and `_` only. `--remote` must point at the **empty**
+repository from step 1 — it becomes the KB's `origin`, and the remote is mandatory (D134):
+`--no-remote` is the explicit opt-out for a throwaway local KB that is neither durable nor synced.
+The KB lands in the local service's data dir (`--data <dir>` overrides it); add `--restart` to
+restart the local service and wait for it to come back healthy.
+
+*Fallback* — a machine that cannot reach the remote, or where you want the skeleton somewhere of
+your own choosing:
+
+```
+cartographer kb create <name> --no-remote --data <parent-dir>   # creates the layout in <parent-dir>/<name>
+cartographer kb attach <name> --remote <gitea-repo-url> --data <parent-dir>   # origin + first push, checked, never forced
+```
+
+Either way the standard layout is: `data/` (conceptual root, with its `index.md`, `log.md` and a
+`.gitignore` of editor junk, D316), the empty `services/`, `skills/`, `agents/`, `hooks/` (git
+keeps them only once they hold a file), and at the KB root `.gitattributes`
+(`data/log.md merge=union`), `settings.yaml` and a starter `instructions.md` (D325); the first
+commit holds those files. The KB carries no `AGENTS.md` (D62); the local `.cartographer/`
+index is excluded via `.git/info/exclude`.
+Edit the starter `instructions.md` (KB root, sibling of `data/`, `skills/`, `agents/`) with
+free-form orchestration directives (e.g. delegation routing, "large reads → explorer") — its body
+is folded into the generated `instructions` artifact after the auto-generated archives/agent
+sections (D61, [sync.md §Instructions](https://github.com/BeppeTemp/cartographer/blob/main/docs/sync.md)). See
+`references/artifacts.md` for that file's role among the KB's other artifacts.
+
+### 3. Declare the KB in the server config (ConfigMap)
+Add an entry under `kbs:` in the server's YAML config (`CARTOGRAPHER_CONFIG`, see
+[`config.example.yaml`](https://github.com/BeppeTemp/cartographer/blob/main/config.example.yaml)) with the `remote:` pointing at the Gitea repo from step 1:
+
+```yaml
+credentials_dir: /etc/cartographer-credentials # every secret file, by KB name (D905)
+kbs:
+  - name: <nome>
+    remote: https://gitea.example.com/user/<nome>.git
+```
+
+No per-KB paths are needed in the config: the server reads the KB's files from `credentials_dir`
+(default `<data>/credentials`; on Kubernetes the mount path of one Secret) by its name,
+`<nome>.token` for the HTTPS remote and `<nome>.age` for its SOPS key, else `default.token` and
+`default.age`. SSH remotes read `<nome>.ssh` or `default.ssh`, with the one `known_hosts`.
+
+### 4. Create/extend the per-KB secret and add a scoped token
+- Add the Gitea token from step 1 to the k8s `Secret` mounted as `credentials_dir` (key
+  `<nome>.token`); if the KB has SOPS secrets, add its age key as `<nome>.age` in the same
+  Secret. Never inline key material in the ConfigMap itself.
+- **The age key is the deployment half only.** Generating that key, writing the root `.sops.yaml`
+  creation rules and creating the first encrypted file are operator actions Cartographer never
+  performs — `secret_set` creates a file only under a creation rule the operator wrote. Do them **before** this step, and do
+  not assume an encrypted file is already there: `references/secrets.md` is the full procedure. A
+  KB with no service credentials needs none of it.
+- Add a **scoped token** for the clients of this KB to `CARTOGRAPHER_TOKENS` (or `auth.tokens` in
+  the YAML): format `token|kb:<nome>:rw` (read-write) or `token|kb:<nome>:r` (read-only), entries
+  separated by comma/whitespace, scopes on one token separated by `;`. Do not reuse an admin
+  (scope-less) token for a KB that should be access-limited.
+
+### 5. Rollout
+Apply the updated ConfigMap/Secret and roll out the Deployment so the server picks up the new
+`kbs:` entry and clones the repo on startup (`ensureClonedKB`).
+
+### 6. Verify and connect
+- Verify the KB is mounted and healthy: call the MCP tool `atlas_overview` with `?kb=<nome>` (HTTP
+  multi-KB) or `kb=<nome>` argument, confirm `data/index.md` exists.
+- Add the KB to clients with `cartographer connect` (interactive form or flags) and the scoped
+  token. Do **not** hand-edit `.cartographer.yaml`: `connect` owns it, and a manual edit is not
+  tracked in the lockfile, so nothing prunes what it produced.
+- On a server mounting two or more KBs, `connect` requires the choice explicitly (D190):
+  `cartographer connect --agents <provider> --kb <name>` (repeatable, or `--kb all`). Pick the
+  narrowest set that does the job — every skill, subagent, hook and instructions block of a bound
+  KB is delivered to that client.
+- To change which KBs an already-connected client receives, use `cartographer client bind` /
+  `unbind` / `reset`, then `cartographer sync`. Bindings are enforced during sync (D170).
+
+## Optional: shape the KB
+Once the KB is live there are two independent things to shape, both drivable by the agent rather
+than the operator.
+
+### Before modeling: suggest the strongest model, once
+The first Maps, Journals, concept boundaries and conventions are what every later session inherits,
+and a structural mistake made now becomes long-lived knowledge debt. So **before the first
+`map_create`**, tell the user once, in your own words:
+
+> The initial structure of a KB has a lasting effect on its quality. Consider switching to the
+> strongest reasoning model you have access to (for example Claude Opus or Codex Sol) for this
+> bootstrap phase; a faster model is fine for routine maintenance afterwards. Continue with the
+> current model?
+
+- It is advice, not a gate: when the user says continue, continue, with no second prompt.
+- Judge by capability, not by a list of names: the models named are examples. If you know which
+  model you are running on, you may say so; if you do not, the message works as written.
+- Say it once per KB bootstrap. Not before ordinary reads, writes or maintenance sessions, and not
+  when the user is only adding one Map to a KB that already has a structure.
+
+### Content: Maps and Journals
+- Ask the user to describe the **Maps** (thematic, mixed concept types) or **Journals**
+  (chronological logs, e.g. incidents/notes) they need: `name`, `title`, `kind`
+  (`map`/`journal`), `concept_types` (a non-empty list makes the map strict: a page of another
+  type is refused; leave it empty for a map open to any type).
+- Call `map_create` for each one.
+- A concept that outgrows a single file becomes an **expanded concept** via `concept_expand`
+  (turns `<id>.md` into `<id>/index.md` plus satellite concepts) — there is no separate
+  "dossier create" step.
+
+### Policy: the KB's own `settings.yaml`
+The three policy keys a KB carries are its own, so every mount of it behaves the same (D746):
+`branch` (the branch Cartographer commits to, in place of the remote's default one),
+`usage_stale_days` (days an unused skill or agent may go before `kb_status` counts it stale) and
+`artifact_prefix` (the scope word every skill and agent of the KB must start with, so `acme`
+requires `acme-review-mr`). The prefix matters because a client picks a skill by name and
+description before reading its body: a work KB's `review-mr` is selectable in a session on any
+project, and a repository's own agent of the same name may shadow it or be shadowed by it.
+**Ask the user for a short scope word at bootstrap, set `artifact_prefix` before the first skill
+or agent is written, and name every skill and agent `<prefix>-<name>`**; a KB that leaves it unset
+(a single-purpose KB) is legitimate, but then its names must be specific.
+The write gate and the safe repairs are fixed behaviour (D907). A KB declares secrets by holding a sops-encrypted
+file under `secrets/`, and its MCP descriptors are always distributed (D906): neither is a key. `cartographer kb create` writes `settings.yaml` at the KB root with all
+keys documented and commented out; uncomment and commit what the KB needs. It is the only
+place these keys live: a server's `kbs[]` carries only `name` and `remote`. Machine-bound keys (`remote`,
+`name`, tokens) stay in the server config, and secrets are files of its `credentials_dir`. No MCP tool writes the file:
+change it with git, reviewed like a Map contract. On a KB made another way, create the file by hand
+from the same key list (`cartographer config --all` shows each key with its description).
+
+### Vocabulary: the path placeholder registry
+Concepts cite machine-local locations as `{{path:<key>}}` and repositories as `{{repo:<key>}}`
+(the client resolves them; D75). Right after the Maps, ask the user which home locations and
+repositories the KB will talk about, and create `paths.yaml` at the KB root with `artifact_write`
+(D263):
+
+```yaml
+paths:
+  claude-home: {description: Claude Code's per-user directory, default: ~/.claude}
+repos:
+  kb-tools: {description: the team's tooling repository, remote: gitlab.example.com/team/kb-tools}
+```
+
+- `description` is required: it is what a client shows when it asks where a key lives.
+- `default` is optional and must start with `~/` or `$HOME/` — an absolute path is refused, since
+  the file is read on every machine. A default that exists resolves the key with no client
+  configuration; one that does not is simply unresolved.
+- `remote` (repos only) makes the key resolve to the clone carrying that remote, not to whichever
+  clone shares the short name.
+- The rule for every later session: **cite only declared keys; add a key to `paths.yaml` in the
+  same change that first cites it.** Before coining a key, reuse one whose default is a prefix of
+  the path. `lint` reports an undeclared key (`unknown_placeholder`) and a declared one nothing
+  cites (`unused_placeholder`) once the file exists.
+
+### Artifacts: skills, subagents, hooks, MCP descriptors
+A KB also configures the agents that read it. Authoring those artifacts — the accepted
+`artifact_write` paths, the shape of each, the naming rules a client enforces, the `if_match`
+protocol, and the manifest → trust → projection → materialization chain that is what actually makes
+one appear in a client — is in `references/artifacts.md`.
+
+Before writing the first skill or agent, settle the KB's `artifact_prefix` (§Policy above): name each
+one `<prefix>-<name>` and start each description from the scope (`Acme: review a merge request ...`).
+A KB without a prefix is legitimate, but its names must then be specific.
+
+`skill_list` / `skill_install` (not in `tools/list`) are a **different** operation: they copy a
+skill bundled in the binary into the KB. That is installation, not authoring.
+
+## Reference
+
+- Tools: `atlas_overview`, `map_create`, `concept_expand`, `concept_write`;
+  `artifact_read`/`artifact_write`/`artifact_delete` for artifacts.
+- Tools not in `tools/list` (served when called by name; a descriptor-bound host that calls only
+  listed tools, such as Codex, cannot use them): `skill_list`, `skill_install`, `artifact_list`.
+- Layout: `data/` is the conceptual root; concept IDs are relative to it.
+- Multi-KB HTTP: endpoint is `/mcp?kb=<name>` when more than one KB is mounted. `<name>` is the
+  `name:` field of the KB's `kbs:` entry, which falls back to the repository basename only when it
+  is omitted (see step 1) — not "always the basename".
+- Config reference, under <https://github.com/BeppeTemp/cartographer/blob/main/>:
+  `config.example.yaml`, `docs/deployment.md` §Configuration: flags, env, YAML and
+  §Bootstrapping a KB from a git remote, `docs/transport-auth.md` §Per-KB scopes, and the
+  decisions D39, D44, D46, D47 (`docs/decisions/D<n>-*`).

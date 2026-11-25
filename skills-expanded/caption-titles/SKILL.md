@@ -1,0 +1,94 @@
+---
+name: caption-titles
+description: Add and animate a consistent text layer on an existing NodeTool timeline. Use for titles, lower-thirds, captions, callouts, end cards, number tickers, deterministic scrambles, and text on a path.
+featured: true
+---
+
+# Caption & Titles → Timeline Agent
+
+Work directly with timeline capabilities and open-timeline tools. Do not build a workflow or fabricate a cut.
+
+`timeline-edit-ops` carries the op contract for every call named here. `motion-principles` gives the entry and exit durations and easing behind each tier's presets, `frame-composition` fixes the safe inset and where a tier sits, `color-motion` the scrim and contrast fixes when type does not read, and `logo-reveal` owns the brand mark at the head or tail.
+
+## Type is post, never a render prompt
+
+Every board skill and every video prompting skill sends its on-screen copy here. A title card, a super, a lyric or a CTA is a text clip on the timeline, not words in a `generate_video` or `generate_image` prompt: generators letter unreliably, and copy baked into pixels cannot be corrected, translated or re-timed. When a board's shot `action` carries `Text: …`, that is the caption map's input, and the render prompt should not have asked for it.
+
+## Hard gate
+
+List and read the selected timeline first. When the job is to caption or title footage, the timeline must contain picture clips. If it is missing or has none, stop and ask for a real cut; route users to storyboard or script-to-timeline work instead. A typographic piece built from type and shapes alone, such as a title sequence, kinetic text or a standalone end card, needs no picture clips: build it through `motion-graphics` and use the tiers below for its type. Snapshot the timeline before editing with `create_timeline_version`.
+
+Read `fps`, `width` and `height` off `get_timeline` before setting a size: `fontSizePx` is authored against the sequence resolution, and the tiers below are fractions of `height`.
+
+## Lock one type system before adding text
+
+Resolve type family and tier weights, five size tiers as fractions of frame height, text/accent/scrim palette, safe inset and maximum width, and per-tier motion presets. Prefer a supplied brand kit, then existing text on the timeline, then a platform-safe system. Keep these tiers consistent: T1 title/end card, T2 lower-third, T3 captions, T4 callouts, T5 CTA.
+
+The family is one NodeTool ships — `Inter`, `Space Grotesk`, `Bebas Neue`, `Playfair Display`, `Lora`, `JetBrains Mono` — or every host resolves it against its own installed fonts, the editor and the render disagree on line widths, and `validate_timeline` reports `font_not_portable`. Sizes below 2.5% of frame height report `text_illegible`; body copy sits at 2.5–4%. `motion-direction` holds the same rule for the whole piece, so when a motion language already exists, take its type family rather than picking a second one.
+
+Motion per tier follows `motion-principles`: `fade` or `slide` in at 300–500ms, out at 200–300ms, role-default easing. Stagger only on a T1 or a kinetic T3 line of five words or fewer, and work out the span (`durationMs + offsetMs × (words − 1)`) against the clip — a span that does not fit is compressed silently and only `stagger_compressed` says so.
+
+Each tier has a shipped composition. Insert it with `{"op": "insert_composition", "composition_id": "<id>", ...}` and override its `params` rather than building the rig from bare clips — the timing and motion inside it are already balanced.
+
+| Tier | Composition id |
+|---|---|
+| T1 title | `title-card` |
+| T2 lower-third | `lower-third` |
+| T3 captions | `caption-bar` |
+| T4 callouts | `callout` |
+| T5 CTA / end card | `cta-end-card` |
+
+A brand mark at the head or tail is `logo-sting`.
+
+Every live-picture T2–T4 element gets a matching scrim unless the plate is demonstrably controlled.
+
+## Caption map
+
+Write the timed map before editing: tier, exact text, start/end, position, and scrim. Caption duration is at least `max(1200ms, words × 350ms)`. Titles/end cards stay on screen at least 2000ms, which leaves the read hold `motion-principles` § Holds sets between their in and out. Lower-thirds arrive about 500ms after a person appears and hold 2500–4000ms. One text idea per frame. Unknown facts use `[INPUT NEEDED: …]`.
+
+## Animate the letters and their content
+
+For a number that changes during a text clip, store `textAnimator` on an
+animation with `kind: "ticker"`, `from`, and `to`. It also accepts `decimals`,
+`padTo`, `prefix`, and `suffix`. Set `groupSeparator` to `","` to show
+thousands as `2,847`; omitting it keeps existing tickers ungrouped. For a
+deterministic decode into the clip's
+authored text, use `kind: "scramble"` with a fixed `seed` and optional
+`charset`. These operate over the animation window, so a held final frame
+shows the finished value.
+
+```json
+{"id": "count-in", "role": "in", "preset": "fade", "durationMs": 900,
+ "textAnimator": {"kind": "ticker", "from": 1, "to": 7,
+  "padTo": 2, "suffix": " / 07"}}
+```
+
+For unit-by-unit motion, set `stagger.unit` to `character`, `word`, or `line`
+and give it `offsetMs`. With a text stagger, `styleTracks` can target
+`glyph.color`, `glyph.blurPx`, or `glyph.trackingPx`. The colour uses CSS
+colour values; blur and tracking use sequence pixels. Use `text.color` or
+`text.fill.stops.0.color` for a whole line. A text fill gradient also exposes
+`text.fill.angle` and stop offsets. The target must refer to an existing
+style field; `text.color` is hidden while a gradient fill is set.
+
+To lay a title along a curve, set `textStyle.path` to an SVG path in
+normalized canvas coordinates. This places the baseline on the path. It does
+not make each character travel along it. Shape and mask paths can morph through
+`shape.d` and `mask.d` style tracks when both paths have matching commands and
+point counts. Use `followPath` when the whole clip should move along a path.
+
+`edit_timeline`'s `animate_clip` input accepts presets and custom numeric
+curves, but does not accept `textAnimator` or `styleTracks`; those fields are
+dropped from that call. To author them, read the current document and use
+`set_timeline_document` with the animation fields in the clip. That call
+validates the complete document and snapshots the previous state. Preserve
+the other tracks and clips from the document. `timeline-edit-ops` owns the full
+tool contract.
+
+## Build and verify
+
+Add separate overlay and subtitle tracks. For each map item, add scrim before text, apply the locked tier style, then animate it with that tier’s entry and exit preset. No hard cut-on. Use stagger only for tone-appropriate kinetic captions. Keep all text within safe margins and clear of faces and product moments.
+
+Two facts about stacking decide whether the text is seen at all. The lowest track `index` draws on top, so the scrim's track index sits between the picture's and the text's — picture, scrim, text, in descending index. And word-level captions generated from a voiceover clip composite above every real track regardless of where that clip sits, so no title can cover them: time a T1 around the narration rather than over it.
+
+Verify in two passes, and they answer different questions. `validate_timeline` reads the document: `text_illegible` (size, or under 3:1 contrast against the text's own `background` plate or a full-frame shape behind it), `font_not_portable`, `stagger_compressed`, `animation_exceeds_clip`, overlaps, and clips shorter than a frame. Its contrast check refuses to guess — a translucent scrim, gradient type or a plate it cannot prove is behind the text produces no finding — so a silent pass is not a pass. Then `preview_timeline_frame` at each item's entry midpoint, a held moment, and its exit: that is where text over a busy plate, a scrim covering a face, or a caption still finishing when its clip ends shows up. Re-read the map against the frames: timing, reading floors, scrim ordering, one CTA at the end. Then render with `render_timeline` before calling the layer done, as `timeline-edit-ops` § The render loop describes: the frames show one timecode, the render shows the timing at speed.

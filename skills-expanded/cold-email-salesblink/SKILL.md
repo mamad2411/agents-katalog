@@ -1,0 +1,183 @@
+---
+name: cold-email-salesblink
+description: >
+  Run cold email sequences on autopilot and manage full sales outreach campaigns via the SalesBlink API.
+  Use this skill to build automated multi-step email campaigns (sequences), manage leads and email lists,
+  create reusable templates with merge variables and spintax, connect Gmail/Outlook sending accounts via OAuth
+  and SMTP/IMAP senders directly or by CSV,
+  handle inbox replies, and track campaign analytics (opens, clicks, replies, sent).
+  Also supports bulk contact imports, email deliverability testing (inbox placement / spam checks),
+  sender warmup links, workspace/team management, and any HTTP request to the SalesBlink platform.
+compatibility: >
+  Requires network access to run.salesblink.io and a SALESBLINK_API_KEY.
+  Supports any HTTP client (curl, Node.js fetch, Python requests, PowerShell, etc.).
+  No prior knowledge of SalesBlink is needed: the skill guides you through connecting email accounts,
+  importing leads, writing templates, building sequences, launching campaigns, and monitoring deliverability.
+metadata:
+  openclaw:
+    requires:
+      env:
+        - SALESBLINK_API_KEY
+    primaryEnv: SALESBLINK_API_KEY
+---
+
+# SalesBlink Public REST API v1.0.0
+
+## When to use this skill
+
+Use this skill when the user wants to:
+
+- Create, update, or manage email lists, sequences, templates, or senders
+- Add, update, move, or remove contacts/leads
+- Send or reply to emails via the inbox
+- Check campaign analytics (opens, clicks, replies, sent)
+- Set up outreach campaigns end-to-end
+- Manage workspaces, users, folders, or deliverability tests
+- Make any HTTP request to `https://run.salesblink.io/api/public/v1.0.0`
+
+## Gotchas
+
+- **ID types matter**: Templates and contact archive use MongoDB ObjectId (24-char hex). All other entities use UUID v4.
+- **GET `/lists/:id` returns a single object**: The API returns the list object directly under `data`, including a `fields` array of its column names in snake_case.
+- **Sequence status filters differ by endpoint**: `GET /sequences` uses status values `running`, `paused`, `completed`, `needs-attention`. `POST /sequences/:id/status` uses `ACTIVE`, `PAUSED`, `STOPPED`, `ARCHIVED`. Do not mix them up.
+- **GET `/sequences/:id` returns the internal flowchart**: The response includes the full internal `flowchart` object, not a simplified step list. Use `flowchart` to inspect steps.
+- **POST `/sequences/:id/clone` returns `clonedSequenceId`**: The response shape is `{ success, data: { clonedSequenceId }, message }`, not `data.id` or `data.name`.
+- **OAuth `redirectUrl` is ignored**: The API does not use a custom `redirectUrl` for `/oauth/google` or `/oauth/outlook`. The response field is `data.auth_url`, not `data.url`.
+- **messageId** is the RFC822 Message-ID (e.g. `<id@domain.com>`) or Microsoft Graph ID. **Crucial:** Always URL-encode this ID when using it as a path parameter (e.g. in `/inbox/:messageId/thread`). This is distinct from the internal UUID `id`.
+- **`senders` is a comma-separated string**, not an array. It can mix sender IDs and folder IDs — the server auto-detects each.
+- **Sequence `steps` fully replace on PATCH**. Send the complete desired array.
+- **Email steps accept `send_as: "new" | "followup"`**: `"followup"` replies in the lead's existing thread (`Re: <original subject>`); it is ignored on the first email step, which always starts a new thread. The stored value reads back as `flowchart.nodes[].data.send_as`.
+- **Verification flags are IRREVERSIBLE**: `verification`, `archive_invalid`, `archive_risky` on lists can only be turned ON, never OFF.
+- **Sequences default to paused**: If `paused` is omitted on create, it defaults to `true`.
+- **`launchTimingMode: "now"` starts in 5 minutes**, not instantly.
+- **Template attachments use FormData field `attachment`** (not `attachments`). Max 3 per template.
+- **Remove template attachments via `remove_attachments`** array of file **names**.
+- **GET `/senders/connect-link` returns a login link; it does not create a sender**. For Gmail and Outlook, use `/oauth/google` or `/oauth/outlook`, which return an `auth_url` the user must open in a browser; the sender is created automatically after OAuth completion. SMTP/IMAP senders can be added with `POST /senders/add-sender` (JSON) or `POST /senders/add-bulk-senders` (CSV, `multipart/form-data`, field `csvFile`); they connect in the background, so wait for `sendingEnabled: true` before using them in a sequence.
+- **Forward content is optional**: `POST /inbox/:messageId/forward` uses the original email body when `content` is omitted.
+- **Archiving is done via dedicated archive routes**: `PATCH /lists/:id`, `PATCH /templates/:id`, and `PATCH /sequences/:id` ignore the `archived` field. Use `PUT /lists/:id/archive`, `PUT /templates/:id/archive`, and `PUT /sequences/:id/archive` instead.
+- **Folder types matter**: General folders (created without a `type`) hold lists, templates, and sequences. `type: "email-sender"` folders hold email senders only. The API rejects a folder assignment to the wrong resource type.
+
+
+## Base URL
+
+`https://run.salesblink.io/api/public/v1.0.0`
+
+## Authentication
+
+This API uses a SalesBlink API key. Get or create an API key at `https://run.salesblink.io/account/integration/api`.
+
+Pass the key in every request as the `Authorization` header (no "Bearer" prefix):
+
+**Header:** `Authorization: key-****`
+
+## Rate Limits
+
+| Method        | Limit | Window     | Applies To |
+| ------------- | ----- | ---------- | ---------- |
+| GET           | 30    | per minute | Most GET endpoints |
+| POST / PATCH  | 15    | per minute | POST and PATCH endpoints |
+| PUT (archive) | 10    | per minute | PUT and DELETE endpoints |
+| GET /signup-link | 250   | per day    | Public signup link (per IP) |
+
+On `429 Too Many Requests`: wait at least 60 seconds before retrying. For batch operations, insert a 4-second delay between requests.
+
+## Public Signup
+
+**GET** `/signup-link`
+
+Get the public SalesBlink sign-up link. This is a public endpoint and does not require an API key. It returns a sign-up link to the SalesBlink web UI:
+
+**Response Body:**
+```json
+{
+  "success": true,
+  "message": "Please sign up through the SalesBlink web UI.",
+  "data": {
+    "login_link": "https://run.salesblink.io/signup",
+    "destination": "/signup",
+    "purpose": "signup"
+  }
+}
+```
+
+**Rate Limit**: 5 requests per day per IP.
+
+## Pagination
+
+Most list endpoints use `limit` (max 100) and `skip`. Activity endpoints (`/sent`, `/opens`, `/clicks`, `/replies`) use `per_page` (max 100) and `page` (1-indexed).
+
+Some endpoints support higher limits:
+- `/sequences/:id/leads` and `/leads/:id/activity` — max 500
+- `/sequences/:id/export` — max 50,000 (default 10,000)
+
+Always paginate. Never assume a single request returns all data.
+
+## Endpoint Categories
+
+Read the relevant reference file before performing operations in that domain:
+
+- **Lists & contacts/leads** → [references/lists.md](references/lists.md) and [references/contacts.md](references/contacts.md)
+  - Use these endpoints when the user wants to fetch or manage lists that contain leads/contacts. A list is a container for contacts/leads. Each contact/lead contains fields like email, first_name, last_name, phone, company_name, job_title, and custom fields. All contact field names sent to the API must be snake_case; requests with other casings are rejected. Contacts are added to lists in batches (up to 500 per request), can be moved between lists, updated, or removed.
+
+- **Email templates** → [references/templates.md](references/templates.md)
+  - Use these endpoints when the user wants to create or manage reusable email templates. A template has a name, subject_line, and HTML content that supports merge variables like {{first_name}} and {{company}}. Templates can have up to 3 attachments and are referenced by sequences when building outreach steps.
+
+- **Sequences & email campaigns** → [references/sequences.md](references/sequences.md)
+  - Use these endpoints when the user wants to create or manage automated email campaigns (sequences). A sequence connects lists (who to email), senders (which accounts send), and templates (what to send) into a timed step-by-step workflow. Steps alternate between email sends and delay periods. Sequences can be launched, paused, resumed, cloned, or archived.
+
+- **Senders, OAuth & warmup links** → [references/senders.md](references/senders.md)
+  - Use these endpoints when the user wants to connect or manage email sending accounts. A sender is an email account (SMTP/IMAP or OAuth-connected Gmail/Outlook) that sends emails on behalf of sequences. Multiple senders can be assigned to a sequence. Senders can also be organized into folders. Warmup links are used in email warmup processes to improve deliverability.
+
+- **Inbox & replies** → [references/inbox.md](references/inbox.md)
+  - Use these endpoints when the user wants to view or interact with email conversations. The inbox contains reply threads, sent emails, scheduled emails, and drafts. Each thread has a messageId. The user can reply to a lead's email, mark messages as read/unread, or classify outcomes.
+
+- **Activity tracking** → [references/activity.md](references/activity.md)
+  - Use these endpoints when the user wants to query engagement events. The system tracks four event types: sent (emails sent), opens (emails opened), clicks (links clicked), and replies (responses received). Events can be filtered by sequence, recipient email, and date range. Also includes per-lead activity history.
+
+- **Analytics** → [references/analytics.md](references/analytics.md)
+  - Use these endpoints when the user wants aggregated campaign analytics: overall stats across all sequences, day-wise breakdowns, lead-level stats, and per-mailbox/sender stats.
+
+- **Blocklist / unsubscribes** → [references/blocklist.md](references/blocklist.md)
+  - Use these endpoints when the user wants to manage account-level unsubscribes and blocked emails/domains. The public API uses `/unsubscribe` routes for all blocklist operations.
+
+- **Users & workspaces** → [references/organization.md](references/organization.md)
+  - Use these endpoints when the user wants to manage team membership or workspaces. A workspace is an account boundary. Users have roles (client, user, admin, developer). Only owners and admins can invite users or create workspaces.
+
+- **Folders** → [references/folders.md](references/folders.md)
+  - Use these endpoints when the user wants to organize resources into folders. Folders have a type (`general` or `email-sender`) and group related resources together for easier management.
+
+- **Domains & signatures** → [references/account-config.md](references/account-config.md)
+  - Use these endpoints when the user wants to view account-level configuration. Custom tracking domains are used for click tracking in emails (returns both verified and unverified domains with DNS setup instructions and "not verified" tags). Signatures are appended to outgoing emails.
+
+- **DFY domains & mailboxes** → [references/dfy.md](references/dfy.md)
+  - Use these endpoints when the user wants to purchase domains and provision mailboxes through the Done-For-You service. Start with `/domains/search` to find available domains, then place an order with Google Workspace, Outlook, or Azure mailboxes. Supports buying new domains or connecting existing ones.
+
+- **Billing & payment methods** → [references/billing.md](references/billing.md)
+  - Use these endpoints when the user wants to add or remove a saved payment card. Returns magic login links to the billing page.
+
+- **API Key Management** → [references/api-keys.md](references/api-keys.md)
+  - Use these endpoints when the user wants to manage API keys. Users can list all keys, create new keys, refresh an existing key (which generates a new one and revokes the old one), or delete a key.
+
+- **Reports** → [references/reports.md](references/reports.md)
+  - Use these endpoints when the user wants to fetch aggregated activity reports over a date range. Reports combine data across campaigns into summary views.
+
+- **Inbox placement tests** → [references/inbox-placement.md](references/inbox-placement.md)
+  - Use these endpoints when the user wants to test email deliverability. An inbox placement test sends a test email to seed email addresses across providers (Gmail, Outlook, etc.) and reports whether the email landed in inbox, spam, promotions, or other tabs. Tests can be one-time or recurring.
+
+- **End-to-end workflow examples** → [references/workflows.md](references/workflows.md)
+  - Use this reference when the user wants to set up a complete outreach campaign from scratch. It shows the full chain: create list → add contacts → create templates → fetch senders → create sequence → launch.
+
+## Error Handling
+
+Always check the `success` boolean in the response body. A `200` status can still return `{ success: false, message: "..." }`.
+
+| Status | Meaning      | Action                                                |
+| ------ | ------------ | ----------------------------------------------------- |
+| 200    | Success      | Check `success` field                                 |
+| 400    | Bad request  | Re-check payload structure against the reference file |
+| 401    | Unauthorized | Verify API key                                        |
+| 403    | Forbidden    | Insufficient permissions (role too low)               |
+| 404    | Not found    | Verify the ID / endpoint                              |
+| 409    | Conflict     | Resource already exists or connection failed          |
+| 429    | Rate limited | Wait 60s, then retry                                  |
+| 500    | Server error | Retry once after 10s                                  |

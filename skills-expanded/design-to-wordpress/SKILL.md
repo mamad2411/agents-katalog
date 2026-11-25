@@ -1,0 +1,297 @@
+---
+name: design-to-wordpress
+description: >
+  Stonewright Figma/image/brief → DesignEvidence → native plan → Elementor /
+  Gutenberg / FSE apply → agent-owned Playwright verification loop.
+---
+
+# Design to WordPress (native-first, pixel-perfect)
+
+Stonewright never embeds Figma APIs, Playwright, or pixel-diff modules. The
+pipeline is:
+
+```
+external Figma MCP (client) / screenshot / brief
+  → agent normalizes DesignEvidence 1.0 (figma_token_table, measured_targets)
+  → stonewright-design-native-plan (target: elementor | gutenberg | fse)
+  → native write (blueprint-apply / elementor build / FSE template)
+  → agent Playwright/browser MCP verifies vs measured_targets
+  → iterate
+```
+
+## Hard rules
+
+1. Call `stonewright-task-start` first. Read `visual_build_gate` and
+   `visual_quality_contract`.
+2. **No raw Figma trees** after normalization — only DesignEvidence fields.
+3. **Mandatory section manifest** for multi-section Figma pages (see below).
+4. **CSS only with `native_gap`**. Call
+   `stonewright-design-implementation-contract` with `action: validate` before
+   shipping custom CSS. Missing gap → `stonewright_spec_invalid`.
+5. Verification is **agent-owned** (Playwright MCP) on a **separate
+   `verification_page` tab**. Never resize the Elementor `editor_page` tab.
+   Tolerances:
+   - spacing ±2px
+   - colors exact hex after token resolution
+   - font-size exact
+   - line-height ±0.05
+6. Engines: `elementor` (alias elementor-v3), `gutenberg`, `fse`. Never silent
+   fallback.
+7. **Breakpoint isolation:** evidence for one breakpoint authorizes only that
+   breakpoint. Mobile-only Figma nodes must set `allowed_breakpoints: ["mobile"]`
+   and must not mutate desktop/tablet/base keys.
+
+## Mandatory per-section Figma extraction
+
+For every supplied Figma node:
+
+1. **Shallow metadata pass** (`get_metadata` / file summary) — always.
+2. Detect top-level visual sections and build an **ordered section manifest**:
+   `{ node_id, name, bounds, target_breakpoints[] }`.
+3. Capture **one screenshot per section** even when the link points at a full page.
+4. Per section extract: layout model, dimensions, grid/flex, typography, colors,
+   borders, radii, shadows, spacing, assets (with provenance/hashes), image
+   crop/fit, breakpoint evidence.
+5. Map each section to native Elementor/Gutenberg/FSE structures before code.
+6. **One section per guarded transaction.** Verify that section before the next.
+7. Full-page desktop + relevant responsive regression only after all sections pass.
+8. A multi-section plan with a single combined screenshot/evidence block is
+   **invalid** — reject and re-extract.
+
+## Browser tab roles
+
+| Role | Purpose | Resize allowed? |
+|------|---------|-----------------|
+| `editor_page` | Authenticated Elementor edit session | **No** — never resize to simulate breakpoints |
+| `verification_page` | Frontend URL after save/cache purge | **Yes** — desktop/tablet/mobile viewports |
+
+- Device switching in the editor uses runtime-discovered top-toolbar
+  `role=tab` controls (`aria-selected=true`), never window resize.
+- After verification, re-check editor URL, unsaved state, selected device tab,
+  and document ID.
+- A page handle must not serve both roles.
+
+## Required task start
+
+1. `stonewright-task-start` with `task`, `surface` and `intent`.
+2. Ask once whether to use Playwright (recommended), another connected browser,
+   or none. Ask permission before scanning client tools/private config. If the
+   selected provider is missing, ask separate permission before installation or
+   configuration; only then show/run the setup command, restart, and stop until
+   the tool is visible.
+3. Elementor work: `stonewright-widget-intent-resolve` + implementation guide
+   before writes.
+4. Snapshot before Elementor / template / theme.json writes.
+
+## Worked example: Figma frame → native page
+
+### 1. Extract (external Figma MCP)
+
+Use the client’s Figma MCP to read frames, tokens, and bounds. Do **not** pass
+the raw document into Stonewright.
+
+Tool map when one or both Figma MCP servers are connected:
+[references/figma-mcp-extraction.md](references/figma-mcp-extraction.md).
+
+Quick pick (always re-list MCP tools — names vary by server build):
+
+| Need | Console-bridge (prefer if present) | Official Figma MCP |
+|------|------------------------------------|--------------------|
+| Color / spacing tokens | `figma_export_tokens`, `figma_get_token_values`, `figma_get_variables` | `get_variable_defs` |
+| Type ramp | `figma_get_design_system_summary` + `figma_get_text_styles` | `get_variable_defs` + `get_design_context` |
+| Bounds / layout | `figma_get_component_for_development_deep`, `figma_get_file_data` | `get_metadata`, `get_design_context` |
+| Screenshot hash | `figma_capture_screenshot`, `figma_take_screenshot` | `get_screenshot` |
+| Copy | file/dev tree text | `get_design_context` text |
+
+One collection-level tokens call beats per-node color reads. Extract per
+top-level section/frame. After normalizing DesignEvidence, do not re-fetch the
+file.
+
+### 2. Normalize DesignEvidence 1.0
+
+Minimum shape:
+
+```json
+{
+  "sources": [
+    {
+      "id": "figma:hero",
+      "type": "figma",
+      "ref": "node:12:34",
+      "hash": "<sha256 of export or node payload>",
+      "captured_at": "2026-07-16T12:00:00Z"
+    }
+  ],
+  "viewports": [
+    { "id": "desktop", "width": 1440, "height": 900 },
+    { "id": "mobile", "width": 390, "height": 844 }
+  ],
+  "global": {
+    "colors": { "primary": "#0B1F3A" },
+    "spacing_scale": { "md": 16, "lg": 24, "xl": 48 },
+    "typography_ramp": { "h1": { "size_px": 56, "line_height": 1.1 } },
+    "figma_token_table": {
+      "spacing": { "section_y": 96 },
+      "type": { "hero_title": 56 }
+    },
+    "provenance": {
+      "colors.primary": {
+        "source": "design",
+        "source_id": "figma:hero",
+        "confidence": 0.99,
+        "requires_confirmation": false
+      }
+    }
+  },
+  "measured_targets": [
+    {
+      "viewport_id": "desktop",
+      "node_id": "hero",
+      "property": "padding_top",
+      "value_px": 96,
+      "tolerance_px": 2
+    }
+  ],
+  "nodes": [
+    {
+      "id": "hero",
+      "role": "container",
+      "bounds": { "x": 0, "y": 0, "width": 1440, "height": 640 },
+      "layout": {
+        "type": "flex",
+        "direction": "column",
+        "align_items": "center",
+        "justify_content": "center",
+        "gap": 24,
+        "content_width": 720
+      },
+      "style": { "gap": 24 },
+      "provenance": {
+        "gap": {
+          "source": "design",
+          "source_id": "figma:hero",
+          "confidence": 0.99,
+          "requires_confirmation": false
+        }
+      },
+      "children": [
+        {
+          "id": "hero-cta",
+          "role": "button",
+          "bounds": { "x": 630, "y": 320, "width": 180, "height": 48 },
+          "content": { "label": "Book visit" },
+          "action": { "url": "https://example.test/book" },
+          "style": { "background_color": "#E8A838" },
+          "provenance": {
+            "background_color": {
+              "source": "design",
+              "source_id": "figma:hero",
+              "confidence": 0.99,
+              "requires_confirmation": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 3. Native plan
+
+```json
+{
+  "action": "plan",
+  "target": "elementor",
+  "evidence": { "...": "DesignEvidence above" }
+}
+```
+
+Call `stonewright-design-native-plan`. Expect per-node:
+
+- `native_mapping` — engine-native construct (widget/block/template), **or**
+- `native_gap` — justified missing control (`css_allowed: true` only here)
+
+Repeat for `gutenberg` or `fse` when the user picks that engine.
+
+### 4. Apply
+
+- Elementor: kit globals if approved → `elementor-v3-build-page-from-spec`
+  dry-run then write (or `blueprint-apply` with `engine: elementor`).
+- Gutenberg: `blueprint-apply` / `design-spec-to-gutenberg` with
+  `engine: gutenberg`.
+- FSE: `blueprint-apply` with `engine: fse` (constrained layout + transaction
+  queue).
+
+Validate specs with `stonewright-design-validate-spec`. Snapshot first.
+
+### 5. When CSS is acceptable
+
+CSS is allowed **only** when:
+
+1. The native plan recorded `native_gap` for that element, **and**
+2. The block includes `native_gap.reason` (or plan gap is promoted via
+   `design-implementation-contract` validate), **and**
+3. User approved phase-two customization.
+
+Otherwise `action: validate` returns `stonewright_spec_invalid` /
+`custom_css_without_native_gap`. Prefer native controls, composition, kit
+tokens, and Theme Builder before CSS.
+
+### 6. Verify (agent Playwright)
+
+For each breakpoint frame in DesignEvidence:
+
+1. Screenshot the **front-end** page (not wp-admin chrome).
+2. Measure padding, gap, font-size, colors against `measured_targets`.
+3. Fail the pass on horizontal overflow.
+4. Iterate fixes until tolerances pass or the user accepts a documented gap.
+
+## Decision rule: CSS
+
+| Situation | Action |
+|-----------|--------|
+| Native widget covers the look | No CSS |
+| Plan has `native_mapping` only | No CSS |
+| Plan has `native_gap` + user approval | Scoped CSS via approval-gated tools + `custom_code_grant` |
+| CSS without gap | Hard fail (`stonewright_spec_invalid`) |
+| Raw CSS/HTML without grant | Hard fail (`stonewright_custom_code_approval_required`) — show `approval_url`, stop, do not strip |
+| Elementor HTML widget | Only when the site option `stonewright_allow_html_widgets` is on and the call has `allow_html_widget: true` |
+| Gutenberg raw HTML | Only with `allow_raw_html` (plus `custom_code_grant` for CSS) |
+
+## Related tools
+
+- `stonewright-design-native-plan`
+- `stonewright-design-implementation-contract` (`contract` | `validate`)
+- `stonewright-blueprint-apply` (`engine`: auto|elementor|gutenberg|fse)
+- `stonewright-elementor-v3-build-page-from-spec`
+- `stonewright-brand-kit-apply` (`preview: true` for diffs)
+
+## Backup / production-safe
+
+- `Backup::snapshot_post` before Elementor/template writes.
+- Confirmation tokens in production-safe mode: every `stonewright-elementor-v3-build-page-from-spec`
+  and `stonewright-elementor-v3-batch-mutate` write that is not a dry run (dry runs need none),
+  one top-level token on `stonewright-elementor-v3-apply-bundle`, and
+  `stonewright-design-normalize-assets` while it sideloads (`sideload: false` needs none).
+- FSE/Elementor transactions rollback on readback failure.
+
+## Motion pipeline (DesignSpec motion contract)
+
+1. Call `stonewright-design-motion-capabilities` once per task; reuse the digest until the schema fingerprint changes.
+2. Optional: `stonewright-design-motion-suggest` for deterministic proposals (max three; "no motion" is always valid).
+3. `stonewright-design-motion-plan` lowers a **validated** spec into renderer operations with a site-signed `plan_hash`. Never edit its bindings or operations. If it binds a capability digest or design direction, pass the same current evidence to apply; drift requires a fresh plan.
+4. Apply per renderer — one dry run, one consolidated write:
+   - Gutenberg/FSE: `stonewright-design-motion-apply-gutenberg` (targets are spec-ID to block-path pairs read from the page).
+   - Elementor V3: `stonewright-design-motion-apply-elementor-v3` (copy `control_key`, `value`, `schema_hash`, `runtime_fingerprint`, `source_plugin`, and `source_version` from the live schema, plus the plan's exact `capability` and `semantic_effect`; unrelated controls and stale evidence are refused).
+   - Elementor V4: compile only. Apply remains unsupported unless the capability digest proves every official mutation primitive and a dedicated typed interactions writer is visible. Never substitute raw `_elementor_data`, WP-CLI, or `update-node`.
+5. After apply: post-write verify, then editor reopen + desktop/tablet/mobile frontend evidence.
+
+Hard rules: target IDs never CSS selectors; hover needs focus-visible parity;
+`playback=loop` is blocked without a persistent control; explicit engines that
+are unavailable produce `unsupported` — no silent CSS/custom-code downgrade;
+per-device motion on all-devices renderers is refused, not widened.
+
+Pass measured `motion_evidence` and `ui_evidence` to
+`stonewright-design-quality-check`. Missing measurements remain `not_checked`;
+motion/UI failures participate in the real report and persisted verdict.

@@ -1,0 +1,204 @@
+---
+name: configuring-oauth2-authorization-flow
+description: Use when configuring secure OAuth 2.0 authorization flows including Authorization
+  Code with PKCE, Client Credentials, and Device Authorization Grant. This skill covers
+  flow selection, PKCE implementation, token
+domain: cybersecurity
+subdomain: identity-access-management
+tags:
+- iam
+- identity
+- access-control
+- authentication
+- authorization
+- oauth2
+- oidc
+- pkce
+version: '1.0'
+author: oyi77
+license: Apache-2.0
+nist_csf:
+- PR.AA-01
+- PR.AA-02
+- PR.AA-05
+- PR.AA-06
+category: cybersecurity
+---
+
+# Configuring OAuth 2.0 Authorization Flow
+
+## Overview
+Configure secure OAuth 2.0 authorization flows including Authorization Code with PKCE, Client Credentials, and Device Authorization Grant. This skill covers flow selection, PKCE implementation, token lifecycle management, scope design, and alignment with OAuth 2.1 security requirements.
+
+
+
+## Anti-Rationalization Table
+
+| Rationalization | Reality |
+|---|---|
+| "I'll figure it out as I go" | A structured approach saves time and reduces errors. Follow the workflow in this skill rather than improvising. |
+| "I already know this topic" | Familiarity breeds shortcuts. Use the checklist to verify you haven't missed critical steps. |
+| "This doesn't apply to my situation" | The patterns here generalize across contexts. Adapt, don't skip — the underlying principles hold. |
+| "One more tool will fix it" | Adding complexity rarely solves process gaps. Master the core workflow first. |
+
+## When to Use
+**Trigger phrases:**
+- "configuring oauth2 authorization flow"
+- "Configure secure OAuth 2"
+
+
+- When deploying or configuring configuring oauth2 authorization flow capabilities in your environment
+- When establishing security controls aligned to compliance requirements
+- When building or improving security architecture for this domain
+- When conducting security assessments that require this implementation
+
+## Prerequisites
+
+- Familiarity with identity access management concepts and tools
+- Access to a test or lab environment for safe execution
+- Python 3.8+ with required dependencies installed
+- Appropriate authorization for any testing activities
+
+## Objectives
+- Implement Authorization Code flow with PKCE for public and confidential clients
+- Configure Client Credentials flow for machine-to-machine communication
+- Design least-privilege scope hierarchies
+- Implement secure token storage, refresh, and revocation
+- Apply OAuth 2.1 best practices and RFC 9700 security recommendations
+- Validate token integrity and prevent common OAuth attacks
+
+## Key Concepts
+
+This section covers key concepts for configuring oauth2 authorization flow.
+
+- Ensure all prerequisites are met before proceeding
+- Follow the documented workflow steps in sequence
+- Record results and any anomalies encountered during this phase
+### OAuth 2.0 Grant Types
+1. **Authorization Code + PKCE**: Recommended for all client types (web, mobile, SPA). PKCE is mandatory in OAuth 2.1.
+2. **Client Credentials**: Machine-to-machine authentication without user context.
+3. **Device Authorization Grant (RFC 8628)**: For input-constrained devices (smart TVs, CLI tools).
+4. **Refresh Token**: Long-lived token to obtain new access tokens without re-authentication.
+
+### PKCE (Proof Key for Code Exchange)
+PKCE (RFC 7636) prevents authorization code interception attacks:
+1. Client generates random `code_verifier` (43-128 characters, unreserved URI chars)
+2. Client computes `code_challenge = BASE64URL(SHA256(code_verifier))`
+3. Authorization request includes `code_challenge` and `code_challenge_method=S256`
+4. Token request includes original `code_verifier`
+5. Server validates `SHA256(code_verifier)` matches stored `code_challenge`
+
+### Token Types
+- **Access Token**: Short-lived (5-60 min), bearer or DPoP-bound
+- **Refresh Token**: Long-lived, single-use with rotation
+- **ID Token (OIDC)**: JWT containing user identity claims
+
+## Workflow
+
+```python
+# Example: IOC detection
+import re
+
+IOC_PATTERNS = {
+    "ip": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+    "domain": r"\b[a-z0-9-]+\.[a-z]{2,}\b",
+    "hash_md5": r"\b[a-f0-9]{32}\b",
+    "hash_sha256": r"\b[a-f0-9]{64}\b",
+}
+
+def extract_iocs(text: str) -> dict:
+    return {k: re.findall(v, text) for k, v in IOC_PATTERNS.items()}
+```
+
+1. **Scope the task** — define objectives, boundaries, and success criteria
+2. **Gather information** — collect all necessary data and context before proceeding
+3. **Execute the core workflow** — follow the domain-specific steps methodically
+4. **Validate results** — verify outputs against expected outcomes or baselines
+5. **Document findings** — record results, anomalies, and recommendations
+### Step 1: Authorization Code Flow with PKCE
+1. Generate cryptographically random code_verifier (min 43 chars)
+2. Compute code_challenge using S256 method
+3. Redirect user to authorization endpoint with parameters:
+   - response_type=code
+   - client_id, redirect_uri, scope, state
+   - code_challenge, code_challenge_method=S256
+4. User authenticates and consents
+5. Authorization server redirects with authorization code
+6. Exchange code + code_verifier for tokens at token endpoint
+7. Validate state parameter matches original value
+
+### Step 2: Scope Design
+- Define granular scopes: `read:users`, `write:orders`, `admin:settings`
+- Follow least-privilege: request minimum scopes needed
+- Implement scope validation on resource server
+- Document scope hierarchy and consent requirements
+
+### Step 3: Token Security
+- Store tokens securely (httpOnly cookies for web, keychain for mobile)
+- Implement token refresh with rotation (one-time-use refresh tokens)
+- Set appropriate expiration: access tokens 5-15 min, refresh tokens 8-24 hrs
+- Enable DPoP (Demonstration of Proof-of-Possession) for sender-constrained tokens
+- Implement token revocation endpoint
+
+### Step 4: Client Credentials Flow
+1. Register service client with client_id and client_secret
+2. Request token: POST /oauth/token with grant_type=client_credentials
+3. Include scope for required permissions
+4. Store client_secret securely (vault, env vars, not code)
+5. Implement certificate-based client authentication for higher assurance
+
+### Step 5: Security Hardening
+- Enforce PKCE for all authorization code flows
+- Use exact redirect URI matching (no wildcards)
+- Implement CSRF protection with state parameter
+- Enable refresh token rotation and revocation on reuse detection
+- Apply RFC 9700 security best practices
+- Block implicit grant and ROPC (removed in OAuth 2.1)
+
+## Security Controls
+| Control | NIST 800-53 | Description |
+|---------|-------------|-------------|
+| Access Control | AC-3 | Token-based access enforcement |
+| Authentication | IA-5 | Client credential management |
+| Session Management | SC-23 | Token lifecycle management |
+| Audit | AU-3 | Log all token issuance and revocation |
+| Cryptographic Protection | SC-13 | PKCE and token signing |
+
+## Common Pitfalls
+- Using implicit grant (removed in OAuth 2.1) instead of authorization code + PKCE
+- Storing tokens in localStorage (XSS vulnerable) instead of httpOnly cookies
+- Not validating state parameter enabling CSRF attacks
+- Using wildcard redirect URIs allowing open redirect exploitation
+- Not implementing refresh token rotation allowing token theft persistence
+
+## Verification
+- [ ] Authorization Code + PKCE flow completes successfully
+- [ ] PKCE code_challenge validated at token endpoint
+- [ ] State parameter prevents CSRF
+- [ ] Access tokens expire within configured lifetime
+- [ ] Refresh token rotation issues new refresh token each use
+- [ ] Token revocation invalidates both access and refresh tokens
+- [ ] Client Credentials flow works for service-to-service calls
+- [ ] Scopes correctly enforced at resource server
+## When NOT to Use
+
+- You need to implement from scratch (use implementing-* skills)
+- Task is about testing the configuration (use performing-* skills)
+- You need to analyze misconfigurations (use analyzing-* skills)
+- Task is about building automation (use building-* skills)
+- You don't have admin access to the system
+- Task requires vendor professional services
+
+
+## Red Flags
+
+- Performing actions without explicit written authorization from the asset owner
+- Testing against production systems without a defined scope and rules of engagement
+- Sharing sensitive findings or credentials in unencrypted communications
+- Failing to properly scope and contain the assessment before starting
+
+## Process
+
+1. Analyze the task requirements
+2. Apply domain expertise
+3. Verify output quality

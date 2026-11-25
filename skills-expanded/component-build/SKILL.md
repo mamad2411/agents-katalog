@@ -1,0 +1,326 @@
+---
+name: component-build
+description: Auto-loads when building, adding, or extending a UI component, widget, island, or any surface in the GoFastr framework, including modals, drawers, dropdowns, toasts, sidebars, banners, popovers, and any other interactive primitive. Encodes the "minimal-register + SSR-inline + hydrate" contract every component must follow. Triggers on phrases like "add a widget", "build a component", "new modal", "create dropdown", "add island", "wire a surface", or whenever the work touches core-ui/widget/, core-ui/widget/preset/, framework/ui/, or registers a widget.Definition.
+---
+
+# Building a component: the contract every primitive follows
+
+This is the framework's pattern for any UI surface that needs server-rendered
+HTML, client-side hydration, and an optional dismiss/lifecycle. The shipped
+presets (Modal, Drawer, ToastStack, Popover) all follow it. New surfaces must
+follow it.
+
+**Do not build a component that downloads its HTML through a JSON catalog,
+constructs DOM at runtime when SSR would have done it, or fires per-mount
+network calls for state it doesn't have.** Those mistakes have happened in
+this repo and produce the same symptoms each time: empty view-source, slow
+first-open, redundant `/state` round-trips, deep-link flicker.
+
+## The four-rule contract
+
+### 1. Register MINIMAL metadata, fetch chrome lazily
+
+The registry (`/__gofastr/widgets`) is an index, not a payload. Each entry
+ships only the data the runtime needs to decide what to do:
+
+```json
+{
+  "name":          "components-confirm",
+  "position":      "center",
+  "backdrop":      true,
+  "closeOnEscape": true,
+  "stylePath":     "/core-ui/widget/components-confirm/style.css",
+  "chromePath":    "/core-ui/widget/components-confirm/chrome",
+  "statePath":     "/core-ui/widget/components-confirm/state",  // omitted when no signals
+  "deepLinkKey":   "modal",
+  "deepLinkValue": "user-edit",
+  "deepLinkParams": ["user_id"]
+}
+```
+
+Chrome HTML is fetched from `chromePath` only when the runtime actually needs
+it, and only when SSR hasn't already inlined the element. The state endpoint
+is omitted entirely when the widget declared no signals.
+
+**When you add a new field to the registry**: add it to `serveWidgetList` in
+`core-ui/widget/server.go`, then to the runtime consumers that read the
+catalog JSON: `core-ui/runtime/frag/widgets-boot.js` (the boot catalog
+fetch and auto-mount pass; `widgets-boot-static.js` is its static-export
+twin) and `core-ui/runtime/src/widgets.js` (the demand module that fetches
+chrome from `chromePath`). Then document the field.
+
+`core-ui/runtime/runtime.js` is GENERATED: `composeFull()` in
+`core-ui/runtime/runtime.go` stitches `frag/*.js` into one IIFE, so an edit
+to `runtime.js` never reaches the browser. Edit the fragments, then regenerate
+the on-disk file:
+
+```
+GOFASTR_UPDATE_RUNTIME_JS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeMatchesOnDiskFile
+```
+
+### 2. SSR-inline whenever the URL says the surface should be open
+
+In `framework/uihost`, every registered widget is walked per-request:
+
+```
+deeplinked widget whose key/value matches r.URL.Query()  →  inline OPEN
+hidden widget that doesn't match                          →  inline with [hidden]
+visible (non-hidden) widget                               →  inline OPEN
+```
+
+The widget chrome lands just before `</body>`. The runtime's `_mountByName`
+checks for an existing `[data-cui-widget="<name>"]` root before fetching
+`chromePath`. If one exists, the runtime hydrates in-place. View-source
+shows the modal. Refreshing a deep-link paints instantly with no flicker.
+
+When you ship a new widget preset: confirm the chrome HTML appears in
+`curl http://localhost:.../some-page | grep <distinctive-text>`. Zero hits
+means the SSR-inline path didn't fire.
+
+### 3. Hydrate, don't reconstruct
+
+`mountWidget` takes either an `existingEl` (SSR-inline path) OR a `chromeHTML`
+string (lazy-fetch path). Both reach the same wired state: handlers, focus
+trap, scroll lock, signal listeners. When dismissed, a hydrated widget is
+**hidden in place** (`hidden` attribute), never detached, so re-opening
+doesn't refetch.
+
+Never write a runtime path that builds DOM the server could have built.
+
+### 4. Skip the network call when there's nothing to fetch
+
+- `cfg.statePath` is absent when the widget has no signals → no `/state` fetch.
+- `cfg.chromePath` is bypassed when SSR-inline succeeded → no chrome fetch.
+- Toast push is `X-Gofastr-Toast` response header on an existing RPC, not a
+  separate SSE channel → no per-page connection budget cost.
+
+If you're adding a network call to a mount path, the bar is: "can the server
+have already given us this on the response that brought us here?" Almost
+always yes.
+
+## Building a new widget preset, step by step
+
+```go
+// 1. preset.go: return a Builder with sensible defaults.
+func Dropdown(name string) *widget.Builder {
+    return widget.New(name).
+        Mount(widget.TopLeft).
+        Hidden().                // click-to-open
+        Role("menu").
+        // …other defaults
+}
+
+// 2. host wires it once at startup.
+def := preset.Dropdown("user-menu").
+    LabelledBy("user-menu-title").
+    Slot("body", ...).
+    Build()
+widget.Mount(r, &def)   // registers metadata + the three /style.css /state /chrome routes
+
+// 3. trigger element in any screen.
+<button data-cui-open="user-menu">Open</button>
+
+// 4. (optional) deep link
+preset.Modal("user-edit").
+    Hidden().
+    DeepLink("modal", "user-edit").
+    DeepLinkParam("user_id").
+    Slot("body", &UserEditForm{}).
+    Build()
+
+// 5. (optional) server response triggers a toast
+ui.AddToastSuccess(w, "Saved", "Your changes are persisted.", 5000)
+w.WriteHeader(http.StatusNoContent)
+```
+
+## Verifying you got it right
+
+Before claiming a component works:
+
+1. **Lint**: `go run ./cmd/check-csp` is clean (no inline `style=`/`<script>`).
+2. **Unit**: `go test ./framework/ui/... ./core-ui/widget/...` is green.
+3. **SSR inline**: `curl http://localhost:8082/<page> | grep "<distinctive
+   text from the slot>"` returns ≥ 1 match.
+4. **Zero ghost network calls**: open Playwright, click the trigger,
+   `browser_network_requests` shows no `/state`, no `/chrome`, no `/widgets`
+   request fires per open (the registry fetch is once at boot).
+5. **Hydration roundtrip**: opening + closing + reopening exercises both
+   paths; verify nothing is detached or refetched.
+6. **A11y**, for backdrop'd surfaces: `role`, `aria-modal`, `aria-labelledby`
+   set; focus moves in on open, traps via Tab, returns on close; body scroll
+   locks while open.
+7. **Browser-verified**: actually open the page in a browser before
+   claiming done. `go test` passing is necessary, not sufficient.
+
+## Interaction tests, not attribute tests
+
+**Attribute checks (`role`, `aria-*`, classes) are necessary but NEVER
+sufficient.** A component with the right `role="combobox"` and the right
+`aria-expanded="false"` can be totally broken: the RPC might not fire,
+the listbox might never open, Enter might pick the wrong option. Every
+component PR must include chromedp e2e tests that:
+
+- **Click / type / press keys** through every primary user flow.
+- **Assert DOM changes** that prove the runtime hook actually ran:
+  - Combobox: type → option count goes from 0 to N, `aria-expanded` flips
+    to `"true"`, Enter sets `input.value` to the picked option's
+    `data-value`.
+  - Tree: clicking the toggle (or pressing ArrowRight) flips
+    `aria-expanded="true"` AND populates `<ul role="group">` children.
+  - CopyButton: click → `data-hui-copy-state="done"` on the wrapper, the
+    `data-hui-copy-status` sibling reads the copy sentence (clear then
+    frame); if `ToastOnCopy=true`, the toast stack receives the title.
+  - ConfirmAction: trigger click → modal visible, Cancel autofocused;
+    Esc → modal closed, modal stack empty.
+  - FilterChipBar: click × → chip count decreases by 1 (server-driven
+    re-render via signal swap).
+  - SegmentedControl: click option N → `input:checked` value matches,
+    `getBoundingClientRect()` of options are equal width.
+- **Use real keys**: `chromedp/kb.ArrowDown`, `kb.Enter`, `kb.Escape`,
+  not literal ANSI escape strings.
+- **Avoid timing flakes**: use `chromedp.Sleep` with a window 2-3x the
+  debounce-or-animation duration, not 100ms because "feels enough".
+
+When the static-shape test passes but the interaction test fails, that's
+the bug you would have shipped without it. Always add both.
+
+## CSS contract: one registry, no manual wiring
+
+**Every styled package registers its stylesheet via
+`registry.RegisterStyle` and wraps its top-level rendered element in
+`Style.WrapHTML(...)`. That covers `framework/ui/*`
+and widget chrome.** (`core-ui/patterns/` is deleted; a composed
+pattern is a `framework/ui` component on its `framework/headless`
+primitive.)
+The runtime emits a `data-cui-comp="<name>"` marker on the wrapper,
+the SSR collector scans the rendered HTML, and CSS auto-loads: one
+`<link>` per used component per page, dedup'd globally.
+
+```go
+// framework/ui/foo.go: canonical component shape (on its headless
+// primitive for the structure + accessibility contract)
+var fooStyle = registry.RegisterStyle("ui-foo", fooCSS)
+
+func fooCSS(_ style.Theme) string { return fooBaseCSS }
+
+func Foo(cfg FooConfig) render.HTML {
+    return fooStyle.WrapHTML(headless.Foo(headless.FooProps{...}, classes))
+}
+
+const fooBaseCSS = `[data-cui-comp="ui-foo"] .fui-foo { ... }`
+```
+
+**Do NOT export `func BaseCSS() string`** from a component package.
+That was the legacy pattern contract: host apps had to import the
+package AND concatenate `BaseCSS()` into their custom CSS, and a
+single missed concat shipped a component without any styling on the
+live site (the 2026-05-19 nestedlist incident).
+
+Selectors stay class-based (`.foo`, `.nested-list`); the marker
+only signals to the auto-loader "fetch this stylesheet". Apps don't
+need any setup; the CSS just appears on every page that renders the
+component.
+
+## Runtime-module contract: per-instance state + CSRF + a11y
+
+Any component that ships a JavaScript counterpart in
+`core-ui/runtime/src/<name>.js` follows three non-negotiable rules.
+Module-scope globals are bugs waiting for the second instance to land.
+
+**1. Per-instance state, never module globals.** Use a `WeakMap`
+keyed by the wrapper element, plus a sibling `Set` for iteration:
+
+```js
+var stateByEl = new WeakMap();
+var active = new Set();
+
+function setupOne(el) {
+  if (el.__fuiBound) return;
+  el.__fuiBound = true;
+  stateByEl.set(el, { failureCount: 0, timer: null });
+  active.add(el);
+  // …
+}
+
+document.addEventListener('gofastr:navigate', function () {
+  active.forEach(function (el) {
+    var s = stateByEl.get(el);
+    if (s && s.timer) clearInterval(s.timer);
+    // IntersectionObserver → call .disconnect(); EventSource → .close()
+  });
+  active.clear();
+  requestAnimationFrame(function () { scan(document); });
+});
+```
+
+**2. CSRF token forwarding.** State-changing fetches (`POST` / `PUT`
+/ `PATCH` / `DELETE`) must forward the page's CSRF token:
+
+```js
+var headers = { 'Accept': 'application/json' };
+var meta = document.querySelector('meta[name="csrf-token"]');
+if (meta && meta.getAttribute('content')) {
+  headers['X-CSRF-Token'] = meta.getAttribute('content');
+}
+fetch(url, { method: 'POST', credentials: 'same-origin', headers: headers });
+```
+
+Apps emit the meta tag via `uihost.WithHeadHTML(...)` and verify the
+token server-side. `OptimisticAction`'s runtime is the canonical
+example. Without this, any cross-origin form on a logged-in user's
+browser can fire the action.
+
+**3. Pending-state a11y.** Async clicks set `aria-busy="true"` +
+`disabled` on the trigger element during the in-flight RPC and clear
+both on commit / error / idle. Without this, keyboard Enter / Space
+fires duplicates and screen readers don't announce the change.
+
+**4. Tear down rollback timers on re-entry.** If your error path
+schedules a `setTimeout` to revert state, store the timer id on the
+button and `clearTimeout` it at the top of the next click handler.
+The race is real: error → user clicks → new fetch goes pending →
+the old 600ms timer fires → state clobbered back to idle while the
+new RPC is still in flight.
+
+## Anti-patterns this skill exists to prevent
+
+- ❌ Module-scope state in a runtime module; see the runtime-module
+  contract above. The next demo will mount two of the widget and
+  reveal the bug.
+- ❌ State-changing fetches without `X-CSRF-Token`; see the runtime-
+  module contract.
+- ❌ Async triggers without `aria-busy` / `disabled` during pending;
+  see the runtime-module contract.
+- ❌ Exporting `BaseCSS()` from a component package. Use
+  `registry.RegisterStyle` + `Style.WrapHTML` instead. See the CSS
+  contract section above.
+- ❌ Embedding full chrome HTML in `/__gofastr/widgets` JSON catalog.
+- ❌ Calling `/state` on mount when the widget has no signals.
+- ❌ Constructing DOM in the runtime when the server already rendered it.
+- ❌ Opening per-page SSE for surfaces that fire once per session.
+- ❌ Inline `style="…"` attributes (strict CSP strips them).
+- ❌ "Open the modal client-side then hope SSR caught up". SSR-inline first.
+- ❌ Hand-rolling `<button class="ui-btn …">` (or `class="fui-button …"`)
+  instead of `ui.Button(...)`. The framework class is `fui-button`,
+  emitted only by the class map inside `ui.Button` / `ui.LinkButton`
+  (with the `data-cui-comp` marker so the CSS auto-loads; the marker
+  and the sheet registration keep the `ui-button` NAME). `ui-btn` IS
+  NOT a thing; it renders unstyled native buttons. **Always compose
+  with the typed framework components.**
+- ❌ Reading form data with `req.FormValue()` when the runtime POSTs
+  JSON. `dispatchRPC` serializes non-multipart forms as JSON
+  (`Content-Type: application/json`); only manual `URLSearchParams`
+  POSTs (SortableList's commit) are form-encoded. Use a helper that handles
+  both.
+- ❌ Writing the response body **before** setting a custom header.
+  Go's `net/http` sends headers automatically on the first `Write`,
+  silently dropping any later `w.Header().Set(...)`. Set headers FIRST.
+- ❌ Mounting Modal/Drawer/Popover presets without `.Pages("/route")`:
+  every page on the site pays for the chrome registration even if it'll
+  never open them. Page-scope demo widgets.
+
+## Related skills
+
+- `gofastr-ui`: the broader SSR-with-hydration architecture this builds on.
+- `gofastr-docs`: docs ship with the same commit as a new component.
+- Verify with pixels, not probes: `go test` ≠ "works in a browser" (see gofastr-ui + CLAUDE.md Hard rule 9).

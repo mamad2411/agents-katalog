@@ -1,0 +1,490 @@
+---
+name: create-rabiroute-agent-adapter
+description: 新增、改造或排障 RabiRoute Agent 端适配器时使用。覆盖 Runtime 所有权和启动独立性、会话找不到或串线、工具能力缺失、后端 agent adapter、独立 Agent Manager API、扫描/安装/登录/健康检查、RibiWebGUI 自动化配置、消息投递、诊断和验证；适用于 Codex runtime、Copilot CLI、Marvis、AstrBot、DSH、脚本、Webhook 或其他 Agent 处理端。
+---
+
+# 创建 RabiRoute Agent 端适配器
+
+## 目标
+
+新增 Agent 端时，不只接上一条 `deliver(message)`。必须让用户能在 WebGUI 里尽量自动完成配置：
+
+1. 自动发现安装位置、运行状态、登录状态、插件状态、项目目录和会话。
+2. 如果有项目概念，先选 Agent 路径或服务地址，再选项目目录，最后选会话。
+3. 如果设置了项目目录，会话列表必须能显示项目归属并用于消歧。Codex Desktop 下拉显示全部任务，选择任务后自动采用其 cwd；其他 Agent 可按项目过滤。没有项目概念就隐藏项目目录。
+4. 能扫描的不要让用户手填；必须提供刷新、安装、打开下载页、登录、部署/更新插件、健康检查等动作入口。
+5. 添加 Agent 端后必须在 WebGUI 展示“环境和依赖”清单：安装状态、登录状态、插件/扩展、Endpoint、项目/会话发现、下载或文档入口、缺失项和下一步动作。
+6. 运行态要能解释“为什么不可用”，不能只给一个空输入框或沉默失败。
+
+所有带会话概念的 Agent 端还必须满足以下 P0 合同，缺一项都不能标记为 `verified`：
+
+1. 已保存的完整任务 ID 存在且 owner 记录未归档时，直接投递到该任务，不创建新任务。owner 保存的默认 cwd、标题或 SQLite `title` 都不能否定有效 ID；本次执行目录由当前 Route 或计划绑定单独提供。保存 ID 指向已归档任务时，真实投递或保存提交点幂等创建新任务并持久化新 ID；不查找或复用其它同名任务。扫描、刷新和失焦仍只报告归档状态。
+2. 目标不存在时，先按 RabiPC Manager 保存的明确名称 + workspace 查找；存在一个或多个匹配时按 `updatedAt` 降序绑定唯一最新任务，只有最新时间并列时才要求用户选择；零匹配才幂等创建一个会话，再把真实消息投给新会话，并发、重试和索引延迟期间仍只能创建一次。允许提供用户显式点击的“自动初始化会话”：它必须先完成同一保存/解析事务，再通过唯一 owner 投递一条携带角色文件、记忆、计划和必读项的角色初始化消息。
+3. 真实消息必须通过 Agent 桌面应用实际使用的 owner 接口执行，保证桌面端统一可见并沿用同一任务的模型、工具、权限和状态；不得用第二 Runtime 冒充。
+4. 用户在 Rabi 设置中选择已有会话或输入新名称后，点击保存必须完成解析/创建并持久化新的名称、完整 ID 和 workspace。
+5. 完整任务 ID 是任务身份；workspace 是每次投递的执行目录，名称用于显示和无 ID 查找。Agent/Desktop 改名、默认 cwd 不同或首投后 `title` 自动变化时继续同一 ID；用户在 Rabi 端明确输入新名称时，UI 先清空旧 ID，再按新名称和 workspace 查找/创建并保存新 ID。
+6. 项目和会话扫描只允许在进入设置界面时自动执行一次，或由用户点击扫描/刷新按钮显式触发；禁止定时轮询、展开面板、输入、`blur`、保存或普通状态刷新持续扫描。
+
+Codex 目前的产品基线是 Desktop owner：RabiRoute 从 Codex Desktop 左侧栏共用的 `session_index.jsonl.thread_name` 读取用户可见 `Name`，再按完整 ID 合并本地状态提供的 cwd、归档、时间和 owner/rollout 状态，以“完整 ID + 工作目录”稳定绑定，并通过 Desktop IPC 把真实消息交给 Codex/ChatGPT Desktop 当前任务。SQLite `threads.title` 可能是首条 prompt，不得用于下拉名称或同名查找。Desktop 必须在线；任务暂时无法加载时，恢复原 owner 的加载与连接后续投原任务，不把真实消息交给第二 Runtime；其它独立工作继续。
+
+AstrBot 这类服务型 Agent 必须显示服务健康、认证状态和可选会话。当前 AstrBot 合同只允许绑定明确的 ChatUI 会话并调用 `/api/chat/send`；没有 `ASTRBOT_SESSION_ID` 时先通过现有会话发现流程取得明确目标，再继续投递；不改投 `rabiroute_agent` 插件的其它会话。
+
+先读 `../../docs/agent-adapter-standard-requirements.md` 和 `../../docs/agent-adapter-integration-lessons.md`。前者定义标准 Agent 端应达到的能力与验收合同；后者记录 Desktop IPC 未唤醒 owner、隔离 app-server 不实时/缺桌面工具，以及共享 4510 导致 Desktop `ECONNREFUSED` 的历史。涉及 Codex/Desktop、会话绑定或工具注册时，还必须读 `../../docs/codex-desktop-agent-acceptance.md`，不能跳过。
+
+新增任何带 Runtime、会话、桌面可见性或工具注入的 Agent 端时，还必须读 [owner-first-design-gate.md](references/owner-first-design-gate.md)，并在实现前完成其中的设计门。不要等实现失败后才补所有权说明。
+
+## 负一号关卡：冻结用户可观察合同
+
+写探测、后端或 UI 前，先把需求改写成可验收事实：
+
+- 消息必须出现在哪里，多久可见，谁能看到运行状态和结果。
+- 哪个 task/session owner 必须执行真实消息。
+- 模型、工具、权限和审批由谁注入。
+- Agent、宿主和 RabiRoute 缺席时各自应如何启动、失败和退出。
+- 新建、续投、重名、失效 ID、active turn 分别是什么行为。
+- 哪些行为明确禁止，例如第二执行 Runtime、模糊换会话、持久化修改宿主启动配置。
+
+把它写成“要求 / 真源 / 验收证据 / 禁止替代”表。以用户现有要求确定可观察合同，不为已授权目标重复申请确认；实现失败时保持目标，修复对应链路。协议无法满足时保持 `experimental` 并报告缺口，不得私自增加 fallback。
+
+历史反复修改暴露了六类设计问题，发现时调整受影响的实现并复核，继续不依赖该问题的工作：
+
+1. 用连接成功、记录可读或构建通过代替用户界面中的真实结果。
+2. 把同一个 session ID 误当成同一个 live owner、实时事件流和工具集合。
+3. 用 fallback 掩盖 owner 未加载、身份错误或协议不完整。
+4. 为追求“一个 Runtime”而让宿主依赖 RabiRoute 的端口、环境变量或进程。
+5. 把本机交互式 Desktop 与远端无人值守 Agent 当成同一生命周期。
+6. 在一个大改动里同时迁移 Runtime、UI、配置、打包和文档，导致测试只验证实现自洽。
+
+一个 adapter 只能有一条真实消息执行路径。发现必须靠第二条路径才能“可用”时，先判断产品要求是否其实包含两种不同 adapter；拆分产品边界，不做模式切换。
+
+## 零号审查：所有权和启动独立性
+
+写探测脚本或 UI 前，先列出：Agent、宿主、Runtime、Transport、Session、Tool 分别由谁拥有，谁启动、谁停止、故障会影响谁。没有这张清单就不实施。
+
+硬性边界：
+
+- 外部 Agent/服务拥有自己的生命周期；RabiRoute 只能探测或通过已验证接口连接。
+- 如果要求消息实时出现在某个 UI 并使用该 UI 注入的工具，这个 UI 的任务 owner 必须执行真实轮次；恢复相同 session ID 的第二个 Runtime 不等价。
+- Codex Desktop 是 transport 的 owner 和健康条件；RabiRoute 只连接 IPC，不启动/停止 Desktop，也不提供 fallback。
+- Adapter 只有在“创建空任务、恢复用户名称”等不执行真实 prompt 的元数据操作中，才可短暂拥有隔离子进程；完成后立即回收，不能成为 fallback。
+- 不得从普通 adapter 配置写用户级环境变量、注册表、桌面启动参数或固定 WebSocket 地址。
+- 不得让 Agent/Desktop 的冷启动依赖 Manager、Gateway、托盘或某个固定 RabiRoute 端口。
+- “一个 Runtime”指一个实际消息 owner，不是把 Desktop 强制连接到 RabiRoute 拥有的共享端口。
+- 对 Codex/ChatGPT Desktop，`127.0.0.1:4510` 属于 Desktop 自己的生命周期。禁止写入进程、用户或机器级 `CODEX_APP_SERVER_WS_URL`，禁止让 RabiRoute 监听/接管 4510，禁止为了投递关闭或重启 Desktop。必须实测 RabiRoute 停止时 Desktop 仍可启动，避免再次出现 `connect ECONNREFUSED 127.0.0.1:4510`。
+
+开始改代码前必须完成两个基线检查：
+
+1. RabiRoute 全部停止时，目标 Agent/Desktop 能单独冷启动。
+2. 目标 Agent/Desktop 全部停止时，RabiRoute Manager 能启动，并对该 adapter 给出可行动状态。
+
+任一项失败，先修所有权，不继续增加回退模式。
+
+## 统一 API Help 与敏捷兼容流程
+
+Agent 适配器不得把 API、渠道或参数写死为长期真源。每次启动、Manager generation 变化、接口返回未知字段/错误，按以下顺序刷新：
+
+1. 从 Host status 或结构化 READY 取得当前 Manager 地址，并用 `/meta` 核对 generation、instance 和健康边界。
+2. 使用共享 operation SDK 的分类、短列表与关键词搜索。HTTP 入口为 `GET /api/agent/categories` 和 `GET /api/agent/operations`，按 `category/query/provider/limit/cursor` 缩小当前结果。选定 ID 后读取 `GET /api/agent/operations/:operationId?view=input`，按需读取 result/full。发送渠道另读取 `GET /api/agent/send/capabilities`。完整合同、CLI 与 MCP 同参规则见 [统一接口](../../docs/unified-agent-api.md)。
+3. 按当前 description 的 request、inputSources、relatedOperations 和原业务错误取得参数并执行。旧客户端保留 `/api/agent/help` 精确查询和完整导出兼容。目录缺项只说明发现范围，继续核原业务 owner 和当前合同。接口的 `operation` 与本次 `requestId/idempotencyKey` 分别传递。
+4. 成功与失败都保存 HTTP 状态、JSON `code`、`errorCode`、`help`、`repair` 和 receipt/resource 标识。写请求超时、5xx、412 或 generation 变化时，保留原 body 和 delivery/idempotency key，由原投递拥有者查询原 ID 和执行阶段，再按已有幂等合同恢复；同一 ID 的可靠恢复不是新投递，不因结果未知停止其它独立工作。
+5. 新增接口或渠道时，先更新统一能力目录、help、真实路由声明、契约 fixture 和中英文导航；不得只改长文或 Agent skill。
+
+`/api/lan-agent/capabilities` 应返回同一 operation help 摘要。Help 只描述当前 Manager 版本，不能缓存成永久合同；适配器应记录读取时的 generation 和 contract/schema 版本（若返回）。
+
+## 统一能力模型
+
+每个 Agent adapter 都要先声明自己支持哪些能力，再决定 UI 显示什么字段：
+
+```ts
+type AgentAdapterCapability = {
+  type: AgentAdapterType;
+  label: string;
+  maturity: "verified" | "experimental" | "stub";
+  requiresInstall: boolean;
+  requiresAuth: boolean;
+  hasAgentPath: boolean;
+  hasServiceEndpoint: boolean;
+  hasProject: boolean;
+  hasSession: boolean;
+  canListProjects: boolean;
+  canListSessions: boolean;
+  canFilterSessionsByProject: boolean;
+  canDeployPlugin: boolean;
+  canHealthCheck: boolean;
+};
+```
+
+能力模型是产品合同，不只是类型定义：
+
+- `verified`：本机或 CI 已验证扫描、配置、投递、失败诊断四条路径。
+- `experimental`：代码存在，但没有完成端到端验证；WebGUI 必须显示“实验/未验证”提示。
+- `stub`：只是占位或打开外部页面；不能默认启用，必须说明缺哪段能力。
+- `hasProject=false` 时不要显示项目目录。
+- `hasSession=false` 时不要显示会话输入框，要显示“该 Agent 无可选会话”。
+- `canListSessions=false` 时不要伪装成下拉框；用说明和后续任务替代。
+- `canFilterSessionsByProject=false` 且 `hasProject=true` 时，要显示项目/会话可能不一致的风险。
+
+当前已有 Agent 的默认基线：
+
+| Agent | 默认等级 | 说明 |
+| --- | --- | --- |
+| Codex Desktop | `verified` | 只读发现 Desktop 任务；完整任务 ID 是任务身份，每次投递单独指定执行目录；通过 Desktop IPC 唤醒并向任务 owner start/steer，无 fallback。 |
+| Copilot CLI | `experimental` | 需要验证安装检测、登录、`-C` 项目目录、`--resume` 会话和 Windows 长 prompt 路径。 |
+| Marvis | `stub`/`experimental` | 目前更像打开 App/复制 prompt，不应宣称有可靠会话绑定或回传。 |
+| AstrBot | `experimental` | 只使用 ChatUI `/api/chat/send`；必须配置明确的 `ASTRBOT_SESSION_ID`，缺失时通过现有会话发现流程取得明确目标，再继续投递。 |
+
+新增或改造时，不要靠口头记忆这些等级；让 Manager scan/status API 返回 `maturity` 和 `warnings`，让 WebGUI 显示出来。
+
+## 先判断 Agent 类型
+
+实现前先确认目标 Agent 属于哪类：
+
+- **Desktop owner 型**：用户可见任务、实时状态和工具由桌面任务 owner 持有，例如当前 Codex/ChatGPT Desktop。投递必须进入 owner，不能另起后台 Runtime。
+- **Agent runtime 型**：有正式进程协议、会话列表和项目目录，但没有“必须实时进入现有桌面任务”的要求。
+- **CLI 项目型**：有可执行文件、登录状态、`cwd` 或 workspace、session/resume 名称，例如 Copilot CLI。
+- **服务/机器人框架型**：有 dashboard URL、插件、token/password、bot 实例、会话或通道，例如 AstrBot。
+- **网页/桌面跳转型**：只能打开页面或 app、复制 prompt，通常没有可靠回传，例如 Marvis。
+- **Webhook/script 型**：有 endpoint、命令、脚本路径、输出协议，可能没有会话。
+
+不要为了统一 UI 强行显示不存在的字段。字段由能力决定。
+
+## 先摸清真实 API
+
+做任何 Agent 端适配前，先用最小脚本或临时命令验证目标 Agent 的真实能力。不要先写 WebGUI，不要先设计配置表单。
+
+必须按这个顺序探测：
+
+1. **健康检查**：确认 Agent app / CLI / service 是否存在、能启动、能连接。
+2. **认证检查**：确认是否需要 token、password、cookie、device code 或本机登录态。
+3. **列出会话线程**：优先找 owner 的 API、CLI、IPC 或插件协议。Codex Desktop 允许只读状态数据库作为任务候选来源，但实际绑定成功必须由 Desktop owner 接受 IPC 投递来证明。
+4. **列出项目或 workspace**：如果会话带 cwd/project/workspace，记录字段名和路径格式。
+5. **创建会话线程**：如果 API 支持，创建一个测试会话，名称用公开占位，例如 `RabiRoute Smoke Test`。若需 bootstrap 子进程，只能创建空任务，不能携带真实测试 prompt。
+6. **消息注入测试**：向新建会话发送一条测试消息。
+7. **同会话重复注入测试**：向同一个会话再发送第二条测试消息，确认不会新建另一个会话线程。
+8. **如果不能创建会话**：选择第一个可用会话线程，连续注入两条明确的测试消息。
+9. **读取结果或状态**：能读回复就读回复；不能读回复也要确认消息已被目标 Agent 接收。
+
+测试消息必须无害、可识别、可公开：
+
+```text
+RabiRoute adapter smoke test. If you see this, reply with: RabiRoute injection OK.
+```
+
+第二条消息必须带序号，用来确认同一会话是否支持重复发送：
+
+```text
+RabiRoute adapter smoke test #2 in the same thread. Reply with: RabiRoute repeat injection OK.
+```
+
+如果目标 Agent 是中文场景，也可以使用：
+
+```text
+RabiRoute Agent 端适配烟测消息。如果你收到这条消息，请回复：RabiRoute 注入成功。
+```
+
+第二条中文测试消息：
+
+```text
+RabiRoute Agent 端适配烟测消息 #2。请在同一个会话里回复：RabiRoute 重复注入成功。
+```
+
+探测结果要沉淀成一小段事实记录，至少包括：
+
+- 使用了哪个 API / CLI / 文件路径。
+- 能否列会话。
+- 会话字段有哪些：id、name、updatedAt、projectPath/cwd。
+- 能否按项目目录筛选。
+- 能否创建会话。
+- 能否向指定会话注入消息。
+- 能否向同一会话重复注入消息。
+- 第二次注入后是否错误地创建了新会话。
+- 注入后能否读取回复或确认接收。
+- 失败点、错误原文摘要和下一步。
+
+如果列会话、建会话或注入消息任何一步没有跑通，该 Agent 的 `maturity` 只能是 `experimental` 或 `stub`。在成功前，只允许提交探测代码、mock、诊断 UI 或明确标注未验证的入口；不要把它做成默认推荐 Agent。
+
+不要用“看起来应该可以”代替真实探测。接口不清楚时，先写临时探测脚本，成功后再把逻辑迁入 Manager scan/status API 和正式 adapter。
+
+## 插件源码与宿主边界
+
+每个 Agent 端在 `src/plugins/<稳定包ID>/` 拥有完整源码，参考 `src/plugins/io.rabiroute.agent.codex/` 与 `src/plugins/io.rabiroute.agent.dsh/`。源码不按版本复制；版本只进入发布产物目录。
+
+- `rabi.plugin.json` 声明稳定身份、版本、Manager/Gateway/Web 入口、能力与依赖；`agent-adapter.json` 声明发现与配置元数据。新增类型采用数据与原生 provider 注册，不扩展宿主枚举或分发 switch。
+- `src/` 保存该 Agent 的适配器、管理操作、安装/登录、会话发现及本地测试。包入口构造真实业务实现，宿主只提供共享服务和原生注册能力。
+- `web/entry.ts`、卡片、翻译和专属资源归本插件。通用页面读取注册目录，不在 RouteConfigPage 追加一个平台分支。
+- `runtime.build.json`、`manager-runtime.build.json` 按实际拥有权声明实现与 worker。共享宿主依赖显式引用 `@rabiroute/host-api/<moduleId>`；不能把另一插件实现伪装成 host API，或复制共享账本。
+- 共享身份、路由、配置和持久化保持原 owner。私有存档使用稳定 namespace；远端明确传入对应 layout/environment，不依赖插件文件的相对目录推导应用根。
+- 新插件从 `0.1.1` 起步；功能变化递增插件版本。架构/扩展点变化才递增宿主。更新后审查入口、真实消费者、状态迁移与资源释放并运行匹配测试/官方构建。
+
+源码、公开配置和构建步骤见 `../../docs/plugin-source-layout.md`；数据归属和升级见 `../../docs/plugin-storage.md`。需要消息入口时使用 `create-rabiroute-message-adapter`。
+
+## UX 合同
+
+Agent 参数面板的顺序固定按依赖关系走：
+
+1. **Agent 路径 / 服务地址 / App ID / CLI 路径**
+2. **项目目录 / workspace / bot 实例 / channel**（仅当该 Agent 有项目或工作区概念）
+3. **会话 / thread / session / resume name**（必须受上一步筛选）
+4. **认证、安装、部署、健康检查动作**
+5. **运行时诊断**
+
+不要让“会话”排在最前面。用户要先知道自己连的是哪个 Agent、哪个项目，然后才知道该选哪个会话。
+
+Agent 卡片本身必须显示统一状态：
+
+- 名称和简短说明。
+- 等级 chip：已验证 / 实验 / 占位。
+- 连接 chip：未安装 / 未登录 / 未启动 / 已连接 / 插件缺失。
+- 如果不是 `verified`，展开面板顶部显示一条短 warning，说明还没验证哪几段。
+
+能自动化的字段使用控件，不用裸输入框：
+
+- 路径：`v-combobox` + 扫描按钮 + 最近配置 + 文件存在状态。
+- URL：默认值 + 健康检查 + 打开 dashboard + 最近成功地址；可手填但不是唯一入口。
+- 会话：`v-combobox` / `v-select`，来源于扫描 API；按 Agent 合同进行项目分组、过滤或全量展示。Codex Desktop 必须可访问全部任务。
+- 安装：状态 chip + 安装按钮或下载链接；安装失败显示 stderr 摘要。
+- 登录：状态 chip + 登录按钮；device code 或浏览器链接要清楚展示下一步。
+- 插件：状态 chip + 部署/更新按钮 + 打开插件目录/插件页。
+- 无会话概念：显示“该 Agent 无会话概念”，不要留一个空白会话输入框。
+
+## 扫描 API 要求
+
+每个新 Agent 都要在 Manager 侧提供扫描/状态能力。可以先扩展 `/api/scan/agents`，复杂时新增：
+
+```text
+GET  /api/agents/<type>/scan
+GET  /api/agents/<type>/status
+POST /api/agents/<type>/install
+POST /api/agents/<type>/login
+POST /api/agents/<type>/deploy-plugin
+```
+
+由本插件的 `src/` 模块提供适用操作，再经插件入口注册到原生 Manager 目录；宿主不构造该平台工厂：
+
+```ts
+scanAgentAdapters(ctx)
+scan<Type>Agent(ctx)
+test<Type>Login(ctx, request)
+get<Type>Status(ctx, request)
+deploy<Type>Plugin(ctx, request)
+open<Type>(ctx, request)
+```
+
+返回 JSON shape 必须和 WebGUI 已消费的结构兼容。迁移旧逻辑时先接新模块再删除 manager 内旧实现，并运行 `npm run build`。
+
+扫描结果至少表达这些信息：
+
+```ts
+type AgentScanResult = {
+  type: AgentAdapterType;
+  label: string;
+  maturity: "verified" | "experimental" | "stub";
+  installed: boolean;
+  installCandidates?: Array<{ label: string; path?: string; url?: string }>;
+  auth?: { required: boolean; loggedIn?: boolean; loginUrl?: string; message?: string };
+  endpoints?: Array<{ label: string; url: string; healthy?: boolean }>;
+  projects?: Array<{ label: string; path: string; exists: boolean }>;
+  sessions?: Array<{
+    id?: string;
+    name: string;
+    projectPath?: string;
+    updatedAt?: string;
+    userNamed?: boolean;
+  }>;
+  plugins?: Array<{ id: string; name: string; installed: boolean; version?: string; healthy?: boolean }>;
+  warnings?: string[];
+};
+```
+
+当前代码还是平铺的 `threadNames/cwdOptions/copilotSessions/copilotBins/marvisAppIds`；新增适配时可以兼容旧字段，但新能力优先按 Agent 分组，避免不同 Agent 的会话混在一起。
+
+推荐返回结构：
+
+```ts
+type AgentScanResponse = {
+  agents: Record<AgentAdapterType, AgentScanResult>;
+  legacy?: {
+    threadNames?: string[];
+    cwdOptions?: string[];
+    copilotSessions?: Array<{ name: string; cwd?: string; userNamed?: boolean }>;
+    copilotBins?: string[];
+    marvisAppIds?: string[];
+  };
+};
+```
+
+WebGUI 读取 `agents[type]` 优先；旧字段只作为迁移兼容。
+
+## 项目目录与会话筛选
+
+如果 Agent 有项目目录或 workspace：
+
+1. 扫描项目目录：从 Agent 会话记录、已有 gateway 配置、最近 workspace、仓库兄弟目录中收集。
+2. 路径必须规范化后比较：处理大小写、斜杠、尾部分隔符、符号链接失败时保持原始值。
+3. 默认按项目过滤或分组；Codex Desktop 是明确例外：显示全部任务的名称 + 最后时间，选择后自动采用该任务 `projectPath`，避免固定前 100 条或路径别名把任务藏掉。
+4. 如果未选择目录，会话按项目分组或显示项目标签，不要让用户猜。
+5. 选择会话时，如果该会话带 `projectPath`，回填项目目录；Codex 以任务自己的 cwd 为准。
+6. 如果项目目录与会话项目不一致，显示 warning，不要静默投递。
+
+会话身份必须遵守：
+
+- 下拉显示 `name + updatedAt`，内部 value 和持久化绑定使用 Agent 返回的完整 opaque ID。
+- Codex 的 `name` 必须来自 Desktop 左侧栏共用的 `session_index.jsonl.thread_name`；SQLite 只按完整 ID 补充 cwd、归档、时间和 owner/rollout 定位。禁止使用 app-server `thread.name` 或 SQLite `threads.title` 覆盖侧栏 `Name`。
+- 会话绑定同时持久化可见名称、完整 ID 和 workspace；完整 ID 决定任务身份，workspace 决定下一轮执行目录。名称、时间和任务保存的默认 cwd 是展示或运行元数据，不能让有效 ID 失效。
+- 投递前必须通过实际 owner 的合同验证精确 ID，并校验规范化 cwd。Codex 还必须验证 Desktop IPC 及目标任务 owner。
+- 统一 resolver 先读取有效 ID；ID 存在且未归档就精确绑定，本轮 cwd 单独传入，不比较 owner 的可变标题。ID 已归档时，真实投递或保存提交点按旧 ID 隔离的幂等键创建新任务并更新绑定，不复用其它同名任务。ID 为空、非法或确实失效时走名称查找，零匹配才按用户输入的新名称创建；最新时间并列才要求选择。
+- 扫描、刷新、输入和 `blur` 只能 lookup，禁止创建；保存/应用、第一条真实投递或用户显式点击“自动初始化会话”才是 create 提交点。
+- 保存提交必须调用和真实投递相同的 resolver，成功前写回完整 ID、名称和 workspace；连续保存不得再次创建。
+- create 必须按 `agentProfile + normalizedWorkspace + requestedName` single-flight；create 已返回但索引尚未刷新时，立即重试仍返回同一个 ID。
+- 精确 ID 决定目标任务；任务默认 cwd 与本轮目录不同不影响身份，按本轮指定目录执行。目录确实不存在或宿主不支持切换时报告具体错误并修复目录/调用，不切换任务。
+- 默认通过扫描或创建取得完整 ID；用户明确提供的完整 ID 可直接按 owner 合同解析，不要求额外许可。
+- 列表超过默认页大小时必须提供分页/搜索或完整加载，不能固定截断后宣称“所有会话”。
+- 名称和 workspace 匹配多个会话时必须按可解析的 `updatedAt` 降序选择唯一最新者，禁止依赖数据库返回顺序；只有最大时间并列或都无有效时间时才让用户选择。
+
+没有项目概念的 Agent 不显示项目目录。只有服务地址/插件/频道概念的 Agent，用对应字段替代。
+
+## 安装、登录和插件检查
+
+每个 Agent 都要有“可行动”的状态：
+
+- 未安装：显示检测来源，提供安装按钮或官方下载/文档链接。
+- 未登录：显示登录方式；能自动启动登录就提供按钮，不能就打开登录页。
+- 服务未启动：提供打开 dashboard、复制启动命令或打开安装目录。
+- 插件缺失：提供部署/更新按钮，并显示部署目标路径。
+- 权限不足：显示需要的权限名和配置位置。
+
+不要只写“请设置环境变量”。如果确实需要 env，要在 UI 里显示变量名、当前是否缺失、哪里保存、是否需要重启 Manager。
+
+## 消息投递协议
+
+`deliver(message: string)` 可以继续兼容纯文本，但新 Agent 应优先能接收结构化上下文。最少要保留这些信息：
+
+- 渲染后的正文 prompt。
+- route kind、input adapter、output adapter/pipeline。
+- 来源信息：群聊/私聊/Webhook/手动触发/语音转写。
+- 角色信息：`agentRoleId`、`agentRolePath`、`agentRoleDir`。
+- 上下文路径：日志、消息记录、附件或 transcript 路径。
+- 期望输出：纯文本、QQ 草稿、JSON、语音短回复、Webhook payload 等。
+
+如果目标 Agent 只能收纯文本，就把结构化字段渲染进 prompt；如果它有 HTTP/plugin API，就发送 JSON，并在 adapter 内做版本兼容。
+
+工具能力与会话文本分开处理：
+
+- 当前轮次有哪些工具，以该 Runtime 实际注册的能力为准。
+- 恢复同一个 session/thread 不代表另一个客户端注入的工具也会恢复。
+- 提示词不能让未注册工具出现；缺工具时要返回明确能力错误和替代入口。
+- 对 Codex，真实 prompt 必须由 Desktop 任务 owner 执行，才能沿用 Desktop 注入的工具和实时状态。
+- 需要跨任务操作时，使用正式桥接 API（例如 `/api/agent/threads`）；它的实际 `send` 仍须进入目标 owner。
+- scan/status 应分别表达 transport、task owner 和 turn tools，不能只返回含糊的 `connected`。
+
+正式 adapter 的第一条集成测试必须来自“先摸清真实 API”的探测结果：
+
+- 支持创建会话：测试创建会话，向同一个会话连续注入两条测试消息，并确认没有创建新会话。
+- 不支持创建会话但能列会话：测试向第一个可用会话连续注入两条测试消息。
+- 能列会话但不能稳定复用同一会话：不能标 `verified`，UI 要提示该 Agent 可能每次投递新开线程。
+- 不能列会话但能投递到默认管线：测试默认管线注入，并在 UI 标明“无可选会话”。
+- 只能打开外部页面或复制剪贴板：不能称为“线程消息注入”，只能标为 `stub` 或人工接力型 adapter。
+
+## 状态文件和诊断
+
+每个 Agent 需要写自己的 state 文件到当前 route 的 `dataDir`，例如：
+
+```json
+{
+  "agentAdapterType": "astrbot",
+  "monitorThreadId": "optional-session-id",
+  "monitorThreadName": "optional-session-name",
+  "monitorThreadSource": "http://127.0.0.1:6185",
+  "bound": true,
+  "notificationCount": 3,
+  "lastNotificationAt": "2026-06-07T00:00:00.000Z",
+  "lastNotificationError": null,
+  "lastPromptPath": "...",
+  "lastResponsePreview": "..."
+}
+```
+
+WebGUI 诊断区至少显示：连接/绑定状态、目标来源、最后成功、最后错误、状态文件路径。错误要转成用户能行动的中文提示。
+
+## WebGUI 实现要求
+
+- 进入 Agent 设置页或打开快速配置对话框时自动扫描一次项目与会话；同一页面生命周期内不重复自动扫描。
+- 只有用户点击扫描/刷新按钮可以再次请求项目与会话扫描。展开/折叠 Agent 参数、添加卡片、输入、`blur`、保存、健康轮询或计时器都不能触发扫描。
+- 扫描按钮总是可见；列表为空时显示“扫描”而不是空下拉。
+- 带角色和会话的 Agent 可提供“自动初始化会话”按钮：先保存名称 + ID 绑定；按 Manager 配置名称查找，零匹配只创建一次；再走正式 AgentPacket/角色消息链投递角色资料。初始化首投失败时复用已创建 ID，只重试投递，不再次创建。
+- 关键动作按钮使用图标：刷新、下载/安装、登录、打开、部署、复制。
+- 保存时校验字段格式并展示路径、连接与依赖状态；暂时离线不阻止保存配置。投递使用有效任务 ID 和本轮目录，不把默认项目目录匹配作为额外准入条件。
+- 不要把多个 Agent 的会话混在一个未标注的列表里。
+- 添加 Agent 后可以自动展开参数面板，但复用页面进入时的扫描结果；需要刷新时由用户点击扫描。
+
+快速配置只放最常用链路，但顺序也必须是：Agent 类型 -> 路径/地址 -> 项目目录 -> 会话 -> 角色。
+
+## AstrBot 改造特别要求
+
+AstrBot 当前只支持 ChatUI 会话合同：
+
+- 扫描默认 dashboard：`http://127.0.0.1:6185`，并允许发现最近配置的 URL。
+- 检查 dashboard 是否在线、登录是否可用，并发现可绑定的 ChatUI 会话。
+- 配置必须保存明确的 `ASTRBOT_SESSION_ID`；没有会话 ID 时保存现有配置并显示待解析目标，继续会话发现；解析出明确目标后更新 ID 和投递状态。
+- 投递只调用 `/api/chat/send`。不得调用 `/api/plug/rabiroute_agent/chat`，不得部署 `rabiroute_agent`，不得在会话缺失时切换到默认管线。
+- 如果 AstrBot API 能列 bot、平台账号、群/私聊 channel，可继续提供辅助筛选，但最终投递身份仍是已保存的 ChatUI 会话 ID。
+- 密码/token 缺失时显示缺失字段和重启/保存要求，不要等投递时才失败。
+
+## 验证清单
+
+按以下顺序交付，前一步没有证据不得进入下一步：
+
+1. 冻结用户可观察合同和禁止替代。
+2. 完成 owner/lifecycle 表与真实协议探测。
+3. 只实现一条最小纵向链路：发现一个目标、投递一条真实消息、读取或观察结果。
+4. 先验证 owner 缺席、旧配置残留、失效 ID 和重复投递，再实现完整 WebGUI。
+5. 完成 UI、诊断和文档后才构建安装包；打包不能充当架构验收。
+
+完成后至少执行：
+
+```text
+npm run webgui:build
+npm run build
+```
+
+如果改了 WebGUI，启动本地页面并用浏览器检查：
+
+- Agent 面板可以渲染，无前端运行时错误。
+- 字段顺序符合“路径/地址 -> 项目目录 -> 会话”。
+- 扫描按钮、安装/登录/部署按钮不会让配置变脏，除非真的改了配置。
+- 项目目录筛选会话有效。
+- 缺安装、缺登录、缺插件、服务断开时都有可行动提示。
+
+如果改了投递逻辑，至少用一个 mock 或本地假 endpoint 验证成功和失败两条路径都会写 state。
+
+所有 Runtime 或会话接入还必须覆盖：
+
+- RabiRoute 缺席时 Agent/Desktop 独立冷启动。
+- Agent/Desktop 缺席时 Manager 独立启动；Codex 显示 Desktop 未就绪且不启动 fallback。
+- 分别关闭、重启两端，不互相拖死。
+- 用户环境残留旧 endpoint 时不产生隐藏依赖。
+- 重名会话按名称 + cwd 限定候选；精确 Codex ID 不因任务保存的默认 cwd 与本轮 workspace 不同而失效。非法/失效 ID 按名称 + cwd 自动解析，一个或多个匹配选择唯一最新者，零匹配创建，最新时间并列要求选择；已归档 ID 必须创建新任务、更新绑定且不复用同名任务。
+- Desktop/Agent 端改名或 SQLite 标题在首投后变化时，连续两次真实投递仍使用同一 ID；Rabi 端明确输入新名称时先清空旧 ID，再按新名称查找/创建并保存新 ID。
+- Codex 下拉和无 ID lookup 能按左侧栏 `Name` 找到 UI 可见任务，即使同一 ID 的 app-server `thread.name` 与 SQLite `threads.title` 都不同；该场景不得创建新任务。侧栏索引缺少 `Name` 时修复或刷新索引，也可使用已知完整 ID 继续；不把自动标题猜成用户名称。
+- 自动初始化按钮先持久化名称 + ID，再投递包含角色文件、记忆/计划索引和必读项的初始化消息；Desktop 中真实可见，初始化失败不产生第二会话。
+- 超过 100 个会话时仍能访问全部结果；UNC、映射盘和 extended path 规范化后属于同一 cwd。
+- 记录进入设置页、展开面板、输入、`blur`、保存和空闲等待期间的扫描请求次数：只有页面进入一次和每次显式点击扫描各增加一次，禁止后台持续增长。
+- 同一会话连续真实投递两次，不意外新建线程。
+- active turn 使用 steer 或明确排队，不并发 start。
+- Codex 实际消息能在 Desktop 目标任务立即显示，并由同一个任务 owner 执行。
+- Desktop 任务工具可用；若缺失，确认不是另一个 Runtime 执行后再报告能力缺失。
+- 登录过期、服务离线和用户配置的限制分别返回可行动错误；沿用用户已有授权和宿主实际审批设置，不在适配器添加默认拒绝或二次许可。
+- 多个 gateway/bridge 不会重复消费同一事件。
+
+测试不能只证明“服务已经运行时能连接”。必须验证冷启动、依赖缺席、残留配置和独立退出，并用 `git diff` 确认没有修改用户级环境、注册表或外部应用启动配置。
+
+验证结果要回写到能力等级：
+
+- 只验证了 UI 构建，不算 `verified`。
+- 只验证了扫描，不算 `verified`。
+- 没有真实投递目标时，保留 `experimental`，并记录 mock 验证范围。
+- 真实跑通过扫描、配置保存、消息投递、失败诊断后，才升为 `verified`。
+
+## 宿主接入检查表
+
+接入能力探测、Hook 自检和宿主专项诊断再读 [宿主接入检查表](references/host-onboarding-checklist.md)。当前正文与现行 Manager 合同优先；参考中的宿主能力必须在当前安装版本复核。

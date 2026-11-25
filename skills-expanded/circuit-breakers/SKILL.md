@@ -1,0 +1,175 @@
+---
+name: circuit-breakers
+description: >
+  The breaker as a state machine that stops calling a failing dependency: closed, open and
+  half-open; choosing rate windows versus consecutive failures; recovery probe limits and
+  in-flight work across state transitions; the failure predicate—classifying correlated
+  dependency failures rather than blindly counting status classes—and the distinction between
+  protecting caller resources by failing fast and providing a semantically valid fallback. Use when a breaker trips on
+  consecutive failures, when it never
+  trips or trips on one client's bad requests, when half-open sends full traffic at a
+  recovering dependency, when a breaker sits on a call with no timeout under it, or when a
+  dependency is slow rather than failing. Does not cover bulkheads
+  (concurrency-limiting-and-bulkheads), retry policy (retries-and-backoff), the bound itself
+  (timeouts-and-deadlines), the system-wide loop (cascading-failures), shedding
+  (rate-limiting-and-load-shedding), or serving a cached fallback (caching-strategies).
+---
+
+# Circuit Breakers
+
+## Purpose
+
+A circuit breaker is a state machine in the caller that stops calling a dependency which is
+already failing, so calls fail immediately instead of waiting for a timeout. It avoids tying
+up additional caller threads and connections in calls predicted to fail —
+the amplification point `cascading-failures` names as pool exhaustion.
+
+**A breaker fails fast on rejected calls; it does not supply a successful result for them.**
+That protects the caller's resources even when the only honest result is a typed error. A
+fallback or degraded response can preserve useful availability, but is not a prerequisite for
+resource protection. Decide both the fast-failure contract and any fallback first.
+
+## States
+
+```text
+CLOSED    → OPEN       failure rate or slow-call rate ≥ threshold, over ≥ minimum calls
+OPEN      → HALF_OPEN  after the wait duration; calls before it are rejected untried
+HALF_OPEN → CLOSED     the recorded recovery sample meets success/slow-call thresholds
+HALF_OPEN → OPEN       the recorded sample breaches a threshold (per implementation policy)
+```
+
+## Workflow
+
+The Java illustration requires Java 21+ without preview; configuration guidance is checked
+against Resilience4j 2.3.0 and its CircuitBreaker guide. Inspect compiler release/toolchain,
+runtime image, resolved breaker/client dependencies and Spring/programmatic integration before
+using property names or decorators. Do not upgrade the project to adopt this example. Reuse
+existing traffic, outcome mappings, decorator configuration and test evidence before asking.
+Keep tuning conditional when these are missing, ask only for decision-changing evidence, and
+continue independent classification or boundary checks.
+
+Before tuning an existing breaker, establish its identity, lifetime, active mode and actual
+call interception. A new breaker per request cannot accumulate shared history; an annotation
+or configured name alone does not prove the real call is protected. Use the lifecycle checks
+in `references/breaker-configuration.md` to distinguish wiring defects from threshold problems.
+
+1. **Check failures predict later calls within the proposed scope.** An invalid payload is
+   request-specific; an independently failing tenant backend or endpoint may justify a bounded
+   scoped breaker. Do not make unrelated callers share that failure history.
+2. **Decide what the caller does with a fast failure**, including status/type, retry guidance,
+   fallback provenance and whether accepted writes may be queued.
+3. **Put a timeout under the breaker.** A breaker counts outcomes, and a call that never
+   returns produces none (`timeouts-and-deadlines`). For asynchronous calls, identify the
+   completion the breaker observes: timing out only the caller-facing wrapper can leave the
+   recorded operation pending. See `references/breaker-configuration.md` before moving decorators.
+4. **Write the failure predicate explicitly**, exception type by exception type and status
+   class by status class. This is the decision with the largest consequence; the table is in
+   `references/breaker-configuration.md`.
+5. **Size the window from the endpoint's traffic**: sliding window type and size, the minimum
+   number of calls before the rate is evaluated, the failure-rate threshold, and — separately
+   — a slow-call rate threshold, so a dependency that is slow but returning 200s still trips.
+6. **Bound recovery load and set the wait duration.** Include half-open residence, ignored-call
+   replacements, unfinished earlier calls and fleet-wide probe load. Per-instance permits do
+   not establish an overall work limit; check the lifecycle in `references/breaker-configuration.md`.
+7. **Instrument state and transitions**, then prove both directions in a test: force the trip
+   under injected failure, assert the probe count, assert recovery. See
+   `references/fallbacks-and-testing.md`.
+
+## Decision block
+
+```text
+Use a circuit breaker when:
+- the call is remote and its failures are correlated — this call failing predicts the next
+  one failing, which is what makes past outcomes usable as a prediction
+- the call holds a scarce resource while it waits: a request thread, a pooled connection
+- the caller has a defined behaviour for a fast failure, and that behaviour is honest
+Avoid a circuit breaker when:
+- failures are independent or request-specific, so recent outcomes do not predict the next call
+- the failures are per-request rather than per-dependency — validation errors, not-found,
+  one tenant's malformed payload. The breaker punishes every caller for one caller's bug
+- traffic through that breaker is below the minimum call count that makes a rate meaningful:
+  it will either never trip or trip on a run of noise
+- the call is in-process and the real issue is a lock, algorithm or local resource; diagnose and
+  bound that resource rather than using remote-health prediction
+Prefer instead when:
+- the saturated resource is yours and the dependency is healthy → a concurrency limit or
+  bulkhead (concurrency-limiting-and-bulkheads)
+- you are the overloaded party and must refuse work → rate-limiting-and-load-shedding
+- one call occasionally hangs but the dependency is fine → a timeout alone
+```
+
+## Rules
+
+- Prefer a rate/slow-call window with a minimum sample for ordinary noisy traffic. Consecutive
+  thresholds can fit rare calls or categorical failure bursts, but are noise-sensitive and can
+  miss sustained intermittent failure. Neither policy is inherently faster: compare the actual
+  thresholds against representative outcome sequences, false-open frequency and detection time.
+- **State the effective minimum number of calls and derive it from the endpoint's rate.**
+  Resilience4j 2.3.0 caps the minimum at the count-window size, including the half-open
+  window; a configured minimum or probe allowance alone does not establish the recovery
+  sample. Use the built configuration, since builder methods can normalize inputs differently
+  (see `references/breaker-configuration.md`). Below the effective minimum, rate-based
+  evaluation is unavailable; with a minimum of two, one failure evaluates to 50%. An
+  endpoint serving 2 requests a minute needs a longer/count-based window, a smaller justified
+  sample, a categorical/consecutive signal, or no statistical breaker.
+- **Half-open should restrict new recovery traffic.** Choose enough recorded outcomes to inform
+  recovery without overwhelming it. Check when the recovery decision actually occurs: it may
+  precede completion of all permitted probes. A permit/sample setting is not a total-attempt or
+  in-flight cap: ignored calls and completions from earlier states affect some implementations.
+- A breaker with no slow-call criterion misses the failure mode that matters most: a
+  dependency answering 200 OK in 30 s exhausts the caller like an outage while the
+  failure-rate breaker reads 0%. Set a slow-call duration and rate, or a tight enough timeout.
+- **What counts as a failure decides whether the breaker works.** Classify whether an outcome is
+  correlated across future calls in this breaker scope and consumes the protected resource. Most
+  validation/domain 4xx are excluded, but 408/429 and shared authentication/routing failures need
+  policy. Some 5xx are payload-specific bugs and should not poison unrelated calls.
+- **A typical library breaker's state is per instance.** N instances each learn from their own traffic, so in
+  a partial outage some are open and some closed and the fleet degrades unevenly. Usually
+  acceptable; never quote a fleet-wide trip time.
+- **Scope the breaker to the failure domain you want to isolate.** One breaker per downstream
+  host lets one slow endpoint open it for all of them; one on a shared resource lets one
+  abusive caller open it for everyone. Key per dependency and endpoint, per tenant when
+  tenants can be independently bad—but per-tenant keys need cardinality bounds and expiry or the
+  breaker registry becomes attacker-controlled memory.
+- Retry composition is a decision, not a default. With `Retry(Breaker(call))` the breaker
+  records **admitted attempts**; local open-state rejections are not backend failure samples.
+  With `Breaker(Retry(call))` it records one outcome per logical call, whose duration includes
+  attempts and backoff. The sample and slow-call meaning therefore depend on composition;
+  reconcile the entire operation with the caller's deadline.
+- A fallback that silently returns wrong data is worse than an error. An empty list the caller
+  persists, a zero balance, a default entitlement that grants access — each turns an
+  availability incident into a data one. Mark degraded responses as degraded.
+- Opening rejects new admissions; it does not cancel calls already in flight or bound closed-state
+  concurrency. Preserve real client deadlines/cancellation and add a bulkhead when that resource
+  needs a concurrency limit. A fallback inside the recorded operation can mask every backend
+  failure as success; record the primary outcome before applying fallback.
+- Instrument state, transitions, recorded primary outcomes, rejections and degraded responses.
+  Interpret open duration alongside demand and caller impact: a quiet, lazily transitioning
+  breaker is not fresh evidence of an ongoing outage. Repeated short open/half-open cycles can
+  cause substantial rejection even without one long open interval. Use transitions to diagnose
+  that cycling, and alert according to sustained impact; one transition alone is not an incident.
+  A successful fallback must not erase primary-failure or degraded-response visibility.
+
+Deliver the recommendation, including keeping current settings or relying on an adequate timeout
+or bulkhead alone. When a breaker is warranted, give its scope, measured traffic/sample assumptions,
+outcome classification, decorator order, settings and trip/probe/recovery assertions. State what
+evidence would change the decision. Separate observed state and downstream calls from hypotheses
+about dependency health; reuse valid checks and report those not executed.
+
+## Primary sources
+
+- [Resilience4j CircuitBreaker guide](https://resilience4j.readme.io/docs/circuitbreaker)
+- [Google SRE — Addressing Cascading Failures](https://sre.google/sre-book/addressing-cascading-failures/)
+- [AWS Builders' Library — Timeouts, retries and backoff with jitter](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/)
+
+## References
+
+- [Configuring a breaker](references/breaker-configuration.md) — every parameter with what it
+  controls and the failure a wrong value produces, the failure-predicate decision table over
+  status codes and exception types, retry composition arithmetic, and per-instance versus
+  shared state. Read before configuring or reviewing a breaker.
+- [Fallbacks and testing](references/fallbacks-and-testing.md) — the fallback options with the
+  condition making each honest, the wrong-data rule, and how to prove a breaker works: forcing
+  the trip, asserting the half-open probe count, asserting recovery, plus decision cases for
+  lifecycle, bypass and state interpretation. Read when writing the fallback or its tests,
+  diagnosing missing protection, or evaluating this skill's decisions.

@@ -1,0 +1,85 @@
+---
+name: dava-usul-tedbir-strateji
+description: "Taşınmaz davası açılmadan önce doğru mahkeme, dava şartları, harç-değer, süreler ve taşınmazın elden çıkmasını önleyici ihtiyati tedbir/şerh stratejisi belirlenmesi gerektiğinde kullanılır."
+---
+
+# Gayrimenkulde Usul, Görev-Yetki, İhtiyati Tedbir ve Strateji
+
+## Görev
+Taşınmaz uyuşmazlığının usulî iskeletini kurmak: görevli ve yetkili mahkemeyi, dava şartlarını, harç ve değeri, süreleri ve karşı tarafın taşınmazı devretmesini önleyecek ihtiyati tedbir/şerh stratejisini belirlemek; davayı en etkili sıra ve biçimde kurgulamak.
+
+## Soğuk başlangıç (intake)
+- Talep türü ne (tapu iptali-tescil, satış vaadi ifası, el atma, ortaklığın giderilmesi, kamulaştırma bedeli, tüketici)?
+- Uyuşmazlığın değeri ve taraf sıfatları (tüketici/tacir/idare) ne?
+- Karşı tarafın taşınmazı üçüncü kişiye devretme veya kayıt değiştirme riski var mı?
+- İşleyen süreler var mı (satış vaadi 10 yıl, İYUK 60 gün, tüketici/cayma süreleri)?
+
+## Denetim şeması
+1. **Yetki**: Taşınmazın aynına ilişkin davalarda (mülkiyet, tapu iptali-tescil, el atma, ortaklığın giderilmesi, irtifak) kesin yetki taşınmazın bulunduğu yer mahkemesidir (HMK m.12). Birden çok taşınmazda biri yeterlidir.
+2. **Görev**: Kural asliye hukuk (HMK m.2). Ortaklığın giderilmesi ve kat mülkiyetinden doğan davalar sulh hukuk (HMK m.4; KMK Ek m.1). Tüketici sıfatı varsa tüketici mahkemesi (6502 m.73). İmar/kamulaştırma iptali idari yargı (İYUK). Görev kesindir, re'sen gözetilir.
+3. **Dava şartları (HMK m.114-115)**: Hukuki yarar, taraf-dava ehliyeti, husumet; elbirliği mülkiyeti ve ortaklığın giderilmesinde zorunlu dava arkadaşlığı eksik husumet doğurabilir.
+4. **İspat (TMK m.6; HMK m.190 vd.)**: Hakkı iddia eden ispatla yükümlüdür; tapu kaydı doğruluk karinesi taşır. Taşınmaz davalarında keşif ve bilirkişi (harita-fen, değerleme, inşaat) çoğunlukla zorunludur. Resmî senetle yapılan işlemler güçlü delildir; tanıkla aksinin ispatı sınırlıdır (HMK m.201).
+5. **İhtiyati tedbir (HMK m.389 vd.)**: Taşınmazın devrini/üzerine işlem yapılmasını önlemek için tapuya tedbir şerhi istenir; yaklaşık ispat ve teminat gerekir. Satış vaadi/kişisel haklarda m.1010 (TMK) tasarruf kısıtlaması şerhi düşünülür.
+6. **Harç ve değer**: Aynı ilişkin davalar nispi harca tabidir; dava değeri taşınmazın güncel değerine göre belirlenir; eksik harç dava şartı sorunu doğurur.
+7. **Ara sonuç**: Doğru mahkeme + tam dava şartları + gerekiyorsa devri önleyici tedbir; talepler arasında terditli/kademeli kurgu.
+
+## Çıktı modülleri
+- Görev/yetki, yargı kolu ve harç-değer kontrol listesi.
+- İhtiyati tedbir/şerh dilekçesi iskeleti (yaklaşık ispat, teminat).
+- Süre ve husumet (zorunlu dava arkadaşlığı) uyarı notu ve dava kurgu planı.
+
+## Plugin bağlamı
+
+Bu beceri `gayrimenkul-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

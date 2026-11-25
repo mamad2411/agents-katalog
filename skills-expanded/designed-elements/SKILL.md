@@ -1,0 +1,223 @@
+---
+name: designed-elements
+description: >
+  Builds the DESIGNED, code-rendered elements of a generated-video piece — end cards, turntables, layers that
+  straddle a cut, bursts, kinetic titles — as HyperFrames compositions from the client's own art, fixed at the
+  source by measurement and verified on the delivered frame. Use when a piece needs a card, a turntable or a
+  layer, when a product must be designed instead of generated, when an asset has a defect, or when a designed
+  event must be re-timed or re-rendered. Triggers — "end card", "the turntable", "a layer over the cut", "spruce
+  up the card", "the edges need aligning", "new length", "render the hyper", "sync it to the sound". Not for
+  generated motion, prompts or references — use video-refs-continuity. Not for placing the element on the timeline
+  — use video-edit-edl. Not for the sting, the chimes or the bed — use spot-audio-assembly. Not for the grade or
+  the encode — use video-finish. Not for a whole narrated explainer — use explainer-video.
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(python3*), Bash(bash*), Bash(node*), Bash(npx*), Bash(ssh*), Bash(rsync*), Bash(ffmpeg*), Bash(ffprobe*), Bash(ls*)
+---
+
+# Designed Elements
+
+Two families share nothing: generated motion (stochastic, GPU, expensive) and designed motion
+(deterministic, CPU, code — infinitely revisable). This skill is the second, fenced from the first —
+motion graphics never pollute the generation context. Its whole game is
+**craft and design-system fidelity**, and its whole discipline is **fix at the source, check on the
+delivered frame, one variable per round**.
+
+**What varies.** The kit — card, turntable, wall, drift, burst — is an ad campaign's; a film or an explainer builds only
+what its brief names. The 2160×3840 canvas, the legibility floor (~40 px at a 2160-wide raster) and the render host scale
+with the delivery raster and the machine. Fixing at the source and reading the delivered frame do not move —
+`video-production/references/WHAT-VARIES.md`.
+
+## 1. Decide what is designed
+
+Anything that must be exact is designed, never generated: packaging and product (a gen printed
+"WARNIGY"), the wordmark and the card, the product's pieces as sprites, a display with names, a wall or
+a drift that must straddle a cut at a known frame. Anything that must be alive is generated. The two
+meet only where the operator has accepted a composite on a plate — **never a 2D overlay on generated
+motion**. Every on-screen WORD has a named source — the client's text, a line heard in the footage, the CTA, or a fact
+read on the page that publishes it and cited on the card — and an internal label, a placeholder or a concept name never
+prints in a frame (a shipped frame once read the concept's working title, 2026-09-15). A **data card** carries a sourced
+fact that supports or tests the point being made — a figure, a ruling, a finding — never a restatement of the line heard
+under it: a card that repeats the speaker is a caption with a border, and a full set of them was rejected
+(2026-10-23). Every figure is read on its primary source (the agency's table, the statute, the paper, the court order)
+before it renders, and the card's source line names that source; a search answer is a lead, never a source — on one job a
+search answer gave a year's total 40 % over the agency's own table, caught on the table before render
+(2026-10-23).
+
+**Done when:** every element in the shot list is labelled designed or generated, and each designed one
+names its kit entry (card · turntable · wall · drift · burst · title) and its length — and, where no voice sets the
+length, the holds of every line it sets plus their reveals and exits fit that length ([`references/CRAFT.md`](references/CRAFT.md) § Readable time) — and a
+card whose rows reveal one at a time passes `card_read_time.py` on the plan before it renders.
+
+## 2. Build from the kit, customised per SKU
+
+The style brief comes first, before any composition exists: [`references/STYLE-BRIEF.md`](references/STYLE-BRIEF.md) —
+eleven sections and a block, written from the subject, approved with the scene plan, checked by `style_brief_check.py`
+(`--prev` against the last build's brief). A campaign whose brief is accepted reuses it; a change goes through the
+creative checkpoint's change steps (`ad-spot-preprod` § 6). A campaign whose kit was accepted before this form existed
+has its brief written from that kit at its next designed build, approved with that build's plan; the kit itself does
+not change for it. Styles to name as neighbours, and camera grammar to borrow:
+[`references/STYLE-CATALOGUE.md`](references/STYLE-CATALOGUE.md).
+
+```bash
+python3 ~/.claude/skills/designed-elements/scripts/style_brief_check.py style-brief.md --prev <last build>/style-brief.md
+python3 ~/.claude/skills/designed-elements/scripts/hyper_new.py --out hyper/<name>-<len> --kind card|turntable|layer --dur 2.5 --canvas 2160x3840 --seed 606
+```
+
+The campaign kit (card, wall, drift, turntable, signature slot) is dialled in once; a SKU changes the label
+texture, the exact-silhouette sheet the sprites are cut from (`video-refs-continuity` plate pieces),
+the palette and the name. Taste comes from the client's own art and the shot-recipe numbers, never a
+web design system. Assets are cut from the highest-resolution source
+with a silhouette matte; a hard border or a straight edge is fixed AT THE SOURCE. The contract every
+composition obeys (`data-*`, `window.__timelines`, a seeded PRNG, local assets, a new length = a new
+project): [`references/HYPERFRAMES-CONTRACT.md`](references/HYPERFRAMES-CONTRACT.md); the kit and where
+each element lands in the EDL: [`references/KIT.md`](references/KIT.md).
+
+A NEW device or typeface is the operator's pick from rendered options before the kit is dialled in for the campaign — a
+motion test of the device on the project's own frames, and the message line set in three to five typefaces
+(`ad-spot-preprod` § 6, the creative checkpoint); a written standard does not stand in for the pick.
+
+**Done when:** for a new subject or a changed style, the style brief passes `style_brief_check.py` and is approved; the
+project renders its full length from
+local assets with a seed, and its sync constant (the burst's `T0`, the wall's opaque frame, the ding times) is written
+in the composition.
+
+## 3. Render, then read the render
+
+```bash
+bash ~/.claude/skills/designed-elements/scripts/render_hyper.sh --dir hyper --name <name> --format mp4 --host <render host> --push --pull
+bash ~/.claude/skills/designed-elements/scripts/render_hyper.sh --dir hyper --name <name> --format png-sequence --host <render host> --push --pull
+python3 ~/.claude/skills/designed-elements/scripts/layer_check.py --frames hyper/<name>/frames --expect-dur 1.0
+python3 ~/.claude/skills/designed-elements/scripts/det_check.py source hyper/<name>                      # every round, free
+python3 ~/.claude/skills/designed-elements/scripts/det_check.py prove hyper/<name> --host <render host>  # a new composition, or a new draw path
+```
+
+Render on the GPU VM (WSL2's headless Chromium hangs), sentinel `RENDER-END`. An event is probed
+(raster, duration = `data-duration`, fps); a layer is checked for contiguous RGBA frames and the frame at
+which it goes opaque — the number the edit places the wall by. The card's burst frame is found by PSNR
+against the render and verified by region brightness.
+
+**The render is split across workers, so a composition must be a pure function of time**
+([`references/HYPERFRAMES-CONTRACT.md`](references/HYPERFRAMES-CONTRACT.md) § The determinism proof). `det_check.py
+source` reads the script for the clock and random readers, a 2D canvas opened without `willReadFrequently` and a `from()`
+with `immediateRender: false` beside a `repeat: -1` (WARN), the CSS for a `transition` (FAIL) and a `will-change:
+transform` (WARN), script and CSS for an opacity, `autoAlpha` or filter on a `transform-style: preserve-3d` element (WARN:
+it snaps back to 3D in one frame), and every PNG for the colour chunks Chromium applies (WARN) — the engine traps measured
+in the contract's § Silent traps; `prove`
+renders the composition twice at different worker splits and compares every frame, which is the only thing that sees
+an accumulation or a raster-path change.
+
+**Done when:** the render probes at its declared length and raster, the layer check passes, `det_check.py source`
+passes (and `prove`, for a new composition — a FAIL whose ONE-ROW block puts every difference on a shrinking text's
+bottom edge counts as passed once those frames are read and the finding is written beside the composition,
+HYPERFRAMES-CONTRACT § The determinism proof), every `det_check.py source` WARN is answered (fixed at the source, or
+read on its frames and recorded — `det-ok: <reason>` on its line, or inside its inline style; a PNG's colour chunks are
+answered by re-saving the art without them, or by a note beside the composition), every `overlapping_gsap_tweens` warning in the check summary is
+answered — one writer per property per element per window, or the overlap read on its frames and shown to draw nothing
+(HYPERFRAMES-CONTRACT § Silent traps: which tween wins flips on a `tl.call()` anywhere in the timeline) — and the sync
+numbers are handed to `video-edit-edl` and `spot-audio-assembly`.
+
+## 4. Verify on the DELIVERED frame, at zoom
+
+The render is not the artefact — the delivered frame is. After the finish, read the element in the
+deliverable at 1:1 and 4× (`video-take-review` `window_frames.py`): the card's edges, the wordmark's
+notches, the wall's coverage across the join, the pieces' legibility (no sprite below ~40 px at a
+2160-wide raster; clusters only in the far field). A fix checked on the card render while the
+delivered frame keeps the defect is a rejected round.
+
+Motion is read on the frames too, never only at speed: `video-finish-qc` `decoded_checks.py motion <render>` lists every
+one-frame pop and one-frame step and the flash rate, with the element's own declared cuts (`--accepted`) set aside —
+its floor is a step of ~2 levels over the whole frame, so a small element's snap needs `--tiles`, a lead that designed
+slams, wipes and shakes also fire. Then the contact sheet at the element's beats (`video-take-review` `contact_sheet.sh
+--beats`, at phone size with `--phone`) and the frames either side of every flagged one.
+
+A composition that sets text is read at the source too: `literal_audit.py hyper/<name> --approved <approved copy>`
+lists every string it can put on screen that the approved copy does not carry — a counter's intermediate or a label
+on a transition shows between sampled frames and nowhere else. The readable-time, number, glyph and join rules are
+arithmetic on the composition's own timeline: [`references/CRAFT.md`](references/CRAFT.md).
+
+A composition with three or more scenes has its STRUCTURE read at the source as well:
+`slide_structure_audit.py hyper/<name>`. Frames cannot tell you that a film is a slide deck — it can pass hero size,
+empty runs and still share and still be one, because the defect is that scenes switch by opacity with nothing moving
+the world, that a kicker/title/body stack sits in one container, that scale is the only thing animated, or that every
+cut animates the same properties. Four judgement rows, read on the composition; it exits 2 rather than 0 when it
+cannot segment the scenes, because a composition it could not read is not one it has cleared.
+
+**Done when:** the defect list is written from the delivered frame, with frame times and crops saved to
+the project and named by path, and — where the composition sets text — `literal_audit.py` reports no unapproved
+literal, and — at three scenes or more — `slide_structure_audit.py` either passes or each flag has been read on the
+composition and answered.
+
+## 5. Fix at the source, one variable per round
+
+```bash
+python3 ~/.claude/skills/designed-elements/scripts/asset_edge_repaint.py --src assets/wordmark-v4.png --dst assets/wordmark-v5.png --above ff2a2a --below 2a5cff --job left:1178,1606:54,82,44,78:18-52,84-112
+python3 ~/.claude/skills/designed-elements/scripts/sprite_burst.py --root <project> --in edit/hero/<hero>.mov --out edit/hero/<hero>-burst.mov --bang 4.3 --muzzle 1180,2300 --dir -0.7,-0.5 --sheet references/sheets/<sku>-sheet-exact.png
+```
+
+- A residual defect (a notch, a speck, a crop line) is repainted IN THE ASSET by measurement (a circle fit
+  through the clean edge), never hidden by layout; missing art is completed at the source or bled off the
+  frame, never extrapolated; the fixed asset then re-renders EVERY final.
+- Alignment is measured; layering is the operator's call on
+  sight; one variable changes per round; after failed rounds, revert to the accepted version and ask
+  what specifically is wrong, candidates side by side.
+- A new length or a new recolour is a NEW project (`drift-a-4s` → `drift-a-5p5s`, `wall-a` →
+  `wall-b`); the accepted version is never edited in place, and a new version at the same length is a new
+  render file that every EDL adopts by path (`references/HYPERFRAMES-CONTRACT.md`).
+- The rules and the rounds that produced them: [`references/CRAFT.md`](references/CRAFT.md).
+- A move used twice is written once, as a card (intent · the motion core in one line · parameters with how each feels ·
+  pitfalls · a demo): [`references/MOVE-CARD.md`](references/MOVE-CARD.md).
+
+**Done when:** the fix is in the source asset, the before/after crops are saved, the element re-rendered,
+and the delivered frame re-read.
+
+## Failure behavior
+
+- A render log without `RENDER-END`, a missing frame in a sequence, a raster off the declaration → the
+  render is re-run, never patched around.
+- A composition that needs the network for an asset, or an unseeded random → fixed before any round.
+- `det_check.py` FAIL → the source is fixed (the seeded PRNG, the tweened distance, the pinned canvas, the transition
+  moved onto the timeline) and the proof re-run; never a `--tolerance` raised until a 2D canvas passes — tolerance exists
+  for a WebGL layer on a software rasteriser, and a deliberate clock or timer use carries `det-ok: <reason>` on its line
+  instead. A NOISE line (a difference the size of Chromium's antialiasing) is not a failure. A DIFF line gives the
+  difference as stored and as composited: a transparent layer stores straight alpha, so a faint edge can read 255 stored
+  code values and 3 on screen — it still fails; read its frames. A FAIL whose ONE-ROW block puts every difference on
+  the bottom edge of a text shrinking in that frame is the engine varying between renders (any two can differ there,
+  pushed or not), not the source: read each listed file at its rows and x ranges, write the finding beside the
+  composition, and it counts as passed — no warm-up render, which would not help. The DIFF lines stop at twelve; the
+  ONE-ROW block lists every frame by index and file (frame 29 is `frame_000030.png`). A one-row speck that is not such
+  an edge — a particle, a dither, an unseeded sparkle — fails as before. A FAIL is never re-rolled: a later proof that
+  passes without a source change does not clear it (two renders can match by chance); one that passes after the fix
+  does.
+- `slide_structure_audit.py` exits 2 (it could not segment the scenes) → the composition does not mark them the way
+  the contract does (`data-start` + `data-duration`); fix the markup, never read the 2 as a pass.
+- A `slide_structure_audit.py` flag the composition confirms → the fix is structural (a world move at the cut, a text
+  level removed, a second kind of transition), never a frame-level tweak.
+- A fix that would need layout gymnastics → stop; find the asset defect and fix it there.
+- The operator rejects a round → revert to the accepted version first, then ask what specifically is
+  wrong.
+
+## Scripts
+
+| script | does |
+|---|---|
+| `style_brief_check.py <style-brief.md> [--prev <last build's brief>]` · `--selftest` | the style brief before any composition: the eleven sections each carrying content, the block's keys (three adjectives, ≥ 2 neighbours, a `#RRGGBB` palette with its source, a face that is not the scaffold's placeholder or a generic family, menu ids for the background and for ≥ 2 transition kinds with one of depth, a render class in the HyperFrames lane, `webgl-3d` a WARN; CommonMark fences); `--prev` FAILs a repeated background, the same transition set, or two of palette (ΔE 10) · face · background · signature (word overlap, both lines printed) shared; WARN on a scaffold colour; exit 1 on a FAIL, 2 on usage, an unreadable file or a `--prev` brief that does not validate |
+| `hyper_new.py --out --kind card\|turntable\|layer [--dur --canvas --seed]` | scaffolds a composition that obeys the contract |
+| `render_hyper.sh --dir --name --format mp4\|png-sequence [--host --push --pull] [--keep-out <zone>]… [--check-only] [--no-check] [--check-timeout 600] [--hf-matrix bt601\|bt709]` | runs `hyperframes check` REPORT-ONLY first — a `--caption-zone` run per zone of the project's declared safe band (`video-production` `safe_zones.py`; the strict ad union when none is declared), the full report alone and the other zones at once, each under the check timeout, then `check_summary.py`'s read — then renders locally (Node ≥ 22) or on the render host; `RENDER-END` only once the output exists, `RENDER-FAILED` and exit 1 otherwise; an mp4 is re-encoded once after the render with the BT.709 matrix NAMED (HyperFrames 0.8.18 encodes BT.601 and tags bt709 — up to 40 levels off on saturated colour, measured 2026-10-21), through 16-bit RGB; `--hf-matrix` names what the HyperFrames encode used — re-measure with `video-finish-qc` `matrix_check.py` on every `--hf-version` change |
+| `check_summary.py <check.json>…` · `--selftest` | the read of a `hyperframes check --json` report: per-section counts, every lint error, the lint warnings that are render traps by message (a blank slot, DOM measured in a callback, a substituted font, a runaway repeat, two tweens on one property) and every lint warning counted, LAYOUT NOT SAMPLED when lint stopped the layout audit, every zone hit (a warning, so `ok` stays true), a switched-off section as `off`; exits 0 on findings |
+| `layer_check.py --frames [--expect-dur]` | validates a PNG-sequence layer; prints its opaque window |
+| `det_check.py source <composition>` · `frames <A> <B> [--project]` · `prove <composition> [--host --workers 1,3 --no-push]` | the determinism proof: the script read for clock/random readers, a bare 2D canvas and a `from()` frozen by a `repeat: -1` (WARN), the CSS read (a transition FAILs; `will-change: transform` WARNs), an opacity, `autoAlpha` or filter on a `preserve-3d` element — by its CSS rule, an inline style, a class co-written with a 3D class, or a variable or array holding it (WARN), the PNG colour-chunk read (WARN), exit 2 without an `index.html`; two renders at different worker splits compared frame by frame on the host, each difference located in the frame and sized as stored and as composited, every listed frame named by its file, a ONE-ROW block giving every differing frame with each row's x range when each separate difference is one pixel row high, and a NOISE band for Chromium's antialiasing (the proof frames stay there, under `<remote-dir>/.det/`); refuses a project whose `frames/` holds PNGs; `--selftest` |
+| `asset_edge_repaint.py --src --dst --above --below --job …` | repaints a notch/speck at a fitted two-colour edge; 8× review crops |
+| `sprite_burst.py --root --in --out --bang --muzzle --dir --sheet` | the exact-silhouette burst composited on a hero, legibility floor |
+| `card_read_time.py <plan.json> [--reveal-s 0.4] [--exit-s 0.4] [--take-in 2.0] [--last-min 4.5]` · `--selftest` | the readable time of every card whose rows reveal one at a time, read from the plan's numbers (any object carrying `rows` + `reveal`, its `from`/`to` on it or its parent): the title and each row hold their floor before the next reveal, the LAST row its floor + the take-in and the project's last-row floor before the exit, the source line ≥ 2.5 s; the no-voice target printed as WARN; exit 1 on a FAIL, 2 when the plan holds no card |
+| `literal_audit.py <composition> --approved <copy> [--approved <script>] [--strict]` | every string the composition can put on screen, read from its SOURCE, against the approved copy (repeat `--approved` for each approved file); `--selftest` |
+| `slide_structure_audit.py <composition> [--lead 0.6] [--json]` | the four structures that read as a slide deck, read from the SOURCE: scenes switched by opacity with no world move · a three-size text stack in one container · scale as the only geometric animation · one property set at every cut. Exit 1 on a flag, **2 when it cannot segment the scenes**; `--selftest` |
+
+## Cross-references
+
+- [`references/HYPERFRAMES-CONTRACT.md`](references/HYPERFRAMES-CONTRACT.md) · [`references/KIT.md`](references/KIT.md) ·
+  [`references/CRAFT.md`](references/CRAFT.md) · [`references/STYLE-BRIEF.md`](references/STYLE-BRIEF.md) ·
+  [`references/STYLE-CATALOGUE.md`](references/STYLE-CATALOGUE.md).
+- `video-refs-continuity` — the silhouette sheet and plate pieces the sprites are cut from; `video-edit-edl` —
+  where events and layers sit; `spot-audio-assembly` — the sting, the chimes, the bed; `video-finish-qc` — the
+  finish that composites layers and the QC that reads the card.
+- Handoffs follow `~/.claude/skills/video-production/references/CHAIN.md`.
+- Deeper context — the upstream projects behind the rules here: `video-production/references/CONTEXT-MAP.md` § Where the deeper context lives.

@@ -1,0 +1,132 @@
+---
+name: cdd-design
+description: Independent brainstorm orchestrator -- Node-anchored flow with digraph as single control-flow source of truth. Consumes the /superpowers:brainstorming（pi：/skill:brainstorming） flow inline as this session's baseline (one import per session), judges which program owns the change and gates on phase registration, runs grilling, and dispatches the parameterized spec-writer（/kairos:cdd-spec-writer） under one template (single-spec / phase-spec / overall charter). Callable standalone; invoke as kairos:cdd-design（pi：/skill:cdd-design）.
+---
+
+# Kairos CDD-Design
+
+Full brainstorm flow orchestration, callable standalone — the imported brainstorm flow lands the request's design context, and the `mode?` gate then judges OWNERSHIP: does this change fall inside a registered program's charter scope? Belongs ⇒ `phase-within-program`, which gates on whether the phase is registered in the parent overall; belongs to no registered program ⇒ `new-program`, which routes straight to grilling with no inventory check.
+
+**Invocation discipline** — every engine command runs as a background dispatch: launch it in the background and await the completion notification — never poll — then read the full output (stdout/stderr). Output filtering is forbidden — no piping to `tail`/`head`, no `2>&1 |`, no `EXIT=$?` capture. **Dispatch boundary** — the obligation runs both ways: a dispatched child carries every verification / build command to completion inside its own turn, never ending that turn to await a background task it launched itself — ending the turn terminates the child, so the awaited notification never arrives and the round dies half-finished while still looking successful; the launching side certifies success by the terminal contract (a clean working tree and the target action actually completed), never by exit code 0. **Round rhythm** — one review pass per dispatch; a fix round re-enters the review while the route is not done; ensure the working tree is clean before entering review (dirty → BLOCKED; the orchestrator writes no tree during dispatch). **Failure face** — cross-node failure handling lives in the Failure Modes table below (the single source); node `Fail` entries keep only local behavior.
+
+## Flow Digraph
+
+```mermaid
+flowchart TD
+  A[run-cdd-design-session] --> B[explore-context]
+  A --> Z1((BLOCKED: upstream plugin missing))
+  B --> M{mode?}
+  M -->|belongs to a registered program · phase-within-program| P{phase-registered?}
+  M -->|belongs to no registered program · new-program| G[run-grilling-session]
+  P -->|not registered| S[run-cdd-charter · sync]
+  S --> P
+  P -->|registered| G[run-grilling-session]
+  G --> Z2((BLOCKED: grilling plugin missing))
+  G --> X{size?}
+  X -->|phase-within-program · fit| W[run-cdd-spec]
+  X -->|phase-within-program · oversized| C[run-cdd-charter]
+  X -->|new-program · single-spec| W[run-cdd-spec]
+  X -->|new-program · multi| C[run-cdd-charter]
+  W --> H[handoff-next]
+  C --> D[handoff-phase-design]
+```
+
+## Node Definitions
+
+### `run-cdd-design-session`
+
+- **Do**: Import `/superpowers:brainstorming`（pi：/skill:brainstorming）; it lands the design context this flow routes on — the request's scope and its exploration surface. It settles no mode: which program owns the change is the `mode?` gate's judgment, never the import's default
+- **Read**: nothing before the import; the import resolves the design context
+- **Exit**: Import landed → `explore-context`
+- **Fail**: Upstream superpowers plugin missing → BLOCKED (no downgrade, no skip, no inline restatement)
+
+### `explore-context`
+
+- **Do**: Explore project context — mode is not settled yet, so the exploration has to surface both sides of the ownership judgment: the request's own material and the program ledger it is judged against
+- **Read**: whatever the task needs — e.g. project files, docs, git log, and the program ledger the ownership gate judges against (each registered overall's charter scope + Phase inventory)
+- **Exit**: Exploration complete → `mode?`
+- **Fail**: Context read fails → report + fail-open
+
+### `mode?`
+
+- **Do**: Judge OWNERSHIP, not existence — the criterion is not "does a parent overall exist" but "does this change belong to a registered program's charter scope". A program that exists (even one whose phases are all Done) does not own a change outside its scope, and sharing the repository is not belonging. Belongs to a registered program → `phase-within-program`, which must then pass the register gate; belongs to none (possibly no program exists at all) → `new-program`, which connects straight to `run-grilling-session` and **skips the inventory check** — an unowned program has no parent inventory to check. Gate order matters: ownership is decided **before** the register gate
+- **Read**: the program ledger from `explore-context` — the parent overall's Phase inventory + charter scope, i.e. every registered program's declared scope — plus the request's design context
+- **Exit**: inside a registered program's charter scope → `phase-within-program` ⇒ `phase-registered?`; inside no registered program's charter scope → `new-program` ⇒ `run-grilling-session`
+- **Fail**: —
+
+### `phase-registered?`
+
+- **Do**: Read the parent overall's Phase inventory — is the requested phase registered? `new-program` never passes through this node (`mode?` routes it directly to grilling). Not registered → run the register-reflow node, then re-judge
+- **Read**: parent overall (`docs/kairos/overalls/*-overall.md`) Phase inventory
+- **Exit**: registered → `run-grilling-session`; not registered → `run-cdd-charter · sync` → re-judge
+- **Fail**: Phase inventory missing or unparseable → BLOCKED (overall-sync-failed); **serial-phase** — registering a new phase whose hard-dependency predecessor has **Design spec ≠ `Done`** in the parent inventory → BLOCKED (never release grilling for an unmet phase)
+
+### `run-cdd-charter · sync`
+
+- **Do**: Run the charter sync variant of the parameterized writer — the phase registration as a four-table sync of the parent overall (issue inventory / phase inventory / dependency graph / version bump + change history), then flow back to `phase-registered?` for the re-judge — the landed registry entry routes the re-entry, not a re-import. Registration reflow — not the terminal overall write (`run-cdd-charter` is)
+- **Read**: the parent overall
+- **Exit**: Sync landed → `phase-registered?`
+- **Fail**: four-table sync inconsistent → BLOCKED (overall-sync-failed)
+
+### `run-grilling-session`
+
+- **Do**: Import `/mattpocock-skills:grilling`（pi：/skill:grilling）, scoped by mode: `new-program` → scope-level grilling (each candidate phase's scope / dependencies / acceptance / issue ownership, one grilling pass); `phase-within-program` → enumerate-then-grill: enumerate the requirements registered for the phase in the parent overall item by item (each requirement's status — `[Pending]` / Done / dropped), restate the full list to the user, and enter the grilling frontier several passes after the user confirms the enumerated coverage is complete. It lands the grilling outcome; the size judgment (`size?`) routes on it. Register-before-grill is guaranteed by the `phase-registered?` gate.
+- **Read**: landed grilling outcome + the `mode?` ownership verdict + gate verdict
+- **Exit**: Grilling outcome landed → the size judgment
+- **Fail**: Grilling an unregistered phase → register-gate violation (BLOCKED upstream at `phase-registered?`)
+
+### `size?`
+
+- **Do**: Judge SIZE only — `mode?` has already fixed the shape family, so size no longer decides between single-spec and phase-spec: on the `new-program` path — does the program fit one freestanding spec (`single-spec` → one unregistered standalone spec) or become a multi-phase program (`multi` → an overall charter)? on the `phase-within-program` path — does this phase fit one phase spec (`fit` → phase-spec · `oversized` → a charter that syncs the sub-phase split into the parent)? Size moves the document's length and task split, never its belonging
+- **Read**: grilling output + exploration context + the parent overall's charter scope (phase-within-program mode)
+- **Exit**: `phase-within-program` path — `fit` → `run-cdd-spec` (phase-spec target) · `oversized` → `run-cdd-charter`; `new-program` path — `single-spec` → `run-cdd-spec` (standalone single-spec target) · `multi` → `run-cdd-charter` (overall charter target). The `phase-within-program` path carries no `single-spec` exit
+- **Fail**: A `phase-within-program` path resolving to a `single-spec` target → BLOCKED (shape contradicts ownership)
+
+### `run-cdd-spec`
+
+- **Do**: Import `/kairos:cdd-spec-writer`（pi：/skill:cdd-spec-writer） with the target parameter (single-spec / phase-spec — the two near-identical dispatch variants are ONE node). The delegated writer lands the document's front-matter identity — `slug:` on either target, plus `program:` (the parent overall's `slug:`) on the phase-spec target
+- **Read**: grilling output + exploration context
+- **Exit**: Handoff executed → `handoff-next`
+- **Fail**: Target skill missing → BLOCKED (install kairos — see the kairos README's installation table)
+
+### `run-cdd-charter`
+
+- **Do**: Import `/kairos:cdd-spec-writer`（pi：/skill:cdd-spec-writer） with the overall target; the delegated writer lands the document's front-matter `slug:` — an overall declares no `program:` (it is the program)
+- **Read**: grilling output + parent overall (oversized phase-within-program case)
+- **Exit**: Handoff executed → `handoff-phase-design`
+- **Fail**: Target skill missing → BLOCKED (install kairos — see the kairos README's installation table)
+
+### `handoff-next`
+
+- **Do**: Hand off following the engine's `next:` face — this skill adds no design-domain continuation of it
+- **Read**: the committed spec
+- **Exit**: Handoff executed → flow ends for this skill
+- **Fail**: Target missing → BLOCKED (install kairos — see the kairos README's installation table)
+
+### `handoff-phase-design`
+
+- **Do**: Hand off — to `/compact` or the next phase's design session (`kairos:cdd-design` [Px program]), summarizing the committed charter
+- **Read**: the committed charter + the run's next phase context
+- **Exit**: Handoff executed → flow ends for this skill
+- **Fail**: Target missing → BLOCKED (install kairos — see the kairos README's installation table)
+
+## Invariants
+
+| # | Invariant |
+|---|---|
+| I1 | **Design first** — zero implementation dispatch: no code commits, no implement dispatch; the flow ends in the delegated writer flows, never in implementation |
+| I2 | **Review Convergence** — a review closes by its conclusion (APPROVED / CHANGES_REQUESTED / REVIEW_FIX); the loop advances by the engine's `next:` face, never by orchestrator guesswork. A mid-backfill or a user adjudication that lands governs over the suggestion (current world state wins). Fixes always dispatch via the fix round; the orchestrator must not edit in place as a substitute; a fix commit opens a new review, never a re-run of a closed one |
+| I3 | **Spec commit discipline** — spec approved = commit immediately; do not wait for dev merge (enforced inside the delegated writer flows) |
+| I4 | **Mid-Flight Backfill** — a user-raised backfill of overall/spec/plan docs surfaced while a dispatch is in flight lands through four ordered steps on the current call's return: (1) **land immediately** — hot context, no deferral; (2) **commit on its own** — a standalone change, never mixed with implementation commits; (3) **pause the loop until clean** — an uncommitted backfill trips the next review's entry gate (dirty → BLOCKED); (4) **audit in-band on resume** — the next review audits the backfill in-band; a backfill rewriting the current task's own plan/spec text routes through the orchestrator's plan write authority |
+
+## Failure Modes
+
+| failure | behavior | reason |
+|---|---|---|
+| Upstream superpowers plugin missing | BLOCKED (install superpowers — see the kairos README's installation table) | Block policy: no silent fallback |
+| Grilling plugin missing | BLOCKED (install mattpocock-skills — see the kairos README's installation table) | Block policy: no degradation |
+| Phase inventory missing / unparseable | BLOCKED (overall-sync-failed) | Registration gate cannot run |
+| Registering with predecessor Design spec ≠ Done | BLOCKED (serial-phase) | Never release grilling for an unmet phase |
+| A `phase-within-program` path producing a `single-spec` | BLOCKED (stop before the write, re-judge the ownership) | Shape contradicts ownership |
+| Four-table sync inconsistent | BLOCKED (overall-sync-failed) | Refuse to register an inconsistent phase |
+| Completed round with no `next:` line (not BLOCKED/TIMEOUT) | HARD_ERROR — report the carried reason, re-run the same command to continue | No dispatchable next |

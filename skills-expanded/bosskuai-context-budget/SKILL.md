@@ -1,0 +1,172 @@
+---
+name: bosskuai-context-budget
+description: "Use when a session is slow or context is crowded: audits context-window cost across agents, skills, MCP, rules and persona injection; outputs ranked token savings."
+license: MIT
+metadata:
+  author: affaan-m/ECC
+  source: context-budget
+---
+
+# Context Budget
+
+Analyze token overhead across every loaded component in a Claude Code session and surface actionable optimizations to reclaim context space.
+
+## When to Use
+
+- Session performance feels sluggish or output quality is degrading
+- You've recently added many skills, agents, or MCP servers
+- You want to know how much context headroom you actually have
+- Planning to add more components and need to know if there's room
+
+## How It Works
+
+### Phase 1: Inventory
+
+Scan all component directories and estimate token consumption:
+
+**Agents** (`agents/*.md`)
+- Count lines and tokens per file (words × 1.3)
+- Extract `description` frontmatter length
+- Flag: files >200 lines (heavy), description >30 words (bloated frontmatter)
+
+**Skills** (`skills/*/SKILL.md`, or the installed copies under `~/.claude/skills/` and `~/.agents/skills/`)
+- Count tokens per SKILL.md
+- Flag: files >400 lines
+- Check for duplicate copies in other tool dirs (`.cursor/`, `.codex/`) — skip identical copies to avoid double-counting
+
+**Rules** (`rules/**/*.md`)
+- Count tokens per file
+- Flag: files >100 lines
+- Detect content overlap between rule files in the same language module
+
+**MCP Servers** (`.mcp.json` or active MCP config)
+- Count configured servers and total tool count
+- Estimate schema overhead at ~500 tokens per tool
+- Flag: servers with >20 tools, servers that wrap simple CLI commands (`gh`, `git`, `npm`, `supabase`, `vercel`)
+
+**CLAUDE.md / AGENTS.md** (project + user-level)
+- Count tokens per file in the instruction chain (CLAUDE.md, AGENTS.md, rule files)
+- Flag: combined total >300 lines
+
+**BosskuAI agent contracts** (`agents/*.md`)
+- Claude Code uses the whole body of each agent file as that subagent's system prompt; count full files, not only the runtime-core block.
+- Verify with `python -m bossku validate --root .` after editing contracts
+
+### Phase 2: Classify
+
+Sort every component into a bucket:
+
+| Bucket | Criteria | Action |
+|--------|----------|--------|
+| **Always needed** | Referenced in CLAUDE.md, backs an active command, or matches current project type | Keep |
+| **Sometimes needed** | Domain-specific (e.g. language patterns), not referenced in CLAUDE.md | Consider on-demand activation |
+| **Rarely needed** | No command reference, overlapping content, or no obvious project match | Remove or lazy-load |
+
+### Phase 3: Detect Issues
+
+Identify the following problem patterns:
+
+- **Bloated agent descriptions** — description >30 words in frontmatter loads into every Task tool invocation
+- **Heavy agents** — files >200 lines inflate Task tool context on every spawn
+- **Redundant components** — skills that duplicate agent logic, rules that duplicate CLAUDE.md
+- **MCP over-subscription** — >10 servers, or servers wrapping CLI tools available for free
+- **CLAUDE.md bloat** — verbose explanations, outdated sections, instructions that should be rules
+
+### Phase 4: Report
+
+Produce the context budget report:
+
+```
+Context Budget Report
+═══════════════════════════════════════
+
+Total estimated overhead: ~XX,XXX tokens
+Context model: Claude Sonnet (200K window)
+Effective available context: ~XXX,XXX tokens (XX%)
+
+Component Breakdown:
+┌─────────────────┬────────┬───────────┐
+│ Component       │ Count  │ Tokens    │
+├─────────────────┼────────┼───────────┤
+│ Agents          │ N      │ ~X,XXX    │
+│ Skills          │ N      │ ~X,XXX    │
+│ Rules           │ N      │ ~X,XXX    │
+│ MCP tools       │ N      │ ~XX,XXX   │
+│ CLAUDE.md       │ N      │ ~X,XXX    │
+└─────────────────┴────────┴───────────┘
+
+WARNING: Issues Found (N):
+[ranked by token savings]
+
+Top 3 Optimizations:
+1. [action] → save ~X,XXX tokens
+2. [action] → save ~X,XXX tokens
+3. [action] → save ~X,XXX tokens
+
+Potential savings: ~XX,XXX tokens (XX% of current overhead)
+```
+
+In verbose mode, additionally output per-file token counts, line-by-line breakdown of the heaviest files, specific redundant lines between overlapping components, and MCP tool list with per-tool schema size estimates.
+
+## Examples
+
+**Basic audit**
+```
+User: audit my context budget
+Skill: Scans setup → 16 agents (12,400 tokens), 28 skills (6,200), 87 MCP tools (43,500), 2 CLAUDE.md (1,200)
+       Flags: 3 heavy agents, 14 MCP servers (3 CLI-replaceable)
+       Top saving: remove 3 MCP servers → -27,500 tokens (47% overhead reduction)
+```
+
+**Verbose mode**
+```
+User: context budget, verbose — show me per-file numbers
+Skill: Full report + per-file breakdown showing planner.md (213 lines, 1,840 tokens),
+       MCP tool list with per-tool sizes, duplicated rule lines side by side
+```
+
+**Pre-expansion check**
+```
+User: I want to add 5 more MCP servers, do I have room?
+Skill: Current overhead 33% → adding 5 servers (~50 tools) would add ~25,000 tokens → pushes to 45% overhead
+       Recommendation: remove 2 CLI-replaceable servers first to stay under 40%
+```
+
+## Best Practices
+
+- **Token estimation**: use `words × 1.3` for prose, `chars / 4` for code-heavy files
+- **MCP is the biggest lever**: each tool schema costs ~500 tokens; a 30-tool server costs more than all your skills combined
+- **Agent descriptions are loaded always**: even if the agent is never invoked, its description field is present in every Task tool context
+- **Verbose mode for debugging**: use when you need to pinpoint the exact files driving overhead, not for regular audits
+- **Audit after changes**: run after adding any agent, skill, or MCP server to catch creep early
+
+## Related Skills
+
+- `bosskuai-token-saver` — compress output and prompts once the audit shows where the weight is
+- `bosskuai-skill-stocktake` — overlap/staleness audit across skills and commands
+- `bosskuai-context-limit-continuation` — when a session is already at the limit and needs a clean handoff
+- `bosskuai-agent-architecture-audit` — when duplication is a symptom of deeper wrapper-stack problems
+
+## Scope and bounds
+
+- A plain "how much context is left" is a live-meter question: point to the harness meter (`/context` in Claude Code, `/status` in Codex) and do not scan files. Run the static audit above only when the user clearly asks for it.
+- Keep an audit read-only and bounded: only the named install root and the harness's known config files, no recursive sweep of home or workspace, no launching MCP servers just to count tools, at most 50 entries per component class (summarize the rest).
+- Eager overhead is mostly descriptions, always-loaded instruction files and MCP tool schemas. Skill, agent and rule bodies load on demand, so report their disk size separately instead of adding them to the baseline.
+- Say every number is an estimate of static config, never a provider-reported or realized saving.
+
+## When to compact
+
+| Transition | Compact? |
+|---|---|
+| Research to plan, plan to implementation | Yes, once the plan is written to a file |
+| Implementation to testing | Only if switching focus |
+| Debugging to unrelated work, or after a failed approach | Yes |
+| Mid-implementation | No: variable names, paths and partial state are lost |
+
+Write the plan and key decisions to a file or memory before compacting; the task list may not exist in the harness and read file contents do not survive. Give `/compact` a focus line for the next phase. Prefer a keyword-to-skill trigger table over loading skills up front.
+
+## Depth on request
+
+If the user asks for a shorter or longer answer, offer 25/50/75/100% depth with a rough token estimate (words x 1.3 for prose, chars / 4 for code; label it +/-15%), then keep the chosen level for the session. Do not trigger when "token" means an auth or payment token.
+
+Adapted in part from ECC skills/context-budget, skills/strategic-compact and skills/token-budget-advisor (affaan-m/ECC, MIT).

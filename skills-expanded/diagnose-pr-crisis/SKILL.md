@@ -1,0 +1,52 @@
+---
+name: diagnose-pr-crisis
+description: 诊断公关事件、媒体争议、负面舆情和品牌回应失误，并制定危机声明、媒体沟通及声誉修复方案。适用于危机公关、舆情分析、声明撰写、负面处理、公众回应、利益相关者沟通，以及 30/60/90 天声誉恢复计划。
+---
+
+# Diagnose PR Crisis
+
+Work as an execution lead, not a commentator.
+
+## Workflow
+
+1. Build a verified timeline. Separate confirmed, disputed, unknown, and privately held facts.
+2. Map affected stakeholders, their interests, current emotion, expected answer, and ability to amplify harm.
+3. Classify the problem: fact gap, responsibility dispute, expression failure, operational failure, value conflict, regulatory exposure, or coordinated attack.
+4. Grade urgency by source credibility, spread velocity, cross-platform reach, real-world harm, legal risk, and business impact.
+5. Set one primary communication objective. Do not mix clarification, apology, rebuttal, and promotion in one message.
+6. Produce actions for 0–2h, 2–24h, 24–72h, 3–14d, and long-term recovery.
+7. Create a single fact base for statements, customer service, executives, legal, media, and sales.
+8. Define monitoring, decision owners, next-update time, and postmortem criteria.
+
+## Opinion-state discipline
+
+Do not label one complaint, article, screenshot, or rumor as a public-opinion event. Use one of four states:
+
+- **insufficient spread evidence:** reach, repetition, or cross-platform evidence cannot yet support a state;
+- **isolated signal:** limited distribution without a repeated public frame;
+- **emerging public narrative:** repeated language, connected cases, or meaningful amplification appears;
+- **established public issue:** multi-channel attention, credible media or institutional involvement, or a stable public label exists.
+
+State the decision subject and exact time slice. Historical reach does not establish the current phase. For trajectory, use conditional triggers: new verified facts, additional affected parties, a reusable label, cross-platform movement, institutional participation, or a response that intensifies the dispute. “Insufficient spread evidence” is not the same as “no risk”; material harm can require action before a narrative is widespread.
+
+## Response decision gates
+
+Before recommending a public response, test reality, harm, context, organizational ability to deliver, and long-term trust. Compare no external action, monitoring, internal correction, targeted stakeholder response, and public response. State what each option gains, what it amplifies, who bears the cost, what commitment it creates, and when it becomes irreversible.
+
+## Statement standard
+
+- Lead with the issue the public actually cares about.
+- State confirmed facts, current actions, unknowns, and next update.
+- Match any apology to specific harm and corrective action.
+- Avoid premature conclusions, blame shifting, moral lectures, empty authority, and unverifiable certainty.
+- Preserve legal options without using legal language to silence legitimate questions.
+
+## Deliverables
+
+Return the relevant subset of: executive diagnosis, timeline, stakeholder map, risk level, response strategy, holding statement, Q&A, media brief, platform actions, monitoring dashboard, and 30/60/90-day recovery plan.
+
+## Boundaries
+
+Never promise total deletion, control of public opinion, guaranteed trending results, fabricated media coverage, fake users, or fake evidence. Separate legal, platform, media, search, content, and operational remedies. For overseas disputes, prefer correction, response, platform policy, privacy, copyright, and lawful escalation over paid deletion.
+
+Read [references/checklists.md](references/checklists.md) when producing a statement, interview plan, or crisis execution schedule. Read [references/incident-patterns.md](references/incident-patterns.md) for promotion, pricing, rumor, or false-information incidents.

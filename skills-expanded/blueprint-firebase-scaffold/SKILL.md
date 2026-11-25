@@ -1,0 +1,34 @@
+---
+name: blueprint-firebase-scaffold
+description: "Create the app skeleton: web app, Cloud Functions workspace, emulator config and the rules test harness."
+---
+
+# App skeleton
+
+1. Web app: Vite + TypeScript (Vue unless the spec says otherwise). Use `yarn`. Keep `typescript` at `^6`, not 7:
+   a later check reads the test files through TypeScript's compiler API, which TypeScript 7 does not ship.
+2. `firebase init` for Hosting, Firestore, Functions (TypeScript) and Emulators (Auth, Firestore, Functions,
+   Hosting). Copy `infra/firestore.rules`, `infra/firestore.indexes.json` and `infra/firebase.json` from the base
+   pack over what init wrote, then merge in anything init generated that they lack.
+3. Test harness for rules and functions: `test/blueprint/` with vitest and `@firebase/rules-unit-testing`.
+   Every later step adds its own `test/blueprint/<name>.spec.ts`; `checks/emulator-test.sh <name>` runs exactly
+   that file against the emulators under the `demo-blueprint` project id, so tests can never touch a real project.
+4. The web app's Firebase config: in development, the emulators with a demo project id; on Hosting, fetch
+   `/__/firebase/init.json` (Hosting serves the config of the project it runs in) and initialise from that before
+   mounting. No `.env`, no key written into the code: a production build has no `.env` to read, and a missing key
+   makes the page throw `auth/invalid-api-key` and stay blank. The same build then works on dev and prod.
+5. `yarn build` must succeed.
+6. Do NOT run `git init`. A new repository root loses the trust its parent folder gave it, and every later step
+   would stop at Claude Code's trust prompt with nobody there to answer. If the user wants git, they add it
+   themselves after the build.
+
+Done when the check passes: `firebase.json` configures the emulators, `functions/` exists, `@firebase/rules-unit-testing`
+is a dev dependency, `test/blueprint/` exists and `yarn build` succeeds.
+
+## Always
+
+- Read `.blueprint/spec.md` first. It is the agreed specification; do not widen it.
+- When you need a decision, ask it through the blueprint question tool and stop. Do not guess.
+- Never enable billing, deploy to production, delete data or handle a credential unless this step's gates say the
+  user approved exactly that.
+- Say you are done by stopping; the executor runs the check. Do not claim success yourself.

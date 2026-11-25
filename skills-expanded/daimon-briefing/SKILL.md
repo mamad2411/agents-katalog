@@ -1,0 +1,157 @@
+---
+name: daimon-briefing
+description: Dream-briefing — surfaces a "while you were away / here's where we left off" briefing at the start of a resumed session, reconstructed from a cognitive checkpoint written at the end of the prior session. Use to recall open loops, decisions, and facts whose state may have changed outside the AI session (e.g. a PR you merged yourself).
+---
+
+# Daimon Dream-Briefing
+
+This plugin keeps continuity across sessions. At the **end** of each session it
+serializes the transcript into a cognitive checkpoint (open loops, decisions,
+beliefs, with extractively-pinned verbatim quotes). At the **start** of the next
+session it injects a skimmable briefing so you resume from a faithful prior state
+instead of a confident guess.
+
+## What it surfaces, in order
+
+1. **Decisions made**: explicit choices, including assistant-side fixes/diagnoses.
+   The newest ones from the last session are always shown.
+2. **Verify before trusting**: items whose state may have changed *outside* this
+   session (a PR you said you'd merge, a deploy, a file edited elsewhere). The gap
+   that produces confident-but-wrong assertions, so check these before repeating them.
+3. **Open loops**: questions left unresolved at the end of last session.
+4. **Beliefs / uncertainties / active topic / contradictions flagged.**
+
+Every section shares one size budget. When a section had to leave items out it says
+so in a note, for example `(4 of 13 shown; 9 carried checks unverified over 7d
+hidden. See: daimon loops --stale)`; the hidden items are still in the
+checkpoint, and `daimon loops --stale` lists them with ids and ages.
+
+Each item is marked `✓ verbatim` (pinned to an exact quote — trust it) or
+`~ inferred` (paraphrased — treat with appropriate caution).
+
+A carried item that has gone unchecked for more than a week renders as
+`[? unverified]`, with its stored tag and age after it (`(was inferred, carried
+12d)`). A carried item that keeps getting restated session after session is not
+corroborated just because it agrees with itself, so world-check it (code, git,
+issue tracker) before treating it as current fact.
+
+A carried note that names a PR, branch, file or dependency ends with `(noted
+<UTC time>, re-check before acting)`: when it was first captured, not its state
+now. It is left off once worldcheck has answered that claim in the same brief.
+
+## Closing loops
+
+Briefed open loops (open questions, uncertainties) carry an inline ` [id]`
+handle — that id is what `daimon resolve` and `daimon reverify` take.
+`daimon loops` lists every open, addressable loop with its id.
+
+When this session's work answers a briefed loop, close it:
+
+```bash
+daimon resolve <id> --by agent --evidence "<exact contiguous transcript quote>"
+```
+
+The evidence must be a verbatim copy-paste of one contiguous span of THIS
+transcript — the same QUOTE DISCIPLINE the serializer itself enforces
+(rule 17) — and it is byte-checked against the transcript at session end.
+A quote that cannot be found leaves the loop open; nothing is withheld
+until the quote verifies or a human confirms. A briefing showing a
+`⚠ agent claims resolved — unverified: "..."` line means an earlier claim
+is still pending that check.
+
+Do not resolve what you merely believe is stale — that is `reverify`/
+worldcheck territory, not a resolve claim. `forget` stays human-only.
+
+`resolve` closes one store. Work in a session moves others, and each has its
+own close verb; a store moved and never closed rides into the next briefing
+as work. A briefed item that advanced but did not close takes `daimon amend
+<id> --change progressed|blocked|changed --evidence "<quote>" --by agent`.
+An accepted request another project sent, satisfied by this session's work
+(a shipped fix, a merged PR), takes `daimon request done <id> --evidence
+"<quote>" --by agent`; `daimon request inbox` lists every one still owed.
+Same quote discipline, same byte-check at session end.
+An accepted request still in progress takes `daimon request reply <id> --note
+"<what moved>" --by agent`. It moves no state, so the request stays owed until
+`request done`. The sender sees it labeled as an unverified agent claim.
+
+Request text fields (`ask`, `why`, `evidence`) cap at 2000 characters. Long
+content belongs in an artifact the request points at (a file, an issue, a
+PR), with the request itself carrying the pointer, not the full text.
+
+When you open one (`daimon request open --to <dir> --ask "<what>" --why
+"<why>" --title "<few words>" --by agent`), give it a `--title` of at most 80
+characters. It is the headline the recipient sees first; without one the
+headline is a guess cut from the start of the ask.
+
+When the briefing shows an active `policy:` line, you may open an ask of
+that kind to that recipient with `daimon request open --kind info`;
+anything asking for a change or effort still stays `work`.
+
+## Automatic behavior
+
+You do not need to invoke anything. The plugin wires the host's native session
+hooks: a checkpoint is written automatically when a session **ends**, and the
+briefing appears automatically at the **start** of the next session if a prior
+checkpoint exists. Between those, a lightweight **proactive recall** watches your
+prompts and surfaces a one-line "you worked on this before" pointer when the
+current prompt overlaps a prior open loop — without re-suggesting anything the
+start-of-session briefing already carried.
+
+## Manual trigger
+
+To re-read the latest briefing on demand, run the bundled CLI:
+
+```bash
+daimon brief
+```
+
+## Configuration
+
+See the plugin README. Key knobs: `DAIMON_DISABLE=1` (kill switch),
+`DAIMON_CHECKPOINT_DIR`, `DAIMON_MIN_MESSAGES`, `DAIMON_LLM_*` (falling back to
+`LITELLM_*`), `DAIMON_LLM_BACKEND=command` + `DAIMON_LLM_COMMAND` (headless-CLI
+fallback), `DAIMON_LLM_COMMAND_INPUT=stdin|arg|file:<flag>` (how the prompt
+reaches a command backend that doesn't read stdin, e.g.
+`file:--prompt-file` for the Devin CLI).
+
+## What ships today
+
+Daimon is self-contained and host-agnostic — no server, no external memory
+backend, stdlib-only at runtime. The capabilities behind the briefing:
+
+- **Checkpoint → briefing loop.** Session end serializes the transcript into a
+  per-project JSON checkpoint; session start reconstructs it into the briefing.
+- **Chunked extraction.** Long transcripts are split into overlapping chunks,
+  serialized pass-by-pass, then merged — so recall holds up on long sessions
+  instead of degrading as the transcript grows.
+- **Deterministic carry.** Unresolved open loops that still matter are carried
+  forward into the next checkpoint by exact term overlap (no LLM in the carry
+  step) and marked `[carried]` so you can see a loop survived from an earlier
+  session rather than being freshly observed. When a carried item goes too
+  long without anyone actually re-checking it against the world, the brief
+  surfaces a staleness warning naming how many days it's been riding
+  unverified.
+- **Proactive recall.** A per-prompt pointer to prior work when your current
+  prompt overlaps an open loop (see *Automatic behavior*).
+- **Trust classing.** Every item is `✓ verbatim` (pinned to an exact quote) or
+  `~ inferred` (paraphrased), so you know what to trust literally.
+- **Trust inspector.** `daimon why <item-id>` is the read side of that tag: it
+  reports one item's evidence axes — capture, provenance, source, byte
+  integrity, current support, quote-check outcome, lifecycle, corroboration —
+  and `--source` adds one bounded, redacted window of the originating text.
+  Reach for it before repeating a carried or inferred claim as true, or when
+  someone asks where a claim came from. Ids come from `daimon recall` or
+  `daimon loops`.
+- **Read-only auditors.** `daimon audit quotes` re-checks stored quotes against
+  their source; `daimon audit privacy` proves no forgotten value survived;
+  `daimon verify-receipt` checks a checkpoint's signed provenance receipt. All
+  three answer with an exit code: `0` proven clean, `1` residue found, `3`
+  cannot prove — never read `3` as clean.
+- **Code-drift detection.** `daimon anchor <file> <symbol>` binds a checkpoint
+  item to a code symbol; the briefing flags it under **CODE DRIFT — verify
+  before trusting** when that symbol's body changes or disappears (offline,
+  stdlib `ast`).
+- **Scars.** An optional session-end pass harvests negative-knowledge signals
+  (abandoned approaches, landmines) into the repo's `.scars/` directory.
+- **Status & self-heal.** `daimon status` reports checkpoint/briefing health;
+  a failed capture self-heals on the next session start.

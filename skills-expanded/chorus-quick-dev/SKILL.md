@@ -1,0 +1,221 @@
+---
+name: chorus-quick-dev
+description: Quick Task workflow — skip Idea→Proposal, create tasks directly, execute, and verify.
+license: AGPL-3.0
+metadata:
+  author: chorus
+  version: "0.24.0"
+  category: project-management
+  mcp_server: chorus
+---
+
+# Chorus Quick Dev Skill
+
+Skip the full AI-DLC pipeline (Idea → Elaboration → Proposal → Approval) and create tasks directly. Ideal for small, well-understood work. The goal is for agents to **autonomously record their development work and verify task completion** through structured acceptance criteria.
+
+---
+
+## Overview
+
+The standard AI-DLC flow ensures quality through structured planning, but adds overhead that slows down small tasks. Quick Dev provides a lightweight alternative:
+
+```
+check explicit task:admin permission → create/claim → implement → self-check AC → submit → independent task review → verify or hand off
+```
+
+**Use Quick Dev when:**
+- Bug fixes with clear reproduction steps
+- Small features (< 2 story points)
+- Post-delivery patches and gap-filling after a proposal's tasks are done
+- Prototype or exploratory tasks
+- Urgent hotfixes that can't wait for proposal review
+
+**Do NOT use Quick Dev when:**
+- The feature needs a PRD or tech design document
+- Multiple interdependent tasks require upfront planning
+- Stakeholder elaboration is needed to clarify requirements
+- The work impacts architecture or shared components significantly
+
+For complex work, use `/chorus-idea` + `/chorus-proposal` instead.
+
+---
+
+## Pre-Flight: Permission Check
+
+Call `chorus_checkin` and inspect the active agent's effective permissions. Set `canVerifyTask` to true **only** when `chorus_checkin().agent.permissions.task` explicitly contains `"admin"` (the `task:admin` permission).
+
+Never infer verification authority from the agent's name, persona, preset/role label, task ownership, or tool availability. Do not ask whether to self-verify: the explicit permission determines the terminal path.
+
+---
+
+## Tools
+
+| Tool | Purpose |
+|------|---------|
+| `chorus_create_tasks` | Create task(s) — omit `proposalUuid` for standalone Quick Task (optionally linked to an Idea via top-level `ideaUuid`), or pass it to attach to an existing proposal |
+| `chorus_update_task` | Edit task fields (title, description, priority, AC, dependencies, `ideaUuid` link) or change status |
+| `chorus_claim_task` | Claim a task (open → assigned) |
+| `chorus_report_work` | Report progress with optional status update |
+| `chorus_report_criteria_self_check` | Self-check acceptance criteria before submitting |
+| `chorus_submit_for_verify` | Submit for admin verification |
+| `chorus_admin_verify_task` | **(admin only)** Verify task — use when self-verification is approved |
+
+---
+
+## Workflow
+
+### Step 1: Create a Quick Task
+
+**`acceptanceCriteriaItems` is required** — `chorus_create_tasks` rejects any task without at least one non-blank criterion (and rejects the whole batch if any task is missing them). These are also the foundation for self-checking in Step 6. Write specific, testable criteria that you can objectively verify after development. Vague AC like "works correctly" defeats the purpose; prefer "returns 200 on GET /api/foo with valid token".
+
+```
+chorus_create_tasks({
+  projectUuid: "<project-uuid>",
+  tasks: [{
+    title: "Fix login redirect loop on Safari",
+    description: "Safari loses session cookie after redirect...",
+    priority: "high",
+    storyPoints: 1,
+    acceptanceCriteriaItems: [
+      { description: "Login works on Safari 17+", required: true },
+      { description: "Existing Chrome/Firefox behavior unchanged", required: true }
+    ]
+  }]
+})
+```
+
+**`proposalUuid` is optional:**
+- **Omit** for standalone quick tasks (bug fixes, hotfixes, exploratory work)
+- **Pass** to attach the task to an existing proposal — useful for gap-filling, follow-up patches, or continuing work after a proposal's initial tasks are delivered
+
+**Link Quick Tasks to an Idea (`ideaUuid`, optional):** when the work belongs to an existing Idea but does not need a proposal (e.g. a small Idea you can deliver directly), pass a top-level `ideaUuid` instead of `proposalUuid`. Every task in the batch is linked to that Idea, and the Idea's status follows its linked tasks — it completes (`done`) once all of them are `done`/`closed`, with no proposal required.
+
+```
+chorus_create_tasks({
+  projectUuid: "<project-uuid>",
+  ideaUuid: "<idea-uuid>",
+  tasks: [{ title: "...", acceptanceCriteriaItems: [{ description: "...", required: true }] }]
+})
+```
+
+- The Idea must be in the same project and must not be a theme; `ideaUuid` and `proposalUuid` are mutually exclusive (the call is rejected if both are set).
+- `ideaUuid` belongs at the top level only: a per-task `ideaUuid` inside `tasks[]` is rejected with a validation error (it is never silently dropped).
+- Link or relink an existing Quick Task with `chorus_update_task({ taskUuid, ideaUuid: "<idea-uuid>" })`; pass `ideaUuid: null` to clear the link. Proposal tasks cannot carry `ideaUuid` — they reach their Idea through the proposal.
+- List an Idea's linked Quick Tasks with `chorus_list_tasks({ projectUuid, ideaUuid })`; `chorus_get_task` returns the task's `ideaUuid`.
+- When the **last** linked Quick Task is verified, the Idea's ship-time code-review gateway applies (see `/develop`, Step 8). If it returns `FAIL`, create the fix tasks the same way — Quick Tasks with the same `ideaUuid`. A proposal-less Idea has no idea-completion report (`chorus_create_report` needs a proposal).
+
+### Step 2: Claim the Task
+
+```
+chorus_claim_task({ taskUuid: "<task-uuid>" })
+```
+
+### Step 3: Edit Details (if needed)
+
+Use `chorus_update_task` to refine the task after creation. Tasks always have AC (creation requires them), but **update them when your understanding changes during development**. Passing `acceptanceCriteriaItems` **replaces** the task's criteria with the provided non-empty set; omit the field to leave them unchanged (it cannot be used to clear AC).
+
+```
+chorus_update_task({
+  taskUuid: "<task-uuid>",
+  description: "Updated with more details...",
+  acceptanceCriteriaItems: [
+    { description: "Login works on Safari 17+", required: true },
+    { description: "Added CSRF token handling", required: true }
+  ],
+  addDependsOn: ["<other-task-uuid>"]
+})
+```
+
+### Step 4: Start Working
+
+```
+chorus_update_task({ taskUuid: "<task-uuid>", status: "in_progress" })
+```
+
+**Subagents:** pass `sessionUuid` for attribution:
+```
+chorus_update_task({ taskUuid: "<task-uuid>", status: "in_progress", sessionUuid: "<session-uuid>" })
+```
+
+### Step 5: Report Progress
+
+```
+chorus_report_work({
+  taskUuid: "<task-uuid>",
+  report: "Fixed Safari cookie issue:\n- Root cause: SameSite=Strict incompatible with redirect\n- Changed to SameSite=Lax\n- Commit: abc1234",
+  sessionUuid: "<session-uuid>"
+})
+```
+
+> Keep completion reports status-free. `chorus_submit_for_verify` (Step 7), not
+> `chorus_report_work`, performs the `in_progress -> to_verify` transition. If a task
+> was moved prematurely, first confirm it is not legitimately awaiting verification.
+> The assignee can return it to `in_progress` with `chorus_update_task`, subject to
+> dependency checks. This clears developer and admin acceptance marks and evidence:
+> repeat Step 6 before submitting again. Do not mechanically roll back submitted tasks.
+
+### Step 6: Self-Check Acceptance Criteria
+
+```
+chorus_report_criteria_self_check({
+  taskUuid: "<task-uuid>",
+  criteria: [
+    { uuid: "<ac-uuid-1>", devStatus: "passed", devEvidence: "Tested on Safari 17.2" },
+    { uuid: "<ac-uuid-2>", devStatus: "passed", devEvidence: "Chrome/Firefox regression tests pass" }
+  ]
+})
+```
+
+### Step 7: Submit and Run Independent Review
+
+```
+chorus_submit_for_verify({
+  taskUuid: "<task-uuid>",
+  summary: "Fixed Safari login redirect loop. Changed SameSite cookie policy. All AC passed."
+})
+```
+
+Submitting is not final verification. Spawn the required native task-reviewer subagent as described in `/chorus-develop`, wait for it, and read THIS round's `VERDICT:` Task comment — the one posted after your dispatch, not an older round's. `PASS` and `PASS WITH NOTES` continue. On `FAIL`, do not verify or hand off: fix every unresolved BLOCKER, repeat AC self-check and submission, then run a fresh independent task review.
+
+### Step 8: Permission-Aware Verification
+
+With explicit `task:admin`, after every required AC self-check passes and independent review has no unresolved BLOCKER, verify and continue autonomously:
+
+```
+chorus_admin_verify_task({ taskUuid: "<task-uuid>" })
+```
+
+Without explicit `task:admin`, do not call the admin tool. Post an evidence-rich comment on the Task containing AC results, test evidence, the latest independent-review verdict, and the exact requested action. @mention the responsible human (prefer `chorus_checkin().agent.owner`) to perform admin verification, then end the current turn.
+
+This handoff applies in interactive and headless daemon sessions. Do not use an interactive prompt, poll for the human response, or rely only on generic notifications.
+
+---
+
+## Session Integration
+
+Quick Tasks work with Kiro subagents just like proposal-based tasks:
+
+- **Orchestrator (main agent)**: create quick tasks, then dispatch them to subagents by task UUID
+- **Subagents**: pass `sessionUuid` to `chorus_update_task` and `chorus_report_work` for attribution
+- **Session lifecycle** on the `chorus` main agent is automated by its lifecycle hooks
+
+---
+
+## Tips
+
+- Keep Quick Tasks small — if you need more than 2-3 tasks, consider using `/chorus-proposal`
+- **Acceptance criteria are required at creation time** — `chorus_create_tasks` rejects tasks without them. They are your self-check contract; specific, testable AC enables autonomous verification and makes the entire workflow self-contained
+- Use `chorus_update_task` to refine tasks (including AC) after creation rather than deleting and recreating
+- Pass `proposalUuid` to attach follow-up or gap-filling tasks to an existing proposal — this keeps related work grouped in the same project context and DAG
+- Pass `ideaUuid` (instead of `proposalUuid`) when the Quick Tasks deliver an existing Idea directly — the Idea completes when its linked tasks are done, without a proposal
+- Quick Tasks show up in the same project task list and DAG as proposal-based tasks
+- Agents with explicit `task:admin` continue autonomously after AC and independent review pass; all others use the evidence-rich asynchronous human handoff
+
+---
+
+## Next
+
+- For full task lifecycle details, see `/chorus-develop`
+- For admin verification, see `/chorus-review`
+- For the standard planning flow, see `/chorus-idea` and `/chorus-proposal`
+- For platform overview, see the `chorus` steering doc.
