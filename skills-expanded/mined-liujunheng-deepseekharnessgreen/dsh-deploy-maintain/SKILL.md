@@ -1,0 +1,580 @@
+---
+name: dsh-deploy-maintain
+description: "DeepSeek Harness 绿色整合版启动器的部署、日常维护、插件开发与避坑经验。覆盖便携 Node/dsh 安装、环境变量重定向、工作区 ACL 沙箱、更新备份、插件管理与 dsh 插件双端加载/路由注册等全套实操知识。"
+updated: "2026-10-24"
+---
+
+# DeepSeek Harness 绿色整合版 · 部署维护与插件开发
+
+> 本 Skill 沉淀自 `DeepSeekHarnessLauncher` 项目（Python tkinter 绿色整合版启动器 + 内置插件）的实测经验，只记录对日后部署/维护/插件开发有复用价值的内容：机制、避坑、约定。不存档开发过程、时间线与一次性审计结论。
+> 本 Skill 自包含：SKILL.md 只留核心避坑与规范，详细规范在 `references/`、逐项核对在 `checklists/`、代码模板在 `templates/`，按需查阅。
+
+## 一、适用场景
+
+- **部署**：在任意 Windows/Linux 机器搭建 dsh 绿色整合环境——便携 Node + 本地安装 dsh + 数据全落程序目录，不污染用户主目录、不装系统 Python/Node。
+- **维护**：检查/更新 dsh（默认先备份后重装，可在常规设置关闭备份）、可视化插件管理（搜索/安装/移除/本地文件夹安装）、数据维护（永久删除/恢复归档会话）、绿色版自更新（双通道）。
+- **插件开发**：开发双端加载的 dsh 插件（宿主端路由 + WebUI 客户端入口），排查"服务端在、客户端不显示 / 路由 404/405 / 装了不生效"等经典故障。
+- 配套：`python-tkinter-desktop-dev`（tkinter GUI 通用规范）、`trae-skill-creation`（Skill 打包规范）。
+
+## 二、绿色整合部署核心机制
+
+### 2.1 总体架构
+
+```
+程序根目录（BASE_DIR，可整目录拷走）
+├── launcher.py            # Python 启动器（GUI/CLI）
+├── start.bat / stop.bat   # ASCII + CRLF 编码的 .bat 入口
+├── desktop-shell.py       # 内置桌面壳（pywebview / WebView2）
+├── build_exe.bat          # PyInstaller 打包 DSH_Launcher.exe
+├── config.json            # 镜像/端口/default_workspace 等
+├── plugins/               # 内置插件源码
+└── runtime/               # 全部运行时数据（绿色整合核心）
+    ├── node/              # 便携 Node
+    ├── dsh/               # @deepseek-ai/dsh 本体
+    ├── dsh-home/          # DSH_HOME：会话/配置/存储
+    ├── npm-cache/ pnpm-home/ pnpm-store/ tmp/
+    └── python/            # 内置便携 Python + PyInstaller
+```
+
+### 2.2 便携 Node 与 dsh 安装（关键路径差异）
+
+- **Node 二进制**：国内走 `https://registry.npmmirror.com/-/binary/node/...`，官方走 `https://nodejs.org/dist/...`。注意二进制下载与 npm 包注册表是**两个不同镜像路径**。
+- **便携 Node 自带 npm 位置分平台，必须两个都探测**：Windows zip `node_modules/npm/bin/npm-cli.js`（node.exe 在顶层）；Linux/Mac tar.gz `lib/node_modules/npm/bin/npm-cli.js`。
+- **Node 版本要跟上 dsh 的 `engines`**：dsh 0.2.3-alpha.2+ 要求 Node 24.x `>= 24.22.3`（26.x 需 `>= 26.13.1`；旧绿色包是 24.22.1 / 22.20.0，npm 只警告不拦安装）。只改默认版本号对老用户无效——更新程序会跳过 `config.json`。必须运行时用 `node --version` 实测，低于最低要求/配置版本才自动升级；升级失败只记日志并继续用旧版；存在多版本目录时按版本号取最高的 `node.exe`，否则旧目录会让升级"回退"。默认推荐 Node 24 LTS（2026-11 最新 24.x 为 24.22.3）。
+- **dsh bin 入口**：`node_modules/@deepseek-ai/dsh/lib/bin.js`（不是顶层 `bin/`）。启动/插件管理必须用便携 `node.exe` + 此 `lib/bin.js` 直接调用；**别依赖 `node_modules/.bin/dsh.cmd`**（.cmd 回退分支会调 PATH 里的系统 node，便携/系统搞混）。
+- **官方会退役/合并 bundle**：旧 profile 的 `dsh.profile.bundles` 可能残留已停发的包名（如 `dsh-experimental-agent-team-web-profile` 在 0.1.6 后合并进 `-agent-team-profile`），启动只打印 `cannot resolve profile bundle ... skipping`，功能正常。维护一份与官方 `dsh-official-bundles` 的 `RETIRED_BUNDLES` 对齐的清理名单，在安装/启动时幂等移除；**别按日志关键字批量删除**，会误伤正常依赖。
+- **镜像附 `--registry`**：`resolve_mirror()` 返回 `("cn", True)` 时附加 `--registry`；auto 模式的 npm install 不会自动挂 registry。
+- **npm 安装"没输出=像卡死"的真因是 npm 而非显示端**：npm stdout 非 TTY（管道）时默认日志级别 notice 会抑制逐包下载输出，只打印完 `added N packages`。**必须加 `--loglevel=http`**（每包实时吐一行；`verbose` 反而刷爆 GUI）；进入 reify（纯本地 I/O 无网络）阶段 http 又静默 → 再配 `_stream_subprocess(heartbeat_interval=60)` 空闲心跳。**网络阶段看 npm http 日志，纯 I/O 阶段看心跳**。
+
+### 2.3 环境变量重定向（build_env，绿色整合的命根子）
+
+| 变量 | 落点 | 作用 |
+| - | - | - |
+| `DSH_HOME` | `runtime/dsh-home` | 会话/配置/存储（**不设则写用户主目录，破坏便携**） |
+| `npm_config_cache` | `runtime/npm-cache` | 下载缓存（否则写 `~/.npm`） |
+| `npm_config_userconfig` | `runtime/npm-userconfig` | 阻断读写 `~/.npmrc` |
+| `PNPM_HOME` | `runtime/pnpm-home` | pnpm 全局（dsh 插件管理依赖）；只设它时 store 落在 `runtime/pnpm-home/store` |
+| `TEMP`/`TMP` | `runtime/tmp` | 进程临时目录（与 ACL 沙箱相关，见 2.5） |
+
+> **pnpm store 位置不能靠环境变量**：`npm_config_store_dir` 环境变量、项目级与 userconfig 的 `.npmrc` `store-dir` 对 pnpm 11 **全部无效**（实测）；只有 `pnpm-workspace.yaml` 的 `storeDir`（或 CLI `--store-dir`）生效。启动器由 `ensure_profile_store_dir` 在每次启动/装插件前写入各 profile 的 `pnpm-workspace.yaml`（值用正斜杠，绿色目录搬走后自动校正），真正落点 `runtime/pnpm-store`；`runtime/pnpm-home/store` 是只设 `PNPM_HOME` 时的旧落点，需一并纳入清理。
+
+> **pip 缓存别忘了重定向**：pip 默认把 wheel 缓存写到 `%LOCALAPPDATA%\pip\Cache`（C 盘），不算在 npm 那套环境变量里。本项目所有 `pip install` 都显式带 `--cache-dir runtime/pip-cache`，构建脚本改用 `PIP_CACHE_DIR` 环境变量；只保证持久缓存不落 C 盘，pip 解包用的临时目录仍是系统 `%TEMP%`。
+
+### 2.4 服务启动与进程管理
+
+- **启动**：`node <dsh>/node_modules/@deepseek-ai/dsh/lib/bin.js web --port 3080 [--no-open]`。
+- **【严重】stdin 必须保持打开**：`Popen` 未指定 `stdin` 时继承父进程 stdin；在 .bat/守护/无 TTY 下 stdin 是 EOF，dsh 检测到后约 40 秒静默退出，网页报 "Failed to fetch"。修法：`Popen(..., stdin=subprocess.PIPE)`。
+- **接管界面必须加 `--no-open`**：官方 `dsh-web-app` 就绪后默认自动打开系统默认浏览器（`openBrowser` 默认 true）。启动器统一 `open_ui` 接管打开时，务必在启动命令末尾加 `--no-open`，否则"官方浏览器 + 自己开的界面"双开。通用方法：只要启动器接管打开界面，先列全所有会启动界面的地方，逐个确认。
+- **就绪检测**：后台线程 socket 轮询端口，就绪后 `webbrowser.open`。CLI 模式要**同步 `wait_ready()`**（daemon 线程会随主进程退出消失）。
+- **冷启动重复检测**：PID 文件（`runtime/server.pid`）+ 进程存在判断。排查端口监听用 `grep -w 3080`（`grep 3080` 误匹配 `13080`）。
+- **启动前自动清理孤儿 dsh 进程**：残留 dsh 占 3080 时新进程起不来还误报"已就绪"。用 `_find_port_owner(port)`（`Get-NetTCPConnection -LocalPort -State Listen`→`Get-CimInstance Win32_Process`）+ `_cleanup_orphan_dsh(port)` 校验进程名含 `node` 且命令行含 `bin.js web --port`（**绝不误杀普通程序**）才 `taskkill /F /PID`，再 `_wait_port_free` 兜底。
+- **窗口尺寸/最大化记忆（pywebview 6.x）**：`create_window(maximized=...)` 可直接恢复最大化，但 pywebview **没有可查询的 maximized 属性**；用 `events.maximized` / `events.restored` 自己跟踪，并在 `events.closing`（同步锁事件、窗口仍存活）里读 `window.width/height` 写回配置。尺寸只夹下限、不设上限。若启动器与桌面壳是**两个进程**共同写同一份 config，保存前必须重新读盘合并对方刚写的字段，否则旧内存值会覆盖新记录。
+- **【高发】新版 dsh web 认证（0.1.2-alpha.2+，界面显示 "dsh web authentication required"）**：首次访问要求认证，启动时打印带一次性 `?token=<launchToken>` 的 URL，打开它才签发 30 天 Cookie；直接开裸地址 401。launcher 从 server.log **最新启动块**解析 token（`_read_launch_token`）+ 拼认证地址（`_web_auth_url`，`/` 不能省），`open_ui`/`wait_and_open`/桌面壳（`--url`）统一用。**两个坑**：① **竞态**——dsh 先绑端口、插件树加载完才打印 token，`wait_and_open` 必须先 `wait_ready` 再解析地址（端口已监听时最多短等 8s）；② **改 launcher.py 必须重打包 exe**，否则旧 exe 开裸地址必然 401、误判"启动失败"。
+
+### 2.5 工作区与 ACL 沙箱（Windows 专属大坑）
+
+- **机制**：dsh 要求临时根目录不能位于会话工作区内部，否则 shell 工具报 `Windows ACL temp root must be outside the workspace`。
+- **三层概念要分清**：
+  1. 会话**工作区归属固化**在日志 header 的 `cwd` 字段，一经创建不可改（旧会话换不了工作区，只能归档/删除/开新会话）。
+  2. `workspace.json` 只是**工作区注册表**（`{path,title,sessionIds,...}` + `archivedSessionIds` + 顺序 `workspaceIds`），不是会话配置。
+  3. 沙箱判定读 `session.header.cwd`：cwd 是子目录的会话 ACL 通过；cwd 是程序根目录（内含 runtime/tmp）的老会话报冲突。
+- **自动解析（不写死）**：`workspace_conflicts_with_tmp(path)` 用 `os.path.commonpath` 判"临时目录是否为工作区严格子路径"（不同盘符 `ValueError` 按不冲突）；`resolve_default_workspace()` 优先级 = ① config `default_workspace` 显式值（冲突警告回退）→ ② 根目录不冲突用根目录 → ③ 冲突才取 `BASE_DIR/workspace`。
+- **【另一类 ACL 故障：沙箱授权写不进去 → 所有受限命令全挂】**症状是**任何** shell 命令立刻失败，报 `SetNamedSecurityInfoW failed (Win32 5): grantWrite(<工作区>)`（连什么都不改的命令也一样），而 `read`/`glob`/`grep` 这类**不需要工作区写授权**的文件后端操作一切正常 —— 极易误判成"命令写错/shell 坏了"。机制：沙箱起受限进程前要在工作区根上写 ACL 授予写权限，写 DACL 需要目标同时具备 `WRITE_DAC` **和 `WRITE_OWNER`**；实测受害目录 owner 是当前用户、`WRITE_DAC=true` 但 **`WRITE_OWNER=false`**（ACE 只给了 Administrators/SYSTEM 的 FullControl、Authenticated Users 的 Modify、Users 的 ReadAndExecute，没有一条给出 WRITE_OWNER）→ `SetNamedSecurityInfoW` 以 `ERROR_ACCESS_DENIED(5)` 失败。**修法 = 用本机 skill `diagnose-windows-sandbox-acl` 的脚本一条命令诊断+修复**（`-Path <失败路径> -AllowRoot <授权根> -Out <持久化恢复目录>`）：读目标及每层上级，对缺权限的目录先备份 DACL 再补当前用户 FullControl allow ACE，改完**重新读回校验**并打印逐条回滚命令。它要写权限，**受限令牌跑不了**（会把沙箱自身的限制误报成"缺权限"）→ 按 skill 要求为这**一条**命令申请一次更宽权限，非受限运行。**三个实测附加坑**：① 本机 Windows PowerShell 禁跑脚本时，用 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force` 再 `& 脚本`（Process 作用域随进程消失，不动机器/用户策略）；② 判断修复**只看 `verification` 记录、不看 `completed` 动作**（"操作完成"≠"权限真变了"），`RECAP` 行才是结论摘要；③ 修完**必须重跑原来失败的那条受限命令**才算闭环（skill 的 `nextAction=verify_original_confined_operation`）。**别做**：手改 ACL/改所有者/递归重置子项/UAC 提权运行（脚本已备份+给回滚命令，手工介入会破坏可回滚状态）。注意与"工作区内含 `runtime/tmp` 导致 ACL temp 冲突"区分：那是路径冲突，这是 Windows 文件权限。
+
+### 2.6 exe 打包（PyInstaller）
+
+- **onefile 下 `__file__` 不可作程序根目录**（指向 `_MEIPASS`）。`get_base_dir()` = frozen 时取 `os.path.dirname(sys.executable)`，否则脚本目录。
+- **必须显式补齐全套 VC 运行库三件套**：`--add-binary vcruntime140.dll/vcruntime140_1.dll/vcruntime140_threads.dll;.`，否则目标机 `Failed to load Python DLL ... 找不到指定的模块`。诊断：`pyi-archive_viewer -l DSH_Launcher.exe` 过滤 `vcruntime|python310`；单 DLL 依赖用 PE 导入表解析。
+- **内置便携 Python**：python-build-standalone 解压后有**顶层子目录**（`runtime/python/python/python.exe`），`find_python_exe()` 必须"先查顶层，再遍历一层子目录"兼容两种布局。
+- **便携 Python 下载源（2026-11-12 扩容）**：产物只发布在 GitHub Release，国内按 `南京大学 GitHub Release 镜像 → gh-proxy.com → ghproxy.net → 官方 GitHub` 依次回退（`PYTHON_URL_TEMPLATE`，三源 Content-Length 一致 = 39634596 字节，可互为备份）。**单靠 NJU 不够**：部分网络会 SSL 握手失败或长时间 0 字节，所以即使 `config.mirror=cn` 也要保留后面的代理与官方兜底。全部失败时仍可用系统 Python 跑 `start.bat`（dsh 服务由 Node 运行）。
+- **校验用便携 python，别用系统 python**（可能是 2.7，`nonlocal` 误报语法错）：`runtime\python\python\python.exe -m py_compile`。
+- **重新打包纪律**：改 `launcher.py`（含 `GREEN_VERSION` 版本号）或 `update_agent.py` 后**必须**重打包 exe（`build_exe.bat`），否则用户跑旧 exe（"界面改了没反应"/"运行时版本比 Release tag 低一级"十有八九是旧 exe）。`release_upload.py` v3.0+ 已强制校验 exe 新鲜度（打包前比 mtime + 跑 `--print-green-version` 对比源码版本，任一失败 exit(2)）。**两条"看起来通过其实没校验"的坑（exe 被占用时 copy 失败却打印 Build complete 假成功；根目录下 `--print-green-version` 返回 -1 被静默跳过，要去 `dist/` 跑或比对 root/dist 的 Get-FileHash；发布脚本须在 `PYTHONIOENCODING=utf-8` 下运行）详见 `references/release-workflow.md`**。
+
+## 三、日常维护
+
+### 3.1 检查更新（备份优先 / 双数据源动态检测）
+
+- **"装了就永远最新"是错觉**：`prepare_dsh()` 只缺失时安装；同步更新的唯一途径是强制重装。
+- **候选收集双数据源**：`dsh_github_releases()`（分页拉全部 tag，`_dsh_tag_to_version()` 兼容 `dsh-v`/`v`/裸版本号）+ `dsh_npm_versions()`（npm 全量版本判断某 tag 是否可安装）。npm dist-tags 的 latest/next 也作为候选来源。
+- **不过滤新旧**：旧版有 `_green_version_greater()` 过滤"只保留比当前新的"——反模式，用户可能想降级/切通道/锁旧版。**正确做法**：只去重不过滤，按钮文案「安装选中版本」（可能是降级或切通道），不是「确认升级」。
+- **版本比较（semver 正确实现）**：`_green_version_tuple()` 返回五元组 `(major, minor, patch, pre_rank, pre_number)`，pre_rank 映射 alpha=0, beta=1, rc=2, 无标记(正式版)=3。**不能**用 `re.split(r"[^\d]+", ...)` 纯拆数字——`alpha.5→(0,1,2,5)` vs `rc.1→(0,1,2,1)` 会误判 rc.1 < alpha.5。
+- **npm dist-tag 两条独立通道**：latest（稳定正式版）和 next（预发布/rc/alpha）不应该混在一起比"谁更新"。GUI 按通道分组展示：① stable（npm latest）→ ② prerelease（npm next + GitHub prerelease）→ ③ history（GitHub 正式历史版），每通道内从新到旧。当前版本绿色 + "(当前)" 高亮。
+- **查询避坑**：`dist-tags --json` 必须拆成独立 argv（`query.split()`），整串当单参数会用法错误；npm view 的 registry 要与安装一致。
+- `update_dsh(target)` 顺序 = 备份 → **备份成功后才**强制重装目标版本（否则"旧版被覆盖又没装上"丢数据）。备份目录不自动清理。
+- **升级后自愈（根治"升级后插件树起不来"）**：更新成功后自动 `_heal_after_core_upgrade` 四步——① `_remove_incompatible_bundles` 移除黑名单 `UPGRADE_INCOMPATIBLE_BUNDLES`(dshmarket)＋日志定位到的不兼容 bundle（关键字 `does not provide an export`/`is not in cache`/`ERR_MODULE_NOT_FOUND`/`Cannot find package`/`SyntaxError` 且堆栈路径命中 profile 的 bundles+dependencies，内置 bundle 不在 dependencies 永不误删）；② `_heal_profile_dependencies` 补宿主核心声明的 peer 依赖（`autoInstallPeers:false` 下 pnpm 不自动装，缺了报 `not in cache`）＋把 profile 与 file: 本地插件的核心依赖版本同步到宿主已装版本；③ `_rebuild_dependency_tree` 便携 pnpm `install --force --no-frozen-lockfile` 强制重建（复用 BOM 清理＋allowBuilds 补丁）；④ `_smoke_verify_core_upgrade` 独立子进程冒烟启动验证端口监听，失败再定位 1 个不兼容 bundle 移除重建重试（最多 2 轮，每轮只删 1 个防误删）。服务运行中跳过冒烟；任一步失败仅记警告不阻断更新成功返回。
+- 安装主体抽成 `install_dsh(package_spec)`，`prepare_dsh(force, package_spec)` 只做"缺失则装 / 强制重装"分支，首装与更新共用。
+- **国内镜像对 dsh alpha 版本滞后**：npmmirror 可能先同步了 `@deepseek-ai/dsh` 元包却没同步它的依赖（如 `dsh-base@0.1.5-alpha.2`），导致报 `ETARGET`/`E404`/`No matching version found` 更新失败——**不是网络或代码问题，是镜像未同步**。启动器已在 `install_dsh` 与 `_rebuild_dependency_tree` 两处兜底：国内源报这些错时自动切官方源 `https://registry.npmjs.org` 重试一次再报错。遇到该报错优先切 GUI 镜像为「官方源」或稍后重试。
+- **官方发新版本先做兼容性审计再决定改不改代码**（审计五类与各次结论记在 DEV_NOTES.md，不写进 skill）：① 插件钩子事件签名是否变化；② 会话接口是否调用被弃用的 `snapshotEvents`/`eventAt`/`ownEvents`（正解是异步 `sessionQuery.readSurface`/`traceSession`，或像 dsh-session-rewind 直接读盘 session.jsonl 跨版本容错解码）；③ 配置/服务改名（PTC、workflow 执行器、E2B 移除、Ralph 默认关闭等——本工程零引用）；④ API 地址/协议变更（如 v0.1.6 起 DeepSeek 默认 Messages 协议 + Files API 复用图片，旧官方根地址 `https://api.deepseek.com` 需改 `https://api.deepseek.com/anthropic`）；⑤ 缓存/沙箱路径移动。另注意：官方大版本发 GitHub pre-release 时不一定上 npm latest（如 v0.1.6-alpha.1 在 alpha tag，升级检查不推送），**等进 latest/稳定再升，别主动装 alpha**。
+
+### 3.2 插件管理（dsh plugin 依赖 pnpm）
+
+- `dsh plugin --profile <name> <pnpm 参数>` 内部转发 pnpm 管理该 profile；**已装清单 = 读 profile 的 package.json**，无需调查询接口。
+- **pnpm 必须装进便携 runtime**：`install -g pnpm --prefix runtime/pnpm-home` 并加 PATH；**`pnpm --version` 裸跑失败（退出码 1）**——pnpm.cmd 内部要调 node，必须在含便携 node 的 PATH 下运行。
+- **本地插件安装**：`os.path.isdir(spec)` 为真自动归一化为 `file:<绝对路径>` 交给 pnpm。**pnpm 对 `file:` 是拷贝非软链**，改 `plugins/` 源码必须重装才同步。
+- **【高发】"内置插件每次打开插件管理都提示已更新" = package.json 核心依赖被自愈改写造成假差异**：`_heal_profile_dependencies()` 会把本地插件 `package.json` 里的 `@deepseek-ai/*` 核心依赖改成宿主已装版本（rc.3→rc.4），而 `plugins/` 随包源码钉的是发版时旧版本号 → 逐文件哈希永远不一致。后果：每次同步都报"已更新"（噪音）、把宿主版本改回旧版、反复重写文件。**修法**：比较前把两侧核心依赖归一化到宿主版本再比（只差核心依赖不算更新），真需要镜像 `package.json` 时复制后立刻重新对齐宿主版本。排查手法：`python -c "import sys; sys.path.insert(0,'<程序目录>'); import launcher; app=launcher.Launcher(); print(app.update_bundled_plugins())"` 直接看 updated/up_to_date 名单（幂等，不改环境）。
+- **内置插件批量安装**：`bundled_plugin_dirs()` 动态扫描 `plugins/` 下含 package.json 的子目录（不硬编码名单）；`install_bundled_plugins()` 用 `file:` 批量装，单个失败不中断；`prepare_all()` 在 `prepare_dsh()` 之后自动调用（幂等），`start_server()` 每次启动前也会走 `prepare_all()`，所以「安装环境」「启动服务」「更新后首启」三条路径都会自动装齐内置插件。**"已装"判定要看两层**：profile `dependencies` 里有 **且** `node_modules/<包名>/package.json` 存在（`_installed_plugin_ready()`）—— 只看清单会让"手删 node_modules / 链接丢失"的插件永远修不回来（`update_bundled_plugins()` 只会记 `not_installed`，不会重装）。
+- **搜索源**：npm 注册表 `/-/v1/search?text=dsh-plugin` + GitHub topic 页。`keywords:dsh-plugin` 在 npmmirror 返回 0，用 `text=<关键词>` + 本地过滤最稳。**必须在 `search_npm_plugins` 里 `if package_name.startswith("@deepseek-ai/"): continue` 过滤官方自带插件**（本机已装/内置，不该作为"可搜索的第三方"列出）。
+- **核心兼容判定三态**：`fetch_plugin_manifest(pkg)`（走当前镜像 `/pkg/latest`，8s 超时，失败返回 None）拉 manifest，`_classify_core_compat(manifest, _host_core_versions())` 比对插件 `dependencies`/`peerDependencies` 里的 `@deepseek-ai/*` 区间与本地核心子包版本 → 全满足=ok(预估兼容) / 有区间不满足=warn(可能兼容) / 拉取失败或版本无法解析=unknown(不明)。**无核心依赖也判 ok**（天然不受官方核心版本变化影响）。一个插件一个 manifest 是额外网络请求，只能给前 30 条后台实测（`enrich_npm_plugins(max_check=30)`），超量未测统一标"不明"（不留裸版本号）。i18n 键 `compat_ok/compat_warn/compat_nocore/compat_unknown` 必须 **zh.json 与 en.json 同时补**（漏 en 会掉回键名）。版本号解析 `_version_tuple`（支持 `x.y.z`/`x.y.z-pre`，失败返回 None 走 unknown）；区间 `_satisfies_range` best-effort（遇 `||` 组合或无法解析返回 None，**不做否定断言**，宁可 unknown 也不误报兼容）。
+- **【高发】作用域包 `@xxx/yyy` 拉 manifest 必 404 的根因 = `@` 被 quote 编码**：`urllib.parse.quote(package_name)` 默认把 `@` 编成 `%40`，npmmirror 等镜像对 `/…/%40scope/name/latest` 返回 404（scoped 插件全静默跳过、状态列空）。**修法**：`urllib.parse.quote(package_name, safe="@/")`，让 `@` 与 `/` 都不编码。
+- **已安装列表兼容列无需联网**：直接读本地产物 `DSH_HOME_DIR/profiles/<profile>/node_modules/<包名>/package.json`（作用域包 `@scope/name` 是 `node_modules/@scope/name/package.json`，用 `*(package_name.split("/"))` 拼接），`host_versions` 先算一次再逐项传入（避免重复全量扫盘）。
+- **推荐列表拉 manifest 必须用 spec（或 name），不能拿显示名**（`dsh-market` 的 spec 是 `dshmarket`，拿显示名 fetch 会 404）。推荐加载放后台线程 + `set_plugin_busy(True/False)`。npm 上发布的版本可能与本地内置不同，以发布为准。
+- **GUI 线程安全**：耗时操作在 `threading.Thread`，结果 `root.after(0, ...)` 回主线程；忙时禁用按钮防重入。`ttk.Panedwindow` 必须 `.add(child, weight=N)` 显式注册（否则空白）。
+- **【高发】后台任务结束后忘了恢复忙碌按钮 = 界面死在半禁用**：凡 `set_plugin_busy(True)` 的地方后效回调里**必须**补 `set_plugin_busy(False)`（搜索/加载用 `try/finally` 兜底）。对照 grep 所有 `set_plugin_busy(True)`，逐一确认有对应 `False` 且在 `finally` 或回调末尾可达。
+- **"包装上了但没生效"根因：pnpm 非 0 退出码跳过官方 reconcile**：pnpm 遇 `ERR_PNPM_IGNORED_BUILDS`（含原生模块/构建脚本依赖：ssh2/node-pty/cloudflared 等）以退出码 1 结束（包已写 dependencies），而官方 reconcile（把声明 `dsh.bundle.patch` 的包写进 `dsh.profile.bundles`）**只在 exitCode===0 运行** → 被打断 → 编排层没有它。**排查顺序**：① 看 `dsh.profile.bundles` 是否含该包（不是 dependencies/node_modules）；② 设 DSH_HOME 后 dump-config 看插件层；③ 有则重装/手动 reconcile。
+- **启动器兜底 `reconcile_bundles()`**：任何插件安装/移除/启停后扫描 dependencies 把声明 bundle 且未停用的写进 bundles，清除不再声明的；**内置 bundle（dsh-base/dsh-web-app）不在 dependencies 里，永不触碰**。`run_plugin_command` 每次命令后兜底。
+- **启用/停用开关**：停用 = 从 bundles 移除 + 写 `dsh.profile.disabled` 数组；**官方 reconcile 不识别 disabled 列表**会把停用包加回 → launcher 每次命令后重放停用状态。启停后重启服务生效。
+- **pnpm 构建白名单已自动化**：`ensure_pnpm_native_allowbuilds`（补原生依赖 `false`）+ `auto_allow_git_build`（`ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 时从报错提取含完整 commit hash 的 URL→`pnpm-workspace.yaml` 的 `allowBuilds: true` 并重试，幂等）。**绿色版 zip 不含 runtime/，此补丁必须在启动器内自动做**。
+
+### 3.3 数据维护（会话恢复 / 永久删除，官方无此能力）
+
+- **dsh 没有"永久删除/取消归档"接口**：网页"归档"只是把会话隐藏（日志 + 注册表全保留）。
+- **彻底删除需服务停止后直接操作数据，三处一并清理**：① `sessions/<编码>/<ID>/` 日志目录（只按 id 遍历查找，**不拼接用户输入进路径，防路径穿越**）；② `workspace.json` 的 `sessionIds`/`archivedSessionIds`；③ projcache 缓存（DSH 0.1.2-rc.1+ 分文件 `sessions/session-{uuid}.json`，旧版单文件 `session_projcache.json`）——**新旧两种格式都要清**，另清写盘中断残留的 `session-{uuid}.json.tmp`。
+- **「会话管理幻影会话」坑（2026-10-27 实测修复）**：只清旧版单文件、漏清新版分文件缓存 → 列表继续从缓存读出"无日志+无工作区"的幻影行，勾选删除后刷新依旧存在（用户感知＝"删不掉"）；无标题的缓存残留还会被静默跳过、连勾选都勾不到。判定 = 无日志 + 不属于任何工作区 + 未归档。dsh 本身不读这类孤儿缓存（不影响 WebUI），删除只影响启动器列表。修复：`purge_session` 同时清新旧缓存，`list_sessions` 对无标题残留也建记录并打 `orphan` 标记，GUI 状态列显示「缓存残留」+ 底部计数提示可删数量。
+- **复原（取消归档）= 只把 id 从 archivedSessionIds 移除并原子写回**——日志/归属/缓存 dsh 从没动过，天然无损。与 `purge_session` 完全相反。
+- JSON 写回用原子写（同目录临时 + `os.replace`）。GUI「会话管理」弹窗：Treeview 多选 +「恢复选中 (N)」/「删除选中 (N)」，均二次确认；GPU 承担全部删除/恢复（实际启动时服务运行中，WebUI 删不了）。
+- **隔离测试**：复制真实 workspace.json 到副本 + monkeypatch `DSH_HOME_DIR`，不碰真实数据。
+
+### 3.4 绿色版自更新（双通道）
+
+分发给用户后两条**完全独立**的更新通道，三保证：① 数据/环境隔离（核心只动 `runtime/dsh`，外围只动根目录）；② 外围覆盖跳过 `config.json`（用户配置）与 `runtime/`（数据+环境）；③ 两套独立查询接口与按钮。
+
+- **通道①官方核心**：更新 `runtime/dsh/` 的 dsh npm 包（即 3.1）。
+- **通道②绿色版外围**：更新根目录 launcher.py/exe/plugins/文档，从双平台 Release 获取（GUI「检查绿色版更新」）。
+- **版本追踪**：`GREEN_VERSION` 常量为**唯一来源**；`green_local_version()` 只在用户 `config.json` **显式写了 `green_version` 字段**时才覆盖（读原始配置文件，不走合并默认值）。版本号对比用正确的 semver 五元组（`_green_version_tuple()`，见 3.1）。
+
+  > **坑**：版本默认值**绝不能**写进 `DEFAULT_CONFIG`（曾导致本地恒显示旧版、反复提示更新）。
+  > **坑（版本核实口径）**：判断"本机版本"**只读代码常量**——`launcher.py` 与 `update_agent.py` 的 `GREEN_VERSION`（两处必须一致）。**不要用根目录的历史发布物推断**（`DSH-GreenPortable-v*.zip`、旧命名 zip、`doc/release_notes/*.md` 都只是产物，据此判断会得到"本机落后 N 个版本"的错误结论）。
+
+- **查询与下载跟随下载源分流**：`config.mirror` 为 `cn`（含 auto）时**先走 Gitee**，失败回退 GitHub→国内镜像；为 `official` 时 GitHub 优先、Gitee 兜底。返回值带 `source`（github/gitee/gitee_release）。
+- **Gitee 通道两级策略**：① 先查 Gitee Release（`GITEE_RELEASES_API` 公开读），取"最新且带手动 zip 附件"（过滤：名 `.zip` 结尾 **且** URL 含 `/releases/download/`，防误选 `archive/refs/tags/...` 源码包）→ `source="gitee_release"` 走 zip 直连下载（手动附件直连返回真 zip）；② 无发布版才回退 `source="gitee"` 整仓快照（版本号读 `raw/master/launcher.py` 的 GREEN_VERSION 正则提取；下载走 git 智能 HTTP 协议克隆整仓——`info/refs?service=git-upload-pack`→`git-upload-pack` 拉 pack→解析 delta 落盘，只依赖标准库；整仓 zip 实际是 JS 挑战页拿不到）。
+- **下载兜底必须覆盖"实际下载"步骤**："api.github.com 可达查得到版本、但 releases/download 大文件流被墙"是典型现象 → GitHub 下载包 try/except，异常后转 Gitee 重下；加**防降级**（Gitee 版本号低于目标则放弃切换）；成功后改写 `release_info["source"]`，调用方**在 `prepare_update_content_root` 之后再取 source**（保证失败提示与真实来源一致）。
+- **独立更新程序 `DSH_Update.exe`（替代 update_apply.bat）**：启动器自身 exe 被 Windows 锁定无法自替换。流程：下载解压新版 zip + 写 `runtime/update/update_job.json`（含 base_dir/content_root/backup_dir/relaunch_mode/new_version/手动地址）→ 以 `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` 启动 `DSH_Update.exe --apply <job>` 并退出本体（兜底：无 exe 用内置 python 跑 `update_agent.py`）。更新程序**自我复制到 `runtime/tmp/DSH_Update_worker.exe` 从副本运行**（释放根目录更新程序文件锁）→ 轮询 exe 文件锁等本体退出（`_can_open_write` 试探，**不轮询 PID**）→ 备份到 `runtime/update/backup/` → `shutil.copy2` 逐个覆盖（跳过 config.json/runtime/.git）→ 重启。失败弹窗给出手动下载地址；全程 tkinter 进度窗口。
+- **关键避坑（独立更新程序）**：① 迁移判定用 `os.path.normcase` 比较绝对路径，仅"自身就是根目录更新程序"才迁移，副本二次运行直接正常覆盖，**不能无限复制**；② DSH_Update.exe 内嵌 python，打包须带 VC_BINARIES 三件套；③ 用 copy2 比 robocopy 可控（失败能定位具体文件）。
+- **更新后内置插件自动同步（触发条件必须两路，2026-10-27 修）**：外围更新完，内置插件要重新同步一次 —— 先 `install_bundled_plugins()` 补装新增插件并注册 `dsh.profile.bundles`，再 `update_bundled_plugins()` 把已装副本镜像到最新源码。触发条件＝① 启动器内更新流程退出前写的 `runtime/pending_bundled_plugin_check`；② `runtime/last_run_version.txt` 记录的版本号 ≠ 当前 `GREEN_VERSION`（没记录也算不同）。**只做条件①会漏掉"手动下载 zip 解压覆盖"的用户**：没有标记 → 首启什么都不做，内置插件（尤其新增的）永远不补装，界面上也没有任何提示（用户感知＝"更新了绿色版但插件没更新"，2026-10-27 实测）。配套约定：同步成功才写版本号+清标记（失败保留 → 下次启动重试，避免一次失败永久放弃）；**结果只写启动器日志、不弹窗**（用户 2026-10-27 明确要求"放日志里写就好了"：逐插件明细 + 结尾一行汇总；`--start` 同样打到控制台）；同步线程必须在 `run_gui()` 里**所有控件创建之后、`mainloop` 之前**启动，并临时置 busy 禁用「启动服务」，防止插件文件镜像到一半服务就加载。
+- **发布相关（编码/凭证/清单/打包）**：
+  - **PS 5.1 编码坑**：Windows PowerShell 5.1 把"无 BOM 的 UTF-8 .ps1"按系统 ANSI(GBK) 读取——脚本里写的中文字面量在内存已乱码，后面怎么编码都救不回。**发布脚本保持纯 ASCII**，中文正文单独放 UTF-8 文件用 `[IO.File]::ReadAllText(path, UTF8)` 显式读取。
+  - **凭证**：Gitee PAT 走 Windows 凭据管理器（`git credential fill` 取 `password` 行）；GitHub 连接器是 OAuth（明文难取）→ 用 GitHub MCP 或向用户要 `ghp_` PAT。**不要重复索要已有凭证**。`release_upload.py` 跑过一次会回写版本日期刷新 mtime，之后别再整跑（撞新鲜度校验）；补发单平台直接用该平台 API/MCP 建 Release+传 zip。
+  - **绿色 zip 顶层清单要维护两处**（打包 `GREEN_TOP_FILES` + verify 期望 `expect_top`）：漏一处会导致新机对应文件缺失但本地不报错（曾漏 desktop-shell.py）；新增/同步顶层文件必须两处都改；建议收敛 verify 从 GREEN_TOP_FILES/GREEN_TOP_DIRS 派生期望。
+  - **zip 打包传目录名**：打包 `plugins`/`skills` 要传**目录名**（zip 内保留前缀）；不能传子路径（会把插件目录打在 zip 根、覆盖时错位拷到程序根）。打包后 `tar -tf` 复核。更新侧 `_normalize_update_structure()` 解压后把错位的 `dsh-*` 归位 + 清理根目录残留。
+  - **在线发布页**：主域由主站静态托管（Cloudflare Pages 常见，root_dir=静态目录，CNAME 裸域 → pages.dev）；GitHub Pages 仅作旧域名 301 跳转（meta refresh + canonical + JS location.replace 三重保险）。发布页动画纯本地渲染、遵循 `prefers-reduced-motion`，无 Canvas 时静默跳过，`pointer-events:none` + `z-index` 归位不拦截交互。日期纪律：版本日期必须是制作当天。完整可套用模板见 `references/web-hosting-seo.md`。
+
+### 3.5 会话回退（dsh-session-rewind 插件）
+
+- **背景**：工具运行时失效（`Cannot read properties of undefined (reading 'prepare')`）崩溃留下孤儿 `tool_calls`，之后每轮被 API 400 拒绝，会话**永久毒化**；官方无"删除失败消息"功能。
+- **方案**：WebUI「会话回退」页 → 分析会话 → 在**已完成**回合「回退到此」走官方 `session.fork`（`{sessionId, atSeq}`）派生干净续接会话并自动打开；原会话不动。
+- **为什么派生而非原地删消息**：服务运行时持久化层内存缓存，原地改磁盘日志会被内存状态覆盖或 seq 断裂；`session.fork` 是官方为此设计的机制（官方 UI 只暴露末位回合，插件放开到任意回合）。
+- **fork 边界语义限制**：边界 =「≥ atSeq 的第一个 turn/end」，只能整回合切，**切不出**"历史+提问、无回答"。
+- **配套 tools/**：`rewind-session.mjs`（服务停止时的离线原地截断回退，自动备份）、`apply-agentloop-guard.mjs`（工具派发加存在性检查，把晦涩报错变明确提示，幂等）。
+- 排查"会话突然全部 400"：看 server.log 有无该签名 → 分析定位崩溃回合 → 在之前**已完成**回合回退派生。
+
+## 四、GUI 启动器要点（tkinter）
+
+- **X 二次确认 + 最小化**：`root.protocol("WM_DELETE_WINDOW", on_close)` 二次确认；最小化到任务栏（图标保留），托盘从启动就常驻，双入口始终可见（用户易误判程序退出）。绿色版自更新传 `confirm=False` 跳过询问。
+- **托盘（纯 ctypes + Win32，零依赖）**：`Shell_NotifyIconW` 加删图标；`SetWindowLongPtrW` 子类化窗口过程拦截 `WM_SYSCOMMAND/SC_MINIMIZE` 与自定 `WM_TRAY_CALLBACK`。**关键避坑**：① 窗口过程挂钩必须在 `__init__` 装（别放 add()，否则第一次最小化漏拦截）；② `winfo_id()` 返回 Tk 内部子窗口，须先 `update_idletasks()` 再 `GetAncestor(GA_ROOT)` + 显式 `argtypes/restype=c_ssize_t` 拿真实顶层 HWND；③ **WndProc 回调里绝不能直接调 Tk**（重入 Tcl 崩溃）→ 只置布尔标志 + `root.after(80,...)` 轮询消费；④ `--windowed` 下 `sys.stderr=None`，回调内不输出 + 全程 try/except；⑤ `remove()` 只删图标不还原窗口过程，退出才 `dispose()`。**右键菜单用 Win32 原生 `TrackPopupMenu`（`TPM_RIGHTBUTTON|TPM_RETURNCMD`）**，别用 Tk `tk_popup`（root 隐藏/最小化时弹不出、点外部关不掉）；`CreatePopupMenu`/HMENU 必须设 `restype=c_void_p`（64 位截断 → 静默失败）；弹前先 `SetForegroundWindow`；**构建器务必 `set_menu_builder(build)` 注入**——漏注入时右键菜单永远弹不出。
+- **单实例**：`CreateMutexW` 命名互斥量，句柄由实例**整个生命周期持有**（否则 GC 释放后互斥量消失）；`GetLastError()==183` 即已有实例 → `FindWindowW` + `ShowWindow(SW_RESTORE)` + `SetForegroundWindow` + `BringWindowToTop`。窗口标题常量化（查找创建共用同一 WINDOW_TITLE）。CLI 命令模式不建互斥量。
+- **自定义图标（窗口+托盘+exe 统一）**：`get_icon_path()`（frozen 从 `_MEIPASS` 取，否则根目录，找不到 None）。窗口 `iconbitmap`；托盘 `LoadImageW` 从 .ico 加载 HICON；exe 加 `--icon` + `--add-data`。**避坑**：`--add-data` 源路径按 **spec 目录**解析，必须写绝对路径 `%~dp0...`；`--icon` 按当前目录解析可直接相对。ICO 保存用 `image.save(format="ICO", sizes=[...])`，**别用 append_images 手动塞帧**（得到几百字节空壳）。
+- **"待保存"设置 vs 已落盘 config 脱节**：tkinter 下拉/条目是内存"待保存"值。启动类动作（如点启动服务）前，先把界面当前值同步进 config 并 `save_config()` 落盘（转换规则与「保存设置」一致、静默）。收敛到单一 `sync_gui(silent=False)` 函数，保存/on_start/on_install 三处共用，防三处逻辑漂移。
+- **语言提示**：`.bat` 保持 ASCII 全英文；desktop-shell 相关提示语用英文（中文乱码）。
+- **插件管理窗口宽度教训**：窗口宽度直接决定左右面板够不够。把 `top.geometry("900x600")` 加宽到 **1160x680**（与主启动器 1160x780 同宽）、`minsize` 提到 1000x580——**窄窗口里调 Panedwindow 权重很难把右侧撑宽**（根源是窗口太窄），宽窗口下左右权重回到 1:2 即可让右侧充足。`ttk.Treeview` 改 columns 后插入的 values 列数必须在定义时同步对齐；**去掉列后必须全局检查所有 `values[i]` 下标读取**（分类列删除后 `values` 变 `(source,version,description)`，`resolve_selected_spec` 里原本取来源列的 `[1]` 会读到版本号 → 改 `[0]`，否则 github 搜索结果被误判按 npm 包名安装）。
+- 涉及图标/托盘/单实例的通用经验可另参考 `python-tkinter-desktop-dev` Skill。
+- **对话框开着时最小化主窗口 → 点任务栏图标毫无反应，点托盘却正常（Tk 桌面应用通用坑）**：症状是"程序像卡死"。实测（Tk 8.6 + Windows）真因有**三条独立机制**，别按直觉猜成"Windows 随 owner 隐藏子窗口"（猜错会只修好一半）：① `root.iconify()` 后 **Tk 自己**会把 `transient(root)` 的子窗口状态改成 `withdrawn`，而 master 恢复时 Tk **不会**把子窗口一并还原；② **只要子对话框握着 `grab_set()`，Tk 就会丢弃 Windows 发来的 `SC_RESTORE`** —— 主窗口永远停在 `iconic`，点任务栏完全没反应（**主因**；对照组：释放 grab 后同一 `SC_RESTORE` 立刻恢复正常）；③ 后台线程回调在主窗口已最小化时弹框，对话框一出生就是隐藏态且已抓走输入。**四层修复**：① 弹框前先恢复最小化/隐藏的 master；② 弹框后用 `after_idle` 显式 `deiconify + lift + focus_force`（放 idle 避免"先显示空窗再被控件撑大"的闪烁）；③ **在窗口过程里拦 `SC_RESTORE`，但必须加条件"当前有 grab 对话框"** —— 拦截时改由 Tk 侧 `deiconify()` 恢复（`deiconify` 不受 grab 影响，且会把 ① 造成的 withdrawn 一并带回）；无对话框时不拦截，保持 Tk 原生行为不变；④ 主窗口重新显示后把登记表里所有非 `normal` 状态的对话框拉回 `normal`。**原生 messagebox 无处可登记**（`tk_messageBox` 内部自建 Toplevel、弹完即销毁，调用点又散落十几处）→ 在 GUI 入口把 `messagebox` 这个**局部名字**替换成薄包装对象（转发 `showinfo/showerror/showwarning/askyesno`，调用前先恢复 owner，其余属性 `__getattr__` 透传），一处覆盖全部调用点且不漏将来新增的。**排查方法论**：不要凭"Windows 应该会怎样"猜窗口行为，写 30 行探针用 `IsIconic` / `IsWindowVisible` / `winfo_viewable` / `grab_current()` + `PostMessageW(WM_SYSCOMMAND, SC_RESTORE)` 直接问系统，一轮定位真因。**探针硬约束**：模拟系统消息必须用 `PostMessageW`（异步），用 `SendMessageW`（同步）会同步重入本线程窗口过程，直接崩 `PyEval_RestoreThread: the function must be called with the GIL held`。另实测 `withdraw/unmap` **不会**释放本地 grab。
+
+## 五、DSH 插件开发（双端加载 + 路由注册）
+
+### 5.0 Cordis 插件协议核心约束（必须先记住，否则装完服务直接炸）
+
+七条硬约束，踩任何一条都会导致"装完插件服务起不来"：
+
+| # | 约束 | 违反症状 | 正确写法 |
+| - | - | - | - |
+| 1 | **宿主端导出函数名必须是 apply** | `invalid plugin, expect function or object with an "apply" method, received object` | `export async function apply(ctx, config)` |
+| 2 | **纯客户端插件也必须带宿主端 lib/index.js** | `ERR_MODULE_NOT_FOUND: ...lib/index.js` 服务启动即退出 | 纯客户端用官方 no-op: `function apply() {}; export { apply }` |
+| 3 | **exports 必须包含 `"./package.json": "./package.json"`** | 客户端 bundle 跳过 → WebUI 入口不出现 | 检查 package.json exports 字段 |
+| 4 | **files 数组必须包含 cordis.patch.yml** | pnpm 安装时文件被排除 → 插件树注册失败 | `files: ["lib", "cordis.patch.yml"]` |
+| 5 | **name 字段与目录名一致** | 包名/目录名对不上时 pnpm 安装可能出问题 | 目录 `dsh-rules/` → package.json `name: "dsh-rules"` |
+| 6 | **纯 hook 插件 package.json 不能写 `dsh.client`** | `client-modules: dsh-xxx declares dsh.client but exports no "./client" bundle` → 服务启动崩溃 | 只有带 WebUI 的"类型 A"插件才声明 `dsh.client`；纯 hook 插件只声明 `dsh.bundle.patch` |
+| 7 | **peerDependencies 不能钉死宿主 prerelease 版本** | 宿主升级后 pnpm/npm ERESOLVE → 插件装不上或安装后启用失败 | 宿主提供的 `@deepseek-ai/dsh-*` 写 `"*"`；有正式版序列的 `cordis`/`schemastery` 写 `^x.y.z`；确认不 import 的依赖直接删 |
+
+> **为什么不能写范围**：semver 规定"带 prerelease 的版本只在范围里出现同一 `major.minor.patch` 的 prerelease 比较器时才满足"。dsh 是 `0.2.1-rc.5` 这种 prerelease，`>=0.2.1-rc.5`、`^0.2.1-rc.5`、`>=0.2.1-rc.5 <0.3.0` **都匹配不到下一个 `0.2.2-rc.1`**，所以只能写 `"*"`。另外启动器的 `_heal_profile_dependencies()` 只同步 `dependencies`、**不再改写 peer**（否则每次启动都会把 `"*"` 覆盖回宿主精确版本）；`_plugin_manifests_match_after_core_sync()` 比较时也会忽略 peer 的版本写法，避免假更新。
+
+**导出契约完整版**（所有插件都应遵守）：
+
+```javascript
+import z from '@deepseek-ai/schemastery';  // 可选
+import '@deepseek-ai/dsh-system-prompt';   // 纯 hook 插件必需
+
+export const name = 'dsh-xxx';         // 插件名, 与目录一致
+export const inject = ['webServer'];    // 按需声明依赖服务, 纯 hook 可空 []
+export const Config = z.object({...});  // 可选: schemastery 配置 schema
+export async function apply(ctx, config) { ... }  // 必须叫 apply, 可用 async
+// package.json 的 dsh.client 块: 只有带 WebUI 的"类型 A"插件才写
+// 纯 hook 插件 (类型 B) 不要写 dsh.client, 否则客户端模块注册表会去找 ./client export
+```
+
+完整检查清单见 `checklists/plugin-dev-checklist.md`；代码骨架见 `references/plugin-skeleton.md`。
+
+### 5.1 插件 = npm 包 + 双入口（最容易漏）
+
+- **`dsh.bundle.patch`** → 指向 `cordis.patch.yml`（`- insert: [{id, name}]` 把插件作为一行插入 profile 插件树）。`dsh plugin add` reconcile 据此写进 `dsh.profile.bundles`；服务启动时 `dsh-app-boot` 的 `loadProfile` 按序合成 **bundle 补丁 → 用户 cordis.patch.yml → --patch 覆盖层**。
+- **`dsh.client`** → 声明 WebUI 客户端入口（`inject` + `platform: "web"`），由 `dsh-client-modules` 扫描注入。
+- **`files` 数组必须包含 `cordis.patch.yml`**（否则命令/安装后文件缺失）。
+- **只声明 `dsh.client` 不会进插件树**；只声明 bundle 没 client 则宿主加载但 WebUI 无入口。
+
+### 5.2 客户端 `exports` 必须导出 `./package.json`（高优先级坑）
+
+- **现象**：已装进 bundles、dump-config 树合成、服务正常，但 WebUI 入口死活不出现。
+- **根因**：`ClientModuleRegistry.resolveMeta()` 用 `require.resolve("<插件>/package.json")` 扫描；`exports` 漏 `./package.json` 抛 `ERR_PACKAGE_PATH_NOT_EXPORTED` → 该插件被跳过 → 不进 `__DSH_BOOT__`。服务端 `resolveBundleDir` 不受 exports 限制 → "服务端在、客户端不在"假象。
+- **修复**：`exports` 保留 `"./package.json": "./package.json"`，重新安装 + 重启服务。
+- **排查顺序**：① 首页源码看 `window.__DSH_BOOT__.entries`；② `node -e "require.resolve('<插件>/package.json')"`。
+
+### 5.3 宿主端路由注册：`ctx.effect` 的正确用法
+
+- **错误写法**：`const disposer = ctx.webServer.register({...}); ctx.effect(disposer, "...");` —— `ctx.effect(fn)` 立即执行 `fn()` 并把**返回值**当清理函数 → 注册刚进表又被删 → 非 GET 3005 fallback（405）。
+- **正确写法**：
+
+  ```js
+  ctx.effect(() => ctx.webServer.register({ kind, path, handler }), "label");
+  ```
+
+  把注册包进回调，register 返回值（注销函数）正是 `fn()` 返回值。
+- **405 语义**：内置 web server 先匹配 exact 表再 prefixes，未命中落 `frontend-static` fallback（非 GET/HEAD 返回 405）。405 = 插件路由根本没在 exact 表里。
+- **404 语义（`webServer.register` 无 `method` 字段，同一 path 只能注册一次）**：想分 GET/POST 必须在**同一 handler 按 `req.method` 分流**；对同 path 注册两条抛 "Duplicate (kind,path)" → 整个插件 fiber 回滚、**所有**路由失效（不止 POST）→ 客户端全 404。排查"路由注册了却 404"三步：① 是否同 (kind,path) 注册两条；② `__DSH_BOOT__.entries` 有该插件 client 条目、`curl /plugins/<id>/client.js` 能 200；③ 若是 `settings.section` 注册——它生成的是**侧边栏导航行**（按 order 排），不是顶栏独立标签，浏览器验证要滚动侧边栏找。
+
+### 5.4 纯客户端插件也必须带宿主端 `lib/index.js`（缺失则服务起不来）
+
+**【严重】宿主 cordis loader 对 bundle 树每个包都会 import 其 `main`/`exports["."]`，纯客户端插件也不例外。** 只放 `client.js` 时安装后重启服务**瞬间退出**，报 `ERR_MODULE_NOT_FOUND: ...lib/index.js`（plugin tree failed to load）。修法：放官方 no-op：
+
+```js
+function apply() {}
+export { apply };
+```
+
+### 5.5 客户端加载器与官方扩展点
+
+- 加载器契约 `window.__ModuleLoader__.load({ id, factory })`；`apply(ctx)` 里 `ctx.slots.inject("settings.section", ...)` 注册设置区块。
+- **消息行两个官方插槽**（只做官方没有的，别重复官方已有能力）：
+  - `conversation.chat.assistant-actions`：每条已完成助手的 IconActions 操作行，`owner={messageId}`，list 按 `order` 升序（官方 👍👎 用 10，第三方从 20 起）。
+  - `conversation.chat.turnTail`：操作行**上方**内容区，chain——`select` 必填返回匹配值（全拒渲染空），`priority` 控选举；组件拿 `matched`+`useSession`。
+- **读快照拿消息数据**：`useSession((s)=>s)` 的 `snapshot.nodes`（legacy，`kind:'assistant'`/`turn`/`usage`）与 `snapshot.chat.nodes.values()`（实时节点库，`data.finalNode` 等）双源；`finalNode.usage` 即事件原始 usage。**0.1.2+ 重构**：`useSession` 改返回 SessionSnapshot（生命周期），聊天数据走新 standard-kit hook **`useChat`**（`chat.legacy.nodes` / `chat.nodes` store）；兼容写法 `const data = useChat ? useChat(s=>s) : useSession(s=>s)` 再按两种形态取节点（官方 StatsLine = `useChat(s=>s.legacy.nodes)`）。
+- **官方 0.1.2 新增（与统计插件不冲突）**：① **ContextMeter**（输入框右侧环形仪表）——当前会话上下文窗口占用（估算、无费用）；② 逐回合精确记账 `turn-tail` 节点 `data.tokenUsage`（`TurnTokenUsage`，含 routes 模型归属）——消息行"实际消耗"的最权威来源。本插件 = 实际计费 token + 费用估算 + 账户余额（账单视角），互补。
+- **官方已原生覆盖、别重复做**：消息正文「复制」、回合尾「在新对话中分支」、悬停"用时/首 token/速率"、会话级 token 合计（官方 StatsLine，`useProjection("tokenUsage")`）。项目价值插件 = 官方没有的（清理/回退/统计）。
+
+### 5.6 客户端 UI 通用坑
+
+- **插槽条目组件不要条件调用 props 传入的 hook**（`typeof useXxx === "function" ? useXxx() : null`）→ React "Rendered more/fewer hooks" 被错误边界吞掉、组件不渲染（`data-slot-error` 空占位）。读快照优先用 ownerProps 里的普通字段（`ownerProps.input.draft`），hook 必须无条件调用。
+- **宽数据用卡片式纵向布局**（标题独占整行 `wordBreak`、元信息 `flexWrap` chips），别用固定列宽横向表格（窄面板只显示半个字）。
+- **自定义 keyframes 必须自己注入**（style 块加 `@keyframes`），否则引用了不存在的动画名不闪。
+- **改客户端源码强刷页面即可生效**（bundle 按请求重新生成、rev 变化）；改宿主端/加减插件才需重启服务。
+- **字符按钮（如 `⌂`）部分字体渲染空白/方框** → 优先内联 SVG + 文字标签 + `title`。
+- **媒体路由 + 防御头的矛盾**：`<img src>`/`<iframe src>`/`<a href>` 均带不上自定义头 → 预览/下载一律 `fetch(url,{headers:防御头})` → blob → `URL.createObjectURL` → 交给 `<img>`/下载 + 适时 `revokeObjectURL`。`showSaveFilePicker` 必须先弹框拿 handle 再 fetch 写回（异步丢焦点会拦截"需要用户手势"）。
+
+### 5.7 主题自适应（内置插件）
+
+> 完整规范（变量速查表/错误示范/设计语义速查）见 `references/theme-adaptation.md`，这里只留三条铁律：
+
+1. **背景和文字必须一起走 CSS 变量**（DSH 自动根据 `data-theme="dark|light"` 切换值）。绝对不要"背景硬编码 + 文字走变量"或反过来。输入框背景用 `--dsw-specific-input-major`。
+2. **同色系必糊**：同一个状态色的 `primary`（主色）和 `secondary`（实心彩底，**不是浅色底**）**不能同时用**在同一个元素上——不管深浅主题，对比度都不够。Badge/Chip 优先只用文字色无背景；确实需要彩底（错误码/错误标签/告警块）时，底色用 `state-xxx-primary`、文字用 `var(--dsw-alias-label-on-color, #fff)` 白字；按钮才用深彩底 + 白字（唯一可接受的硬编码 = 按钮白字 `#ffffff`）。
+3. **颜色语义**：运行中/在线 = success（绿），离线/错误 = error（红），信息提示 = business（蓝），真正危险才用 warn（橙）。排查硬编码残留：`Select-String -Path "lib\client.js" -Pattern '#([0-9a-fA-F]{3,8})|rgb\(|rgba\('`。
+
+### 5.8 改源码必须同步运行副本（最易"改了没生效"）
+
+- 插件经 `dsh plugin add file:`（pnpm）是**拷贝/硬链接**进 `runtime/dsh-home/profiles/web/node_modules/<插件>/`，dsh 实际跑的 bundle 读安装副本。只改 `plugins/` 源码不重装/不同步，运行端**静默不生效**。
+- **同步法**：`Copy-Item -Path "$src\*" -Destination $dst -Recurse -Force`（`Copy-Item -Destination` 遇已存在目录会**嵌套**复制，须用 `$src\*`）；dsh 硬链接同 inode 时 `Get-FileHash` 双路径一致即已同步（运行时只读副本的宿主文件被锁、Copy 报"被占用"属正常）；或直接 `--install-plugin file:<绝对路径>` 重装。
+- 改 `lib/index.js`/`cordis.patch.yml` 需**重启服务**；纯客户端 `lib/client.js` 强刷页面即可。
+- **验证插件树必须设 DSH_HOME**：`--dump-config` 要先 `$env:DSH_HOME=runtime\dsh-home`，否则加载 `~/.dsh` 默认 home（只有内置 bundle），误判没进树。
+
+### 5.9 system-prompt/assemble 插件注入机制（纯 hook 插件的核心）
+
+除了"路由 + 客户端"双端插件，DSH 还支持**纯 hook 插件**：只监听 DSH 内部事件，注入内容到 system prompt。dsh-rules（用户规则注入）和 dsh-memory（祖宗记忆库注入）就是这个模式。
+
+#### 运作原理
+
+DSH 组装 system prompt 时 → 触发 waterfall 事件 `system-prompt/assemble` → 所有监听者依次修改 `assembly.contexts` → DSH runtime 把所有 contexts 拼成完整 prompt → 发给 LLM。
+
+#### 事件签名
+
+```javascript
+import '@deepseek-ai/dsh-system-prompt';  // 声明依赖, 否则事件总线不存在
+
+ctx.on('system-prompt/assemble', async (assembly, _ctx, next) => {
+    assembly.contexts.push({
+        name: 'unique-context-name',  // 必填, 全局唯一 (invariant.js 校验, 重复会 fail)
+        text: '注入的纯文本内容',        // 必填, 必须是字符串
+        weight: 0.9,                   // 可选, 权重越高越优先
+    });
+    return next();  // waterfall 链必须继续传下去
+});
+```
+
+#### 两个已存在的 context.name（不要重复）
+
+| 插件 | context.name | 内容 |
+| - | - | - |
+| dsh-rules | `user-rules` | 用户手写的规则文件 |
+| dsh-memory | `zuzong:auto-recall` | 祖宗记忆库自动召回的最近对话 |
+
+#### 实现注意事项
+
+- **钩子失败要静默**：读文件失败/bridge 断开时别 throw，用 try-catch 吞掉，下一次请求继续试。
+- **context name 全局唯一**：两个插件用同一个 name 会报 invariant 错。
+- **hook 是 async 的**：可以 `await bridge.callTool()` 异步取数据，不阻塞 waterfall。
+- **缓存策略**：规则/记忆这种"读多写少"的内容应该本地缓存（2s TTL），避免每次请求磁盘 IO。
+- **文件变化自动重载**：用 `fs.watch` 监听目录 + 清缓存 → 下次请求生效。
+
+完整代码骨架见 `references/plugin-skeleton.md` 类型 B。
+
+### 5.9.1 类型 B → 类型 A 升级路径（纯 hook 加 WebUI 开关）
+
+> 参考实作：dsh-rules v3、dsh-memory v3。纯 hook 插件需要从 WebUI 开关（不每次改 cordis.yml 重启）时，把 Type B 升级成 Type A 要改三处：
+
+1. **package.json 加两个声明**：`exports: { "./client": "./lib/client.js" }` + `dsh.client: { inject: ["slots"], platform: "web" }`，同时补 `files: ["lib", "cordis.patch.yml"]`。
+2. **lib/index.js 加 inject + 路由 + 持久化配置**：`inject` 从 `[]` 改成 `["webServer"]`；Config 加 `enabled` 默认 false（省 token）；持久化 json 独立于 cordis.yml（用户手改 cordis.yml 可能覆盖 WebUI 开关；json 是"用户态覆盖层"，优先级更高）；路由始终注册、hooks 按 enabled 装（enabled=false 时用户仍能打开 WebUI 改开关但不消耗 token）。
+3. **新建 lib/client.js**：settings.section 插槽 + enabled 开关 checkbox；提示"下次启动生效"（apply() 只在启动时跑一次，不热插拔）。
+
+完整骨架见 `references/plugin-skeleton.md` 的「持久化配置 + WebUI 开关」章节。
+
+### 5.10 第三方"工具型"插件（无 UI）
+
+- 分类：**宿主端工具/路由插件**（package.json 只有 dsh.bundle.patch）与**客户端 UI 插件**（有 dsh.client）。工具型插件只 `ctx.tools.register(defineTool(...))`，**界面上不出现任何 UI**（"装完没见 UI"正常），靠 agent 在对话里按需调用。安装后重启 `dsh web`。
+- **排查"装了没反应"顺序**：① dependencies + bundles 是否含包；② 设 DSH_HOME dump-config 看插件层；③ package.json 有无 dsh.client（无则无 UI）；④ **插件自身运行时/凭据前提**（外部解释器版本、下载型依赖、API key 所属，最易忽略）→ 看 server.log 里插件 `ctx.logger.error` 的降级提示；⑤ 重启服务。
+
+### 5.11 接入第三方模型/Provider（Ollama 等）：写 pi-ai 的 providers 配置
+
+- 官方多 Provider 底座 = `dsh-llm-pi-ai`（命名空间 `llm-pi-ai`）。给 DSH 加模型源**绝不要**自己调 `ctx.llm.registerAdapter`（对 provider 路由**排他**）或 `registerModelDiscovery`（每 namespace 只能一个）。**正解**：经 `sctx.settings.mutate("llm-pi-ai", ops)` 写 `providers.<id>`，pi-ai 监听变更自动注册模型目录 + 对话路由 + 发现。
+- **Ollama 接入配方**：`api:"openai-completions"` + `baseURL:"{url}/v1"` + `models:[{id,name,contextWindow,maxTokens}]`（从 `/api/tags` 探测）。
+- **上下文容量配置错位 = "能对话但从不调工具 + 报 token 上限"双故障同源**：① `maxTokens` 绝不能等于 `contextWindow`（正确如 32768/8192）；② 提升 Ollama 上下文别用 `OLLAMA_CONTEXT_LENGTH` 环境变量（桌面版 serve 不继承）、`/v1` 也不转发 num_ctx → 正解 Modelfile `PARAMETER num_ctx N` 建变体再装、DSH 指向该变体。
+- **OpenAI 兼容服务必配 `compat`**：Ollama/LM Studio/vLLM 不认 OpenAI 官方方言（`developer` 角色/`max_completion_tokens`/工具 `strict` 字段），不配则工具 schema 到不了模型、**模型接入后从不调工具**。`compat:{ supportsDeveloperRole:false, supportsReasoningEffort:true, maxTokensField:"max_tokens", supportsStrictMode:false }`。
+- **thinking 模型关思考只认 `reasoning_effort`，不认 `think:false`**：新版 `/v1` 静默丢 think 字段 → `compat.supportsReasoningEffort:true` + 每模型 `reasoningEfforts:{off:"none",minimal:"none",low:"low",medium:"medium",high:"high"}`，think off 时发 `reasoning_effort="none"` 关思考。
+- **生效字段是 `target*` 不是 `default*`**：`buildProviderProfile` 取 `target* || default* || 内置默认`，`ensureContextVariants` 只认 `targetContextWindow` → 面板应绑 `targetContextWindow/targetMaxTokens`（不是 default*，default 是被 target 盖掉的回退值）。排查"AI 优化了配置没效果"先核对是不是生效字段。
+- **周期自动写入必须保留用户手改的生效字段**：`applyOllamaProfile` 已存在 provider 分支里用 `mergeModelParams(current, new)`（已有模型保留手改参数、新增套默认），否则 Models 页手改的 contextWindow/maxTokens/name 会被下一轮探测（默认 60s）覆盖。教训：任何"周期自动写入"逻辑先问"会不会覆盖用户手改的生效字段"。
+- **免鉴权服务必带占位 Authorization 头**：`openai-completions` 协议校验 key——无 apiKeyEnv 无头抛 `No API key for provider`、写 `apiKeyEnv` 又缺真 Key 报 `MISSING_CREDENTIAL` → 正解 `headers:{Authorization:"Bearer ollama-local"}`（服务不校验）。
+- **thinking 模型"Deep diving…"是正常思考态**（先流 reasoning-delta 后出正文，本地 4B 冷启动+思考十几秒~几十秒）；`curl` 直测注意 PowerShell 单引号 JSON 被吃（写临时文件 `--data-binary "@file"`）；`api/ps` 空 = 模型未加载。
+- **后台探测型插件要提供「主动重接入」入口**（外部服务比 DSH 晚启动时用户无重试入口）：加独立路由 `POST /<route>/reconnect`（复用 `runDetection(force:true)`），与配置路由**不同 path**（避免同 path 只能注册一次）；`force:true` 全量重写但 `mergeModelParams` 保留手改项；内部只 runDetection，**不写**配置文件（避免点一下清空面板覆盖值）；离线也是正常返回（reconnected:false + lastError）；客户端按钮置忙。
+- **【坑 48】dsh 0.2.2 起 `settings.get()` 被移除 → 插件路由返回"空白 400"**（2026-11-03 实测）：
+  - **API 变更**：≤0.2.1 用 `settings.get(namespace)` 取配置；**≥0.2.2 没有 `get` 了**，改 `settings.describe({redactSecrets:true})` → `[{ns, value, schema, revision, ...}]`，从数组里 `find(item => item.ns === ns)` 再取 `.value`。写入 API `mutate/update/replace` 不变。
+  - **症状极具误导性**：WebUI 只显示 `一键接入失败: HTTP 400`；直接 curl 复现是 **400 + 空响应体 + server.log 无任何异常**。带自定义守卫头的请求 400、不带的返回 403（说明路由注册正常）。
+  - **为什么是空白 400**：`dsh-host-webserver/lib/index.js` 的兜底 catch —— handler 里任何未捕获异常都 `res.writeHead(400); res.end()`，无 body、无 content-type。更隐蔽的是**catch 块里又调了会抛异常的 `configPayload()`**，把原本"200 + error"的友好降级也炸掉。
+  - **正确写法**：封装 `readSettingsNamespace(sctx, ns)`，`typeof settings.get === "function"` 走旧 API、否则走 `describe()`，都失败返回 `undefined`（按"无配置"处理）**绝不向上抛**；`configPayload()` 整体包 try/catch，**路由永远返回 200**，把错误写进 payload。
+  - **通用规则**：① 插件路由 handler 必须自己兜住所有异常（dsh 只会给你空白 400）；② catch 块里不能再调可能抛异常的函数；③ 调宿主服务前先做 `typeof fn === "function"` 能力检测——dsh alpha 阶段 API 变动频繁（0.2.2 删 `settings.get` / 更早删 `installSettingsSection` / 0.1.2 改 `useSession`→`useChat`）；④ 升级大版本后重点核查"读配置"路径，写入 API 通常更稳。
+
+### 5.11.1 官方模型 id / 定价是"活"的：插件里别硬编码
+
+- **结论先说**：DeepSeek 官方会在**不升 DSH 版本**的情况下改模型 id 与价格（曾下调 Flash 系列定价并换主力 id `deepseek-v4-flash` → `deepseek-flash`，旧 id 退役但仍由新版服务并按新价计费）。**任何写死模型 id / 单价的地方都会静默过期**；会话里 `message.source.model` 记的是"当时"的 id，价格表键名对不上就掉进 `fallback` 算错钱，且**无任何报错**。
+- **硬编码的正确姿势（四件必须一起做）**：① 单价集中在**唯一一处**常量表；② 键名同时覆盖**当前 id + 退役别名**并并价到同一单价，保证历史会话也算得对；③ **升持久化 key 版本**（如 `dsh.usageStats.prices.v3`→`v4`）——只要默认值被 localStorage / settings 优先读取，改默认值不升 key 就**等于没改**；④ 注释与 README 标**抓取日期 + 官方口径生效时间**，下次核对有基准。
+- **DSH 内置目录也是"会过期的官方硬编码"，但一律不手改**：`@deepseek-ai/dsh-llm-deepseek` 的 `DEFAULT_MODELS`、`@deepseek-ai/dsh-acp-app/cordis.patch.yml` 的 `model:` 都在 node_modules 里，**升级重装必被覆盖**。正解＝等官方发版，或用 settings 层（`$DSH_HOME/settings.yaml` 的 `llm-deepseek.models` 显式列表，热重载、随升级保留）覆盖——**但覆盖等于"钉版本"，会一并屏蔽官方未来新增模型，非必要不做**。
+- **判断"要不要跟着改"的口径**：① 查 `npm dist-tags`（latest/next）确认是否已有新版 dsh 携带新目录；② 查官方定价页；③ 默认模型 id 与官方一致就**不动**。真正需要本仓库自己维护的只有**插件里的价格表**。
+
+### 5.12 WebUI 悬浮侧栏/浮层的开关按钮：别钉右上角、也别叠内容区
+
+> **首选方案已变更**：官方右侧栏自带 tab 容器（`files` / `text` / `terminal` / `browser`）与折叠 / 分栏 / 持久化能力 → **能注册官方 tab 类型就不要自建侧栏**（见 5.14）。以下自建侧栏的坑仅在确实必须自建、或需理解历史实现时参考。
+
+- 官方 WebUI 右上角自带宽操作按钮（下载对话等）；自建侧栏/浮层的**展开收拢开关若 `position:fixed; top/right` 固定右上角会盖住官方按钮**（第一处坑）。**把折叠开关垂直居中叠在面板内容区（文件列表）高度上会挡住列表点击**（第二处坑，`dsh-sidebar-extend` 自建侧栏时期两面都踩过）。
+- **（历史实现，已被 5.14 取代）展开态**：折叠按钮放在**标题/tab 条右端**（内容区之外），绝不叠在列表中间高度；**收起态**：开关在右上角/右缘（圆形图标按钮）。
+- 按钮用**官方 icon-button 样式**（圆形无边框 / secondary 墨色 / hover 加深填底），图标复刻官方 `IconPanelRightOutline16`（外框 + 右侧竖条）而非字符箭头。
+- 规避重叠的正解不是"把开关挪开"，而是靠 `#root` 让位：面板展开时 `#root{margin-right:面板宽}` 把**官方 header（含下载按钮）推到面板左侧**，故面板内右上角本就没有官方按钮 → 标题条右端放折叠按钮天然不重叠。收起态若用右上角 cluster，需让官方 header `padding-right` 给 cluster 让位。左缘拖拽调宽条保持窄透明（宽 5px），避免挡内容。**注意：`#root` 让位本身就是在和官方右侧栏争抢宽度，这套自建外壳已被官方容器方案取代（见 5.14）。**
+- **浮动弹窗避让官方右侧栏的正解读法（2026-09-29）**：别再读自建插件的 CSS 变量（外壳已删除），直接量官方停靠面板 —— `document.querySelectorAll("[data-sidebar-right-session]")` 里只认「带 `data-sidebar-right-open`（展开态才有）+ `data-sidebar-right-panel !== "fullscreen"` + `checkVisibility()` 为真」的那块，宽度取 `getBoundingClientRect().width`；变化监听用 `MutationObserver(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-sidebar-right-open", "data-sidebar-right-panel", "style"] })`。实作：`dsh-file-browser` / `dsh-media-background` 的 `getSidebarRightOffset()`。
+
+### 5.12.1 内置文件类插件：右键菜单统一约定 + 跨插件输入机独立桥接（dsh-sidebar-extend / dsh-file-browser）
+
+**右键菜单约定（同一套设计，条目按各自定位取舍）：**
+- `dsh-file-browser`（浮动文件浏览器）：**文件行 6 项**（顺序固定）：①以官方 @ 引用插入 → ②插入路径到输入框 → ③插入内容到输入框 → ④另存为 → ⑤复制相对路径 → ⑥复制绝对路径；**目录行 3 项**：①插入路径到输入框 → ②复制相对路径 → ③复制绝对路径。
+- `dsh-sidebar-extend`（0.3.0 起并入官方右栏）：**文件行 5 项**：①以官方 @ 引用插入 → ②编辑（打开本插件编辑 tab）→ ③另存为 → ④复制相对路径 → ⑤复制绝对路径；**目录行 2 项**：①复制相对路径 → ②复制绝对路径。已去掉走 `setDraft` 的「插入路径 / 插入内容」（官方 @ 引用管线已覆盖，插件不再持有输入机全局桥接）。
+- 各功能分别承担：①走官方 `slash/input-insert-reference`（mint 成 chip）；②③走输入机 `setDraft`（见下）；④走宿主端 `/download` 路由（文件全量字节，单文件上限 32MB，`showSaveFilePicker` 原生另存为对话框，不可用回退浏览器下载）；⑤⑥复制相对/绝对路径（相对会话工作目录 cwd，跨盘返回绝对路径兜底）。
+
+**跨插件插入输入框必须独立桥接（核心避坑）：**
+- **背景**：侧栏与文件浏览器都想"插入路径/内容到会话输入框"。最初侧栏读 file-browser 注入的全局变量（`window.__dshInputActions`）→ **两个插件互相依赖**；且用 `document.querySelector("[contenteditable='true']")` DOM 兜底会**命中页面第一个可编辑元素（文件查看器）而非会话输入框**，侧栏连续插入后落到查看器。
+- **正解（两个插件各自独立完成）**：每个插件在 `apply(ctx)` 里**自己**注册官方 `conversation.input.left` slot（`ctx.slots.inject("conversation.input.left", () => ctx.slots.register({name, id:"<插件>-bridge", order:1}, (ownerProps)=>{ ...存 inputActions/input 到模块级变量; return null }))`），渲染 null 不占 UI。组件渲染时把 `ownerProps.inputActions` / `ownerProps.input`（InputZone 契约快照）存入**模块级变量**，供菜单插值用。
+- **插入走三级降级**：①`inputActions.setDraft(current + sep + text)`（首选，稳定落在真实会话草稿）；②官方输入机 `actx.bail(actx, "slash/input-insert-text", {text, span})`（bail 拿 liveRev 避免 CAS 失败）；③DOM fallback（`textarea`/`[contenteditable]`，仅前两者都不可用，且**只作用于会话输入框**）。路径 B 从 `bridge.scope(sessionId)` 取 actx，不一定拿到官方通道，故 A 优先。
+- **关键**：官方 `conversation.input.left` 是**每个插件可独立捕获**的通道，别依赖对方注入的全局；两个插件各自持有模块变量，互不依赖、互不干扰。
+- **现状（2026-09-28 起）**：`dsh-sidebar-extend` 并入官方右栏后只用官方 @ 引用（`slash/input-insert-reference`），本节的 `setDraft` 桥接与 DOM fallback 只对 `dsh-file-browser` 生效；侧栏侧的 `insertIntoInput` / DOM 兜底已删除。
+
+### 5.13 插件 WebUI 多语言（i18n，10 个插件统一后的规范）
+
+> 完整规范见 `references/i18n-webui-plugin.md`，client.js 模板见 `templates/i18n_client_template.js`。
+
+- **两种 bridge 场景**：桌面壳（WebView2 `evaluate_js` 同步预注入 `window.__DSH_I18N__`）与浏览器直接访问（心跳 3081 端口 `/__dsh_i18n_bridge.js` **异步**加载）。插件**不能假设 bridge 已就绪**，`_dsht(key, fallback)` 只负责读，不负责等。
+- **`_dsht(key, fallback)` 统一实现**：读 `bridge[bridge.current][key]`（扁平化点路径字典），缺失/为空返回 fallback。UI 文案禁止硬编码中文（注释除外）。
+- **bridge 注入必须全局去重**（`window.__dsh_i18n_bridge_loaded` 标志）：10 个插件各注入一个 `<script>` 会发 10 个重复请求；桌面壳已注入时直接跳过。
+- **React 插件 vs 原生 DOM 插件（核心坑）**：React 插件靠 `useEffect` 监听 `dsh-i18n-change` → `setI18nTick()` 自动 re-render；原生 DOM 插件 `textContent` 一次性写死，必须手动两层修复——① `apply()` 等 `__DSH_I18N__._initialized` 再 init（100ms 轮询最多 5s，超时兜底）；② 监听 `dsh-i18n-change` 销毁旧 rootEl + CSS 重建并恢复状态（`_i18nHandlerBound` 只绑一次）。判断依据：代码里有无 `react.createElement`。
+- **waitReady 注册必须幂等**：只保留"立即 or 轮询"两分支；**严禁 setTimeout 强制注册**——轮询成功后 2 秒再注册一次，报 7 条 `list slot "settings.section" already has an entry with id "XXX"`。
+- **语言字典对齐纪律**：`locales/zh.json` / `en.json` 扁平化后 key 集合必须完全一致（漏一个 key 该语言 fallback 回 key 本身）；launcher 的 3081 心跳端口同时服务 `/__dsh_ui_alive` 心跳、`/__dsh_i18n_bridge.js` bridge 脚本、`/__dsh_locales/{zh,en}.json` 字典四类请求。
+- **验证**：切 en 后全部插件面板实时变英文；控制台无 `already has an entry`；Network 里 bridge 请求只有一次。
+- **例外（2026-09-28 起）**：并入官方右栏的 `dsh-sidebar-extend` 已改用官方 locale 契约（`ctx.locale.register(ns, { zh, en })` + 插槽 `locale` 选项拿 `t()`），**不再用 `_dsht` / `__DSH_I18N__` bridge**；其余 9 个插件仍按本节规范。
+
+### 5.14 官方右侧栏 tab 类型插件（官方容器扩展点，优先于自建侧栏）
+
+自建第二列侧栏（`document.body` portal + `#root` `margin-right` 让位）等于重造官方容器，会与官方 header / 下载按钮 / 分栏持续打架（见 5.12）。**官方右栏已内置 `files` / `text` / `terminal` / `browser` 四类 tab，且容器级能力齐全（折叠 / 分栏 / 浮窗 / 全屏 / 快捷键 / 按会话持久化 `dsh.sidebar-right.v1.<sessionId>`）→ 正解是注册官方 tab 类型**（实作：`dsh-sidebar-extend` 接管 files + 新增 `sidebar-extend.edit` 编辑类型）。
+
+**两阶段注册契约（缺一不可）**：
+
+```js
+// ① 声明 tab 类型
+ctx.effect(() => ctx.sidebarRightTabs.register({
+  id, kind, priority: "extension",        // extension 档压过官方 builtin
+  keepMounted: true,                      // 可选: 切会话不销毁
+  patterns: ["dsh-resource://edit/**"],   // 可选: 资源类型按地址认领
+  canOpen, title, guide,
+}), "label");
+// ② 把正文注册进官方插槽 (标题另走 sidebar.right.pane.tab.title)
+ctx.effect(() => ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register(
+  { name: "sidebar.right.pane.tab", key: id, locale: ns }, Body,
+)), "label");
+```
+
+**四条硬约束**：
+
+1. **命名必须两两对齐**：`sidebar.right.pane.tab` 注册的 `key` 必须等于类型的 `definition.id`；且沿用「三处名字一致」（`package.json` 的 `name` / 客户端 `window.__ModuleLoader__.load({ id })` / 宿主端 `export const name`）。任一处不一致会**静默不渲染 / 静默加载失败**，不报错、无日志。
+2. **档位与接管回滚**：`priority: "extension"` 的同类类型会**压过官方 `builtin`**（如官方内置文件树被接管）；**禁用 / 卸载插件后官方实现自动恢复**，无需改官方文件 / 包。新增类型（官方无同 kind）不涉及让位。
+3. **官方只持久化资源地址（`tab.contentId`），不持久化 `navigation.params`**（官方 README：导航参数 / 资源内容 / 活动连接不属于布局状态）→ 需要跨刷新复原的 tab，**必须把身份编进资源地址本身**（如 `dsh-resource://edit/session/<sessionId>/<逐段编码的绝对路径>`），**不能**用 `params: { path }`（刷新后 params 丢失，tab 退化成空）。地址编解码与官方 `@deepseek-ai/dsh-util-workspace-path` 同逻辑但**必须内联实现**（客户端不能 `require` 官方包；`encodeSegment` 保留盘符冒号 `:`，Windows 反斜杠归一 `/`）。
+4. **文案走官方 `ctx.locale`（`register` + `bind` + 插槽 `locale` 选项拿 `t()`），样式只用官方主题 token**（`--dsw-alias-*` / `--dsw-specific-input-major` / `--dsw-radius-*` 等）；不要再注入自研 i18n 脚本桥、不要 JS 主题监听。
+
+**边界差异必须写进插件 README**：插件自家宿主路由的文件树浏览是「绝对路径、**无工作区围栏**，可上溯到工作区之外」，而**官方预览读取（`workspaceFiles`）受工作区围栏限制** → 工作区外文件预览会被官方预览器报 `outside-workspace`。**容器统一 ≠ 沙箱统一**，同一个右栏里并存两套边界，用户与维护者都易误解。
+
+### 5.15 大目录扫描：只在"某次失败"时懒做，并且必须有硬上限
+
+插件需要"按文件名找回已被移动的文件"这类能力时，**不要在启动 / 打开面板时做全量比对**：那要遍历全库并对每个候选 `stat`，大曲库下明显拖慢首屏，而且用户可能只是暂时没接移动硬盘。正确做法是**由某一次具体失败（404 / `error` 事件 / 解码失败）触发，只针对该项扫一次**：
+
+- 宿主端提供独立 POST 路由（入参 `{name, size, path}`，出参 `{found, url, ...}`），BFS 遍历时同时限制**深度、目录数、文件数、总耗时**（如 5 / 300 / 3000 / 800ms），任一超限就带着已有结果返回，保证单次请求 IO 有界；遍历用异步 `readdir`/`stat`，不阻塞其它请求。
+- **扫描起点只能是"用户配置的那一个根目录"**（含子目录）：绝不枚举盘符、绝不用失败路径向上回溯找父目录；原路径只用于"同父目录优先"比较，路径不在根目录内就直接判未命中。若插件支持多个用户目录，也只在"已添加目录集合"内逐个扫描，不做兜底全盘。拒绝进入回收站 / 系统目录 / 隐藏目录（名字以 `.` 开头）与系统维护目录，`entry.isSymbolicLink()` 先行 `continue`，符号链接 / junction 不跟随，避免扫描因链接逃出根目录。
+- 匹配要"**同名（大小写不敏感）+ 同体积**"双条件；体积来自列表接口返回的 `size`，**新写入的清单项必须持久化 `size`**，否则只能退化成同名匹配（旧清单数据属预期降级）。
+- 多个候选取"**与原路径同父目录**"的优先（同级命中可直接提前返回），其余取遍历第一个。
+- 客户端用内存集合（如 `relocateTried`）记录已尝试的地址，**成功后的新地址也要记入**，防止"新地址再失败 → 又扫一遍"；成功后只重试起播**一次**，失败则回到原有可见反馈（行标灰 / 状态提示 / 清理按钮）。
+- 用户点"清理失效项"移除条目时，要**同步清除该条目的已尝试记录**，否则重新加回同一项会被误判为"扫过了"而不再重定位。
+
+## 六、验证与排查速查表
+
+| 症状 | 首选排查动作 |
+| - | - |
+| WebUI 入口不显示 | 抓 `__DSH_BOOT__.entries` 是否含插件 → 查 exports 含 `./package.json` → 查 files 含 `cordis.patch.yml` |
+| 右栏 tab 类型注册了却不出现在侧栏 | slot 的 `key` ≠ 类型 `definition.id`（核对「两处标识 + 三处命名」是否对齐，不一致**静默不渲染**）→ 确认 `priority` 档位未被官方 `builtin` 遮挡 → 重启服务（见 5.14） |
+| 右栏 tab 刷新后变空 / 丢内容 | 把身份放进了 `navigation.params`（官方不持久化）→ 改为编进资源地址本身（`tab.contentId`，见 5.14） |
+| 客户端组件不渲染/按钮消失（componentDidCatch、Rendered more/fewer hooks） | 查条目组件是否条件调用 props 传入的 hook → 改读 ownerProps 普通字段 → 强刷页面 |
+| 点击按钮 HTTP 405 | 路由没进 exact 表 → `ctx.effect(()=>register(...), label)` 写法 → `dsh-host-frontend-static` fallback |
+| 客户端 fetch 404（服务端明明有路由） | 是否同 (kind,path) 注册两条（无 method 字段，重复注册抛 Duplicate 回滚全路由）→ 合并单 handler 按 req.method 分流 → 重启服务 |
+| 路由 403 | 自定义头没带对 / 跨域带不上自定义头 |
+| 会话 shell 报 ACL temp 冲突 | 临时目录在工作区内 → 换 `BASE_DIR/workspace` 或工作区外目录 |
+| 任何 shell 命令立刻失败报 `SetNamedSecurityInfoW failed (Win32 5): grantWrite(<工作区>)`，而 read/glob/grep 正常 | 工作区目录对当前用户缺 `WRITE_OWNER` → 用 skill `diagnose-windows-sandbox-acl` 的脚本**非受限**一条命令诊断+修复（申请一次更宽权限）→ 重跑原命令验证（见 2.5） |
+| `& xxx.ps1` 报「在此系统上禁止运行脚本」 | 同进程 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force` 后再执行（不改机器/用户策略） |
+| "Failed to fetch"/服务 40 秒退 | stdin 读到 EOF → `stdin=PIPE` 保持打开 |
+| 日志 `Unexpected token '\ufeff'` | npm 包 package.json 带 UTF-8 BOM → 读 JSON 前去 BOM |
+| 改插件源码 WebUI 没变化 | pnpm 对 file: 是拷贝 → 同步运行副本/重装 + 重启服务 |
+| 安装插件后服务重启即退出（ERR_MODULE_NOT_FOUND lib/index.js） | 纯客户端插件缺宿主端 `lib/index.js` → 加官方 no-op |
+| 装插件 WebUI 看不到任何东西（无 UI） | 查有无 `dsh.client`——无则宿主端工具/路由插件，靠 agent 调用或 HTTP 路由验证 |
+| `--dump-config` 看不到自定义插件层 | 先 `$env:DSH_HOME=runtime\dsh-home` 再 dump |
+| 会话突然全部 400（孤儿 tool_calls 毒化） | 「会话回退」插件分析 → 在崩溃回合前已完成回合「回退到此」派生续接 |
+| 界面空白（GUI） | `ttk.Panedwindow` 漏 `.add()`；滚动条被列宽挤成 1x1 |
+| 升级不想备份旧 dsh / 备份占用大 | 常规设置关闭「升级 DSH 前自动备份」（`auto_backup_on_dsh_upgrade=false`）；关闭后升级确认底部与完成弹窗会自动改为"未备份"文案，别只改一处 |
+| 分不清「清理更新缓存」和「清理版本备份」 | 更新缓存按钮统一清 `runtime/update` 升级暂存 + `runtime/npm-cache` + `runtime/pnpm-store` + `runtime/pnpm-home/store`（旧落点）+ `runtime/pip-cache`（都是可重建的下载缓存，已装插件/会话/登录态不受影响）；版本备份 = `runtime/backup` 旧 dsh 拷贝，清理后无法回退。别把 `webview2_data`、`npm-userconfig`、`pnpm-home` 本体、`tmp` 混进去 |
+| 多次重启累积 WebUI 标签页 | `dist/index.html` 无 `dsh-launcher-ui-beacon`（patch_frontend 没跑/旧 exe）；有心跳仍开新页查 3081 占用/token |
+| 「检查绿色版更新」查不到 | 网络 api.github.com / 镜像；Release tag 带 v 前缀；资产名以 `DSH-GreenPortable-v` 开头（`green_find_zip_asset` 用 `startswith()`，旧前缀 `DSH_Launcher_GreenPortable_Online_` 的存量版本仍可匹配） |
+| 更新后启动器没被替换 | 独立更新程序 `DSH_Update.exe --apply`：查 `runtime/update/backup/`、`update_job.json`、server.log |
+| 桌面窗口起不来显示"连接失败" | 避免 `start()` 前 `load_url()` 致 Main window failed 后回退浏览器 → 提示页放 create_window 初始地址，导航放 `start(func)` 回调；用控制台 python 跑看 traceback |
+| 桌面窗口图标是默认 | 往 `webview.start(icon=路径)` 传 icon（WinForms 支持，`self.Icon=Icon(icon)`）；别信"仅 GTK/QT"文档；`WM_SETICON` 依赖 FindWindowW 而 WebView2 用页面 title 覆盖窗体标题，常失效 |
+| 桌面版点登录无反应 / 无法跳网页扫码 | pywebview 的 WebView2 不支持 `window.open` → `create_window(js_api=...)` 暴露 `open_external` + 注入 JS 覆盖 `window.open`（`about:blank` 返回带 `location.replace` 的占位对象）与 `<a target="_blank">`，转系统浏览器；OAuth 回调走本机 origin，登录态自动同步 |
+| 远程打不开 WebUI/进程立即退 | `dsh_host=0.0.0.0` → 两道 wildcard 守卫都要放行：`dsh-web-app/lib/startup.js`（`isWildcardHost`）与 `dsh-host-webserver/lib/index.js`（`isWildcardAddress`）；调 `patch_web_startup()` 并确认 core/shared 两份都打了 |
+| 远程能聊天但改设置 403 | 正常——PRIVILEGED_METHODS 仅回环可调，官方安全保护 |
+| 填了受信任主机没生效 / 局域网 /api 403 | 新版 dsh 只认显式 `--trusted-host`（不再自动并入 lanAddresses）：`build_server_command` 在留空时自动追加本机局域网 IPv4，填写时只信任填写的；`patch_lan_trust` 仅兼容旧版 |
+| 升级后出现"跳过 client-connection 补丁/结构不匹配" | 官方重写 `isSameAuthorityOrigin()`；v4 锚点是 `const hostUrl = parseAuthority(host, scheme);\n\treturn hostUrl !== void 0 && originUrl.host === hostUrl.host;`；验证用 `curl -H "Origin: http://127.0.0.1" .../api`（401=已放行，403=未放行），别用首页判断 |
+| 关了 web token 认证但裸地址仍 401 | `patch_auth` 按 v3 → v2 → v1 匹配：v3（0.2.3+）是 `webserver/authorize` 里的 `const admission = this.authentication.authenticate(facts);` 与 `admit()` 里的 `return this.authentication.authenticate(request);`，两处都换成 `{ peer: this.browserPeer }`；v2（0.2.1-rc.2+）是 `admit()` 的 `browserAuth.isAuthenticated` 早退 + `authorizeIndex(request, response)` 开头 `return true;`；v1 更旧。全不命中才会静默跳过并打警告 |
+| ui-commands 退避补丁失效 / 日志「文件结构不匹配」 | 0.2.3+ 客户端产物压缩成单行，多行锚点失效。改用短锚点 `if(entry.state===\`failed\`)throw new Error(\`command directory warmup failed:`，在 `throw` 前插 1.5s 退避，幂等标记 `setTimeout(resolveDelay,1500)`。**不要用 `{...}` 包原 if**：压缩产物里 throw 后的两个 `}` 分别关闭 while 与方法，多一个 `{` 会吃掉方法右括号 → `Unexpected token '{'`、模块 loaded without registering，连带 5 个 client 插件失败；应写成两条并列 `if`，不新增花括号 |
+| 装完 dsh 0.2.3-alpha.1 启动即退出（`does not provide an export named 'EntryValidationError'` 或 `reading 'call'`） | 上游 manifest 与代码不一致：app-boot 需要 loader 1.2 / cordis 4.2，但声明的是 1.1 / 4.1。把 `next` 频道五个包整套换齐（core + profiles 两棵树）：`cordis@4.2.0-alpha.1`、`cordis-plugin-loader@1.2.0-alpha.1`、`cordis-plugin-include@1.2.0-alpha.1`、`cosmokit@1.10.0-alpha.1`、`schemastery@3.20.0-alpha.1`；重装 dsh 会复发，建议回 `latest` 或等正式版 |
+| 模型选择器无 Ollama/报 No API key | 查 `llm-pi-ai.providers.<id>` 已写（重启服务持久）；免鉴权服务带占位 `headers.Authorization`；thinking 模型等待式思考正常 |
+| Ollama 能对话从不调工具 | **compat 缺失**（OpenAI 兼容端点不认官方方言）→ 配置带 `compat:{...}`；查 settings.yaml 的 providers.<id>.compat |
+| 对话停"Deep diving…"很久 | thinking 模型先思考后出正文（本地冷启动+思考十几秒~几十秒）；`GET /api/ps` 确认已加载 |
+| bat 双击闪退但代码看着没问题 | 抓行为用 `subprocess.run(["cmd","/c",bat], capture_output=True)`（别用 PS Start-Process 重定向，与 pause 交互冲突）；字节级检查 ASCII 无 BOM CRLF |
+| 清理更新/备份时 UI 冻结 | tkinter 主线程跑了 `shutil.rmtree` 大目录 → 包进 `threading.Thread(daemon=True)`，UI 更新用 `root.after(0, lambda: ...)` 回主线程 |
+| 账号登录后余额卡提示"未配置 Key" | 余额来源为 API Key 优先、账号登录兜底：先 `readApiKey()`，没有 Key 再 `ctx.get("deepseekAccount")?.getBalance(...)`（dsh 0.2.1+）；`deepseekAccount` 别写进 `inject`（旧版无此服务会加载失败） |
+| 局域网地址没有 ?token / 打开 401 | 新版 dsh 在 LAN 下先打印 `dsh web: listening on 0.0.0.0 ...`（无 token），再打印带 token 的地址；`_read_launch_token()` 必须用 `findall` 从后往前找带 `token=` 的那条，不能取第一条 `dsh web:` |
+| 想删零引用代码但怕误删活代码 | 见下方「死代码审计方法」；**框架回调搜不到调用点但都是活代码，必须白名单排除** |
+
+**死代码审计方法（维护向，零依赖）**：用 `ast` 收集全部 `def`/`class` 及其行号，再逐行 `re.search(r'\b名\b', 行.split('#')[0])` 计数，**跳过定义行本身与整行注释**，计数为 0 即死代码候选。**必须白名单排除**（否则会误删）：
+- `BaseHTTPRequestHandler.do_GET` / `log_message` —— 由 `http.server` 框架回调；
+- `__del__` / `__enter__` / `__exit__` 等 dunder —— 由 GC / `with` 语句调用；
+- Tkinter `command=` / `bind()` / `after()` 的目标函数 —— 以引用形式传递，无文本调用点。
+
+另需注意：删完必须复查「是否有新符号被孤立」（例如删掉唯一调用者后，被调用者变成新的死代码）。**一次性审计清单记 `DEV_NOTES.md`，skill 只留方法。**
+
+**巨型闭包函数瘦身方法（tkinter `run_gui` 这类上千行的"闭包工厂"）**：不要改写成类（要把所有 `root.`/`app.` 全量改写，diff 巨大收益低），而是**把自包含的弹窗抽成模块级函数 + 显式传参**。步骤：
+
+1. **先算参数表**：用 `ast` 算目标函数的「自由名」= `Load 的 Name` − (`Store 的 Name` ∪ 全部 `ast.arg` 参数名 ∪ 子 `FunctionDef`/`ClassDef` 名 ∪ `ExceptHandler.name` ∪ 模块级名 ∪ builtins)，结果就是必须传入的参数。
+   - **三个假阳性源必须处理**，否则误报一堆"未解析名"：① lambda 默认参数（`lambda _event, u=url:` 的 `u`）；② 嵌套 `def` 的参数名（`choose(value)` 的 `value`）；③ `except Exception as error` 的 `error`（`ExceptHandler.name` 是 `str`，不是 `Name` 节点）。
+2. **大函数（数十 KB）用脚本按 AST 边界机械搬迁**（整体去一层 4 空格缩进 + 换新签名），比手工 Edit 可靠；**先备份到 gitignore 目录**便于回滚。
+3. **搬完立刻机械校验**：新函数的自由名必须为空（⊆ 形参 ∪ 模块级名），再跑 `py_compile` + `import`。
+4. **优先搬"叶子弹窗"**（自带 `Toplevel`、不碰主窗口控件、不调用兄弟嵌套函数的），链式调用组要整组搬或把下游回调作为参数传入。
+
+**关键前提**：若 i18n 注册表（`_i18n_widgets`）是**模块级**列表，抽出去的控件照旧 `append` 即可，语言切换仍能刷新——这是能安全搬迁的基础。反之若注册表是闭包变量，搬迁必须一并迁移注册逻辑。另注意**被 `try/except` 包住的调用**（如 `refresh_all_text` 里调 `_refresh_auth_warning`）：漏传依赖不会报错，只会静默失效，静态检查也看不出来，只能靠"切语言后逐个弹窗开一遍"的手工回归。
+
+**插件 JS 代码的死代码扫描（正则 + 引用计数，零依赖）**：思路同上面的 Python 版，但 JS 没有 `ast` 可用，改用正则收集两类定义——`^\s*function\s+(\w+)\s*\(` 与 `^\s*const\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)\s*=>|function)`，再在**整个插件目录**的文本里数 `\b名字\b` 出现次数，**≤1（仅定义处）即候选**。**必须人工确认**：通过对象属性、字符串或配置引用的名字（`slots.register` 的回调、事件名常量）搜不到调用点但都是活代码。
+
+**JS 函数的精确删除方法（无 ast 时用括号深度法）**：先 `re.sub` 把字符串字面量（反引号 / 双引号 / 单引号）替换成空串**再**统计 `{}` 深度——否则字符串里的花括号会让深度错乱；**连带删除紧邻的前置注释块（JSDoc / 连续 `//`）与上方空行**；**同一文件多处删除必须从后往前**，否则行号漂移。删完用 `node --check <file>` 验证语法，并**重跑扫描复检是否产生新的孤立符号**。（本项目便携 node 在 `runtime/node/node-v*/node.exe`。）
+
+**插件 README 与代码的一致性核对（高发点，按命中率排序）**：① **默认值漂移**——代码改了默认（开关从 true 改 false、召回条数 4 改 6），README 的配置示例没跟，读者照 README 配就与实际不符（**最高发**）；② **路由前缀 / 守卫头改名**——插件改名或重构后 README 没同步（如 `session-import` → `session-transfer`）；③ **新增的 UI 开关没写进 README**；④ **接口 / 工具清单数量与代码不符**（README 说 5 个路由、实际 6 个）。核对方法：把 README 声明的路由、配置项、工具清单逐项在代码里 grep 验证。
+
+## 七、工作流建议（开发顺序）
+
+1. **先理数据目录**：确认 `DSH_HOME`/`runtime/` 全部重定向到程序目录，明确"绿色整合"边界。
+2. **再搭启动**：便携 Node → `lib/bin.js` → `stdin=PIPE` → 就绪检测 → `--no-open` + 统一 `open_ui` 接管。
+3. **后做维护**：检查更新（备份优先）→ 插件管理（pnpm 便携化 + reconcile 兜底）→ 数据维护 → 绿色版自更新（双通道 + 独立更新程序）。
+4. **最后开发插件**：先宿主 index.js（路由）再客户端 client.js，双端声明齐全 → 设 DSH_HOME dump-config 验证树 → 抓 `__DSH_BOOT__` 验证客户端 → 实测路由。
+
+## 八、DSH 技能（skill）子系统与「技能中心」插件（2026-10）
+
+> 通用知识，适用于任何要在 DSH 里做 skill 相关 UI/能力的需求；实现样例与维护要点见本项目内置插件 `plugins/dsh-skill-center/README.md`。
+
+### 8.1 原生 skill 子系统由哪些包组成
+
+| 包 | 职责 |
+|---|---|
+| `@deepseek-ai/dsh-skill` | 注册表服务 `ctx.skills`：`list(options)` / `snapshot()` / `get(name, options)`；合并多提供方、按层裁决重名 |
+| `@deepseek-ai/dsh-skill-filesystem` | 本地发现提供方：扫描 5 类根、解析 frontmatter、watcher 失效目录 |
+| `@deepseek-ai/dsh-tool-skill` | 模型侧：`skill` 工具 + 会话内 `<available_skills>` 目录（持久 user-role 消息）+ `/name` 用户显式调用的 pre-step 注入 |
+| `@deepseek-ai/dsh-client-ui-skill` | Web 侧：输入框 `/` 菜单 source、`Skill` 工具行卡片、点名字在右栏预览 SKILL.md |
+| `dsh-skill-badge` / `dsh-skill-office` / `dsh-experimental-badge-skill-bundle` | 随包提供的官方 skill（徽章、Office 工作流） |
+
+**原生没有「技能」页面/入口**——这是很多用户以为"DSH 没有 skill 功能"的原因；入口只有 `/` 菜单、`/name` 调用卡片、右栏预览。
+
+### 8.2 磁盘布局与发现规则（必须记住）
+
+- 扫描根（rank 从高到低）：`<项目根>/.dsh/skills`(100) → `<项目根>/.agents/skills`(200) → `customSkillDirs`(300) → `<DSH_HOME>/skills`(400) → `~/.agents/skills`(500) → `bundledSkillDir`(600)。
+- **只发现一层**：`<root>/<name>/SKILL.md` 或 `<root>/<name>.md`；**不支持嵌套 `**/SKILL.md`**。
+- 项目根 = 最近含 `.git` 的祖先，没有则用 cwd。
+- SKILL.md：`---` 包裹的 frontmatter，`name`（kebab-case）与 `description` 必填；可选 `whenToUse`、`metadata`、`disable-model-invocation`、`user-invocable`（严格布尔）；`name` 必须与目录/文件名一致。
+- 调用策略：`modelInvocable=false` 只对用户 `/name` 可见；`userInvocable=false` 只对模型目录可见（`/name` 不会加载）。
+- **停用技能必须移到扫描根之外**（如 `$DSH_HOME/skill-center/disabled/<name>`）：provider 只跳过 `.system` 子目录，`skills/.disabled/` 会被当作 skill 条目扫描并产生告警。
+- 官方技能可能位于 **preset 作用域**：host 侧要 `ctx.skills.list({scope: agent})` 才能列出；全局列表只含全局层。
+- **preset 随包技能的 `source` 报 `custom`**（preset 用 customSkillDirs 挂载随包技能），只有 `path` 落在 `<DSH安装>/node_modules/@deepseek-ai/` 下能区分它与用户自建 custom 技能；做「官方/个人」分组别只看 source。
+- 热加载：launcher `--install-plugin` 新增 bundle 会被运行中的 dsh 热加载（`__DSH_BOOT__` entries 立即出现、HTTP 路由可测），但**改已装插件的宿主代码不会自动重载**，需 remove+add 重装或重启。
+
+### 8.3 可用的 UI 插槽（0.2.1-rc.3 实测）
+
+| 插槽 | 用法 |
+|---|---|
+| `sidebar.panellist` | 左侧面板行：`{id, order, label:()=>string}`，组件给 glyph；点击由 shell 负责选中面板 |
+| `main` | keyed 中央面板：`{key: 与 panellist 相同的 id}`，组件即页面（离开面板时卸载） |
+| `conversation.input.left` | 输入框工具行左侧（list）：ownerProps 提供 `inputActions.setDraft(text)` 与 `input.draft/draftRev`；插入 `/name ` 文本即等价于用户手打（`/` 引用是纯文本 + lexicon 高亮） |
+
+样式遵循宿主主题 token（`--dsw-alias-*`），不要 import `@deepseek-ai/dsh-client-*`（会随版本漂移、抛错会空白整个 slot）。插件里请自绘控件并复制宿主样式。
+
+### 8.4 双端插件骨架约定（本项目内置插件通用）
+
+- `package.json`：`main` + `exports["./client"]` + `dsh.bundle.patch` + `dsh.client:{platform:"web",inject:["slots"]}`；`files` 含 lib/patch/locale/icon/README。
+- 宿主 `lib/index.js`：`export const inject = ['webServer']`；`export async function apply(ctx)`；路由必须 `ctx.effect(() => webServer.register({ kind:'exact', path, handler }))`，否则注册后被立即清理（405）。
+- 客户端 `lib/client.js`：`window.__ModuleLoader__.load({ id, factory })`，factory 返回 `module.exports` 并挂 `exports.apply` / `exports.inject`；`ctx.slots.inject(slot, () => ctx.slots.register({name:slot,...}, Component))`。
+- 安装：`plugins/<name>/` 被 launcher `bundled_plugin_dirs()` 自动发现，以 `file:` 安装并 reconcile 进 `dsh.profile.bundles`；**装完必须重启 dsh 才加载 host 行**；已装用户走「插件管理 → 一键安装内置插件 / 一键更新内置插件」。
+
+### 8.5 测试方法（无浏览器/无 DSH 环境也能验）
+
+- **宿主端**：假 `ctx`（`webServer.register` 收集 handler、`ctx.skills` 打桩、`ctx.effect` 立即执行）+ 临时 `DSH_HOME`；用 `Readable.from` 伪造 req、收集 res.body，逐路由断言正常与错误码。
+- **客户端**：假 `window.__ModuleLoader__`、假 `document`、假 React（`useState` 按脚本化初始值返回、`useEffect/useRef` 空实现）；先验 `apply` 注册的 slot 集合与 label，再逐组件渲染并断言关键文案（含"仅模型可调用"等过滤逻辑）。
+- 语法：`runtime/node/node-v*/node.exe --check lib/*.js`；JSON/locale 用 node 解析校验。
+
+### 8.6 高发坑
+
+1. 路由 handler 签名统一 `(ctx, body)`——单参 handler 会把 ctx 当 body，症状是 `NAME_INVALID: 技能名不能为空`。
+2. `ctx.slots.inject` 回调**不是立即执行**（声明就绪时才调用）；单测要主动调用 `cb()`。
+3. `sidebar.panellist` 与 `main` 必须成对且同 id，否则点击无面板。
+4. 停用目录不能放在扫描根内（见 8.2）。
+5. 会话内技能列表要带 `sessionId`（客户端取 `ctx.sessions.list.getSnapshot().current`），host 用 `ctx.agents.get(id)` 作 scope，否则 preset 层官方技能缺失。
+6. 客户端 i18n：可自包含 zh/en 词典（按 `<html lang>`），同时监听 `dsh-i18n-change` 重渲染；启动器 3081 的 `__dsh_i18n_bridge.js` 只在桌面壳/启动器运行时可用，纯浏览器场景要有回退。
+7. ZIP 导入（TRAE / WorkBuddy 同款需求）用 `node:zlib` + 手写中央目录解析即可，不必引第三方库：扫尾部 EOCD（注意注释上限 65535）→ 读 0x02014b50 条目 → 按 local header（30+nameLen+extraLen）取数据 → store 直取 / deflate 用 `inflateRawSync`；仅支持 store/deflate，拒绝 ZIP64/分卷/加密。安全必须做：条目名规范化（拒绝对路径/`..`/空段/NUL）、解压目标 `isInside` 校验（zip-slip）、拒绝符号链接条目（Unix mode 高 16 位 0xA000）、重复条目、单文件/总大小/压缩比上限（zip bomb）。布局识别支持 `<name>/SKILL.md`、根 `SKILL.md`、单层包装、`skills/<name>/SKILL.md`（多技能）、`<name>.md`。单测可手工构造 store 方法 ZIP（不校验 CRC 也能过本项目解析）。注意：TRAE / WorkBuddy 导出的 zip 常带**显式目录条目**（如 `trae-skill-creation/`、`templates/`），解析时必须在路径校验**之前**识别并跳过，否则尾部空段会被误判为非法路径（本项目初版就踩了这个坑，用真实用户 zip 一测即暴露）；同时应容忍 `./` 前缀段，并拒绝盘符（`C:`）。
+8. 客户端文件导入别假设有系统文件/目录对话框：DSH 0.2.1-rc.3 **没有 `uiWorkspace/pickDirectory` 服务**（调用静默失败，按钮毫无反应），`<input webkitdirectory>` 在桌面 WebView2 里选目录后 **FileList 为空**（提示"没有文件"）。可靠方案只有：`<input type="file">` 选 ZIP + document 级拖拽 ZIP + 粘贴路径交给宿主。拖拽监听挂 `document`（`dragover` 仅 `types` 含 `Files` 时 preventDefault），页面放**常驻**「可拖拽」提示。

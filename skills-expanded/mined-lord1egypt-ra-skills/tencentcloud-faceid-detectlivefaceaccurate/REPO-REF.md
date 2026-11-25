@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/t/tencentcloud-faceid-detectlivefaceaccurate/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 腾讯云人脸静态活体检测高精度版(DetectLiveFaceAccurate)接口调用技能。当用户需要对人脸图片进行防翻拍活体检测时，应使用此技能。相比普通静态活体检测，高精度版增强了对高清屏幕、裁剪纸片、3D面具等攻击的防御能力，适用于移动端、PC端各类型场景的图片活体检验。支持图片Base64和图片URL两种输入方式。

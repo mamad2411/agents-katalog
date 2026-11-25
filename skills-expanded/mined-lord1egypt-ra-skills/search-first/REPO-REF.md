@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_affaan-m_ecc_search-first/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Research-before-coding workflow. Search for existing tools, libraries, and patterns before writing custom code. Invokes the researcher agent.

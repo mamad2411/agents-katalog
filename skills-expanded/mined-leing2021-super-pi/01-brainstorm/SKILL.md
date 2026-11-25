@@ -1,0 +1,99 @@
+---
+name: 01-brainstorm
+description: "Discover requirements through structured multi-round dialog. Use when the request is ambiguous, needs discovery, or describes a new idea/product."
+---
+
+# Brainstorm
+
+Use this skill when the request is ambiguous, needs requirements discovery, or the user describes a new idea/product.
+
+See [shared pipeline instructions](../references/pipeline-config.md) for model routing and pipeline behavior.
+
+## Core rules
+
+- Use **`brainstorm_dialog`** to manage multi-round conversations (`start` → `refine` → `summarize`).
+- Ask **one question at a time**.
+- Every question ships with a **recommended answer**: put the recommendation and its one-line reason in the `question` text on its own line below the question (e.g. `✓ 推荐「X」：<理由>`), NOT inside options — option labels must stay short (≤ 20 chars) or the selector UI truncates them. Questions without a recommendation are a blocking violation.
+- Compare **2-3 approaches** when multiple directions are plausible.
+- Keep focused on **what** to build, not implementation details.
+- **Explicit user approval required** before chaining into `02-plan` (the approval is the 01→02 gate).
+- Write result to `docs/brainstorms/` as durable requirements document.
+
+## Mode selection
+
+After initial context, determine mode via `ask_user_question`:
+
+> What's your goal?
+> - **Building a startup** → Startup Diagnostic
+> - **Intrapreneurship** → Startup Diagnostic
+> - **Side project / hackathon** → Builder Mode
+> - **Adding a feature** → CE Brainstorm
+
+Skip question if mode is obvious from request.
+
+**Mode mapping:**
+- Startup / intrapreneurship → **Startup Diagnostic** (see `references/startup-diagnostic.md`)
+- Side project / hackathon → **Builder Mode** (see `references/builder-mode.md`)
+- Feature addition → **CE Brainstorm** (see `references/ce-brainstorm-mode.md`)
+
+## Mode summaries
+
+| Mode | Key principle | End goal |
+|---|---|---|
+| Startup Diagnostic | Specificity is currency, narrow beats wide | One concrete next action |
+| Builder Mode | Delight is currency, ship something showable | Concrete build steps |
+| CE Brainstorm | Requirements clarity | Implementation-ready spec |
+
+See reference files for full question sets and patterns.
+
+## Premise Challenge
+
+After mode-specific questions, run Premise Challenge. See `references/premise-challenge.md`.
+
+## Design checklist
+
+Before summarizing, ensure the design answers:
+- What are we building?
+- Why does it exist?
+- What files/modules will change?
+- What are the responsibility boundaries?
+- What can fail, and how?
+- How will we verify success?
+
+## Domain vocabulary (optional)
+
+After mode-specific questions, check if the project has a `CONTEXT.md` (or `GLOSSARY.md`) at root.
+If not, and the brainstorm reveals 3+ domain-specific terms with ambiguous meanings,
+offer to create one using `references/context-glossary.md` (contract: `../references/domain-language.md`).
+Update it inline during the session — don't batch. If it exists, cross-reference and flag conflicts:
+
+> "Your CONTEXT.md defines 'cancellation' as X, but you seem to mean Y — which is it?"
+
+## Stop conditions
+
+Stop and ask instead of guessing when: requirements conflict, success criteria unclear, task spans multiple systems, or user hasn't approved design. Before fleshing out an idea, grep `docs/out-of-scope/` for prior rejections — surface matches before proceeding.
+
+## Approval gate
+
+**Required:** Explicit user approval before chaining into `02-plan` — this approval is the 01→02 gate; after it, chaining happens in-session (Workflow step 12).
+
+## Workflow
+
+1. Scan repository for nearby context
+2. Check for existing `CONTEXT.md` or `GLOSSARY.md` at repo root
+3. Determine mode (Startup / Builder / CE)
+4. Run mode-specific questions (use reference files)
+5. Run Premise Challenge
+6. Generate 2-3 alternatives (minimal viable + ideal architecture)
+7. Validate against design checklist
+8. Offer to create/update `CONTEXT.md` if domain terms emerged
+9. Use `brainstorm_dialog` `summarize` to finalize
+10. Capture requirements in `docs/brainstorms/`
+11. Get explicit user approval
+12. **Chain to plan:** after explicit user approval, immediately read `../02-plan/SKILL.md` and execute it in this session — do not wait for further user instruction. `references/handoff.md` still defines the handoff artifact to save first.
+
+## Artifact contract
+
+Use `references/requirements-template.md` to structure the document. Keep implementation details out unless specifically about architecture.
+
+Before finishing this skill, apply the completion checklist in [shared pipeline instructions](../references/pipeline-config.md).

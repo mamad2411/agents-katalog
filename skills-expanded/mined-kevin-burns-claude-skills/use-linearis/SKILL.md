@@ -1,0 +1,217 @@
+---
+name: use-linearis
+description: >-
+  Run Linear.app operations from the terminal with the `linearis` CLI (binaries `linear` and `linearis`, JSON output) instead of an MCP or the web UI: create, update, archive, list or filter issues, set project milestones, wire blocked-by relations. Covers install and auth, the CLI's sharp edges, and keeping workspace identifiers out of the repo.
+license: MIT
+---
+
+# use-linearis
+
+`linearis` is a Node CLI for Linear.app — JSON output, smart ID resolution, cursor pagination, built for LLM agents. It ships two identical binaries, `linear` and `linearis`. It is **not** an MCP: no tool schemas land in context, so every fresh session pays a discovery tax. This skill pays that tax up front — generic setup, the CLI's sharp edges, and the Ogham dogfooding workflow. It carries **no real workspace identifiers** — those live in a local `~/.config/dotfiles/env.sh` you source (see below).
+
+If Linear ships an official MCP with write support, migrate to it. Until then, `linearis` is the agent-shaped CLI.
+
+## Setup (generic — works for any Linear workspace)
+
+**Source:** <https://github.com/linearis-oss/linearis> · npm package `linearis` (MIT). Requires Node.
+
+Install globally, then authenticate:
+
+```bash
+npm i -g linearis        # installs BOTH `linear` and `linearis` (same binary)
+linear auth login        # browser OAuth; stores a token at ~/.linearis/token
+```
+
+One-liner to confirm it's installed and authed:
+
+```bash
+command -v linear >/dev/null && linear auth status || echo "install: npm i -g linearis && linear auth login"
+```
+
+`auth status` returns `{authenticated: true, user: {name, email}}` when a token is live at `~/.linearis/token`. If write operations fail with `Invalid scope: write required`, generate a Personal API Key in the Linear web UI (Settings → API → Personal API keys) with `admin` scope, then either `export LINEAR_API_TOKEN=<key>` or overwrite `~/.linearis/token`.
+
+Anything not covered below, discover with `--help` (this skill is the sharp edges, not the full surface):
+
+```bash
+linear --help
+linear issues --help          # per-subcommand flags
+```
+
+## Gotchas (the ones that cost time — re-verified against 2026.8.0 on 2026-09-22)
+
+Run the preflight first. It reads `linear --version`, compares it with the release these gotchas were checked on, and names all eight if the two differ. No API call, no network unless you pass `--latest`:
+
+```bash
+python3 ~/.claude/skills/use-linearis/scripts/preflight.py --latest
+```
+
+**1. Flag asymmetry between `issues create`/`update` and `issues list`.** Create/update take `--project-milestone <ms>`; list takes `--milestone <name>` (and requires `--project`). Same concept, two flag names. Likewise `--label` (singular, comma-separated) on list vs `--labels` on create/update.
+
+**2. ~~Milestone create is broken.~~ Fixed in 2026.6.0** ([#223](https://github.com/linearis-oss/linearis/issues/223), [#228](https://github.com/linearis-oss/linearis/issues/228))**.** It used to return `Variable "$projectId" of required type "String!" was not provided` even with `--project` set, so the workaround was to create milestones in the web UI. The project id is now passed correctly — an invalid project yields a clean JSON error instead of the variable error (`Entity not found: Project` on 2026.8.0; the wording was `Project "X" not found` on 2026.6.0, so match on `"error"`, not on the message). `milestones` also gained `read` and `update`. Note there is still **no `milestones delete`**, so a mistyped milestone has to be cleaned up in the web UI; that is why the fix above was probed with a deliberately invalid project rather than by creating a throwaway.
+
+**3. ~~Labels can't be created via CLI.~~ Fixed in 2026.6.0** ([#117](https://github.com/linearis-oss/linearis/issues/117))**.** `linear labels` now has `create`, `read`, `update` and `delete` alongside `list`. Still true on 2026.6.0, and the expensive part: a nonexistent label name passed to `issues create` fails with `Label "X" not found` and **no issue is created** — so create the label first, or the whole call is a no-op. *(The verbs were re-checked on 2026.8.0; the no-op behaviour was not re-probed, because doing so safely needs a real team and risks creating a stray issue.)*
+
+**4. The stored token isn't a raw Personal API Key.** Copying `~/.linearis/token` into a `curl` `Authorization: Bearer …` header returns 401. Don't bypass the CLI by hitting GraphQL directly — fix `linearis` or stay on its surface.
+
+**5. Project resolves by name or UUID, not slug — and the slug is the one you'll reach for.** `projects list` hands you both a `slugId` and a `url`, and the slug is what sits in every Linear project URL, so it is the natural thing to paste. Neither form is accepted:
+
+```bash
+linear issues list --project "Ogham"                                  # resolves
+linear issues list --project "00000000-proj-0000-0000-000000000000"   # resolves
+linear issues list --project "abcdef012345"                           # Project not found
+linear issues list --project "myproject-abcdef012345"                  # Project not found
+```
+
+Same on `milestones list --project`. Use the display name or the full UUID.
+
+**6. ~~Query-complexity ceiling.~~ Fixed upstream on 2026-08-06** ([#276](https://github.com/linearis-oss/linearis/issues/276), via PR #284; 2026.7.0 is the first stable release after it)**.** On 2026.6.0, `linear projects list` with no filter returned `Query too complex — complexity 13950 / 10000` even on a one-project workspace, and the workaround was `--limit 5`. On 2026.8.0 it returns normally with no `--limit`. If you are pinned below 2026.7.0, the workaround still applies.
+
+**7. Fetching one issue is `read`, not `get` — and `get` is never coming.** `linear issues read <issue>` returns the full record including the description. Asking for `get` used to fail with `error: too many arguments for 'issues'. Expected 0 arguments but got 2`, which read like a flag problem rather than a wrong verb. On 2026.8.0 it fails honestly — see below.
+
+This is a well-worn trap, not a local quirk: upstream [#48](https://github.com/linearis-oss/linearis/issues/48) reports LLMs reaching for `issues get` with exactly this error, and was closed **NOT_PLANNED** — aliases are a deliberate no, so do not wait for it. The recovery problem it describes — [#281](https://github.com/linearis-oss/linearis/issues/281) — **was fixed upstream on 2026-08-06** (PR #288). Before that, malformed commands printed plain text and both kinds of failure exited 1, so an agent could not tell "I called it wrong" from "that issue doesn't exist".
+
+**How to tell them apart now, measured on 2026.8.0 — use the exit code, not the shape of the output.** Every error is JSON, so "non-JSON means wrong verb" no longer fires at all:
+
+| you did | exit | body |
+|---|---|---|
+| used a verb that doesn't exist (`issues get`) | **2** | `{"error": "UNKNOWN_COMMAND", "available_commands": [...]}` |
+| asked for an entity that doesn't exist | 1 | `{"error": "Issue with identifier \"X\" not found"}` |
+
+`available_commands` is the useful part — it lists the real verbs, so read it instead of guessing again. The issues surface grew a lot between 2026.6.0 and 2026.8.0 (`batch`, `relations`, comments and reactions among them); this skill still documents only the sharp edges, so check `linear issues --help` before assuming a recipe below is the only way.
+
+**8. Sub-collections come back as `{nodes: […]}`, not bare arrays.** `issues read` returns `labels`, `comments`, `children` and `relations` each wrapped in a `nodes` key, while `issues list` returns its results under a top-level `nodes`. So `jq '[.labels[].name]'` fails with `Cannot index array with string "name"` — it needs `jq '[.labels.nodes[].name]'`. Cheap way to avoid guessing:
+
+```bash
+linear issues read ENG-227 | jq 'keys'          # what fields exist
+linear issues read ENG-227 | jq '.labels'       # what shape a given field is
+```
+
+**Version pin:** lives in `scripts/preflight.py` as `VERIFIED` and `VERIFIED_ON`, not in this sentence. It was a sentence until 2026-09-22 — and on 2026-08-05 that sentence already admitted two of eight gotchas had gone stale, then went stale itself when #276 and #281 closed upstream and nothing noticed for six weeks. The preflight at the top of this section is the check; bump the constant only after re-running 1-8.
+
+---
+
+## Workspace identifiers — `~/.config/dotfiles/env.sh`
+
+This skill is public and carries **no real IDs**. Team, project and milestone UUIDs are not credentials — nobody can act on them without your auth — but they describe a private tracker, so they live in a local file instead. Every example here uses obvious placeholders (`00000000-proj-…`, `abcdef012345`, `ENG-123`).
+
+**Do not resolve IDs by querying at session start.** That reinstates exactly the discovery tax this skill exists to remove — and on releases before 2026.7.0 it also hit the complexity ceiling in gotcha 6. Source the file instead — zero API calls:
+
+```bash
+source ~/.config/dotfiles/env.sh
+linear issues list --project "$LINEAR_PROJECT_OGHAM" --limit 20
+```
+
+Create it once. Keep it outside any git repo, `chmod 600`:
+
+```bash
+mkdir -p ~/.config/linearis && chmod 700 ~/.config/linearis
+linear teams list --limit 10 | jq -r '.nodes[] | "\(.key)  \(.id)  \(.name)"'
+linear projects list --limit 20 | jq -r '.nodes[] | "\(.name)  \(.id)"'
+linear milestones list --project "<project-uuid>" | jq -r '.nodes[] | "\(.name)  \(.id)  \(.targetDate)"'
+```
+
+then write the values into `env.sh` as exports and `chmod 600` it. The names this skill's recipes expect:
+
+| Variable | Holds |
+|---|---|
+| `LINEAR_TEAM` | team key, e.g. `ENG` |
+| `LINEAR_TEAM_ID` | team UUID |
+| `LINEAR_PROJECT_<NAME>` | project UUID, one per project you work in |
+| `LINEAR_MS_<VERSION>` | milestone UUID, one per active release |
+
+Refresh after a workspace change — milestone IDs are stable but target dates and labels drift.
+
+Remember gotcha 5: `--project` takes the **display name or full UUID**, never a `slugId` and never the slug in a project URL.
+
+### Ogham conventions
+
+- **Title carries the release**: prefix atomic issues with `[vX.Y.Z]` (e.g. `[v0.16] Migrations 041-043: ...`). Milestone linkage is separate, but titles let you scan a mixed list.
+- **Milestone = release, Issue = atomic backlog item, in-session TaskCreate = per-session scratch.** Don't mirror Linear issues into the in-session task tracker. Do stamp `ENG-N` into a scratch task's description before closing it as ported.
+- **Release-execution issue per milestone** — the last issue in each milestone, blocked-by all the others, invokes CLAUDE.md's 10-step release playbook. Named `[vX.Y.Z] Execute release per 10-step playbook (blocked by all above)`.
+- **Priority mapping**: `2` = release-critical, `3` = medium, `4` = nice-to-have. `1` (urgent) is reserved for hotfixes.
+
+### The Linear ↔ Ogham dogfooding loop
+
+The reason to drive `linearis` from Claude Code rather than clicking Linear's web UI is the Ogham workflow experiment: **durable state lives in Linear** (issue status, blocked-by, milestone); **transient session context lives in Ogham**, the shared-memory database.
+
+Ogham ships its own CLI — a Go binary, MCP client for the Ogham memory stack, JSON output by default. Source: <https://github.com/ogham-mcp/ogham-cli>.
+
+**Do not hardcode its path or assume its name.** The binary is `omcli` on some machines and `ogham` on others, and is sometimes only a checkout rather than on `PATH`. Worse, on machines running the Python MCP a bare `ogham` may resolve to *that* rather than the Go CLI. So resolve it — `env.sh` (above) exports `OGHAM_CLI` by trying `omcli` first, then `ogham`, then the known checkout locations, and leaves it empty rather than failing if nothing is found.
+
+So when an agent picks up `ENG-114`:
+
+```bash
+source ~/.config/dotfiles/env.sh
+linear issues read ENG-114                          # durable: atomic spec, status, blocked-by
+"$OGHAM_CLI" search "typed edges store_triple"      # transient: design memory (hybrid vector+keyword)
+```
+
+Guard on it if the command is load-bearing: `[ -n "$OGHAM_CLI" ] || echo "ogham cli not found"`.
+
+`ogham search <query>` runs the fast native-Go hybrid search; add `--sidecar` for the full retrieval pipeline (intent detection, MMR, graph augmentation), `--limit N` / `--tags a,b` to scope. That pairing — spec from Linear, design memory from Ogham — is the loop every prior task-tracking attempt was missing. See `ENG-131` for the recipe deliverable in v0.17.
+
+## Common recipes
+
+Examples use the Ogham IDs above; swap `OGHAM`/`ENG`/milestone IDs for your own workspace.
+
+**Create an atomic issue against a milestone**:
+
+```bash
+source ~/.config/dotfiles/env.sh
+# milestone id comes from env.sh too
+linear issues create "[v0.16] <what>" \
+  --team "$LINEAR_TEAM" --project "$LINEAR_PROJECT_OGHAM" --project-milestone "$LINEAR_MS_V0_16" \
+  --labels "Feature" --priority 2 \
+  --description "$(cat <<'MD'
+Body markdown.
+MD
+)"
+```
+
+**Batch create with error surfacing** — errors go to stdout as JSON, so `tee` a file and grep it:
+
+```bash
+OUT=/tmp/linear_batch.jsonl; : > "$OUT"
+mk() {
+  local title=${title:?} labels=${labels:?} prio=${prio:?} body=${body:?}
+  linear issues create "$title" --team "$LINEAR_TEAM" --project "$LINEAR_PROJECT_OGHAM" \
+    --labels "$labels" --priority "$prio" --description "$body" 2>&1 \
+    | tee -a "$OUT" | grep '"identifier"'
+}
+title="[v0.16] Foo" labels="Feature" prio=2 body="..." mk
+title="[v0.16] Bar" labels="Improvement" prio=3 body="..." mk
+grep '"error"' "$OUT" || echo "clean"
+```
+
+> Named variables rather than `$1`-`$4` on purpose. A skill's markdown is rendered into the agent's context with its arguments interpolated, so bare positional parameters inside a fenced block get **silently replaced by whatever the caller passed as skill args** — an agent then copies a recipe that creates an issue titled `an` with the label `issue`. Observed on 2026-08-05. Keep shell examples in this file positional-free.
+
+**Backfill a milestone across a range of issues**:
+
+```bash
+# milestone id comes from env.sh too
+for n in 109 110 111 112 113; do
+  linear issues update "$LINEAR_TEAM-$n" --project-milestone "$LINEAR_MS_V0_16" | grep '"identifier"'
+done
+```
+
+**Wire blocked-by** — one call per dependency, `--blocked-by` on `issues update`:
+
+```bash
+blocker=121
+for dep in 109 110 111 112 113 114 115 116 117 118 119 120 122 123; do
+  linear issues update "$LINEAR_TEAM-$blocker" --blocked-by "$LINEAR_TEAM-$dep" 2>&1 | grep '"error"'
+done
+```
+
+**Filter open issues in a release**:
+
+```bash
+linear issues list --project "$LINEAR_PROJECT_OGHAM" --milestone v0.16 --limit 50 | \
+  jq -r '.nodes[] | "\(.identifier)  \(.state.name)  \(.title)"'
+```
+
+**Clean up a stray test issue** (archive over delete — leaves history; both need `admin` scope):
+
+```bash
+linear issues archive ENG-102
+```

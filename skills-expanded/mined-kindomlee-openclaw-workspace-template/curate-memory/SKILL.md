@@ -1,0 +1,240 @@
+---
+name: curate-memory
+description: >
+  Full curator workflow for memory archival: scan the conversation, dedup against
+  existing records, classify via the Context Tree, then decide whether each entry
+  belongs in memory/ journal, MEMORY.md long-term index, notes/, reference/, or
+  LEARNINGS.md. Merges fragments into existing notes when possible.
+  Triggers on "curate memory", "organize memory", "archive this", "where should
+  this go", "/curate-memory", and proactively after non-trivial technical
+  decisions, infrastructure changes, or problem solutions.
+  Complements the quick path of appending one line to the journal (by hand, or via
+  a save-memory skill if you have one installed); curate-memory is the full
+  classify-and-merge workflow.
+user-invocable: true
+---
+
+# Curate Memory Skill
+
+> **Relationship to the quick-append path** (this template does not ship a
+> `save-memory` skill; add one globally if you want a shortcut):
+> - Fast path — append a single line to `memory/YYYY-MM-DD.md` and stop.
+>   Use when the user says "remember X" and X is already a well-formed journal entry.
+> - `curate-memory` (this skill) — full curator flow. Reviews the conversation,
+>   dedups against MEMORY.md and notes/, classifies via the Context Tree, and
+>   writes to the right layer (journal vs long-term index vs topic notes vs
+>   learnings). Higher latency, makes real classification decisions.
+>
+> This skill lives under `.claude/skills/curate-memory/`. If you add a global
+> `save-memory` skill, keep its directory and frontmatter `name:` distinct from
+> this one. When a conversation produces a single one-liner, prefer the fast path.
+> When it produces a chunk of new knowledge that needs to land in the right place,
+> prefer this skill.
+
+## Trigger Scenarios
+
+**Explicit:** "curate memory" "organize memory" "archive this" "where should this go" "/curate-memory"
+
+**Implicit (proactive):**
+- Technical decisions or config changes
+- Problem solutions
+- Infrastructure changes (new services, config modifications)
+- User preference/requirement changes
+- **Compaction test:** Would this info be lost on compaction? Yes → record it
+
+**From the flag:** `curate-memory.flag` (raised hourly by `cron/bin/curate-memory.sh`,
+no LLM) lists closed-day journals that haven't been curated yet. Run the workflow
+on those files, then finish with step 5.
+
+## Workflow
+
+### 1. Scan Conversation
+Review all conversation from last memory write to now. Identify new decisions/settings/preferences.
+When run from `curate-memory.flag`, the material is the journal files the flag lists:
+read each one and treat its entries as what to classify.
+
+### 2. Duplicate Check (mandatory before writing)
+
+```bash
+# Fast grep on journal + long-term index
+grep -ri "keyword" MEMORY.md memory/*.md
+
+# Hybrid scored search across memory/ + notes/ in one pass
+# (keyword overlap × temporal recency × hall-type boost)
+python3 scripts/memory-search-hybrid.py "keyword" --days 90 --top 5
+```
+
+- Exact duplicate → skip
+- Partially related → merge into existing entry (notes/ or memory/)
+- Conflict → keep newer, note replacement date
+
+### 3. Classify and Store (Two-Layer System)
+
+The memory system has two layers: **journal** (temporal) and **knowledge** (semantic).
+
+```
+═══ Layer 1: Journal (memory/) — Temporal ═══
+memory/YYYY-MM-DD.md              ← What happened (events, decisions, status changes)
+                                    Retention: 5 days, then auto-archive to archive-YYYY-MM/
+
+═══ Layer 2: Knowledge (notes/) — Semantic ═══
+MEMORY.md                        ← Long-term index (P0 prefs/infra, P1 tech, P2 experiments)
+notes/02-Areas/{topic}/           ← Topic knowledge (merge-first, don't create fragments)
+notes/03-Resources/{topic}/       ← Tools/services references
+reference/                        ← Deep references
+LEARNINGS.md                      ← Learnings (claim/evidence fields, parsed by scripts)
+.learnings/                       ← ERRORS.md, FEATURE_REQUESTS.md
+```
+
+### Per-file Role Caps
+
+Each SessionStart-loaded file has its own role and **its own token cap**. Don't let one file eat the entire budget — when a cap is exceeded, consolidate **that file**, not the total.
+
+The caps below mirror `PER_FILE_CAPS` / `BUDGET_TOKENS` in `.claude/hooks/budget-flag-guard.py`, which is the source of truth: it writes `.claude/flags/sessionstart-budget.flag` on a breach. If you retune the hook, the hook's numbers win.
+
+| File | Cap (token) | Role | Over-budget action |
+|------|-------------|------|-------------------|
+| `MEMORY.md` | **≤ 4000** | Long-term index (wikilink + hard facts) | Consolidate Events Timeline → details to `notes/` |
+| `CLAUDE.md` | ≤ 2500 | Workspace entrypoint + bootstrap | Move on-demand playbooks (e.g. graphify) to notes/skills |
+| `AGENTS.md` | ≤ 6000 | Operations manual | Converge with `CLAUDE.md` to avoid dual-canonical drift |
+| `SOUL.md` / `USER.md` | ≤ 1300 / ≤ 600 | Persona + long-term user prefs | Persona is non-compressible; executable rules → `spec/` |
+| `~/.claude/CLAUDE.md` | ≤ 800 | Personal cross-workspace prefs | Move workspace-specific rules into the workspace files |
+| `MEMORY_COMPACT.md` | ≤ 500 (convention; not measured by the hook) | AAAK machine-quickload version | If overlaps with `CLAUDE.md` L0/L1, pick one as canonical |
+| **All combined** | **≤ 16000** | — | Any single file over cap triggers consolidation, don't wait for total |
+
+> Per-file caps fire first; the total (`BUDGET_TOKENS`) is a backstop kept ≥ the sum of the per-file caps. Estimates are `chars // 3`.
+
+### Hard conditions for upgrading to MEMORY.md (default: NO)
+
+**The default is NOT to upgrade.** `MEMORY.md` is a long-term index, not a log. Most events should NOT go in. Only when **ALL** of the following are satisfied does the entry belong in `MEMORY.md` Events Timeline:
+
+1. **Will still be queried next month** — grep failure a week from now would hurt? Then maybe
+2. **Cannot be found via wikilink** — if a `notes/` or `spec/` file already covers it, link to that, don't restate
+3. **Affects other systems / future decisions** — pure one-off troubleshooting doesn't count (LEARNINGS or journal)
+4. **Fits in ≤ 2 lines + wikilink** — if it doesn't compress to an index entry, it's not an index entry
+
+**Blocklist** (never go in `MEMORY.md`):
+
+| ❌ Don't put in MEMORY.md | Put it here |
+|---|---|
+| Tool/service operational detail (CLI, env, ports, tokens, container versions) | `notes/03-Resources/infrastructure/` |
+| Wallet / API key / credential fragments | Never anywhere persistent (see security rules) |
+| One-off troubleshooting (bug fixes, cache flush, disk reseat details) | `memory/YYYY-MM-DD.md` + topic wikilink |
+| Personal preference details (coffee recipes, equipment params) | `notes/02-Areas/<topic>/` |
+| Upgrade batch container version lists | Topic wikilink (e.g. `[[portainer-upgrades]]`) |
+| Persona / profile repetition of SOUL.md / USER.md | Don't restate — SOUL/USER are canonical |
+
+### Classification Tree
+
+```
+Is this "what happened" or "what was learned"?
+├─ "What happened" (event/decision/status) → memory/YYYY-MM-DD.md (default stops here)
+│   └─ Passes ALL 4 hard conditions above + not in blocklist?
+│      → Only then update MEMORY.md Events Timeline (≤ 2 lines wikilink-only)
+├─ "What was learned" (knowledge/method/principle)
+│   ├─ Related notes/ already exist? → Merge into existing (don't create new)
+│   ├─ New topic + >500 words? → notes/02-Areas/ or 03-Resources/ (create new)
+│   └─ Fragment <500 words? → memory/YYYY-MM-DD.md, let cron sync organize
+├─ Error/learning? → LEARNINGS.md
+└─ Uncertain? → memory/YYYY-MM-DD.md (safe default)
+```
+
+**Key Principles:**
+- **Merge First:** Always search notes/ for related content before creating new
+- **Don't put topics in memory/:** memory/ is for date-based journal only; topic knowledge goes to notes/
+- **Keep memory/ clean:** Only recent 5 days + system files
+- **MEMORY.md is an index, not a log:** Events Timeline entries are **≤ 2 lines** (headline + hard facts + `详: [[link]]`). Step-by-step details stay in `memory/YYYY-MM-DD.md`.
+- **`### YYYY-MM` heading is mandatory:** Before writing the first entry of a month into Events Timeline, ensure a `### YYYY-MM` heading exists so `scripts/memory-archive.py --mode archive-timeline` can auto-rotate it to `timeline-archive.md` on the 1st of next month.
+- **`Last updated` field:** single-line date only; do NOT accumulate per-session curate logs.
+
+### LEARNINGS Dedup Pass (mandatory before writing to LEARNINGS.md)
+
+Without this pass, the same meta-pattern fragments into multiple `rc=1` entries
+and never crosses the promotion gate. Each time you want to write a new LEARNINGS
+entry, run these three steps to decide **+1 existing** vs **create new**.
+
+**Step 1 — Topic search**: extract 3-5 keywords from the new claim, run hybrid
+search restricted to LEARNINGS:
+
+```bash
+python3 scripts/memory-search-hybrid.py "<keyword 1> <keyword 2> <keyword 3>" \
+    --days 365 --top 10 | grep -i "LEARNINGS\|^\[[0-9]" | head -10
+```
+
+**Step 2 — Cluster candidates**: run promotion-check cluster mode to see if a
+relevant family already exists (requires `LEARNINGS.md` to be present):
+
+```bash
+python3 scripts/learnings-promotion-check.py --cluster --json \
+  | jq '.clusters[] | select(.size >= 2) | {keywords, members: [.entries[].id]}'
+```
+
+**Step 3 — Three-way decision**:
+
+| Situation | Action |
+|---|---|
+| Step 1 hits a high-score entry with overlapping claim | **+1 evidence**: append `- YYYY-MM-DD: <new case summary>` to that entry's evidence section, increment `recurring_count` |
+| Step 2 shows a cluster of size ≥ 3 already exists | **Add to family**: pick the cluster's most representative entry and +1 there (don't create another isolated entry) |
+| Neither — genuinely new pattern | **Create new entry**, but reserve `related: KG-XXXX-XXX` cross-link slot for future linkage |
+
+**Overlap rule of thumb**: extract 5-10 keywords from the new claim and compare
+against existing entries' keyword sets. **Jaccard ≥ 0.3** → same family, prefer
++1 over creating. The `--cluster` mode in `learnings-promotion-check.py`
+defaults to a looser Jaccard ≥ 0.05 (it includes weak matches for you to
+filter); pass `--cluster-threshold 0.3` to apply this rule directly.
+
+### 4. Report
+List: what was recorded (summary), where it was stored, what priority level.
+Nothing to record → `✅ No unrecorded important information`
+
+### 5. Wrap-up (when `curate-memory.flag` exists)
+
+`cron/bin/curate-memory.sh` points here. After every write is done, advance the
+state **first**, then remove the flag:
+
+```bash
+python3 - cron/state/curate-memory.json <<'PY'
+import datetime, json, sys
+p = sys.argv[1]
+try:
+    s = json.load(open(p))
+except Exception:
+    s = {}
+s["last_curated_date"] = str(datetime.date.today() - datetime.timedelta(days=1))
+s["notified_identity"] = None
+json.dump(s, open(p, "w"), ensure_ascii=False, indent=2)
+PY
+rm -f .claude/flags/curate-memory.flag
+```
+
+Removing only the flag doesn't finish the job: the next hourly check sees the
+same backlog and raises it again.
+
+## Condensation Principles
+
+- Long conversations → condense to 3-5 sentences (keep: decisions, actions, conclusions)
+- Keep specific numbers (IPs, ports, prices, parameters)
+- Omit chitchat and intermediate attempts (unless failure experience is valuable)
+
+## Quick Reference
+
+```bash
+# Check today's memory
+cat memory/$(date +%Y-%m-%d).md
+
+# Fast grep
+grep -rn "keyword" MEMORY.md memory/*.md
+
+# Hybrid search (memory/ + notes/, scored)
+python3 scripts/memory-search-hybrid.py "keyword" --top 10
+
+# Check MEMORY.md Events Timeline (last 10 bullets)
+grep "^- \*\*" MEMORY.md | tail -10
+```
+
+## Memory Search Notes
+
+`scripts/memory-search-hybrid.py` already walks both `memory/` and
+`notes/` in one pass, so no extra config is needed. If you're on
+OpenClaw mode instead, see `guides/context-tree.md § Making notes/
+searchable` for `memorySearch.extraPaths` setup.

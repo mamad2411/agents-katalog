@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_webmaxru_enonic-agent-skills_enonic-nextxp-integration/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Guides setup, development, and troubleshooting of the Next.js and Enonic XP headless integration (Next.XP framework). Covers Enonic adapter configuration, content type to React component mapping, Guil

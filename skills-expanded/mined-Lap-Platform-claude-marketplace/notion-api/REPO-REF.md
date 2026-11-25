@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Lap-Platform/claude-marketplace (path: plugins/notion-com-notion/skills/api/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Notion API skill. Use when working with Notion for users, search, blocks. Covers 22 endpoints."

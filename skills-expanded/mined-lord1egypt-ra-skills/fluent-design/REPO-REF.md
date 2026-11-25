@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/f/fluent-design/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Microsoft Fluent Design System 实战参考。涵盖 Windows 11 设计语言、Mica/Acrylic 材质、WinUI 3 控件规格、排版层级、布局模式、Dark Mode、辅助功能和 Electron 适配。适用于开发 Windows 桌面应用或需要 Windows 原生感的跨平台应用。

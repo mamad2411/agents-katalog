@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_cap-go_capgo-skills_capgo-cli-usage/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Guides the agent through the Capgo CLI command surface and routes requests to more specific Capgo skills. Use when the user asks generally about the Capgo CLI, app setup, diagnostics, OTA operations, 

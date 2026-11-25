@@ -1,0 +1,34 @@
+---
+name: gstack-roles
+description: "Compatibility alias for engineering-workflow with optional specialist review perspectives."
+---
+# gstack-roles
+
+## Overview
+
+Deprecated compatibility identifier. Use [engineering-workflow](../engineering-workflow/SKILL.md) for the canonical instructions.
+
+## When to Use
+
+An existing configuration or user explicitly names gstack-roles. Skip loading this body if engineering-workflow is already available.
+
+## Rules & Patterns
+
+Apply the canonical skill without loading a duplicate process. Existing authorization, proportional verification, and optional role declarations carry forward. The resolver redirects this identifier and reports an alias warning.
+
+## Code Examples
+
+Explicit gstack-roles selection resolves to engineering-workflow; inspect the resolver result rather than assuming both bodies were loaded.
+
+## Validation Checklist
+
+- [ ] Resolution selects engineering-workflow once and reports the alias redirect.
+- [ ] Any specialist perspective answers a concrete review concern; a role change is identified as self-review.
+
+## Common Mistakes
+
+Treating this compatibility name as an independent engine or a mandatory ceremony.
+
+## Integration Notes
+
+Keep legacy links available. Read [references/roles.md](references/roles.md) only for compatibility details.

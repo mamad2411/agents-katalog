@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/i/intelligent-file-renamer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Batch rename files using pattern matching and AI suggestions"

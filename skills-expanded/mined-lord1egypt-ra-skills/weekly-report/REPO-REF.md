@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_yunshu0909_yunshu_skillshub_weekly-report/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 帮助用户梳理周报，按照完整逻辑展示工作价值和边界。当用户说"写周报"、"周报"、"梳理周报"、"整理工作"时触发。

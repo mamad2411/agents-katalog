@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/l/linkfox-zhihuiya-claim-data/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Zhihuiya Patent Claims Data

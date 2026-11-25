@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/longleo287/omniclaw (path: ecosystem/skills/task_intelligence/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Protocolo de Inteligência Pré-Tarefa — ativa TODOS os agentes relevantes do ecossistema ANTES de executar qualquer tarefa solicitada pelo usuário."

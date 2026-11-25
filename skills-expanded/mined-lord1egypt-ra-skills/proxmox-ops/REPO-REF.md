@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/p/proxmox-ops/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Proxmox VE Management

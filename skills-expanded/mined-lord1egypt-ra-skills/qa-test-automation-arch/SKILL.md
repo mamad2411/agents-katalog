@@ -1,0 +1,155 @@
+---
+name: qa-test-automation-arch
+description: >-
+  当需要设计自动化测试框架、或者现有框架维护成本太高需要重构时使用此技能。运用 PageObject、分层测试、关键字驱动、数据驱动等模式设计可维护可扩展的自动化架构。不要直接写测试代码——先设计架构：选型（UI/API/单元）、分层（测试层/业务层/基础设施层）、数据管理（测试数据与脚本分离）和 CI 集成方案。好的自动化架构应该让写用例的人不需要懂底层实现。 触发场景：自动化架构、框架设计、自动化策略、自动化框架、测试框架架构、自动化维护困难需要重构时。 Use when the user asks about: test automation architecture — Page Object, layered test design, keyword-driven and data-driven frameworks, and data management.
+license: MIT
+allowed-tools: Read Grep Glob Bash
+metadata:
+  display-name: "Test Automation Arch"
+  version: "1.8.0"
+  when-to-use: "用户说\"自动化架构\"、\"框架设计\"、\"自动化策略\"、\"自动化框架\"、\"测试框架架构\"、需要设计测试自动化架构、自动化维护困难需要重构时"
+  related-skills: "{\"upstream\":[\"qa-tech-selection\",\"qa-test-strategy-design\"],\"downstream\":[\"qa-ci-cd-testing\",\"qa-api-testing\",\"qa-mobile-testing\",\"qa-tech-debt-management\"]}"
+  references: "[\"references/layered-architecture.md\"]"
+  input-format: "{\"required\":[{\"name\":\"测试策略\",\"type\":\"object\",\"description\":\"来自qa-test-strategy-design的测试策略\"},{\"name\":\"技术选型\",\"type\":\"object\",\"description\":\"来自qa-tech-selection的技术选型建议\"}],\"optional\":[{\"name\":\"项目约束\",\"type\":\"string\",\"description\":\"技术栈和团队限制\"}]}"
+  output-format: "{\"traceability\":[\"每份架构设计带唯一ID（ARCH-XXXX）\"],\"structure\":[\"覆盖率：标注口径（基于现有需求/输入文档），禁止\\\"全覆盖/100%\\\"绝对化表述；缺失模块标注\\\"未覆盖+原因\\\"\",{\"automation_architecture\":\"自动化测试架构设计\"},{\"framework_selection\":\"框架选择建议\"},{\"layer_design\":\"分层设计\"},{\"maintenance_strategy\":\"维护策略\"}]}"
+  error-recovery-guidance: "{\"on_failure\":\"自动化架构遗漏维护策略时回退到技术选型补充\",\"retry_behavior\":\"补充选型后重新设计架构\"}"
+  categories: "[\"Development\",\"Testing\",\"DevOps\"]"
+  depth-requirement: "{\"reference_value\":\"根据架构复杂度调整设计深度：简单×1/中等×2/复杂×3\",\"minimum\":\"至少覆盖层架构、工具集成、维护策略3个核心要素\"}"
+---
+> ⚠️ 本技能单独使用效果有限，建议配合完整技能集（12 步工作流）使用。安装：npx skills add Kokxi/qa-test-skills
+
+> **⚠️ 安全警告**：本技能的示例可能涉及订单号、支付金额、截图、身份证、手机号等敏感数据。
+> 实际使用时请勿粘贴真实生产数据、客户信息或财务凭证；测试前应脱敏/掩码处理。
+> 本技能仅在 workspace/ 输出评估文件，不持久化、不外传、不跨会话复用。
+
+# 测试自动化架构设计
+
+## 核心原则
+
+好的自动化架构——分层清晰、职责单一、易于维护、快速反馈。
+
+## 测试自动化金字塔
+
+> 📌 本节与 qa-test-strategy-design「测试金字塔」概念对应，但分层名称和比例不同——本技能侧重自动化落地（集成测试层名、70/20/10 比例），strategy-design 侧重策略规划（接口测试层名、60/30/10 比例）。修改时请确认两处含义，避免矛盾。
+
+```text
+                    ┌─────────────┐
+                    │   E2E测试    │  10%
+                    │  (UI/API)    │
+                    ├─────────────┤
+                    │  集成测试    │  20%
+                    │ (接口/服务)  │
+                    ├─────────────┤
+                    │  单元测试    │  70%
+                    │  (函数/类)   │
+                    └─────────────┘
+```
+
+## 加载时机
+
+| 什么时候读 | 读哪个 |
+|-----------|--------|
+| 设计自动化框架分层时 | [`references/layered-architecture.md`](references/layered-architecture.md) |
+
+> `分层架构设计`的完整内容已下沉至 `references/layered-architecture.md`，避免每次触发都占用上下文。
+
+## 框架设计模式
+
+### Page Object Model
+
+```text
+优点：
+├─ 封装页面元素和操作
+├─ 减少代码重复
+├─ 易于维护
+└─ 可读性强
+
+示例结构：
+tests/
+├── pages/
+│   ├── login_page.py
+│   ├── home_page.py
+│   └── cart_page.py
+├── tests/
+│   ├── test_login.py
+│   ├── test_home.py
+│   └── test_cart.py
+├── fixtures/
+│   ├── test_data.py
+│   └── setup_teardown.py
+└── utils/
+    ├── driver_factory.py
+    └── report_generator.py
+```
+
+### 关键字驱动
+
+```text
+优点：
+├─ 业务人员可参与
+├─ 测试用例可读性强
+├─ 与实现分离
+└─ 易于复用
+
+示例：
+| 关键字 | 参数1 | 参数2 | 参数3 |
+|--------|-------|-------|-------|
+| 打开浏览器 | Chrome | | |
+| 输入用户名 | testuser | | |
+| 输入密码 | Test@123 | | |
+| 点击登录 | | | |
+| 验证跳转 | /home | | |
+```
+
+### 数据驱动
+
+```text
+优点：
+├─ 测试数据与逻辑分离
+├─ 易于添加新用例
+├─ 覆盖多种场景
+└─ 便于维护
+
+示例：
+@pytest.mark.parametrize("username,password,expected", [
+    ("user1", "pass1", "success"),
+    ("user2", "pass2", "success"),
+    ("", "pass3", "error"),
+    ("user4", "", "error"),
+])
+def test_login(username, password, expected):
+    result = login(username, password)
+    assert result == expected
+```
+
+## 框架选型决策
+
+| 维度 | Playwright | Cypress | Selenium |
+|------|-----------|---------|----------|
+| 浏览器支持 | 多浏览器 | 仅Chrome | 多语言 |
+| 执行速度 | 快 | 快 | 中等 |
+| 调试体验 | 好 | 优秀 | 一般 |
+| 学习曲线 | 中等 | 低 | 高 |
+| 社区生态 | 成长中 | 成熟 | 成熟 |
+| 适用场景 | 现代Web | 单页应用 | 传统Web |
+
+## 输出示例
+
+**设计Web UI自动化框架（团队5人，JS技术栈，1000+用例）**
+→ 分层：单元测试（Jest）→集成测试（Supertest）→E2E（Playwright）
+→ 模式：Page Object Model组织页面对象，关键字驱动封装业务操作
+→ 数据驱动：JSON/CSV管理测试数据，和环境配置分离
+→ CI/CD集成：GitHub Actions触发，Allure报告
+
+**API自动化框架设计**
+→ 分层：请求封装层→业务接口层→用例层→数据层
+
+## 检查清单
+
+架构设计完成后检查：
+- [ ] 分层是否清晰（单元/集成/E2E）？
+- [ ] 各层职责是否明确？
+- [ ] 框架选型是否合理？
+- [ ] 设计模式是否适用？
+- [ ] 可维护性是否考虑？
+- [ ] CI/CD集成是否规划？

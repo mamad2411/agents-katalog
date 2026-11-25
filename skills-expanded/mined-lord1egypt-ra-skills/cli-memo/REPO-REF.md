@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/w/wirecat-memo/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: memo — the owner's context across messengers, mail and notes

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_ognjengt_founder-skills_lead-magnet-generator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Creates viral lead magnet posts that drive comments and DMs. Produces 2 versions - a quick punchy format and a detailed format with bullet points. Use when user needs social media posts to give away a

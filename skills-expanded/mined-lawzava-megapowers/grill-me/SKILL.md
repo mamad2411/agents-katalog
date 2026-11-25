@@ -1,0 +1,43 @@
+---
+name: grill-me
+description: "Use only when the user explicitly asks to be grilled or interviewed, to stress-test a plan, decision, idea, or draft before action. Covers grill me, poke holes in this, challenge my idea, and ask me everything before we start."
+---
+
+# Grill Me
+
+Interview the user until you reach a shared understanding. The interview is the
+deliverable. Do not implement, edit, or plan execution until the user confirms
+shared understanding.
+
+## Map the decision tree
+
+Model the topic as a tree of decisions. Each answer can open new decisions
+under it. Track each decision as settled, open, or blocked by an open
+decision.
+
+## Ask in rounds
+
+The frontier is every open decision whose prerequisites are settled. Ask the
+whole frontier in one round. Number each question. Give each question one
+recommended answer and its tradeoff, worded so that "yes" accepts the
+recommendation. A question that depends on another open
+question belongs to a later round. After each round, wait for the answers,
+update the tree, and recompute the frontier. Open each round with a short
+restatement of settled decisions and open branches; the restated tree, not
+earlier history, carries the interview state. Rounds are requested depth: they
+may exceed a standing prose cap or one-at-a-time question rule but stay
+scannable.
+
+## Resolve facts yourself
+
+Facts are your job; decisions are the user's. Resolve repository and
+environment facts before asking, as in design-and-plan. When a fact needs a
+long lookup, ask the rest of the frontier now and mark dependent questions
+blocked.
+
+## Finish
+
+Stop when the frontier is empty and no assumption remains unstated. Summarize
+the settled decisions and remaining risks. Confirm shared understanding. A
+finished interview does not authorize any change; execution needs its own
+instruction from the user.

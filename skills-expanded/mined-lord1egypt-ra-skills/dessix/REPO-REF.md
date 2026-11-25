@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/d/dessix-skill/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Access a local Dessix desktop workspace by calling the Electron MCP bridge directly from Node.js (socket/pipe), without using MCP stdio JSON-RPC. Use when an agent needs to read or invoke Dessix tools

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/c/card-compare/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Return a side-by-side comparison of two major-US credit cards across fees, earning rates, credits, transfer partners, and key benefits. Use when the user is deciding between two cards.

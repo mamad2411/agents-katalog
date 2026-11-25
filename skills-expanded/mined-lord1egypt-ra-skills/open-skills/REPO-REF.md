@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/o/open-skills/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 一个交互式 CLI 工具，帮助开发者按分类浏览、空格多选、一键批量安装/同步 AI Agent skills 到多个编辑器。

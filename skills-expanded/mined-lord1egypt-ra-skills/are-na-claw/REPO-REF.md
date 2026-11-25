@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/a/arena-claw/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Simple CLI wrapper for the are.na API. Lists channels, adds blocks, watches feeds. No AI, no automation, no external integrations. Just API calls.

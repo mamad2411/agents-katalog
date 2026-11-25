@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Lap-Platform/claude-marketplace (path: plugins/azure-com-azure-com-mariadb/skills/api/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: MariaDBManagementClient API skill. Use when working with MariaDBManagementClient for subscriptions, providers. Covers 33 endpoints."

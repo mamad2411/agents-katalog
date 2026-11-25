@@ -1,0 +1,3 @@
+---
+name: reference-maintainer
+description: Professional system documentation generator that prevents AI agents from sounding like 'new hires' every session. Automatically extracts schemas, parameters, and configs from code/systems, generating living reference docs (overview, phases, architecture, file index, repo, credentials, tools, best practices) to ensure accurate, up-to-date knowledge across compactions/sessions. Triggers on 'document system', 'generate references', 'maintain docs', 'prevent new hire syndrome', 'package as skill', 'create expert memory'.

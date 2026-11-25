@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/support-systems/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Build and scale customer support for a solopreneur business. Use when setting up support channels, writing help docs, reducing support volume, improving response times, or automating common questions.

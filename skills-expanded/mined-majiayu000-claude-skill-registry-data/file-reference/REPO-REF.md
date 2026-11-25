@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/file-reference/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 处理和分析用户上传的文件引用，提取关键信息并提供应用建议。适用于解析@符号引用、自然语言引用、提取短剧策划相关信息

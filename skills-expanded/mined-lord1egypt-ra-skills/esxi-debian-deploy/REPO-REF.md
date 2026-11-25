@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/o/openbot-esxi/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Zero-touch Debian 13 VM deployment on VMware ESXi 8. Builds custom preseed ISO, creates NVMe+vmxnet3 VM with serial console, and runs unattended installation. Use when deploying Debian VMs on ESXi, au

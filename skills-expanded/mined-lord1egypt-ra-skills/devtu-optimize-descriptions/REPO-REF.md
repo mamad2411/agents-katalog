@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_mims-harvard_tooluniverse_devtu-optimize-descriptions/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Optimize tool descriptions in ToolUniverse JSON configs for clarity and usability. Reviews descriptions for missing prerequisites, unexpanded abbreviations, unclear parameters, and missing usage guida

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/j/juejin-article-trends/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 获取掘金网站热门文章排行榜，支持查询文章分类列表和各分类的热门文章趋势。当用户需要了解掘金技术文章排行榜、获取前端/后端/AI等领域的热门文章时使用此技能。

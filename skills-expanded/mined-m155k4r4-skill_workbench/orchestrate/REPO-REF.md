@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/m155k4r4/skill_workbench (path: plugins/agentic-awesome-skills-claude/skills/orchestrate/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Coordinate focused subagents on substantial work, keep their ownership non-overlapping, and integrate verified results. Use for large-scope Codex tasks; keep trivial work with the coordinator."

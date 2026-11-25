@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/d/douyin-sensitive-check/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 抖音/短视频违禁词和敏感词检测（本地词库版，无需 API Key）。每天首次使用自动从 GitHub 开源词库更新本地缓存，离线检测文案合规性。支持多词库合并（广告极限词、平台限流词、暴恐、色情、涉枪涉爆等）。使用场景：(1) 生成短视频文案后自动检测违禁词，(2) 用户要求检查某段文字是否有问题，(3) 抖音/快手/B站内容合规审核，(4) 直播话术自查。触发词：违禁词、敏感词、检测、合规、抖音

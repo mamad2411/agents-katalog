@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_nvidia_skills_nemoclaw-user-configure-inference/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Indexed by skills.sh from nvidia/skills"

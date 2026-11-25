@@ -1,0 +1,104 @@
+---
+name: review-core
+description: >-
+  Shared adversarial review engine: blind parallel critics (including alternatives),
+  tribunal adjudication, and adversarial re-validation. Used by review-tribunal and
+  ticket-to-pr-pipeline. Use directly when blind-reviewing a local branch, commit
+  range, or working tree.
+---
+
+# Review core
+
+The shared review engine: **blind** critics → **tribunal** → **adversarial** validation. Predictability over improvisation.
+
+Parent skills usually invoke review-core; direct local branch review is also supported.
+
+**Requires sibling install** of this skill when using [review-tribunal](../review-tribunal/SKILL.md) or [ticket-to-pr-pipeline](../ticket-to-pr-pipeline/SKILL.md).
+
+## Mode
+
+Parents must set **mode** before running:
+
+| Mode | Parent | Outcome for Holds |
+|------|--------|-------------------|
+| `review` | review-tribunal Steps 3–5 | Adjudicated findings → parent delivery |
+| `implement` | ticket-to-pr-pipeline Phases 3–4 | Code fixes + re-run tests on branch |
+
+## Code exploration
+
+All phases and subagents follow [EXPLORATION.md](EXPLORATION.md). Paste those rules into every critic and validator prompt.
+
+Before Step 1, the caller fills this source manifest and reuses it unchanged across critics, validators, and scorecards within that review snapshot. If the reviewed head changes, start a new snapshot: prepare and verify a fresh manifest pinned to the new head before further review. Never mutate the old manifest or reuse its pin for new source.
+
+```text
+Target: {TARGET}
+Repo: {FULL_REPO_PATH}
+Branch: {BRANCH_OR_DETACHED}
+Head: {HEAD_SHA}
+Review item: {OWNER/REPO#N | N/A}
+Source mode: {REUSED_CHECKOUT | DETACHED_WORKTREE | STASHED_CHECKOUT | N/A}
+Source restore: {WORKTREE_PATH | STASH_SHA_AND_ORIGIN | N/A}
+Diff source: {EXACT_PR_RANGE_COMMIT_OR_WORKTREE_SOURCE}
+Working-tree components: {STAGED | UNSTAGED | UNTRACKED | NONE}
+Commands: {EXACT_READ_ONLY_SOURCE_COMMANDS}
+Changed files: {DEDUPLICATED_LIST}
+Commits in range: {COUNT | 0}
+Commit SHAs: {LIST | N/A}
+Commit commands: {commands that produced the list | N/A}
+```
+
+The three source fields are `N/A` for `local-diff` (its tree is read in place); for a GitHub PR, [PR-SOURCE.md](../review-tribunal/PR-SOURCE.md) defines them. Several PRs reviewed together carry one manifest each: [REVIEW-SET.md](REVIEW-SET.md).
+
+## Step 1 — Blind critics
+
+Spawn parallel **blind** judges — ticket + diff + intel facts only; no implementer rationale. Each critic is a separate subagent.
+
+Details: [BLIND-REVIEW.md](BLIND-REVIEW.md).
+
+- Pick distinct lenses from the roster; floor ≥2 independent critics.
+- **Alternatives critic is required** for `mode: review`; default for `mode: implement` unless diff is trivial (note skip on scorecard).
+- For substantive changes in either mode, spawn a separate **Operational Reviewer** concurrently with the other critics using [OPERATIONAL-REVIEWER.md](OPERATIONAL-REVIEWER.md). Skip only a truly trivial change and record the reason on the scorecard.
+- Manifest lists commits → spawn hygiene critic per [COMMIT-HYGIENE.md](COMMIT-HYGIENE.md).
+- Paste [EXPLORATION.md](EXPLORATION.md) rules into every subagent prompt.
+
+**Completion criterion:** ≥2 independent reviews with distinct lenses returned; for a substantive change, the Operational Reviewer has returned a review, or a truly trivial skip has a scorecard reason; wrong-diff reviews are discarded; skipped roster lenses are noted with reason. A review set meets this per item ([REVIEW-SET.md](REVIEW-SET.md)).
+
+## Step 2 — First tribunal
+
+You are the judge, not the author's advocate. For every material finding: **Holds up** / **Reject** / **Defer**.
+
+Details: [TRIBUNAL.md](TRIBUNAL.md). Alternative proposals: [ALTERNATIVES.md](ALTERNATIVES.md).
+
+Verify claims with **Read** / **Grep** / **Glob** before ruling.
+
+Publish a scorecard to the user (finding → verdict → why). In `review` mode, hand findings to the parent only after adversarial validation; in `implement` mode, wait for validation before changing code.
+
+**Completion criterion:** every material finding has an explicit verdict and the compact evidence record defined in [ADVERSARIAL.md](ADVERSARIAL.md#evidence-record); user can see the audit trail.
+
+## Step 3 — Adversarial validation
+
+Spawn a **second** wave tasked with **disproving or downgrading** the **Holds up** items; confirmation must overcome counter-evidence.
+
+Details: [ADVERSARIAL.md](ADVERSARIAL.md).
+
+Feed validators: the finding, first-tribunal rationale, ticket/AC, sibling-repo paths, and any Atlassian/FE evidence already gathered.
+
+Re-adjudicate after validators return. Overturn freely when evidence wins.
+
+**Completion criterion:** every prior Hold has its own independent adversarial validation and a CONFIRMED / DOWNGRADE / REJECT / UPGRADE verdict carrying the challenged evidence record defined in [ADVERSARIAL.md](ADVERSARIAL.md#evidence-record); revised scorecard published. A review set meets this for every item. For requested repeat validation, apply [ADVERSARIAL.md](ADVERSARIAL.md#repeat-validation).
+
+## After review-core
+
+| Mode | Next step |
+|------|-----------|
+| `review` | review-tribunal target-specific delivery |
+| `implement` | Implement Holds, re-run tests, summarize audit trail |
+
+## Checklist
+
+```
+- [ ] Blind critics (≥2 distinct lenses; Operational Reviewer report returned or trivial-skip reason; alternatives per mode; hygiene run or skip noted)
+- [ ] First tribunal scorecard
+- [ ] Adversarial validation + revised scorecard
+- [ ] Parent handoff (target-specific review delivery or implement fixes)
+```

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/t/test-materials/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Render JSON schemas to images and generate schemas from prompts using declare-render and AI.

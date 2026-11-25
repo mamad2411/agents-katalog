@@ -1,0 +1,71 @@
+---
+name: overcast-init
+description: >-
+  Install and configure overcast for this harness: install the CLI, verify the
+  system ffmpeg, and configure reusable provider profiles. Use once per
+  machine/profile before driving the `overcast` skill.
+---
+
+# overcast-init
+
+One-time setup for overcast.
+
+1. **Install the CLI** — `pi install npm:@kdrrr/overcast` (inside pi) or
+   `npm i -g @kdrrr/overcast` for the standalone binary.
+2. **Install bundled skills for this agent** — for Codex, Cursor, and other
+   non-Claude harnesses, copy the shipped skills into the agent's skills
+   directory explicitly:
+   ```bash
+   overcast skills install --dest ~/.codex/skills
+   ```
+   Bare `overcast skills install` remains the Claude Code default
+   (`~/.claude/skills`), and `--harness claude-code` is the explicit Claude
+   target.
+3. **Install/update tinycloud** — the default perception backend. Get the latest
+   (`npm i -g @cloudglue/tinycloud@0.3.12` then `tinycloud install --latest`, or
+   `tinycloud update`). overcast needs **tinycloud ≥ 0.3.12** — its watch
+   envelope inlines the verbatim `watch`/`listen` transcripts
+   (`watch.speech.v1`); the `face` + `index` verbs need ≥ 0.3.4, and the image
+   `see`/`extract` verbs behind the opt-in `see:tinycloud` provider need
+   ≥ 0.3.7. Override the invocation with `OVERCAST_TINYCLOUD_CMD` if it isn't
+   on `PATH`.
+4. **Verify** — `overcast doctor --json` (pi pinned, ffmpeg/ffprobe runnable,
+   Cloudglue key, tinycloud CLI + version, optional uv/visual-db readiness).
+5. **Cloudglue key** — the default `watch`/`listen`/`face`/`index` providers
+   reach Cloudglue via the tinycloud CLI; configure it (`tinycloud setup cloudglue`)
+   or export `CLOUDGLUE_API_KEY`.
+6. **Provider profile setup** — choose reusable providers once per profile, not
+   once per case. Always preview before applying:
+   ```bash
+   overcast provider setup show --profile default --json
+   overcast provider setup plan --preset cloudglue --profile default --json
+   overcast provider setup apply --preset cloudglue --profile default --yes --json
+   overcast doctor --profile default --json
+   ```
+   Optional presets/choices:
+   - `cloudglue` for tinycloud watch/listen/face plus built-in ffmpeg enhance.
+   - `fal` for `see`/`enhance` with `FAL_KEY`.
+   - `hf` for `see`/`enhance` with `HF_TOKEN`.
+   - `elevenlabs` for `listen`/`enhance` with `ELEVENLABS_API_KEY`.
+   - `owl-local` for OWLv2 open-vocabulary object detection.
+   - `see:tinycloud` (choice, `--verb see --choice tinycloud`) for Cloudglue
+     file-level image analysis via `tinycloud see`/`extract` (needs tinycloud
+     ≥ 0.3.7; `--detect` facts are boxless — no `crop`).
+   - `deepface-local` for local face detect/match through DeepFace.
+7. **Optional visual DB setup** — prepare visual DB Python once per
+   checkout/machine. DeepFace can be selected as a profile provider for the
+   `face` verb, while image/face DBs are still case-owned local indexes:
+   ```bash
+   scripts/visual-db-uv.sh --face
+   overcast doctor --json
+   overcast provider setup apply --verb face --choice deepface-local --profile default --yes --json
+   overcast index create logos --type image-ransac --local --json
+   overcast index create localfaces --type deepface-local --local --json
+   ```
+8. **Case setup later** — use the main `overcast` skill per investigation to run
+   `case setup`, select targets/sources/indexes, and optionally set case-level
+   automation such as `--auto-sense`, `--auto-index-new`, and `--findings`
+   (defaults to `suggest` — score/text triggers auto-suggest leads; `review` is
+   the legacy text-only mode, `off` disables).
+
+Then use the `overcast` skill to drive the verbs.

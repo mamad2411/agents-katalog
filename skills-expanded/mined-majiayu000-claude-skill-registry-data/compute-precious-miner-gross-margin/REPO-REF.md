@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: analysis/compute-precious-miner-gross-margin/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 以公開金屬價格 + 礦業成本指標（AISC/All-in cost/現金成本）計算「黃金/白銀礦業毛利率代理值」，並判斷當前是否處於歷史高/低檔區間。

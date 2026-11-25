@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/kesslernity/awesome-copilot-agent-skills (path: skills/it-operations/service-catalogue-entry/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Service catalogue entry

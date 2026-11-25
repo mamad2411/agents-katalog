@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_wind-information-co-ltd_wind-skills_wind-alice/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 调用万得 Alice Agent（A2A 协议，SSE 流式）执行指定 Skill 并获取分析结果的 CLI 工具。当用户要求"用 Alice 跑某个 Skill"、"出一份某公司的调研问题清单"、"做一页纸投资备忘"、"核验一段金融信息"等需要点名 Alice 子 Skill 的场景使用。

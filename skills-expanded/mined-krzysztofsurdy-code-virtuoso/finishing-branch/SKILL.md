@@ -1,0 +1,323 @@
+---
+name: finishing-branch
+description: Finishes a development branch by verifying tests and lint, reviewing the diff, choosing merge, squash, rebase, or stacked PR, writing the PR message, opening the PR, and cleaning up. Use when the user says 'ready to merge', 'finish this branch', or 'open a PR'.
+user-invocable: true
+argument-hint: "[optional: branch name or PR target]"
+---
+
+# Finishing a Development Branch
+
+The code is written and the tests are green locally. The gap between "done coding" and "merged to main" is where branches rot, conflicts pile up, and mistakes happen. This playbook closes that gap in four steps: verify, review, integrate, clean up. Run them in order every time and skip none.
+
+**Never push without green. Never merge without review evidence.**
+
+## When to use
+
+- Implementation is complete and you are ready to integrate
+- You need to decide between merge, squash, rebase, or PR
+- A branch has been sitting and needs to be wrapped up
+- You are finishing work in a worktree and need to clean up
+- You are managing stacked branches and need to land them in order
+
+## Quick start
+
+```bash
+# Verify everything passes
+git diff --stat main...HEAD
+make test && make lint && make typecheck
+
+# Push and open a PR (adjust target as needed)
+git push -u origin HEAD
+gh pr create --fill
+```
+
+If you need more control, follow the phases below.
+
+---
+
+## Phase 1: Working-tree sanity
+
+Before anything else, put the working tree in a known-good state.
+
+```bash
+# Check for uncommitted changes
+git status
+
+# Check for forgotten stashes
+git stash list
+
+# Confirm you are on the right branch
+git branch --show-current
+
+# Verify upstream tracking is set
+git rev-parse --abbrev-ref --symbolic-full-name @{u}
+```
+
+| Check | Pass condition | Fix |
+|---|---|---|
+| No uncommitted changes | `git status` shows clean tree | Commit or stash intentionally |
+| No orphaned stashes | `git stash list` is empty or all stashes are accounted for | Apply or drop stale stashes |
+| Correct branch | Branch name matches your work | `git checkout <branch>` |
+| Upstream set | Tracking branch exists | `git push -u origin HEAD` on first push |
+| No untracked noise | No generated files, build artifacts, or editor files | Add to `.gitignore` or remove |
+
+---
+
+## Phase 2: Pre-push verification
+
+Run the full verification suite before pushing. Order matters: run the cheapest checks first so failures show up early.
+
+```bash
+# 1. Lint (fastest, catches formatting/style issues)
+make lint            # or: npm run lint, cargo clippy, flake8, etc.
+
+# 2. Type checking (catches type errors without running code)
+make typecheck       # or: npx tsc --noEmit, mypy, phpstan, etc.
+
+# 3. Unit tests (fast feedback on logic correctness)
+make test            # or: npm test, pytest, phpunit, cargo test, etc.
+
+# 4. Integration / end-to-end tests (slower, catches wiring issues)
+make test-integration
+
+# 5. Build (checks that the artifact compiles / bundles cleanly)
+make build           # or: npm run build, cargo build --release, etc.
+```
+
+If any step fails, stop and fix it before continuing. Do not push broken code.
+
+See [Pre-Push Checks Reference](references/pre-push-checks.md) for the full verification order, CI parity tips, and conflict detection.
+
+---
+
+## Phase 3: Diff review
+
+Review your own diff before handing it to others. You will catch things automated tools miss.
+
+```bash
+# Full diff against the target branch
+git diff main...HEAD
+
+# Commit-by-commit review (more granular)
+git log --oneline main..HEAD
+git show <commit-hash>
+
+# Stat summary (spot unexpectedly large changes)
+git diff --stat main...HEAD
+
+# Check for secrets or sensitive data
+git diff main...HEAD | grep -iE '(password|secret|token|api.key|private.key)' || true
+```
+
+### Self-review checklist
+
+- [ ] No debug code left behind (`console.log`, `dd()`, `print_r`, `var_dump`, `TODO`)
+- [ ] No commented-out code that should be deleted
+- [ ] No secrets, tokens, or credentials in the diff
+- [ ] No unrelated changes mixed into the branch
+- [ ] Commit messages follow the project convention ([Commit Conventions](references/commit-conventions.md))
+- [ ] New files are in the correct directories
+- [ ] Tests cover the changes (not just existing tests passing)
+- [ ] The PR is within size targets, or split (see [PR Sizing and Review](references/pr-sizing-and-review.md))
+
+---
+
+## Phase 4: Integration strategy selection
+
+Choose how to integrate based on your team's workflow, the branch's history, and the target branch.
+
+| Strategy | When to use | Command |
+|---|---|---|
+| **Pull Request** | Team requires review, CI gates, or an audit trail | Push + open PR (see Phase 6) |
+| **Direct merge** | Trunk-based, solo project, or pre-approved change | `git checkout main && git merge --no-ff <branch>` |
+| **Squash and merge** | Branch has messy intermediate commits | Via PR settings, or: `git merge --squash <branch>` |
+| **Rebase and merge** | Linear history wanted, clean commit discipline | `git rebase main && git checkout main && git merge --ff-only <branch>` |
+| **Stacked PR** | Branch builds on another unmerged branch | Push + open PR targeting parent branch |
+
+Default to the repository's configured strategy. Squash when the branch history is WIP noise, rebase when every commit is atomic, merge commit for shared branches, and never squash a branch that is the base of a stack. See [Integration Strategies](references/integration-strategies.md) for the decision matrix, rebase vs merge rules, stacked PRs, and the target branch per branching model.
+
+---
+
+## Phase 5: Message writing
+
+Use the `pr-message-writer` skill to write the PR description. It reads the diff and ticket, follows a template, and writes testing instructions.
+
+If that skill is not installed, write this minimal message:
+
+```
+## Summary
+What changed and why, in 1-3 sentences. Link the ticket.
+
+## Changes
+- Specific changes, grouped by area
+
+## Test plan
+- [ ] How a reviewer verifies each change
+
+## Risks
+- Migrations, deploy order, rollback. "Low risk" if none.
+```
+
+Title: under 72 characters, imperative, in the project's commit format (see [Commit Conventions](references/commit-conventions.md)). Under squash merge the title becomes the commit message. Use closing keywords (`Closes #123`) to link issues; GitLab accepts the same, and Bitbucket links Jira keys.
+
+For a direct merge without a PR, write the merge commit message as a short summary of the change and its reason.
+
+---
+
+## Phase 6: Push and PR creation
+
+### Push to remote
+
+```bash
+# First push (sets upstream tracking)
+git push -u origin HEAD
+
+# Subsequent pushes
+git push
+
+# After rebase (use --force-with-lease, never --force)
+git push --force-with-lease
+```
+
+### Open a pull request
+
+**GitHub:**
+
+```bash
+# Basic PR
+gh pr create --title "feat: add user email verification" --body-file pr-description.md
+
+# PR targeting a specific branch (for stacked PRs)
+gh pr create --base feat/parent-branch --title "feat: add verification UI"
+
+# Draft PR (not ready for review yet)
+gh pr create --draft --fill
+```
+
+**GitLab:**
+
+```bash
+glab mr create --title "feat: add user email verification" --description-file pr-description.md
+
+# Target a specific branch
+glab mr create --target-branch feat/parent-branch
+
+# Draft MR
+glab mr create --draft
+```
+
+**Bitbucket:**
+
+```bash
+# Using Bitbucket's REST API via curl
+curl -X POST -H "Content-Type: application/json" \
+  "https://api.bitbucket.org/2.0/repositories/{workspace}/{repo}/pullrequests" \
+  -d '{"title": "feat: add email verification", "source": {"branch": {"name": "feat/email-verification"}}, "destination": {"branch": {"name": "main"}}}'
+```
+
+### Direct merge (no PR)
+
+```bash
+# Fetch latest and merge with a merge commit
+git checkout main
+git pull
+git merge --no-ff feat/my-branch -m "Merge feat/my-branch: add user email verification"
+
+# Push main
+git push
+```
+
+---
+
+## Phase 7: Cleanup
+
+After the branch is merged, clean up local and remote references.
+
+```bash
+# Delete the local branch
+git branch -d feat/my-branch
+
+# Delete the remote branch (if not auto-deleted by PR merge)
+git push origin --delete feat/my-branch
+
+# Prune remote tracking references
+git fetch --prune
+
+# If working in a worktree, remove it
+git worktree remove /path/to/worktree
+```
+
+See [Cleanup Commands Reference](references/cleanup-commands.md) for pruning stale branches, worktree cleanup, and upstream maintenance.
+
+---
+
+## Recovery
+
+Common mistakes and how to fix them.
+
+| Mistake | Recovery |
+|---|---|
+| Force-pushed the wrong branch | `git reflog` to find the pre-push commit, then `git push --force-with-lease origin <sha>:<branch>` |
+| Deleted an unmerged branch | `git reflog` to find the tip, then `git checkout -b <branch> <sha>` |
+| Pushed secrets to remote | Rotate the secret immediately, then `git filter-repo` to purge from history |
+| Merged to wrong target branch | `git revert -m 1 <merge-commit>` on the wrong target, then merge to the correct one |
+| Rebase went wrong mid-way | `git rebase --abort` to return to pre-rebase state |
+| Lost work after worktree removal | `git reflog`. Commits survive worktree deletion if they were committed |
+| PR targets wrong base branch | Update the PR's base branch in the hosting platform UI or CLI |
+
+See [Recovery Reference](references/recovery.md) for detailed walkthroughs of each recovery scenario.
+
+---
+
+## Quality checklist
+
+Run through this before considering the branch done.
+
+- [ ] All tests pass (unit, integration, e2e as applicable)
+- [ ] Linter and type checker report no errors
+- [ ] Build completes without warnings
+- [ ] Reviewed the full diff yourself: no debug code, secrets, or unrelated changes
+- [ ] Commit messages follow project conventions
+- [ ] PR description explains what, why, and how to verify
+- [ ] Target branch is correct
+- [ ] Branch is up to date with the target (rebased or merged)
+- [ ] CI pipeline passes on the remote
+- [ ] Reviewer(s) assigned (if PR workflow)
+- [ ] Local branch and worktree cleaned up after merge
+
+---
+
+## Critical rules
+
+1. **Never force-push to main, master, or any shared long-lived branch.** Use `--force-with-lease` on feature branches only.
+2. **Never skip verification.** A single untested push can break the pipeline for the whole team.
+3. **Never delete an unmerged branch without explicit confirmation.** If it happens by accident, recover with `git reflog`.
+4. **Never push secrets.** Check the diff before every push. Rotate immediately if it happens.
+5. **Always use `--force-with-lease` instead of `--force`.** It stops you from overwriting someone else's work on a shared branch.
+6. **Always clean up after merge.** Stale branches and orphaned worktrees pile up and cause confusion.
+7. **Always write a meaningful PR/merge message.** "Fix stuff" helps nobody. Explain what changed and why.
+8. **Rebase only your own branches.** Rebasing shared branches rewrites history that others depend on.
+
+---
+
+## Reference Files
+
+| Reference | Contents |
+|---|---|
+| [Pre-Push Checks](references/pre-push-checks.md) | Verification command order, CI parity, conflict detection, pre-push hook setup |
+| [Integration Strategies](references/integration-strategies.md) | Merge vs rebase vs squash choice, stacked PRs, target branch per branching model |
+| [Commit Conventions](references/commit-conventions.md) | Conventional Commits, ticket prefixes, breaking changes, message quality, commit-msg hook |
+| [PR Sizing and Review](references/pr-sizing-and-review.md) | Size targets, keeping PRs small, author and reviewer etiquette, review gates |
+| [Cleanup Commands](references/cleanup-commands.md) | Branch pruning, worktree removal, upstream cleanup, batch operations |
+| [Recovery](references/recovery.md) | Detailed recovery walkthroughs for force-push, deleted branch, lost stash, bad merge |
+
+---
+
+## Integration with Other Skills
+
+| Situation | Recommended Skill |
+|---|---|
+| Writing a full PR message | `pr-message-writer` |
+| Reviewing code before merging | `reviewer` agent |
+| Running verification before declaring done | `verification-before-completion` |
+| Getting a fresh-eyes review before merging | `cold-reviewer` agent |

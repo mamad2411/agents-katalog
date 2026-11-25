@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/m/money-knowledge/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 金钱与财富知识助手。提供关于金钱的基本概念、理财知识、投资原则、财富思维等方面的内容。适用于：1) 了解金钱的基本知识；2) 学习理财和投资原则；3) 培养财富思维；4) 了解经济学基础概念。

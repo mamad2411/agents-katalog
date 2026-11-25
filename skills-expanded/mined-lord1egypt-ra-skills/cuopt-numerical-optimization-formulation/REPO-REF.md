@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_nvidia_skills_cuopt-numerical-optimization-formulation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: LP, MILP, QP — concepts, problem-text parsing, and formulation patterns (parameters, constraints, decisions, objective). Concepts only; no API.

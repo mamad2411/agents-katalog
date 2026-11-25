@@ -1,0 +1,187 @@
+---
+name: zero-copy-requirements
+description: >-
+    Decides where a fact belongs so that no artifact exists whose content is
+    fully reconstructable from another artifact in the system. Use when
+    adding, reviewing, or pruning documentation, when deciding where a decision
+    or follow-up belongs: a document, an issue, a commit, or a requirement, when
+    an architecture note, decision log, status page, or triage write-up is
+    proposed, or when auditing a documentation tree for duplicated authority.
+    Do not use to establish requirement meaning, normalize a requirement graph,
+    or classify evidence state; hand those to requirements-grounding,
+    requirements-topology, and requirements-traceability.
+---
+
+# Zero-Copy Requirements
+
+Keep every fact in exactly one artifact. A second copy is not redundancy; it is
+a second authority that will disagree with the first.
+
+> **Purpose**: No artifact may exist whose content is fully reconstructable
+> from another artifact already in the system.
+
+> **Core Directives**
+>
+> 1. **One question, one authority.** Each fact has exactly one owning
+>    artifact. Every other mention is a reference to it, never a restatement.
+> 2. **Four authorities carry the system.** Behavior, history, open work, and
+>    specification. An artifact that is none of them is a generated report, a
+>    bounded exception, or waste.
+> 3. **Decisions close where they were raised.** A reversible technical decision
+>    closes in the commit or change request that makes it; an owner's answer
+>    closes on the issue that asked. Never write a separate decision document
+>    for it.
+> 4. **Sign-off is immutable.** Compliance-grade approval lands in a merged
+>    commit or change request, not in a mutable comment or an editable page.
+> 5. **Reports are compiled, never authored.** Anything assembled from the
+>    authorities is regenerated from them and read-only.
+> 6. **Reference by identifier.** A dependent artifact names the ID of what it
+>    depends on; it does not copy that artifact's text.
+> 7. **Frozen records are closed, not maintained.** A historical or migration
+>    record is dated and never backfilled; the moment it is updated to stay
+>    current it has become an unowned second authority.
+> 8. **The tracker holds live work, not memory.** Whatever is not live work or a
+>    bounded owner question has another home, or none (§1).
+
+## Boundary
+
+`zero-copy-requirements` is a task-matched Alchemy companion, not a
+qualification stage, gate, or acronym letter. It runs in a single pass, at any
+point where an artifact's home is in question.
+
+It does not decide whether the work is worth doing. `push-out` owns the general
+directive that executable sources beat prose duplicates, and the ladder that
+moves operational work outward; this skill names which artifact owns which
+question in the first place.
+
+Apply a project profile for concrete paths, tracker names, schemas, identifier
+formats, and validation commands. Keep none of those here.
+
+## Select the Mode
+
+| Mode | Use for | Emits |
+| --- | --- | --- |
+| **Targeted** | One named or proposed artifact | One output contract |
+| **Sweep** | No artifact named: find every redundant document in a tree | One ranked row per artifact opened, plus the unreached remainder |
+
+With no artifact named, start in Sweep and read
+[references/sweep.md](references/sweep.md). Both modes decide with the same
+litmus test (§4); Sweep adds discovery, an evidence bar, and ranking. Sweep
+classifies nothing `DUPLICATE` without naming the artifact that already carries
+each claim. A claim no artifact carries is unowned, not redundant: move it,
+never delete it. Establish neither and the row is `Defer`, naming what is
+missing.
+
+## 1. The Four Authorities
+
+| # | Authority | Sole owner of | Must not absorb |
+| --- | --- | --- | --- |
+| 1 | **Code and its tests** | What the system does now, and the conditions under which it is correct | Why a change was made, what is still undecided, what is merely planned |
+| 2 | **Version-control history** | What changed, when, by whom, and — via the commit message or change request — the immediate why of that specific change, including any reversible technical decision it makes | Standing policy, open questions, the specification of unbuilt work |
+| 3 | **Issue tracker** | Work picked up now; defects; checks that block a named milestone; owner questions and their answers | Current behavior, which the code already states; acceptance conditions, which the register already states; reversible technical decisions, which history owns; findings, follow-ups, ideas, and reminders, which have no home |
+| 4 | **Requirement / specification register** | What can or should be built, and the conditions that make it complete | The decision's rationale, which lives on the issue or change it cites; evidence state, which traceability owns |
+
+Wiring between them:
+
+- A requirement cites the issue or change that decided it, and — when blocked —
+  the issue or milestone check that will unblock it. It restates neither.
+- An issue's closing note, or the answer under a standing question, is the
+  decision record. A decision that outgrows a comment becomes a requirement plus
+  the issue that decided it, not a document.
+- A commit message carries the immediate why of its own change, names any
+  reversible technical decision it makes, and references the issue or
+  requirement that authorized it, if any. It does not restate the standing rule.
+- Code and tests carry requirement identifiers as anchors, not requirement
+  prose.
+
+### Issue Scope
+
+An open issue is work picked up now, a defect, or a check that blocks a named
+milestone. The rest goes here; a project profile names the two standing items.
+
+| Item | Home | Rule |
+| --- | --- | --- |
+| Reversible technical decision: changes neither what users see, nor privacy, nor cost | The commit or change request that makes it | Decide it and name the choice there. A technical trade-off is never an owner question |
+| Owner question: what remains after reading the code and running the system | One standing questions issue | Plain language, at most three open at a time, each with the default that stands without objection. An irreversible step waits for a yes. An answer is work: build it before asking anything new |
+| Milestone check or fixed date | One milestone checklist | A check closes when it ran, or when the owner accepted the risk for that milestone. An issue with an unrun check moves that check to the checklist first |
+| Unbuilt obligation nobody has picked up | The requirement register | It becomes an issue when work on it starts; without an obligation it is an idea |
+| Finding, follow-up, idea, or reminder | No artifact | Fixed in the change at hand or dropped, never filed |
+
+## 2. The Generated-Report Layer
+
+Anything compiled from the authorities is a report, not an authority.
+
+- Regenerate it from a command; never hand-author or hand-patch it.
+- Mark it read-only, and fail the build when a committed report differs from a
+  fresh regeneration.
+- A report may be an external-audience deliverable — a coverage matrix, a status
+  board, a compliance pack assembled from requirements and issues — but its
+  content still originates entirely in the authorities.
+- If a report carries a fact that exists nowhere else, that fact is the defect:
+  move it into the authority that owns the question, then regenerate.
+
+## 3. Bounded Exceptions
+
+Exactly three kinds of artifact may exist outside the authorities and the report
+layer.
+
+| Exception | Admission test | Guard |
+| --- | --- | --- |
+| **Onboarding / tooling meta-documentation** | Explains how to work *on* the system — setup, conventions, which command to run, which skill to route through — rather than what the system does or what was decided | Delete it when the tooling carries the instruction itself; see the documentation-pruning pattern in `push-out` |
+| **Compliance-mandated external-audience deliverable** | An external obligation names the artifact and its audience, and the authorities are not a deliverable form for that audience | Restructure as a generated report as soon as its content is reconstructable; hand-authoring it each cycle is the anti-pattern |
+| **Frozen historical or migration record** | Closed and dated; describes a completed transition, a superseded model, or a one-time import whose provenance is still cited | Never backfilled, never updated to stay current, never the authority for anything live |
+
+An artifact that fits no exception and duplicates an authority is waste. Fold its
+content into the owning authority and delete it.
+
+## 4. Litmus Test
+
+Run in order for any existing or proposed document or tracker item. Stop at the
+first match.
+
+```text
+1. Is its content fully reconstructable from artifacts that already exist?
+   → Yes: delete it, or replace it with a generated report.
+2. Does it answer "what does the system do?"
+   → Code and its tests.
+3. Does it answer "what changed, when, and why that change?"
+   → Version-control history.
+4. Does it answer "what is undecided, what was decided, or what work is open?"
+   → Issue Scope in section 1 places it. Work picked up now or a defect: an
+     issue, whose decisions close as its comments or closing note. A decision
+     that must later be proved unaltered closes in a merged commit or change
+     request (Directive 4).
+5. Does it answer "what should be built, and when is it done?"
+   → The requirement register, citing the issue or change that decided it.
+6. Is it compiled from 2-5?
+   → A generated report, regenerated by command and read-only.
+7. Does it pass exactly one exception admission test in section 3?
+   → Keep it, and record the guard that ends or freezes it.
+8. Otherwise
+   → Waste. Fold and delete.
+```
+
+A document that needs two answers is two artifacts. Split it before keeping it.
+
+## 5. Output Contract
+
+```text
+Subject:              <document, tree, or proposed artifact>
+Classification:       AUTHORITY | GENERATED-REPORT | EXCEPTION | DUPLICATE
+Owning authority:     <code+tests | history | issues | requirements | none>
+Reconstructable from: <artifacts that already carry the content, or none>
+Decision:             Keep | Fold into <authority> | Generate | Freeze | Delete | Defer
+Exception:            <onboarding/tooling | compliance deliverable | frozen record | none>
+Guard:                <condition that ends or freezes the exception, or none>
+Next action:          <one concrete action>
+```
+
+In Sweep, emit one ranked row per artifact opened, then the unreached count:
+
+```text
+| Artifact | Classification | Owning authority | Carried by | Decision | Guard |
+| -------- | -------------- | ---------------- | ---------- | -------- | ----- |
+```
+
+`Carried by` names what already holds the content: file and symbol, commit,
+issue ID, or requirement ID. Empty means unowned, not redundant.

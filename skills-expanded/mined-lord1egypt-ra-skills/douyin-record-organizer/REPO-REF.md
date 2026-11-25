@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/d/douyin-record-organizer/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 实时获取抖音平台的记录及数据整理为结构化的成果：作品描述、发布时间、点赞数、评论数、分享数、收藏数、评论内容等互动数据，可根据数据获取时间进行横向对比分析，帮助用户记录抖音社媒平台作品的表现，便于后续分析和决策。支持五大能力：(1) 关键词搜索视频/图文，可按点赞数、发布时间、视频时长、内容类型筛选排序；(2) 实时热榜查询，获取抖音热搜词条与热度数据；(3) 单条作品详情，按视频链接或 awem

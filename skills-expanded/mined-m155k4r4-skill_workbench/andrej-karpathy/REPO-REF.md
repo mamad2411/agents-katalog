@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/m155k4r4/skill_workbench (path: plugins/agentic-awesome-skills-claude/skills/andrej-karpathy/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiabl

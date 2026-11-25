@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Koloyaaa/foreign-academic-translator-skill (path: skills/max/skills/foreign-academic-quiz-generator/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Draft source-grounded multiple-choice questions for selected lesson difficulty levels; use only when the task manifest requests an end-of-chapter quiz.

@@ -1,0 +1,137 @@
+---
+name: lich-i18n
+description: Map and carry out translation work in lich, for both the interface language (the native window's catalogs) and the prompt language (text lich and lich-plugin inject into agent sessions). Use when adding or changing any user-visible text or any text typed into a session, when adding a new language, when a parity or locale test fails, or when asked what a translation change touches.
+---
+
+# lich i18n
+
+lich has two languages that never derive from each other:
+
+- **Interface language**: lich's own screens. The catalogs are in `native/i18n/locales/`, chosen in
+  Settings › General and stored in the global setting `lich.appearance.language`; the window follows the
+  system's language until one is picked.
+- **Prompt language**: every word lich hands an agent (spawn briefing, `[lich]` relay notes, nudges,
+  merge notices, MCP and CLI results, prompts the window types into a PTY, lich-plugin's mod text).
+  Stored as the global `prompt.language` setting, exported to every session as `LICH_PROMPT_LANG`.
+
+This skill is the map of *where* a change lands, and the rules for writing a message. Start by deciding
+which job this is.
+
+## Writing a message
+
+- **Keys** are `<namespace>.<component>.<what>`, camelCase (`sidebar.newFolderDialog.title`). A key names
+  the meaning, never the English words. A message goes to `common` only once a second namespace needs it.
+- **One sentence, one key.** Never build a sentence from fragments or concatenation: word order differs
+  between languages. Values go in through named placeholders, `"Close {name}"` with
+  `i18n.T("...", i18n.Args{"name": name})`. `{` in a message is always a placeholder.
+- **Plurals** are an object of CLDR forms, `{ "one": "{count} file", "other": "{count} files" }`, picked
+  from the int `count` (`plural.go`). Never branch on `n == 1` at the call. Portuguese counts 0 as `one`.
+- **Not translated:** backend error text (only the sentence around it is), `CHANGELOG.md` (the What's new
+  dialog reads its translations from `changelog/<locale>.md`, written by the `lich-changelog-i18n` skill at
+  release time), identifiers and names (providers, branches, commands, file paths, `lich`, `Claude Code`),
+  keyboard shortcuts, and a test's fixture data.
+
+## Job 1: a feature adds or changes text
+
+Classify every string first. Who reads it?
+
+| Reader | Where it goes | Language |
+|---|---|---|
+| The user, on a lich screen | `native/i18n/locales/<lang>/<namespace>.json`, read with `i18n.T()` | interface |
+| An agent, composed in Go (relay, briefing, notices, MCP/CLI output) | a field of `prompt.Catalog` (`internal/prompt/catalog.go`) | prompt |
+| An agent, typed by the window into a PTY | `native/i18n/locales/<lang>/prompts.json`, read with `i18n.Prompt()` | prompt |
+| An agent, added by a lich-plugin mod | `hooks/prompt-text.js` in `lichdotdev/lich-plugin` | prompt |
+| The user, in the What's new dialog | `changelog/<locale>.md`, one release, written by the `lich-changelog-i18n` skill when a release is cut | interface |
+| Nobody localizes it | backend error text, `CHANGELOG.md`, MCP tool descriptions, CLI `--help`, identifiers | none |
+
+Then, in the same PR:
+
+1. **English is the source.** Add the key to `native/i18n/locales/en/*` (or the `en.go` field) with the
+   exact text.
+2. **Every locale gets it.** One entry per file in `native/i18n/locales/*/` and per
+   `internal/prompt/<lang>.go`. `TestEveryLocaleMatchesEnglish` fails on a missing key or placeholder;
+   `TestCatalogParity` fails on an empty Go field or mismatched verbs.
+   Translate from English, never from another translation.
+3. **Literal in every locale:** `[lich]`, tool and CLI names (`send_to_session`, `wait_for_answer`,
+   `reply_to_session`, `open_session`, `close_session`, `list_worktrees`, `"$LICH_BIN" reply|wait`,
+   `lich send`, `gh pr create`), ticket ids, status enums (`pending`, `answered`, `unread`, ...),
+   parameter names, product names, key names, `{placeholders}` and Go format verbs.
+4. **Text lich matches by equality** (`resumePrompt` is the precedent: persisted, then compared) must
+   match the text of *any* locale: `slices.ContainsFunc(prompt.Langs, ...)`. A row written under one
+   language is read back under another.
+5. **Out-of-process text** (`internal/cli`, plugin hooks) reads `LICH_PROMPT_LANG`, fixed at spawn. If
+   the new text only reaches sessions born after a change, that is the existing ceiling; don't add a
+   second mechanism.
+6. **Tests stay in English.** Assert another locale with `i18n.SetCurrent` / `i18n.In` / a `prompt.Langs`
+   loop, never by editing an English assertion.
+7. **Provider symmetry.** Prompt text reaches all eight providers through the relay. The spawn briefing
+   only exists where `docs/ceilings.md` says it does; a gap that grows goes there and in every README
+   provider table.
+
+### In the window's code
+
+- Read a key at layout, never into a package-level `const` or `var`: Gio draws every frame, so a label
+  that reads `i18n.T` while it lays out changes language on the next one. A table built at init (the
+  settings index, the hotkeys) holds keys and resolves them when drawn; a settings row names
+  `titleKey`/`alsoKey`/`groupKey` and is read through `titleText`/`alsoText`/`groupText`.
+- `go:embed` cannot leave the `native/` module: the catalogs live under it.
+- `TestEveryLocaleMatchesEnglish` (`native/i18n`) is the parity check, keys and placeholders;
+  `TestEveryKeyTheSourceNamesIsInTheCatalog` (`native/cmd/lich-native`) fails on a literal key no catalog
+  has. Write the key literally at the call so that test sees it.
+- Tests stay English: nothing sets the interface language under `go test`. Assert another locale with
+  `i18n.SetCurrent` / `i18n.In`, and set it back.
+
+## Job 2: add a language
+
+Pick the BCP 47 tag first (`es`, `zh-CN`, `pt-BR`); the same string is the window's `Locale`, the Go `Lang`, the
+setting value, `LICH_PROMPT_LANG` and the plugin catalog key. Then touch every point below. Append the new
+language at the **end** of every list so parallel additions merge as a union.
+
+**Window** (`native/i18n/`)
+- `i18n.go`: a `Locale` const, `Locales` (append), its name in itself in `Name` (`Español`, `简体中文`).
+  `Match` needs no change unless the language's script or region rules differ from "exact tag, then
+  language prefix".
+- `locales/<tag-lowercase>/`: one JSON file per namespace in `locales/en/` (list it, don't remember it),
+  every key English has.
+- Plurals: write the CLDR forms the language uses; a language with forms other than one/other extends
+  `pluralForm` (`plural.go`), as Russian does.
+
+**Backend** (`internal/prompt/`)
+- `prompt.go`: a `Lang` const, `Langs` (append), the `catalogs` map.
+- `<tag>.go`: a full `Catalog`, including its `isOne` rule. `Plural` has only `One`/`Other`: a language
+  with more CLDR forms (Russian, Arabic, Polish) extends `Plural` and `Pick` in the same PR.
+- The spawn briefing must stay cmd.exe-safe (no `"` or `<>`); `compose_lang_test.go` checks every
+  `Langs` entry, so a new language is covered once it is in `Langs`.
+- Tests that loop `prompt.Langs` cover it automatically; add a language-specific case where the pt-BR
+  or es one exists (`prompt_test.go`, `internal/cli/text_lang_test.go`, `internal/drop/notice_lang_test.go`,
+  `internal/store/prompt_language_test.go`, `internal/terminal/prompt_language*_test.go`).
+
+**Docs**
+- `docs/hooks/README.md`: the accepted `LICH_PROMPT_LANG` values.
+- `CHANGELOG.md` `[Unreleased]` › Added.
+- `changelog/<locale>.md`: the latest release translated with the `lich-changelog-i18n` skill;
+  `TestTranslations` (`internal/patchnotes`) fails until it exists.
+- README.md and each README.<lang>.md only if they enumerate languages.
+
+**Companion repo** `lichdotdev/lich-plugin` (separate PR, after lich's)
+- `hooks/prompt-text.js`: a catalog object registered under the exact tag.
+- `tests/prompt-text.test.mjs`: parity, literals, one render per hook for the new tag.
+- The mod engine never follows `$` across an import: hooks read `$.env.get("LICH_PROMPT_LANG")` at the
+  call site and pass the string to `promptLang(tag)`. Run **both** `node --test tests/*.test.mjs` and
+  `claude plugin test .`; only the second loads the mods the way Claude Code does.
+- The plugin text reaches users only after a plugin release.
+
+## Splitting the work across agents
+
+A new language is one agent per repo side, not one per namespace: the catalogs are read best as a whole,
+and the registration points are few. Converting untranslated code is the opposite: one agent per folder,
+since folders don't overlap. Agents working in parallel conflict only on the registration lists
+(`Locales`, `Langs`), and those resolve as a union.
+
+## Done means
+
+- The Local Gate in the root `CLAUDE.md` is green.
+- No existing test assertion changed.
+- `go test ./internal/prompt/` and, from `native/`, `go test ./i18n/ ./cmd/lich-native/` pass.
+- The new language was looked at in a running window (`lich-build-dev` skill): both selects, a session
+  spawned after the switch, and one relay note.

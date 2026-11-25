@@ -1,0 +1,175 @@
+---
+name: labtasker
+description: Use Labtasker v2 to queue and run ML inference, evaluation, or experiment Tasks; set experimental Task dependencies; migrate pipelines; design routes and Workers; inspect Task demand and Worker activity; and archive or recover Tasks. GPU allocation, cluster management, and artifact storage remain external.
+---
+
+# Labtasker
+
+Use Labtasker when many independent ML jobs should be distributed across
+processes the user already controls, with progress, retries, and small structured
+results kept in one place. Keep GPU allocation, process launching, cluster
+management, workflow orchestration, and artifact storage outside Labtasker.
+Experimental `dependencies` can gate a Task on successful predecessor IDs;
+users own dependency correctness, data transfer, and diagnosis of waiting Tasks.
+
+Prefer the documented public path even when a custom workaround is technically
+possible. Do not add a Server, shell wrapper, Queue, or compatibility mechanism
+unless the workload needs it.
+
+Documentation map: <https://raw.githubusercontent.com/luocfprime/labtasker/refs/heads/main/docs/llms.txt>
+
+## Read the relevant reference
+
+- Read [deployment-and-capabilities.md](references/deployment-and-capabilities.md)
+  for installation, local versus shared operation, HTTP authentication,
+  Windows, Unix-socket requests, package selection, version warnings, or “does it support this?”
+  questions.
+- Read [workers-and-workloads.md](references/workers-and-workloads.md) when
+  submitting Tasks, converting an experiment, choosing routes or Queues, binding Task args,
+  wrapping a command, reusing a loaded model, reporting progress, or using a
+  distributed launcher.
+- Read [operations-and-recovery.md](references/operations-and-recovery.md) for
+  idempotent submission, priority, filtering, fuzzy name search, pagination, updates, cancellation,
+  experimental dependencies, user-side waiting diagnosis, external early-stop decisions,
+  archival and restoration, retries, interruption, and rerunning work.
+- Read [observations-and-counts.md](references/observations-and-counts.md) for
+  online Workers, route presence, busy/idle activity, Worker metadata/latest
+  telemetry, grouped counts, and paginated monitoring queries.
+
+Read every reference relevant to the request before proposing commands. Before
+the first Labtasker CLI operation in an environment, run the selected
+executable's `--version`. Before the first use of each distinct command path,
+run its exact `--help` (or the narrowest command-group help that exposes the
+needed subcommand). Use the same launcher and environment for these checks as
+for the real operation (for example, `uv run labtasker`). Treat the installed
+help as authoritative when it differs from this Skill; do not guess an option,
+subcommand, default, or output shape from memory.
+
+## Adapt an existing pipeline on the user's terms
+
+When the user asks to migrate, convert, or adapt an existing pipeline, first set
+an internal working preference from the conversation: either lead from their
+existing project or review a concrete migration design they already proposed.
+This preference controls the agent's behavior; never name it, present it as a
+mode, or ask the user to select it.
+
+- If they are new to Labtasker, work project-first. Ask about their existing
+  command or function, what varies between runs, expensive setup, independent
+  failure and retry units, current resource launching, dependencies, and output
+  storage. Do not ask them to choose a Task, Worker, route, Queue, or Labtasker
+  deployment. Make those mappings yourself and explain them after the relevant
+  project facts are known.
+- If they already propose a concrete Labtasker design, collaborate at that level,
+  correct mistaken mappings, and still recommend a complete design rather than
+  returning the decisions to them.
+- If neither is clear, ask naturally whether this is their first Labtasker
+  integration or whether they already have a concrete migration design to work
+  from. Never offer “use Labtasker concepts” as a conversation mode.
+
+Do not ask a classification question when the context already answers it. Ask
+only one or two decision-changing project questions at a time, inspect the
+current pipeline when available, then present the existing flow, what stays
+unchanged, what Labtasker coordinates, and what remains externally owned. Read
+[workers-and-workloads.md](references/workers-and-workloads.md) for the detailed
+migration interview and mapping rules.
+
+## Use the managed-local path first
+
+Labtasker requires Python 3.10 or newer. In an ordinary POSIX experiment
+project, install the complete package:
+
+```bash
+python -m pip install labtasker
+# or in a uv project
+uv add labtasker
+```
+
+No MongoDB, configuration file, or TCP port is needed. A default Client selects
+exact `CWD/.labtasker` and connects to its derived Unix socket, but it does not
+start a process. Explicitly authorize startup on the first operation:
+
+```bash
+labtasker --auto-start-local-server queue list
+```
+
+Submit one Task:
+
+```bash
+labtasker task submit \
+  --name sample-1 \
+  --args '{"prediction":"cat","reference":"cat"}' \
+  --route text-eval
+```
+
+The flag is invocation-scoped and idempotent. Later commands connect without
+it while the daemon remains healthy. Use global `--labtasker-root PATH` or
+`LABTASKER_ROOT` to select another exact root; never search parent or VCS
+directories.
+
+Run an existing program once for every compatible Task:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 labtasker loop --route text-eval -- \
+  python evaluate.py \
+    --prediction '%{prediction}' \
+    --reference '%{reference}'
+```
+
+Start another Worker process on each additional resource already allocated by
+the user. Each Worker executes one Task at a time and asks for another when it
+finishes. Labtasker does not select the GPU.
+
+Inspect the recorded state and result:
+
+```bash
+labtasker task list --status succeeded
+labtasker task get t_ABCDEFGHIJKL
+```
+
+With a uv project, run these commands through `uv run`. Use
+`labtasker config show` to inspect the selected endpoint without starting or
+contacting a Server.
+
+## Keep the working model small
+
+- A **Task** is one independent job plus its JSON inputs, state, retry count,
+  metadata, and small result.
+- A **Worker** is one user-started process that repeatedly executes compatible
+  Tasks. The Server stores authoritative Tasks and supplementary expiring Worker
+  observations with optional user-defined resource details; it does not discover,
+  allocate, or manage processes or GPU capacity.
+- A **route** is an exact, case-sensitive compatibility label shared by a Task
+  and the implementation allowed to run it.
+- A **Queue** is an independently managed body of Tasks, not a Worker, GPU,
+  model, or route.
+
+Put executable inputs in `args`, searchable grouping data in `metadata`, and
+compact JSON outputs in `result`. Save images, videos, checkpoints, trajectories,
+and detailed reports outside Labtasker and return their paths, URLs, checksums,
+or summaries.
+
+Use `progress` for one replace-only snapshot of provisional work position,
+metrics, or early-stop diagnostics. Keep `result` for the final successful
+output. Progress is not a history series and does not decide or complete the
+Task. When a determinate display is useful, use top-level finite numeric
+`completed` and `total` values with `0 <= completed <= total` and `total > 0`;
+all other keys remain workload-defined.
+
+Use a command Worker for an existing executable. Use a Python Worker when a
+model, dataset, simulator, or evaluator should be initialized once and reused.
+
+## Preserve explicit behavior
+
+- Do not infer Worker eligibility from Task args; use routes.
+- Do not invent v1 aliases or implicit coercion. CLI objects are strict JSON.
+- Inspect before mutating. Use `cancel`, `requeue`, and `delete` rather than
+  patching status.
+- Do not silently start, stop, or reconfigure an externally managed Server.
+  Confirm its
+  ownership and deployment scope first.
+- Unix sockets and HTTP are both public Server transports. Require an explicit
+  `labtasker-server serve --connection socket|http` choice; do not infer one.
+  Prefer direct argv; add a
+  wrapper only when the workload itself needs shell or multi-step logic.
+- Treat the Server as authoritative. Local run journals are diagnostic records,
+  not a second source of Task state.

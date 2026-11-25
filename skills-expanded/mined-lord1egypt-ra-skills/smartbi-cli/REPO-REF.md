@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/smartbi-cli/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 广州思迈特软件有限公司（思迈特）提供的 SmartBI 通用业务操作技能。当用户需要连接 SmartBI、查询数据模型或指标模型、对已有报表问数、进行 AI 问数与复杂洞察，或管理智能体、知识库与知识图谱、数据模型、数据源、定时任务与 ETL、消息推送、资源及权限时使用。通过 @smartbi/cli 发现并调用当前环境的 SmartBI API，支持 MQL 与只读 SQL 直接取数。

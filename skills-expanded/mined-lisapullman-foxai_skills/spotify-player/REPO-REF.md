@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lisapullman/foxai_skills (path: spotify-player/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Terminal Spotify playback/search via spogo (preferred) or spotify_player.

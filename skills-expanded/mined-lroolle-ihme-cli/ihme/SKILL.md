@@ -1,0 +1,384 @@
+---
+name: ihme
+description: Manage iCloud Hide My Email addresses — list, create, edit, deactivate, export
+triggers:
+  - hide my email
+  - HME
+  - icloud email
+  - private relay
+  - generate email
+  - email alias
+  - disposable email
+tools:
+  - ihme
+---
+
+# ihme — iCloud Hide My Email CLI
+
+## Setup
+
+Prefer the local checkout when available, so agents use the newest CLI changes:
+
+```bash
+# From the root of an ihme-cli checkout
+make install
+```
+
+`make install` builds `ihme` and copies it to `$GOPATH/bin/ihme`, or to
+`~/go/bin/ihme` when `$GOPATH` is unset. Make sure that directory is on `PATH`.
+
+If the checkout is unavailable, install a release:
+
+```bash
+# macOS (Apple Silicon)
+curl -sL https://github.com/lroolle/ihme-cli/releases/latest/download/ihme_macOS_arm64.tar.gz | tar xz && sudo mv ihme /usr/local/bin/
+
+# macOS (Intel)
+curl -sL https://github.com/lroolle/ihme-cli/releases/latest/download/ihme_macOS_x86_64.tar.gz | tar xz && sudo mv ihme /usr/local/bin/
+
+# Linux
+curl -sL https://github.com/lroolle/ihme-cli/releases/latest/download/ihme_linux_x86_64.tar.gz | tar xz && sudo mv ihme /usr/local/bin/
+
+# Or via Go
+go install github.com/lroolle/ihme-cli/cmd/ihme@latest
+```
+
+First run requires `ihme auth login` (interactive — Apple ID + 2FA).
+
+Session lookup uses `IHME_SESSION_PATH` when set; otherwise it reads
+`$XDG_CONFIG_HOME/ihme/session.json`, falling back to `~/.config/ihme/session.json`.
+
+`ihme auth status --json` first reads the local session file, then checks whether
+that session can currently access iCloud. It includes Apple's `/validate` payload
+as `rawResponse`. Use `ihme auth status --local --json` only when you want the
+local file/timestamp check without a network request.
+`--verbose` only logs method, URL, status, and size.
+Current `/validate` success responses are account-info payloads with `dsInfo`
+and `webservices`; they may omit a `success` boolean.
+
+## JSON response shapes
+
+```
+list --json     → {"addresses":[{anonymousId,label,hme,isActive,createTimestamp,note,...}],"count":N,"hints":{...}}
+view --json     → {"result":{anonymousId,label,hme,forwardToEmail,isActive,...},"hints":{...}}
+new --json      → {"candidates":["a@icloud.com",...],"label":"...","preferences":["..."],"hint":"ihme new <label> --address <addr>"}
+                  (preferences: the user's standing preferences, present only when any are recorded)
+new -y --json   → {anonymousId,label,hme,isActive,...}
+forward --json  → {"forwardTo":"...","available":[...],"hint":"ihme forward set <email>"}
+auth status     → {"loggedIn":true,"appleId":"...","expired":false,"canAccessICloud":true,"rawResponse":{...},...}
+deactivate      → {"status":"deactivated","hme":"...","id":"...","hints":{...}}
+reactivate      → {"status":"reactivated","hme":"...","id":"...","hint":"..."}
+```
+
+## Commands
+
+```bash
+# Auth check: local file + current iCloud access
+ihme auth status --json
+
+# Local auth file/timestamp only
+ihme auth status --local --json
+
+# List and search (hundreds of addresses supported)
+ihme list --json --jq '.addresses[0:5]'
+ihme list --search netflix --json
+ihme list --active --tag dev --json
+ihme list --sort label --json
+
+# Create (two-step: generate candidates, then reserve)
+ihme new github.com --json                              # step 1: get candidates
+ihme new github.com --address abc@icloud.com --json     # step 2: reserve one
+ihme new github.com --yes --json                        # one-shot: take first
+
+# View and edit
+ihme view github.com --json --jq '.result.hme'
+ihme edit github.com --label GitHub --tag dev,work
+
+# Lifecycle
+ihme deactivate github.com --json
+ihme reactivate github.com --json
+ihme delete github.com --yes --json
+ihme deactivate <id> <id> --json      # several: {"results":[...],"hints":{"retry":...}}
+
+# Export
+ihme export --format json
+ihme export --search github --active -o filtered.csv
+
+# Forward-to
+ihme forward --json
+ihme forward set user@icloud.com
+```
+
+## <ref> resolution
+
+All commands accepting `<ref>` resolve in order: anonymousId (prefix >= 6 chars) > email > label (exact) > label (fuzzy).
+
+## Choosing an address
+
+You'll see this address for years — in password managers, email threads, account
+settings. It's a mask, but it's still yours. The core test:
+
+**Does it make a picture, and is the picture one you'd keep?**
+
+Two checks, in order:
+
+1. **Can you see it?** Concrete nouns with physicality beat abstractions.
+   `hilltop_desert` is a landscape. `pollen_pipe` is an object. `63.fryer.immune`
+   is a serial number. Specific things are memorable; categories are forgettable.
+
+2. **Would you keep it?** No deficit words (debts, gristle, paupers), no clinical
+   tone (immune, generic, baseline), nothing that carries weight. An address is a
+   micro-identity — it shouldn't feel assigned.
+
+Calibration — the bar is keep-worthy, not poetic:
+
+- Taste RANKS a pool; it rarely vetoes one. The expected outcome of every pool
+  is "reserve the best," and with three candidates that is almost always round 1.
+- A clean, pronounceable address with a normal email shape passes even when it
+  makes no vivid picture. `sterner.turning5r` passes: two real words, one dot,
+  reads like an address a person could have. Trailing suffix noise (`5r`, `0j`,
+  `2k`) is Apple's fingerprint on nearly every candidate — never count it
+  against one.
+- A candidate FAILS only on an active defect: a deficit or clinical word,
+  leading digits (`63.posher_pearly`), unpronounceable gibberish.
+- A vivid image or contextual resonance PROMOTES a passing candidate; its
+  absence disqualifies nothing. Resonance is discovered, not manufactured — a
+  stretch (`turbine.dives` ~ "does energized deep-dives, like the service")
+  reads as selling, and selling is bad taste.
+- The rationale is one honest sentence in plain register. When the true reason
+  is "the only candidate without a defect word," say exactly that; do not
+  invent an image to fill the field or restate the verdict in fuller prose.
+- If your verdict is "all candidates are weak," you are almost certainly
+  misreading the bar — recheck each candidate against this list before even
+  considering a refresh.
+
+Bonus (elevates good to great, not a gate):
+
+- **Contextual resonance**: does the address echo something about the service —
+  a brand name, a logo shape, a developer handle? `oranges.lobby` for a service
+  whose developer is `@oran_ge` and whose logo is an O isn't luck — it's fit.
+  Most addresses won't have this. When it's there, it's decisive.
+
+Secondary signals (tiebreakers, not filters):
+
+- **Euphony**: read it aloud. Pleasant vowel/consonant rhythm and natural stress
+  help recognition in a list of 300+.
+- **No leading digits**: `65.ampere` reads like a form field. Letters first.
+- **Separator style**: a distant tiebreaker by default. Never override a better
+  image for a separator nobody asked for. `hilltop-desert` beats `relay_strop`
+  regardless of format.
+
+A recorded user preference changes the order above. The candidates payload
+carries `preferences` (embedded: the `<preferences>` block and every
+`generate_candidates` result; shell: the `preferences` field of `ihme new
+--json`) — that is the user's standing direction, not a tiebreaker: rank the
+candidates that pass the taste test by it, above image, euphony, and separator
+defaults. "Dots between words" then beats a cleaner hyphenated candidate. A
+preference never rescues a candidate with an active defect, and what the user
+says in the current request outranks it.
+
+The best HME addresses feel like they could be a place on a map, a cocktail name,
+or an album title — evocative without trying.
+
+## Error handling
+
+Errors include the fix command:
+```
+Error: <ref> required — an address label, email, or ID
+  Usage: ihme deactivate <ref>...
+  Example: ihme deactivate github.com
+```
+
+## Exit codes
+
+- 0: success
+- 1: error
+- 2: not authenticated (run `ihme auth login`) — from ANY command, not
+  just `auth status`
+
+A session that expires mid-command heals itself (one silent re-auth,
+then the call is replayed), so a lone 401 never surfaces. Exit 2 means
+Apple kept refusing: only an interactive login fixes it.
+
+An error saying Hide My Email refuses this session exits 1: iCloud
+signed in fine, but the account blocks iCloud data on the web. Do not
+ask for a login; tell the user to turn on "Allow Data Access" (iPhone:
+Settings > [your name] > iCloud > iCloud.com; Mac: System Settings >
+[your name] > iCloud > Data Access on iCloud.com), as the error's Fix
+line says.
+
+## Operational guide (for agents)
+
+### Creating an address
+
+1. **Derive the label and search key.** For a URL, use the registrable domain
+   without public suffix as the canonical label/search key: `https://atypica.ai/...`
+   becomes `atypica`; `https://linear.app/...` becomes `linear`. Drop paths,
+   query strings, callback URLs, referral parameters, dates, and campaign text.
+   Keep the full URL only as context for the user or note.
+
+2. **Check auth.** Confirm the stored session can access iCloud before generating
+   candidates:
+   ```bash
+   ihme auth status --json
+   ```
+   If it exits 2 or returns `canAccessICloud:false`, the user must run
+   `ihme auth login` interactively.
+
+3. **Check first.** Search for existing addresses before creating:
+   ```bash
+   ihme list --search <search-key> --json
+   ```
+   `--search` matches label, address, and note by substring, so search the
+   canonical key, then inspect returned labels for the intended service.
+   Interpret matches by label, not by search key:
+   - An active address with the SAME canonical label is a duplicate: ask
+     before creating another (embedded interactive runs: `ask_user`). When
+     you cannot ask, an explicit `new <label>` request has already decided
+     creation — proceed, and flag the existing duplicate prominently in the
+     summary.
+   - Addresses for the same service under DIFFERENT labels (older accounts,
+     dated labels, per-team variants) are context, never a blocker: mention
+     them in the note or summary and continue.
+
+4. **Generate and evaluate.** Get candidates and apply the taste test above:
+   ```bash
+   ihme new <label> --json
+   ```
+   When the payload carries `preferences`, rank the passing candidates by
+   them first (see "Choosing an address").
+   Evaluate each candidate individually — don't let bad neighbors taint a good
+   one. A pool with two duds and one strong image is not a "weak pool."
+   Reserve the best immediately — rotation and questions are for pools where
+   every candidate actively fails, not pools that merely lack a vivid image
+   (see Calibration above). When NO candidate passes
+   after rotation: interactively (embedded: `ask_user`), offer your top two
+   with a one-line reason each and let the user pick; non-interactively,
+   reserve the least-bad and say plainly it was a compromise. Embedded runs
+   must articulate the verdict: `reserve_address` requires `rationale` (one
+   honest sentence on why it wins this pool — an image only if genuinely
+   there) plus one `rejected` entry per candidate you passed on, each naming
+   its failure — the user judges your pick against these on the consent card.
+
+5. **Reserve with a useful note.** `ihme new` supports `--note`; Apple stores it
+   in the address metadata, and `ihme list --search` searches it. Keep notes
+   compact and durable: why the address exists, the full signup/origin URL when
+   useful, account/workspace context, referrer/invite code, or owner/team. Do not
+   put passwords, recovery codes, API keys, cookies, or other secrets in notes.
+   ```bash
+   ihme new <label> --address <candidate> --note "signup: https://example.com/auth/signup?via=team; workspace: acme" --json
+   ```
+
+6. **Refresh the pool only when every candidate actively fails.**
+   Apple's generate returns a FIXED pending pool that repeats —
+   calling generate again returns the SAME candidates until a slot is
+   consumed, so re-generating never helps. But a refresh is NOT free
+   either: it reserves and deletes a real address on Apple (mutations
+   that count toward rate pressure — repeated churn risks the
+   account) and typically swaps only ONE candidate in the pool. It is
+   a last resort for a pool with zero keepers, never a reroll for a
+   better image.
+   - Embedded agent: `refresh_candidates` does the whole maneuver in
+     one call (reserve + delete + regenerate). It requires a `reason`
+     naming each candidate's active defect, asks the user for consent
+     before burning anything, and is capped at 2 per task.
+   - Shell: ask the user before rotating, then reserve any candidate,
+     delete it, and generate again.
+     ```bash
+     ihme new <label> --address <throwaway> --json   # consume a slot
+     ihme delete <throwaway-id> --yes --json          # clean it up
+     ihme new <label> --json                          # fresh pool
+     ```
+   - If the refreshed pool still has no keeper, stop churning: take
+     the least-bad and say plainly it was a compromise. Never ask the
+     user to restart the session — you get a fresh budget next request.
+
+7. **Show the result.** State what was reserved and one line on why it was
+   picked. If a compromise was made (every candidate actively failed), say so.
+
+### Labels
+
+Use the service or team name as a bare noun. Dates age; names don't.
+- Good: `github`, `linear`, `colaos`, `atypica`
+- Avoid: `240501_chatgpt openai`, `0315 claude felix 2`, full signup URLs,
+  referral/callback parameters
+
+### Tags
+
+Apply from a small controlled set when the user specifies context.
+Common tags: `#work`, `#dev`, `#personal`, `#throwaway`, `#team-<name>`.
+
+### Hygiene
+
+`ihme list --sort date:asc` to surface old addresses for audit.
+Suggest pruning dead services quarterly.
+
+### Memory
+
+You keep a memory across runs — a plain markdown graph (journals for
+what you did, pages per topic, and two pages loaded into every run:
+`preferences`, the user's standing direction, and `flashcards`, your
+own pins). Use it for continuity:
+
+- **Preferences load themselves.** The `preferences` page is injected
+  into every run and repeated beside every candidate pool — you never
+  have to recall it. When the user states a lasting preference about
+  addresses or accounts ("dots over hyphens", "this is a work
+  account"), record it there so the next run ranks by it. Shell:
+  `ihme memory prefer <note>`. Embedded: `remember` with topic
+  `preferences`.
+
+- **Recall before creating.** Search memory for the service first;
+  you may have reserved for it before, and the past note carries the
+  account context. Shell: `ihme memory search <service>`. Embedded:
+  `recall_memory`.
+- **Reservations journal themselves.** Every reserve is written to
+  memory automatically, linked to its service page. Never hand-record
+  a reservation.
+- **Remember durable learnings, sparingly.** When you learn a fact
+  about a service worth carrying forward, save one note under the
+  service name for on-demand recall. Pin a note of your own to the
+  `flashcards` topic only when every future run needs it. Never
+  store secrets. Shell: `ihme memory card <note>`. Embedded:
+  `remember`.
+
+## Execution adapters
+
+The procedure and taste rules above are shared by two executors; only
+the operation mapping differs.
+
+**External agent** (Claude Code etc.): run the shell commands as
+written above.
+
+**Harnessed agent** (`ihme agent --via codex|claude|opencode`): you
+are a full coding agent driven BY ihme; the operations arrive as MCP
+tools from the server named `ihme` (possibly prefixed, e.g.
+`mcp__ihme__reserve_address`). Use only those tools for HME work —
+never the ihme shell CLI — and follow the Embedded agent column
+below. Consent and caps are enforced inside the tools.
+
+**Embedded agent** (`ihme new <label> --agent` for scoped creation,
+`ihme agent` for the general interactive assistant): the same file is
+embedded in the binary and invoked with the user's task. There is no
+shell — operations map to in-process tools:
+
+| Shell command | Embedded tool |
+|---|---|
+| `ihme auth status --json` | `auth_status` |
+| `ihme list --search <key> --json` | `search_addresses` |
+| `ihme new <label> --json` (candidates) | `generate_candidates` |
+| reserve + delete a throwaway, then generate | `refresh_candidates` |
+| `ihme new <label> --address <a> --note <n> --json` | `reserve_address` |
+| `ihme deactivate <ref> --json` | `deactivate_address` |
+| `ihme edit <ref> ...` | `edit_note` |
+| `ihme memory search <query>` | `recall_memory` |
+| `ihme memory prefer <note>` | `remember` (topic `preferences`) |
+| `ihme memory card <note>` (or editing a page) | `remember` |
+
+Embedded runs enforce the rotation cap (3 generation rounds) and
+call budgets in code, and gate mutating actions outside the run's
+granted scope behind user consent (`--grant ask`, the default) or
+allow them unattended (`--grant auto`). Interactive embedded runs
+also expose `ask_user` — one short question, answered on the
+terminal, max 3 per run. Non-interactive runs must decide within
+the task scope and record assumptions instead of stalling.

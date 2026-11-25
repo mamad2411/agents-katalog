@@ -1,0 +1,102 @@
+---
+name: rebuild
+description: サーバーをリビルドして再起動する。「リビルド」「再起動」「サービス再起動」「本番環境を再起動」「ビルドして起動」などの指示で使用する。
+allowed-tools: Bash(./scripts/*), Bash(git worktree list)
+---
+
+# Rebuild
+
+サーバーを停止し、ビルドしてバックグラウンドで再起動します。
+
+## ⚠️ 最初に決めること: ビルドは要るのか（Issue #2132）
+
+**ビルドは「ビルドの入力が変わったとき」だけ必要です。** 規則: `next build`（`npm run build`）・`build:cli`・`build:server` の入力が前のビルド（`.next/BUILD_ID`・`dist/server/`・`dist/cli/`）より新しければビルドする。入力は一覧で閉じず、各 `tsconfig*.json` の `include` が拾うファイル（`src/`、ルートの `server.ts` など）、`tsconfig*.json` 自体、`package.json` の版番号と依存、`next.config.js`、`locales/`・`public/` を含めて見る（`npm start` は `dist/server/server.js` を動かすので、`server.ts` の変更も `build:server` が要る）。
+`src/` の差分だけを見ないこと: `package.json` の版は `next.config.js` が
+`NEXT_PUBLIC_APP_VERSION` としてバンドルへ焼き込むので、版を上げただけでもビルドが要ります（詳しくは docs/DEPLOYMENT.md の再起動の節）。
+`npm run build` は `.next/BUILD_ID` を書き換えるため、**開いているブラウザタブが chunk を取得できなくなって壊れます**
+（`.commandmate/verify.yaml` が `skipInPrimaryCheckout: true` でビルドを外しているのと同じ理由）。
+
+| 状況 | 使うもの | ビルド |
+|------|---------|--------|
+| ビルドの入力（上の規則。`src/`・`server.ts`・`package.json` の版など）を変えた | このスキル（`build-and-start.sh --daemon`） | する |
+| `.env` だけ変えた（ビルドの入力は変えていない） | `./scripts/restart-nobuild.sh` | **しない** |
+| クラッシュしたサーバーを復帰させたい | `./scripts/restart-nobuild.sh` | **しない** |
+| 停止中のサーバーを起こすだけ | `./scripts/start.sh --daemon` | **しない** |
+
+ビルド不要と判断したら Step 2 の代わりに次を 1 回の Bash 呼び出しで実行し、完了報告形式はそのまま使う:
+
+```bash
+cd {TARGET_DIR} && ./scripts/restart-nobuild.sh
+cd {TARGET_DIR} && CM_PORT={port} ./scripts/restart-nobuild.sh   # ポート指定あり
+```
+
+**手製の `nohup npm start` を使わないこと。** その前に `source scripts/load-env.sh` を叩く形になりますが、
+このスクリプトは bash 専用で、zsh から source すると `.env` を 1 変数も読み込みません
+（Issue #2132 以降はエラーで失敗しますが、正しい手段は上記の 2 スクリプトです）。
+
+## 使用方法
+
+```bash
+/rebuild                        # 現在のリポジトリで実行
+/rebuild feature/235-worktree   # 指定ブランチのWorktreeで実行
+/rebuild --port 3011            # ポート3011で起動
+/rebuild feature/235-worktree --port 3011  # ブランチ指定+ポート指定
+```
+
+## パラメータ
+
+- **branch_name**: 対象ブランチ名（省略可）。指定時は `git worktree list` からディレクトリを解決する。
+- **--port {number}**: 起動ポート番号（省略可）。指定時は `CM_PORT` 環境変数を設定してサーバーを起動する。未指定時はデフォルト（3000）。
+
+## 実行手順
+
+### Step 1: 実行ディレクトリの決定
+
+1. **ブランチ名が指定された場合**:
+   - `git worktree list` を実行し、指定ブランチに対応するディレクトリを取得する
+   - 見つからない場合はエラー終了（「ブランチ '{branch_name}' に対応するWorktreeが見つかりません」）
+   - 見つかったディレクトリを `TARGET_DIR` とする
+
+2. **ブランチ名が未指定の場合**:
+   - 現在の作業ディレクトリ（プロジェクトルート）を `TARGET_DIR` とする
+
+### Step 2: サーバー停止・ビルド・再起動
+
+停止とビルド・再起動を **1回のBash呼び出し** で実行する（ユーザーへの許可確認を1回に抑えるため）。
+
+**ポート指定なしの場合:**
+```bash
+cd {TARGET_DIR} && ./scripts/stop.sh && ./scripts/build-and-start.sh --daemon
+```
+
+**ポート指定ありの場合:**
+```bash
+cd {TARGET_DIR} && CM_PORT={port} ./scripts/stop.sh && CM_PORT={port} ./scripts/build-and-start.sh --daemon
+```
+
+**注意**: ポート競合が発生した場合は `lsof -nP -iTCP:{port} -sTCP:LISTEN -t` で**待ち受け中の**プロセスを特定し、killしてから再試行する。
+`-sTCP:LISTEN` を外すと、そのポートに接続しているだけのプロセス（CommandMate を開いているブラウザの network service、他セッションの CLI など）まで返り、止めると CommandMate 以外のタブの通信も一斉に切れる（Issue #2473）。
+
+## 完了報告形式
+
+```
+✅ サーバー再起動完了！
+
+📋 サーバー情報:
+  ディレクトリ: {TARGET_DIR}
+  ブランチ:     {branch_name}
+  PID:          [プロセスID]
+  ポート:       {port} (デフォルト: 3000)
+  URL:          http://localhost:{port}
+  ログ:         {TARGET_DIR}/logs/server.log
+
+🔧 操作コマンド:
+  ログ確認: tail -f {TARGET_DIR}/logs/server.log
+  停止:     cd {TARGET_DIR} && CM_PORT={port} ./scripts/stop.sh
+```
+
+**注意**:
+- `./scripts/stop.sh` / `./scripts/build-and-start.sh` / `./scripts/start.sh` / `./scripts/restart-nobuild.sh` はプロジェクトルートの `.env` ファイルを自動読み込みする（`CM_PORT`, `CM_DB_PATH` 等）。
+- `--port` オプションで `CM_PORT` を明示指定した場合、`.env` の値より優先される（環境変数が既にセットされている場合は `.env` で上書きされない仕様）。
+- 複数ポートで起動している場合、特定ポートだけ停止するには必ず `CM_PORT={port}` を付けること。
+- 起動ログに `[env] ...` の警告が出た場合、`.env` は存在するのに 1 変数も読み込めていない（Issue #2132）。その状態では Web Push・DB パス・worktree ルートがすべて既定値になっているので、報告して原因を潰すこと。

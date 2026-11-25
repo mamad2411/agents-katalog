@@ -1,0 +1,135 @@
+---
+name: robotik-plugin
+description: Create, rename or extend a RobotIK plugin (plugins/<Name>/ with plugin.yaml, Makefile, src/Plugin.cpp, scenario logics). Use when adding a demo, a scenario to a plugin, a menu/panel/key binding, or debugging "scenario is not in a plugin package", id mismatch, library not found.
+---
+
+# RobotIK plugin
+
+Template to copy: `plugins/HelloWorld/` (4 lessons: ScenarioLogic only, joints/FK,
+IK, skill + behavior tree; panel, menu, key 'H'). Reference demo with
+perception + BT: `plugins/PickAndPlace/`.
+
+## New plugin checklist
+
+1. `cp -r plugins/HelloWorld plugins/<Name>`; drop unused `src/` files,
+   `experiments/`, scenarios.
+2. Keep these names consistent (otherwise the host refuses the package):
+   - `<Name>.mk`: `TARGETS += robotik_<snake>` → builds `librobotik_<snake>.so`;
+     `robotik_<snake>.SOURCES := src/*.cpp`;
+     `$(eval $(call ROBOTIK_PLUGIN,robotik_<snake>,<Name>))`; add `<Name>` to
+     `PLUGINS` of the root `Makefile`.
+   - `plugin.yaml`: `plugin.id: robotik.<snake>`, `api_version: 1`,
+     `library.entrypoint: librobotik_<snake>.so`, `resources.packs` used by
+     the worlds, `scenarios.entries[] {id, name, file}`.
+   - `src/Plugin.cpp`: `describe()` returns `{ .id = "robotik.<snake>" }`;
+     `setup(host, scenario)` handles every scenario `id`, else
+     `host.error(...)` + `return ROBOTIK_PLUGIN_ERR_SETUP`.
+   - each `scenarios/<s>.scenario.yaml`: `scenario.id` = the entry id.
+3. One `.cpp` ends with `ROBOTIK_EXPORT_PLUGIN(<Class>)`.
+4. Every new file starts with the SPDX header (copy from HelloWorld).
+5. Build + run:
+   ```bash
+   make <target>
+   ./build/linux-gcc-debug/bin/RobotIK-Headless build/linux-gcc-debug/lib/robotik/plugins/<Name>/scenarios/<s>.scenario.yaml --trace
+   ```
+   The root `make` builds the plugins listed in `PLUGINS` (root `Makefile`).
+
+## Skeleton
+
+```cpp
+class MyLogic final: public robotik::ScenarioLogic
+{
+public:
+    void setup(robotik::RoboticCell& p_cell, robotik::SceneView* p_view) override; // skills, detectors; p_view null headless
+    void reset(robotik::RoboticCell& p_cell, robotik::Seed p_seed) override;      // clear episode state
+    void act(robotik::RobotContext& p_ctx, Seconds p_dt) override;         // command: robot + beliefs, no truth
+    void simulate(robotik::RoboticCell& p_cell, Seconds p_dt) override;           // the world itself (conveyor, ink); sim only
+    void observe(robotik::RoboticCell const& p_cell, Seconds p_dt) override;      // truth, read only: count for metrics
+    void measure(robotik::RoboticCell const& p_cell, robotik::Metrics& p_m) const override; // p_m.set("my.x", v)
+    [[nodiscard]] robotik::Status status(robotik::RobotContext const& p_ctx) const override; // only without BT
+};
+
+class MyPlugin final: public robotik::ScenarioPlugin   // one scenario logic per scenario
+{
+public:
+    static robotik::PluginInfo describe() { return { .id = "robotik.my" }; }
+    MyPlugin() : ScenarioPlugin({ { "main", robotik::logic<MyLogic>() } }) {}
+    // Optional: menus, panels. Call the base first.
+    void setup(robotik::Host& p_host, std::string_view p_scenario) override
+    {
+        ScenarioPlugin::setup(p_host, p_scenario);   // creates + binds; unknown id throws
+        p_host.addPanel("my", "My", [this](robotik::Canvas const& c) { c.text(scenario()); });
+    }
+};
+ROBOTIK_EXPORT_PLUGIN(MyPlugin)
+```
+
+Plugin methods return `void` and throw on error (caught at the C border:
+`ERR_SETUP` from setup, `ERR_RUNTIME` otherwise); `update` gets `Seconds`;
+`logic<T>()` gives the typed scenario logic, `scenario()` its id.
+
+Lifecycle: manifest read → dlopen on scenario choice → `setup` (no
+simulation yet) → Simulation built (`ScenarioLogic::setup`, `reset`) → `start` →
+[`Simulation::step` (→ `RoboticCell::step` → `ScenarioLogic::act|simulate|observe`) → `Plugin::update`]* → `stop` →
+`shutdown` (simulation already destroyed).
+
+Host services: `bindLogic`, `simulation()` (null before attach), `log`,
+`error`, `subscribe(ROBOTIK_EVENT_KEY_PRESSED | _SCENARIO_STARTED |
+_SCENARIO_STOPPED | _SKILL_COMPLETED | _SKILL_FAILED | _ASSERTION_CHANGED)`,
+`addMenuItem(menu, item, [this] { ... })`,
+`addPanel(id, title, [this](robotik::Canvas const& c) { ... })`: lambdas,
+kept alive by `Host` on the plugin side; their exceptions are reported. The
+canvas (`text`, `textColored`, `button`, `checkbox`,
+`radio`, `sliderInt`, `separator`), valid only during the draw.
+
+## Rules
+
+- Do not judge in C++: publish metrics, assert in YAML. Prefix metric names.
+- Do not keep pointers to world entities across resets/shutdown; use
+  `cell.entity("id")`, `cell.requirePose("id")`.
+- Must run headless (no view, no camera image → `perception: { blind: truth }`).
+- `host.clock: plugin` (or `clock: plugin` on one scenario entry) → `update(dt)` must advance the simulation itself.
+- Models are asset ids (`robotik.robots.robot_6axis`), never paths; a
+  plugin-local pack goes in `plugins/<Name>/data/pack.yaml` +
+  `resources.directory: data`.
+
+## Core stays agnostic of the demos
+
+The demo plugins exist to prove that RobotIK fits **any** robot project
+(arm, humanoid, fly, mobile robot, hexapod...). So the core (`src/RobotIK/`,
+`include/`) and the hosts (`src/Simulator/`, `src/Headless/`) must not know a demo:
+
+- no demo name, object id, joint name, tool kind or task in core code
+  (`red_cube`, `drill_spindle_joint`, "painting"...);
+- a feature one demo needs goes in its plugin; it goes in the core only as
+  a generic concept that a second, different project could use too;
+- a core concept keeps a generic name (`ecs::Shape`, not `SceneObject` of a
+  pick and place).
+
+When you meet a leak, fix it or list it below and tell the user.
+
+Known leaks (October 2026), to fix:
+
+| Where | Leak | Generic direction |
+|-------|------|-------------------|
+| `Task/Grasp/AbstractGrasp.cpp`, `Task/RoboticCell.cpp` `trackPropPenetration` | the abstract level puts a released box at the centre of the container below (vacuum only) | done for `rigid` (`RigidGrasp`); a gripper interface for fingers (`contact`, doc/reference/scenario-file.md "Physics fidelity") |
+| `Task/RoboticCellTruth.cpp` `(holding g)` | only for `VacuumGripper` | a gripper interface (`holding`, `label`, `RoboticCell::held`) for any grasping actuator |
+| `Robot/Backends/SceneView.hpp` `openCanvas`, `ink` | the Painter sheet in the backend interface | a generic dynamic texture on an entity |
+| `Task/RoboticCell.cpp` built-in `Home` | needs an arm joint group; no sense for a humanoid or a fly | `Home` only when the robot declares a `home:` pose |
+| `src/Simulator/TeachPanel.cpp` `triggerTool` | knows vacuum, gripper, drill and `drill_spindle_joint` | each tool declares its trigger (actuator) in its pack |
+| `ecs::Shape` | box and container only | sphere, cylinder, mesh |
+| `Task/Perception/WorldModel.cpp` monocular estimate | objects on a known top plane (tabletop) | a depth source or a declared support |
+
+## Errors
+
+| Message | Fix |
+|---------|-----|
+| `scenario is not in a plugin package` | list the file in `plugin.yaml` |
+| `plugin id does not match plugin.yaml` | `describe().id` = `plugin.id` |
+| `plugin library not found: ...` | `entrypoint` = `lib` + target name + `.so`; build it |
+| `built for plugin API N` | `api_version: 1` |
+| `Unknown Pinocchio frame: tcp` | no tool mounted: use `robot.tool0` |
+
+Tests touching plugins: `tests/Plugin/TestPlugin.cpp` (HelloWorld ids,
+panel text `updates=N keys=N homes=N`, scenario names). Update them if you
+change HelloWorld.

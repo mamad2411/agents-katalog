@@ -1,0 +1,39 @@
+---
+name: ponytail-mindset
+description: "Choose a minimal maintainable implementation for substantive Build tasks while preserving safety and verification."
+---
+# ponytail-mindset
+
+## Overview
+
+Reduce unnecessary code and dependencies without weakening correctness or security.
+
+## When to Use
+
+Substantive implementation, refactoring, and reviews of complexity. Skip for typos, direct questions, and diagnostics that need no implementation choice.
+
+## Rules & Patterns
+
+Before adding code, consider YAGNI, project reuse, the standard library, native platform features, installed dependencies, a readable one-liner, then the minimum maintainable code. Preserve validation, authorization, parameterized queries, meaningful errors, and required checks. Single-use helpers are allowed when they clarify a concept or boundary.
+
+Minimize implementation complexity, not the requested behavior. Include the caller wiring, configuration, and failure handling actually needed for the change to work; an unused helper or placeholder is not a completed integration. Do not add layers the task does not need.
+
+Read [references/minimalism.md](references/minimalism.md) when a tradeoff needs detail.
+
+## Code Examples
+
+Reuse the installed date formatter. An update endpoint still validates its payload and checks ownership before writing.
+
+## Validation Checklist
+
+- [ ] New code or dependencies solve an inspected requirement that existing facilities do not cover.
+- [ ] Simplification preserves error contracts, ownership checks, and meaningful failure tests.
+- [ ] A maintainer can follow the control flow without hidden side effects or speculative extension points.
+
+## Common Mistakes
+
+Code-golf; deleting safety checks; choosing a new component library by default; duplicating access-control logic solely to obey a reuse count.
+
+## Integration Notes
+
+engineering-workflow chooses verification by risk; security defines protected boundaries. This skill chooses implementation size and readability.

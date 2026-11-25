@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: workflow/n8n-workflow-automation-aaaaqwq-agi-super-skills-2/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 自动化创建和管理 n8n 工作流。当用户需要设计工作流、配置节点、优化自动化流程或集成多个服务时使用此技能。

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: quality/go-testing-quality/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Use when writing or reviewing Go tests, adding coverage, benchmarking, or profiling a Go program. Not for CI/lint wiring (go-tooling-security) or non-Go tests.

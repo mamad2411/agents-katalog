@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/data-metabase/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Metabase REST API automation and troubleshooting: authenticate (API key preferred, session fallback), export/upsert questions (cards) and dashboards, standardize visualization_settings, and run/export

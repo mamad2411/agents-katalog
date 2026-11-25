@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/d/dida365-cli/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 使用 Node.js CLI 管理滴答清单（Dida365）的任务、项目、标签等，支持已完成任务按日期查询、全量同步、标签管理、批量操作等，适用于日常任务管理与自动化场景。

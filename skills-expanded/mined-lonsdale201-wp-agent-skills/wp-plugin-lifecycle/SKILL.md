@@ -1,0 +1,254 @@
+---
+name: wp-plugin-lifecycle
+description: Designs and reviews the three lifecycle events of a WordPress
+  plugin — activation (one-shot setup, dbDelta, add_option seeding, cron
+  schedule, cap seeding), deactivation (reversible cleanup, cron clear
+  via wp_unschedule_hook, never delete user data), and uninstall.php
+  (standalone file, WP_UNINSTALL_PLUGIN guard, no autoloader, full
+  data removal). Multisite-aware patterns using the $network_wide /
+  $network_deactivating callback args, plus the recommendation
+  against register_uninstall_hook in favor of uninstall.php. Use when
+  scaffolding a plugin or debugging ghost cron events / orphan options.
+  Does not cover update-time version migrations (running upgrade routines
+  when the stored version is older than the code).
+  Triggers on register_activation_hook, register_deactivation_hook,
+  uninstall.php, WP_UNINSTALL_PLUGIN, dbDelta, wp_unschedule_hook,
+  switch_to_blog.
+metadata:
+  wp-skills-author: "Soczó Kristóf"
+  wp-skills-contact: "mailto:lonsdale201@hotmail.com"
+  wp-skills-plugin: "wordpress"
+  wp-skills-plugin-version-tested: "6.5 - 7.1"
+  wp-skills-wp-version-tested: "7.1"
+  wp-skills-php-min: "7.4"
+  wp-skills-last-updated: "2026-08-20"
+---
+
+# WordPress plugin: lifecycle (activate / deactivate / uninstall)
+
+The three events that frame a plugin's existence on a site. Each has a different scope, different runtime context, and different non-negotiable rules. Get the contract wrong and you ship plugins that:
+
+- Activate "successfully" but leave the site in a broken state.
+- Leave behind cron events that fire forever after deactivation.
+- Leave 50 orphan options + 100k orphan meta rows after uninstall.
+
+This skill assumes the plugin already has a clean bootstrap (see `wp-plugin-bootstrap`). It covers ONLY what happens at the three lifecycle boundaries.
+
+Update-time migrations after plugin files are replaced are out of scope here; note that activation does not fire on an ordinary plugin update.
+
+## When to use this skill
+
+Trigger when ANY of the following is true:
+
+- Scaffolding a new plugin and writing the activation / deactivation / uninstall logic.
+- Reviewing a PR that touches `register_activation_hook`, `register_deactivation_hook`, or `uninstall.php`.
+- Debugging "ghost cron events still firing after my plugin is deactivated", or "I deleted the plugin but options are still in `wp_options`".
+- Adding a "Preserve data on uninstall" toggle / a clean removal toggle for site owners.
+- Adapting an existing plugin to be multisite-aware (per-site activation, network-wide uninstall).
+
+The diff or file most likely contains: `register_activation_hook`, `register_deactivation_hook`, `register_uninstall_hook` (anti-pattern, see below), `uninstall.php`, `WP_UNINSTALL_PLUGIN`, `dbDelta`, `wp_unschedule_hook`, `wp_clear_scheduled_hook`, `delete_option`, `delete_site_option`, or `switch_to_blog`.
+
+## The three events at a glance
+
+| Event | Hook / file | When it fires | Runtime context |
+|---|---|---|---|
+| **Activate** | `register_activation_hook( __FILE__, $cb )` → `activate_<basename>` | User clicks "Activate" in `/wp-admin/plugins.php`. Also re-fires on reactivation. NOT on plugin update. | Full WP loaded, user logged in, plugin's main file already loaded. Classes via autoloader available. |
+| **Deactivate** | `register_deactivation_hook( __FILE__, $cb )` → `deactivate_<basename>` | User clicks "Deactivate". | Full WP loaded, plugin loaded. |
+| **Uninstall** | `uninstall.php` at plugin root | User clicks "Delete" on a deactivated plugin. | Full WP loaded, BUT plugin's main file NOT loaded — `uninstall.php` runs in isolation with only the WP API available. `WP_UNINSTALL_PLUGIN` constant is defined (`wp-admin/includes/plugin.php:1324`). |
+
+That third row is the unintuitive one. WP includes `uninstall.php` at the top of `uninstall_plugin()` — your namespaced classes, your `Plugin::instance()`, your composer autoload — none of it is loaded. Only the WP global functions and the `$wpdb` global are available.
+
+## Activation — one-shot setup
+
+```php
+register_activation_hook( __FILE__, static function (): void {
+    // 1. Requirements re-check (the bootstrap-time check may have been bypassed
+    //    by direct DB activation). Bail loud if anything is missing.
+    if ( ! function_exists( 'jet_form_builder' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        deactivate_plugins( plugin_basename( __FILE__ ) );
+        wp_die( esc_html( 'JetFormBuilder must be active.' ), '', array( 'back_link' => true ) );
+    }
+
+    // 2. Seed default options — add_option respects existing values, so
+    //    reactivation after a deactivate-without-uninstall preserves user
+    //    preferences. NEVER use update_option here.
+    add_option( 'myplugin_settings', array(
+        'log_level'   => 'errors',
+        'cache_ttl'   => 3600,
+    ) );
+
+    // 3. Schema migration via dbDelta. Note the explicit require_once —
+    //    dbDelta is in wp-admin/includes/upgrade.php, NOT loaded by default.
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+    global $wpdb;
+    $charset = $wpdb->get_charset_collate();
+    // dbDelta is finicky — follow the canonical style EXACTLY:
+    //   - one column per line, two spaces after column name
+    //   - PRIMARY KEY on its own line at the end
+    //   - lowercase types ('bigint(20)', 'datetime'), as WP itself uses
+    //   - no IF NOT EXISTS (dbDelta diff-applies)
+    dbDelta( "CREATE TABLE {$wpdb->prefix}myplugin_log (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        created_at datetime NOT NULL,
+        message text NOT NULL,
+        PRIMARY KEY  (id),
+        KEY created_at (created_at)
+    ) {$charset};" );
+
+    // 4. Schedule recurring cron events (the schedule constant must already
+    //    be registered on the 'cron_schedules' filter in your runtime code).
+    if ( ! wp_next_scheduled( 'myplugin_daily_cleanup' ) ) {
+        wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', 'myplugin_daily_cleanup' );
+    }
+
+    // 5. Capability seeding (only if you genuinely need plugin-specific caps).
+    $editor = get_role( 'editor' );
+    if ( $editor && ! $editor->has_cap( 'manage_myplugin' ) ) {
+        $editor->add_cap( 'manage_myplugin' );
+    }
+} );
+```
+
+Rules for the activation callback:
+
+- **Run the requirements check again.** The plugin file might have been activated through `activate_plugin()` programmatically, bypassing the wp-admin UI's pre-checks. Belt and suspenders.
+- **Use `add_option`, NOT `update_option`** for default seeding. `update_option` overwrites existing values, destroying user preferences if the plugin is reactivated.
+- **Always `require_once 'wp-admin/includes/upgrade.php'` before `dbDelta()`** — the file is not auto-loaded outside the admin context.
+- **Don't register hooks** (`add_action`, `add_filter`) here. Activation is one-shot; runtime hooks belong in `plugins_loaded`.
+- **Don't perform expensive work synchronously.** A long-running activation hook that blocks the request shows up as "site is taking too long to respond" in the admin. Schedule a one-shot cron event with `wp_schedule_single_event` instead.
+
+### Activation in multisite
+
+WP passes `$network_wide` as the **first argument** to your activation hook callback (`wp-admin/includes/plugin.php`, `do_action( "activate_{$plugin}", $network_wide )`). It's `true` if the user clicked "Network Activate", `false` (or unset on single-site) otherwise. Use this — don't reconstruct it from `is_network_admin()` or `is_plugin_active_for_network()`, both of which are less reliable in WP-CLI and during the activation event itself (the sitewide active option hasn't been written yet at the moment the hook fires).
+
+```php
+register_activation_hook( __FILE__, static function ( bool $network_wide = false ): void {
+    if ( $network_wide ) {
+        // Network activation: seed every site's per-site state.
+        foreach ( get_sites( array( 'fields' => 'ids' ) ) as $site_id ) {
+            switch_to_blog( $site_id );
+            myplugin_setup_site();
+            restore_current_blog();
+        }
+        // Plus any network-wide options.
+        add_site_option( 'myplugin_network_settings', myplugin_network_defaults() );
+    } else {
+        myplugin_setup_site();
+    }
+} );
+```
+
+The same pattern applies to `register_deactivation_hook`, which receives `$network_deactivating`.
+
+## Deactivation — reversible cleanup
+
+```php
+register_deactivation_hook( __FILE__, static function (): void {
+    // Clear ALL scheduled events for our hooks, regardless of $args.
+    // wp_unschedule_hook (since WP 4.9) is more robust than
+    // wp_clear_scheduled_hook because it doesn't require remembering
+    // the exact $args that were passed at schedule time.
+    wp_unschedule_hook( 'myplugin_daily_cleanup' );
+    wp_unschedule_hook( 'myplugin_token_refresh' );
+
+    // OPTIONAL: clear active-state transients that are meaningless when
+    // the plugin is off. Most TTL-bearing transients can self-expire.
+    delete_transient( 'myplugin_api_status' );
+} );
+```
+
+The hard rule: **deactivation is REVERSIBLE.** The user clicked "Deactivate", not "Delete". They might activate again tomorrow and expect their settings, custom tables, post meta, and capabilities to still be intact.
+
+So the deactivate callback does:
+- Clear cron events (otherwise WP keeps firing them; the hook has no listener but the cron table grows ghost entries).
+- Clear active-state transients ("API is reachable", "license is valid this hour", etc.).
+- Maybe clear flush rewrite rules if the plugin registered CPTs / custom rewrites.
+
+It does NOT do:
+- Delete options.
+- Delete custom tables.
+- Delete CPT posts or post meta.
+- Remove capabilities. (Optional, gray area — see below.)
+
+### Cron clearing in multisite
+
+Cron is **per-blog** in multisite — each site has its own scheduled events. `wp_unschedule_hook` only affects the current blog. The deactivation callback receives `$network_deactivating` as its first argument; use it to decide whether to loop:
+
+```php
+register_deactivation_hook( __FILE__, static function ( bool $network_deactivating = false ): void {
+    if ( $network_deactivating ) {
+        foreach ( get_sites( array( 'fields' => 'ids' ) ) as $site_id ) {
+            switch_to_blog( $site_id );
+            wp_unschedule_hook( 'myplugin_daily_cleanup' );
+            restore_current_blog();
+        }
+    } else {
+        wp_unschedule_hook( 'myplugin_daily_cleanup' );
+    }
+} );
+```
+
+## Uninstall — full removal via `uninstall.php`
+
+Place `uninstall.php` at the plugin root, guard it with
+`WP_UNINSTALL_PLUGIN`, and assume the plugin bootstrap/autoloader did not run.
+Use raw WordPress functions or deliberately require a dependency-free constants
+file. Delete every owned option, meta key, transient, cron event, capability,
+post/object, upload, and custom table unless an explicit preserve-data policy
+says otherwise.
+
+On multisite, distinguish per-site data from network options and shared users.
+Loop sites for per-site cleanup and call `delete_site_option()` for network
+state. Prefer `uninstall.php` to `register_uninstall_hook()` so uninstall does
+not need to load the complete plugin while its dependencies may be inactive.
+
+Read `references/uninstall-and-multisite.md` before implementing destructive
+cleanup; it contains the isolated-file pattern and failure cases.
+
+## Critical rules
+
+- **Activation is one-shot setup, NOT runtime configuration.** No `add_action` here.
+- **Deactivation is REVERSIBLE.** Clear cron + active-state transients. Nothing destructive.
+- **Uninstall is DESTRUCTIVE.** Clear everything the plugin owns, in `uninstall.php`, multisite-aware.
+- **`uninstall.php` runs without your classes.** Use raw WP functions and inline strings (or manually `require` a constants file).
+- **`wp_unschedule_hook($hook)` over `wp_clear_scheduled_hook($hook, $args)`** — args-mismatch means orphaned events. The former clears all events for a hook regardless of args (since WP 4.9, `wp-includes/cron.php`).
+- **`add_option` for activation seeding, never `update_option`** — preserves existing user preferences across reactivation.
+- **`require_once 'wp-admin/includes/upgrade.php'` before any `dbDelta()` call.**
+- **Multisite cron is per-blog; multisite options are per-site OR network-wide.** Use `delete_site_option` for network-level data, loop sites for per-site cleanup.
+- **Offer a `preserve_data_on_uninstall` toggle.** Some users reinstall; uninstall ≠ "I want to lose everything".
+
+## Common mistakes
+
+Use `references/uninstall-and-multisite.md` to review reactivation overwrites,
+cron-argument mismatches, unavailable plugin classes, non-trivial registered
+uninstall callbacks, and destructive deactivation.
+
+## Cross-references
+
+- Run **`wp-plugin-bootstrap`** first — it covers the main plugin file (header, constants, autoload, requirements check at activation entry).
+- Run **`wp-security-audit`** on the activation handler — it's a write endpoint with admin context.
+- Run **`wp-i18n-audit`** if the lifecycle handlers emit translated strings (admin notices, `wp_die` messages).
+
+## What this skill does NOT cover
+
+- Custom cron interval registration (`cron_schedules` filter), Action Scheduler integration — adjacent topic, separate skill (`wp-plugin-cron`, planned).
+- Database schema/data migrations beyond the initial `dbDelta` — versioned update migrations need their own pattern; do not rely only on `upgrader_process_complete`.
+- WP-CLI `wp plugin activate` / `wp plugin deactivate` semantics — same hooks fire, but the multisite detection (`is_network_admin()`) is different.
+- Theme uninstall — themes don't have a `uninstall.php` equivalent; theme cleanup is generally less mechanized.
+
+## References
+
+- Isolated uninstall and multisite examples:
+  `references/uninstall-and-multisite.md`.
+- Uninstall methods: [Plugin Handbook](https://developer.wordpress.org/plugins/plugin-basics/uninstall-methods/)
+- `register_activation_hook` / `register_deactivation_hook` / `register_uninstall_hook`: `wp-includes/plugin.php`
+- `uninstall_plugin()` (the function that includes `uninstall.php`): `wp-admin/includes/plugin.php:1302-1330`
+- `wp_unschedule_hook` (since 4.9): `wp-includes/cron.php`
+- `dbDelta`: `wp-admin/includes/upgrade.php`
+- Multisite blog switching: `wp-includes/ms-blogs.php`
+- Official documentation: <https://developer.wordpress.org/reference/functions/register_activation_hook/>
+- Official documentation: <https://developer.wordpress.org/reference/functions/register_deactivation_hook/>
+- Official documentation: <https://developer.wordpress.org/reference/functions/wp_unschedule_hook/>
+- Official documentation: <https://developer.wordpress.org/reference/functions/dbDelta/>

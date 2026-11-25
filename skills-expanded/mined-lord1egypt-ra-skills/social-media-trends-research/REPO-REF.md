@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_drshailesh88_integrated_content_os_social-media-trends-research/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Programmatic social media and marketing research using free tools: pytrends (Google Trends), yars (Reddit without API keys), and Perplexity MCP (Twitter/TikTok/Web). Use when finding trending topics i

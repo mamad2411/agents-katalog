@@ -1,0 +1,98 @@
+---
+name: ai-shifu-course-creator
+description: Create, edit, review, publish, manage, or analyze AI-Shifu (AI师傅) courses and their Teaching Prompts and Course Prompts in MarkdownFlow (MDF). Use for course materials, lesson design, interactions, course memory, images, deployment, platform administration, learner progress, learner profile distributions, orders, revenue, and credit-consumption questions.
+metadata:
+  version: 2.3.1
+  version_management: standalone
+---
+
+# AI-Shifu Course Creator
+
+Use these capabilities to complete the user's course goal. The using agent owns task decomposition, capability selection, execution order, and teaching design. Start from the available topic, brief, source material, outline, Prompt, or course directory; no questionnaire, segmentation run, intermediate JSON, or separate execution plan is a universal prerequisite.
+
+Reuse existing answers and artifacts. Ask when missing information materially affects the result; otherwise make reasonable design choices within the user's constraints. Capabilities can be combined, revisited, or used alone. A reference explains how to perform its capability, not what the agent must do next. Read the relevant guidance as needed rather than loading a transitive reference graph.
+
+## Collaborating With the Teacher
+
+For a new complete course or a substantial redesign, help the teacher make consequential decisions through concrete work. Use the guidance below according to uncertainty and the cost of rework; it is not a required sequence, questionnaire, or set of intermediate files. A supplied plan, existing confirmation, or explicit delegation can already resolve a decision. Focused edits, reviews, analytics, and platform-only tasks retain their requested scope.
+
+- Start with what the teacher supplied. Recommend an achievable learning result and a useful next deliverable; explain the capability that helps with this particular material when its value becomes visible. Resolve audience, prerequisites, intended application, delivery setting, or source gaps only where they affect the current work, using [course design choices](references/course-design-choices.md). Avoid a capability tour or asking the teacher to select pedagogical terminology.
+- Before expanding a course whose direction is still uncertain, show a concise proposal: intended learning results, evidence of learning, scope and rough structure, and consequential assumptions. Ask the teacher to confirm or correct the unresolved choices. Reuse a clear brief directly instead of requiring approval of a restatement.
+- When teaching experience has not been established, offer and create a small representative lesson or excerpt before expanding the whole course. Choose material that tests important design decisions, rather than automatically choosing the introduction or the hardest topic. Show actual sample content and any useful visual or feedback behavior; a description of intended effects or a Prompt alone is not an experienced lesson. Label illustrative delivery, model simulation, and observed platform behavior accurately. A second short excerpt is useful only when a materially different kind of content remains untested.
+- Use the sample to calibrate difficulty, explanation, pacing, presentation, and any interactions. Where relevant personalization is selected, make its value visible with contrasting sample learner contexts, clearly labeled as hypothetical, and a neutral fallback; follow [teaching design](references/teaching-design.md) and the existing [personalization boundaries](references/prompt-semantics.md#personalization-directions). Keep the teacher's authoring preferences distinct from learner context. Explain a selected teaching method and its source to the teacher under [method attribution](references/teaching-design.md#method-attribution).
+- Ask for confirmation only when it will settle a consequential open decision. Give the concrete result, a recommendation, and the specific choice at stake. Pause work dependent on that answer while continuing independent preparation; silence is not confirmation. Honor a request to proceed autonomously within established constraints. Once calibrated, complete the remaining work without repeated per-lesson approvals. Reopen a decision only when new evidence, a conflict, or a material scope change warrants it.
+- Retain the teacher's resolved choices in the conversation or existing authoring notes. Apply corrections to affected content and companion artifacts and check their consistency; do not require a new planning schema or restart unrelated work. Review the completed course against its intended learning results and source constraints, distinguishing artifact checks, simulated delivery, and real learner evidence.
+
+These are teaching-design decisions, not additional upload or publication approvals. A pending consequential teaching decision means the affected content is not complete; after resolving it and checking the content, follow [automatic platform updates](#automatic-platform-updates) and the requested creation outcome. Do not add a completed-content approval gate to an already resolved task.
+
+## Shared Conventions
+
+- Apply [language-policy.md](references/language-policy.md) to conversation and authored content, including target-language resolution and terminology.
+- Apply [session-controls.md](references/session-controls.md) to contact eligibility, explicit-request-only version checks, progress, errors, and completion handoffs. First-response contact conditions remain applicable. The completion handoff applies to the user's completed request, not each internal capability call.
+- Use Markdown links `[descriptive text](URL)` for URLs in user-visible messages. URLs inside Teaching Prompts follow MarkdownFlow rules; URLs inside fenced code blocks are exempt.
+- When showing a course outline to the teacher, apply [outline presentation](references/course-structure.md#outline-presentation).
+- Honor explicit author choices, source facts, selected exact material, and the distinction between a per-lesson Teaching Prompt and a course-wide Course Prompt. Runtime semantics are defined in [prompt-semantics.md](references/prompt-semantics.md) and [markdownflow-syntax.md](references/markdownflow-syntax.md).
+- Apply [automatic platform updates](#automatic-platform-updates) to new courses and changes to existing courses.
+
+## Capabilities
+
+Capabilities fall into three categories: **teaching design**, **expressing that design in MarkdownFlow**, and **operating the CLI**. These categories describe responsibilities, not execution phases. Use one alone, combine them, or revisit them in any useful order. Inputs describe useful starting points, not mandatory upstream outputs.
+
+### Teaching Design
+
+Decide what learners should understand or do and how teaching can help them get there. Use existing choices directly; resolve missing choices within the task without requiring a separate design artifact.
+
+| Capability | Useful inputs | Result and guidance |
+| --- | --- | --- |
+| Resolve course design | Topic, learner needs, source material, existing choices | Design choices and their effects; ask only material unresolved questions. [Course design](references/course-design-choices.md) |
+| Analyze material and plan structure | Source material, topic, outline, existing lessons | Relevant source analysis, chapter and lesson structure, or optional traceable segments. [Structure and segmentation](references/course-structure.md) |
+| Design lesson teaching | Goals, audience, source, existing teaching choices | Suitable explanations, examples, practice, interactions, visual purposes, and feedback. [Teaching options](references/teaching-design.md) |
+| Write listing copy | Course topic, audience, goals, and supported outcomes | Learner-facing course description; this prose does not require MarkdownFlow. [Course description](references/course-description.md) |
+| Review teaching quality | Available material, design, or course content | Scoped findings and requested repairs for factual support, source coverage, and learning effectiveness. [Review](references/course-review.md), [checks](references/review-checklist.md) |
+
+Teaching patterns, interaction counts, and visual rhythms in [teaching-design.md](references/teaching-design.md) are recommendations. Select a strategy for the learning task using its content, intended performance, learner starting point, and constraints under [approach selection](references/teaching-design.md#selecting-an-approach-for-the-learning-task). The agent may combine approaches within the user's explicit constraints.
+
+For new courses, apply the [personalization defaults](references/prompt-semantics.md#personalization-directions) and make useful [response-dependent support](references/teaching-prompt.md#make-response-dependent-support-runnable) executable. Use relevant personal background, learning preferences, and course memory supplied by the platform, with [existing-information reuse](references/teaching-prompt.md#encode-existing-context-reuse) under the [memory contract](references/markdownflow-syntax.md#memory). Preserve explicit author restrictions and existing-course authorization; this adds no required questionnaire, diagnostic phase, or lesson template.
+
+### Express in MarkdownFlow
+
+Make the intended teaching behavior executable in Teaching Prompts and Course Prompts. Preserve supplied design choices; use the teaching-design capabilities for choices that remain open rather than letting syntax or a layout template determine pedagogy.
+
+| Capability | Useful inputs | Result and guidance |
+| --- | --- | --- |
+| Write or revise a lesson | Topic, source, existing Prompt, or supplied design | Runnable Teaching Prompt with the author-editable layout for the requested scope. A separate design run is not required. [Teaching Prompt](references/teaching-prompt.md) |
+| Specify slide interaction and animation | Dynamic process, experimental model, or intended learner controls | Slide-generation instructions for controls, motion, and observable changes. [Interactive slides and animation](references/teaching-prompt.md#slide-interaction-and-animation) |
+| Write or revise a Course Prompt | Course title, topic, goals, audience, and design context | Course-wide Prompt using the existing six-section template. [Course Prompt](references/course-prompt.md) |
+| Encode interactions, memory use, and exact content | Intended response behavior, relevant prior answers, selected exact material | Explicit controls or natural-language interactions with context-generated options, course memory use, branches, and deterministic output. [MarkdownFlow](references/markdownflow-syntax.md), [Prompt semantics](references/prompt-semantics.md) |
+| Express lesson images | Teaching intent, authoritative asset URLs and metadata | Correct image embedding or HTML-view instructions. [Image authoring](references/image-authoring.md) |
+| Review Prompt expression | One Prompt or selected artifacts | Scoped findings and repairs for runtime syntax, memory use, comments, layout, and artifact contracts. [Review](references/course-review.md), [checks](references/review-checklist.md) |
+
+### Operate the CLI
+
+Use deterministic commands for local course files, platform access and changes, and observed course data. Existing Prompts and directories can be used directly without redoing teaching design or Prompt authoring. The [CLI reference](references/cli/cli-reference.md) owns command mechanics; the [course-directory specification](references/cli/course-directory-spec.md) owns recognized files, build precedence, and import format.
+
+| Capability | Useful inputs | Result and guidance |
+| --- | --- | --- |
+| Establish platform access | Selected service/profile and existing authorization | Verified access and recoverable browser authorization when needed. [Authentication](references/authentication.md) |
+| Identify an existing course | BID or title and selected platform context | Unique target or an explicit unresolved result. [Course target](references/course-lookup.md) |
+| Upload lesson images | Image assets, informative alt text, and selected platform context | Real resource URLs and provenance records for later embedding. [Image upload](references/cli/cli-reference.md#image-upload), [asset handling](references/image-authoring.md) |
+| Synchronize existing content | Existing course and local edits/directory | Pull, divergence inspection, version-protected writes, and conflict convergence. [Course sync](references/course-sync.md) |
+| Build or import a new course | Authored course directory or import payload | Built payload, new draft, and verified imported content. [Build and import](references/build-and-import.md) |
+| Manage and publish a course | Resolved course and requested operation | Metadata, structure, access, avatar, Listen Mode, publication, preview, or archive changes. [Course management](references/course-management.md) |
+| Analyze course data | Course/question, dimensions, and time range | Queries and readable, privacy-respecting findings, including learner profile distributions. [Analytics](references/analytics/guide.md) |
+
+Shared references support the relevant category: [authoring-contracts.md](references/authoring-contracts.md) defines optional author controls and artifact consistency; [source-preservation.md](references/source-preservation.md) defines exact-source decisions. An image's teaching purpose, MarkdownFlow representation, and CLI upload are separate actions even when they share a reference. Review likewise applies the criteria for the requested design, expression, or platform result.
+
+Design-only work, explicit local-only authoring, read-only content review, and standalone builds do not require platform access; invoke authentication when a selected platform operation needs it. Analytics may inform a later teaching decision when relevant, but querying data does not itself request a course rewrite.
+
+## Automatic Platform Updates
+
+New courses and changes to existing courses take effect on AI-Shifu automatically. After creating or modifying deployable course artifacts, apply the local changes to the intended platform course as part of that work. This covers lesson Teaching Prompts, the Course Prompt, descriptions, requested structure or metadata changes, and repairs made during a requested review-and-fix task. Complete the relevant content checks, then create or update the platform draft without waiting for the user to review local files, confirm a preview or completed result, or separately request upload or synchronization. Explicit local-only, read-only, or design-only requests retain that scope. A standalone Prompt snippet without new-course or existing-course intent remains an artifact deliverable. A draft-only request still uploads the course but does not publish it.
+
+Resolve the intended course and platform access as needed. Use [build and import](references/build-and-import.md) for a new course. Before preparing lesson, Course Prompt, or description edits to an existing platform course, apply the [versioned editing baseline](references/course-sync.md#pull-before-editing). Use [course sync](references/course-sync.md) for existing lesson and structural changes and [course management](references/course-management.md#operations) for course-wide artifacts and attributes. Preserve their version protection, conflict handling, and result checks. Existing-course publication remains a selected operation under the user's requested scope.
+
+## Full-Course Creation Outcome
+
+A request to create a complete AI-Shifu course includes deployment and publication by default. An explicit local-only, unpublished-draft, or narrower deliverable request determines that narrower outcome. A title-only creation request is still course authoring; it does not mean creating an empty platform draft. This outcome does not prescribe the order of authoring capabilities.
+
+Keep new-course intent distinct from an existing-course edit. A no-match lookup does not authorize creating a replacement course. Reuse the BID of an already-created course when resuming incomplete work. Report the operations and verification that actually completed; an imported draft or a printed public URL alone does not establish successful publication.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/m/meme-generator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Meme Generator. Use when you need meme generator capabilities. Triggers on: meme generator."

@@ -1,0 +1,99 @@
+---
+name: dataify-google-videos
+description: "Search Google Videos for video results. Do not use for YouTube media downloads or structured YouTube records."
+---
+
+# Dataify Google Videos
+
+Use this skill to turn a user's Google Videos request into a Dataify Scraper API form submission.
+## Workflow
+
+1. Parse the user's request into Google Videos fields. Use `q` as the video search query and force `engine` to `google_videos`.
+2. Build request parameters with the fields the user requested plus the documented defaults only: `json: "1"`, `google_domain: "google.com"`, `no_cache: "false"`, `nfpr: "0"`, and `filter: "0"`. Do not treat examples such as `us`, `en`, or `true` as defaults.
+4. If the user requests changes, update the parameters and show the complete table again. Call the API only after the user confirms.
+5.  If the token is missing, stop and tell the user to sign in at [Dataify Dashboard](https://dashboard.dataify.com?utm_source=skill) to obtain `DATAIFY_API_TOKEN`.
+6. Run the bundled Python script with `python3`. Run it from this skill directory, or use the absolute path to `scripts/google_videos.py`.
+
+
+```bash
+python3 scripts/google_videos.py --request "search Google videos for electric cars in English" --preview-table
+```
+
+
+```bash
+python3 scripts/google_videos.py --q "electric cars" --hl en
+```
+
+For many fields, pass one JSON object with shell-appropriate quoting. The script will still submit form data to the API:
+
+```bash
+python3 scripts/google_videos.py --params-json '{"q":"electric cars","json":"1","google_domain":"google.com","gl":"us","hl":"en","no_cache":"true"}'
+```
+
+
+## Field Mapping
+
+Use `references/google_videos_api.md` when you need the exact field list, defaults, constraints, or table descriptions.
+
+Core rules:
+
+- Always submit the API request as form data with `Content-Type: application/x-www-form-urlencoded`.
+- Always force `engine` to `google_videos`.
+- Use UTF-8 for script source, form encoding, and displayed text.
+- Keep request values as strings unless the script accepts and normalizes a boolean.
+- Ask a follow-up only when the required video query `q` cannot be inferred.
+- If `uule` is present, omit `location`.
+- Normalize token values in the script. A token without `Bearer ` is accepted and prefixed automatically.
+
+Common mappings:
+
+- "JSON" -> `json: "1"`
+- "JSON+HTML" -> `json: "2"`
+- "HTML" -> `json: "3"`
+- "Light JSON" -> `json: "4"`
+- Google domain -> `google_domain`
+- country or region for Google behavior -> `gl`
+- interface/search language -> `hl`
+- named search origin -> `location`
+- Google encoded location -> `uule`
+- page number N -> `start: String((N - 1) * 10)`
+- advanced video filters, duration, quality, source, or date -> `tbs`
+- bypass cache / no cache -> `no_cache: "true"`
+- language-restricted results -> `lr`, formatted like `lang_fr`
+- safe search on/off -> `safe: "active"` or `safe: "off"`
+- exclude autocorrected query results -> `nfpr: "1"`
+- include autocorrected query results -> `nfpr: "0"`
+- disable similar/omitted result filters -> `filter: "1"`
+- enable similar/omitted result filters -> `filter: "0"`
+
+## Result presentation
+
+- Return a compact, user-facing result by default: the most relevant titles, links, and vertical-specific fields, plus a count or truncation note when useful.
+- Do not expose transport details, fixed engine fields, task plumbing, or the full response envelope in the ordinary flow.
+- Return raw JSON or HTML only when the user explicitly requests raw output.
+- Preserve source links and distinguish missing fields from empty values; do not invent data.
+
+## Quick Start
+
+```bash
+python3 scripts/google_videos.py --help
+```
+
+## Parameter interaction policy
+
+- For a clear, low-risk, read-only, and low-cost request, apply safe defaults and execute immediately. A short execution summary is optional; do not pause for confirmation.
+- Ask only for a missing required input, a material ambiguity, a high-volume or multi-page scope, a media download, a choice that materially changes credit usage, an irreversible action, or an explicit user request to review parameters.
+- When confirmation is required, show only user-facing values that affect the target, scope, output, or cost. Prefer one concise sentence; use a compact table only when three or more consequential values are easier to compare.
+- Never show fixed fields, empty optional fields, unchanged defaults, credentials, or internal implementation parameters such as engine selectors, response-format flags, offsets, spider IDs, and file-name templates.
+- Keep advanced filters hidden unless the user asks for them or they are needed to resolve ambiguity. Never substitute documentation example values for missing required user input.
+- After returning results, offer relevant refinements instead of forcing all optional decisions before the first result.
+
+## Account CTA policy
+
+- Show a prominent Dataify account CTA only when the API token is missing, rejected/invalid, or the account has insufficient credits.
+- For a missing token, offer https://dashboard.dataify.com/login?utm_source=skill and state: New accounts receive 50 free credits. Never ask the user to paste the token into chat.
+- Detect the current operating system and shell. Show only the matching session-scoped setup command first (`export` for macOS/Linux shells, `$env:` for Windows PowerShell, or `set` for Windows Command Prompt). Show other platforms or persistent setup only when detection is ambiguous or the user asks.
+- After the user says the token is configured, verify only whether `DATAIFY_API_TOKEN` is present; never print its value. If verification succeeds, continue the original task without asking the user to repeat it.
+- Explain that persistent shell changes may require a new terminal or restarting the agent application. Do not recommend a project `.env` unless the execution path explicitly loads it, and ensure `.env` is ignored by version control.
+- For an invalid token, direct the user to API-key management without implying that a new registration is required. For insufficient credits, direct the user to balance or recharge management.
+- During normal submission, processing, and successful completion, do not promote registration or the Dashboard. Never expose the token or include it in CTA attribution parameters.

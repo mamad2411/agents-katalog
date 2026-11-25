@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/a/ai-ecommerce-motion-image/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 当用户搜索 AI动图、商品动图、电商动图、图片动起来、动效商品图、电商图片、商品视频、AIGC营销、淘宝、京东、抖音、小红书、Amazon、Shopify、AI-HIVE MCP 时使用。帮助商家完成把静态商品图变成轻量循环动效：先锁定SKU与授权素材，再查询真实可用模型与价格，生成小样，逐帧验收商品结构、Logo、标签、色彩、文字和平台规格；提供可复制的提示词、JSON工单、失败回退和批量扩展方

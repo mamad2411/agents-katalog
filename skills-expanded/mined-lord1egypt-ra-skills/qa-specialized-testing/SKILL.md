@@ -1,0 +1,204 @@
+---
+name: qa-specialized-testing
+description: >-
+  当功能测试做完之后需要做进一步的质量验证时使用此技能。覆盖性能测试（负载/压力/稳定性）、安全测试（OWASP Top 10 TOP 漏洞）、兼容性测试（多浏览器/多设备）的测试方法。不要在功能测试还没做完时就做专项——先保证功能正确，再评估性能和安全。专项测试的产出是一组可复用的测试方案（性能指标基线、安全渗透用例、兼容性矩阵）。 触发场景：性能测试、安全测试（专项）、兼容性测试、专项测试、压力测试、渗透测试、SQL注入测试、跨浏览器测试、功能测试完成后需要补充专项测试时。 Use when the user asks about: specialized non-functional testing — performance and load and stress testing, OWASP security testing, and cross-browser compatibility.
+license: MIT
+allowed-tools: Read Grep Glob Bash
+metadata:
+  display-name: "Specialized Testing"
+  version: "1.8.0"
+  when-to-use: "用户说\"性能测试\"、\"安全测试（专项）\"、\"兼容性测试\"、\"专项测试\"、\"压力测试\"、\"渗透测试\"、\"SQL注入测试\"、\"跨浏览器测试\"、需要进行专项测试、功能测试完成后需要补充专项测试时"
+  related-skills: "{\"upstream\":[\"qa-risk-intuition\",\"qa-test-strategy-design\"],\"downstream\":[\"qa-release-risk-governance\",\"qa-agent-testing\",\"qa-mobile-testing\"]}"
+  references: "[\"references/performance-depth.md\"]"
+  input-format: "{\"required\":[{\"name\":\"测试策略\",\"type\":\"object\",\"description\":\"来自qa-test-strategy-design的测试策略\"},{\"name\":\"专项需求\",\"type\":\"string\",\"description\":\"性能/安全/兼容性等专项测试需求\"}],\"optional\":[{\"name\":\"环境信息\",\"type\":\"string\",\"description\":\"专项测试环境配置\"}]}"
+  output-format: "{\"traceability\":[\"每个专项测试用例带唯一ID（TC_{模块缩写}_{功能缩写}_{序号}，如 TC_API_LOGIN_001）\",\"关联专项类型和需求ID\"],\"structure\":[\"覆盖率：标注口径（基于现有需求/输入文档），禁止\\\"全覆盖/100%\\\"绝对化表述；缺失模块标注\\\"未覆盖+原因\\\"\",{\"specialized_test_plan\":\"专项测试方案\"},{\"performance_cases\":\"性能测试场景\"},{\"security_cases\":\"安全测试用例\"},{\"compatibility_matrix\":\"兼容性矩阵\"}]}"
+  error-recovery-guidance: "{\"on_failure\":\"专项测试遗漏维度时回退到测试策略补充范围\",\"retry_behavior\":\"补全范围后重新执行专项测试\"}"
+  categories: "[\"Development\",\"Testing\"]"
+  depth-requirement: "{\"reference_value\":\"根据专项类型调整测试深度：简单×1/中等×2/复杂×3\",\"minimum\":\"至少完成性能、安全、兼容性3类专项中的2类\"}"
+---
+> ⚠️ 本技能单独使用效果有限，建议配合完整技能集（12 步工作流）使用。安装：npx skills add Kokxi/qa-test-skills
+
+# 专项测试能力
+
+## 核心原则
+
+专项测试不只是会用工具，而是知道测什么、怎么测、测到什么程度算够。
+
+## 深度要求（参考值）
+
+**关键指标**：根据系统复杂度调整专项测试深度
+
+| 复杂度 | 维度覆盖要求 | 每维度测试点 | 说明 |
+|--------|------------|------------|------|
+| 简单系统 | 至少2个维度 | 5-8个/维度 | 内部系统/低风险 |
+| 中等系统 | 全部3个维度 | 10-15个/维度 | 业务系统/中等风险 |
+| 复杂系统 | 全部3个维度+深度测试 | 20-30个/维度 | 核心系统/高风险 |
+
+**适用范围**：本技能仅在你明确要求某个专项测试方向（如性能/安全/兼容性）且已确认测试目标和环境授权时激活。安全测试相关内容必须配合授权声明使用，不得在未获授权的系统上执行。
+
+## 加载时机
+
+| 什么时候读 | 读哪个 |
+|-----------|--------|
+| 做性能测试专项时 | [`references/performance-depth.md`](references/performance-depth.md) |
+
+> `维度1：性能测试`的完整内容已下沉至 `references/performance-depth.md`，避免每次触发都占用上下文。
+
+## 维度2：安全测试
+
+> ⚠️ **授权与法律声明**：安全测试（尤其是渗透测试）必须获得系统所有者的明确书面授权。
+> 执行前必须确认：
+> 1. 测试目标属于你或已获得明确授权
+> 2. 清楚界定测试范围、目标环境和边界（严禁超出授权范围）
+> 3. 了解并遵守当地网络安全相关法律法规
+> 4. 测试活动不会对业务系统造成影响（建议使用独立测试环境）
+> 5. 使用攻击性工具（Burp Suite/SQLMap 等）仅限于你拥有或明确获授权的系统
+
+### 安全测试类型
+
+```text
+├─ OWASP Top 10
+│   ├─ 注入攻击（Injection）
+│   ├─ 失效的身份认证（Broken Authentication）
+│   ├─ 敏感数据暴露（Sensitive Data Exposure）
+│   ├─ XML外部实体（XXE）
+│   ├─ 失效的访问控制（Broken Access Control）
+│   ├─ 安全配置错误（Security Misconfiguration）
+│   ├─ 跨站脚本（XSS）
+│   ├─ 不安全的反序列化（Insecure Deserialization）
+│   ├─ 使用含有已知漏洞的组件（Vulnerable Components）
+│   └─ 不足的日志和监控（Insufficient Logging）
+│
+├─ 渗透测试
+│   ├─ 信息收集：域名、IP、端口
+│   ├─ 漏洞扫描：自动化扫描
+│   ├─ 漏洞利用：手动验证
+│   └─ 报告输出：漏洞报告
+│
+└─ 代码审计
+    ├─ 静态分析：代码扫描
+    ├─ 动态分析：运行时检测
+    └─ 人工审计：代码Review
+```
+
+### 安全测试工具
+
+```text
+├─ Burp Suite
+│   ├─ 用途：Web应用渗透测试
+│   ├─ 功能：代理、扫描、爬虫、爆破
+│   └─ 适用：Web安全测试
+│
+├─ OWASP ZAP
+│   ├─ 用途：Web应用安全扫描
+│   ├─ 功能：自动扫描、手动测试
+│   └─ 适用：自动化安全测试
+│
+├─ SQLMap
+│   ├─ 用途：SQL注入测试
+│   ├─ 功能：自动检测、利用SQL注入
+│   └─ 适用：SQL注入测试
+│
+└─ Nmap
+    ├─ 用途：网络扫描
+    ├─ 功能：端口扫描、服务识别
+    └─ 适用：信息收集
+```
+
+## 维度3：兼容性测试
+
+### 兼容性测试维度
+
+```text
+├─ 浏览器兼容
+│   ├─ Chrome
+│   ├─ Firefox
+│   ├─ Safari
+│   ├─ Edge
+│   └─ IE（如需要）
+│
+├─ 设备兼容
+│   ├─ PC
+│   ├─ 手机（iOS/Android）
+│   ├─ 平板
+│   └─ 不同分辨率
+│
+├─ 系统兼容
+│   ├─ Windows
+│   ├─ macOS
+│   ├─ Linux
+│   └─ 不同版本
+│
+└─ 网络兼容
+    ├─ WiFi
+    ├─ 4G/5G
+    ├─ 弱网
+    └─ 离线
+```
+
+### 兼容性测试工具
+
+```text
+├─ 浏览器测试
+│   ├─ BrowserStack：云端真机测试
+│   ├─ Sauce Labs：云端测试平台
+│   ├─ LambdaTest：跨浏览器测试
+│   └─ Can I Use：兼容性查询
+│
+├─ 移动端测试
+│   ├─ Appium：移动端自动化
+│   ├─ XCTest/Espresso：原生测试
+│   └─ 真机测试：实际设备测试
+│
+└─ 响应式测试
+    ├─ Chrome DevTools：设备模拟
+    ├─ Responsinator：响应式检查
+    └─ Am I Responsive：响应式检查
+```
+
+## 专项测试检查清单
+
+### 性能测试检查
+- [ ] 测试场景设计？
+- [ ] 性能指标定义？
+- [ ] 测试工具选择？
+- [ ] 测试环境准备？
+- [ ] 监控工具配置？
+- [ ] 结果分析报告？
+
+### 安全测试检查
+- [ ] 测试范围确定？
+- [ ] 测试工具准备？
+- [ ] OWASP Top 10覆盖？
+- [ ] 渗透测试执行？
+- [ ] 漏洞报告输出？
+- [ ] 修复验证完成？
+
+### 兼容性测试检查
+- [ ] 浏览器范围确定？
+- [ ] 设备范围确定？
+- [ ] 测试矩阵设计？
+- [ ] 测试工具选择？
+- [ ] 测试执行完成？
+- [ ] 问题报告输出？
+
+## 输出示例
+
+**用户说"测一下这个接口的性能"**
+→ 性能测试：确定测试类型（负载/压力/稳定性）→选择工具（JMeter/Locust）→定义指标（TPS/响应时间/错误率）→执行→分析瓶颈
+
+**用户说"做个安全测试"**
+→ 安全测试：OWASP Top10逐项扫描→SQL注入/XSS/CSRF→认证绕过测试→授权越权测试
+
+**兼容性测试需求：用户说"网站要在Chrome和Safari上都能用"**
+→ 确定浏览器矩阵→功能回归→渲染检查→交互测试
+
+## 检查清单
+
+专项测试完成后检查：
+- [ ] 测试类型是否明确？
+- [ ] 测试工具是否选择？
+- [ ] 测试环境是否准备？
+- [ ] 测试执行是否完成？
+- [ ] 结果分析是否深入？
+- [ ] 报告输出是否规范？

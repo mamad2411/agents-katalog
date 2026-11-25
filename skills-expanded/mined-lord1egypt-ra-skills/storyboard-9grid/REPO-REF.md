@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/storyboard-9grid/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 九宫格电影分镜生成器。将剧本/故事大纲拆解为导演级分镜结构，每个分镜输出9宫格画面（环境建立→角色登场→动作起势→情绪铺垫→核心动作→情绪高潮→关键细节→关系变化→叙事收束），每格附带可直接用于Nano Banana Pro的详细生图提示词。当用户说\"分镜\"、\"九宫格\"、\"拆镜头\"、\"把这个脚本转成画面\"时触发。"

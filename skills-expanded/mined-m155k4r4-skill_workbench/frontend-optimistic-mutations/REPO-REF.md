@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/m155k4r4/skill_workbench (path: plugins/agentic-awesome-skills-claude/skills/frontend-optimistic-mutations/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: A portable, framework-agnostic discipline for the write path of any React or React Native app using a query/cache layer. Codifies the optimistic-update lifecycle (cancel in-flight queries → snapshot e

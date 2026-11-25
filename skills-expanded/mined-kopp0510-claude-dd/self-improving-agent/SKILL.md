@@ -1,0 +1,147 @@
+---
+name: self-improving-agent
+description: "Curate Claude Code's auto-memory into durable project knowledge. Analyze MEMORY.md for patterns, promote proven learnings to CLAUDE.md and .claude/rules/, extract recurring solutions into reusable skills. Use when: (1) reviewing what Claude has learned about your project, (2) graduating a pattern from notes to enforced rules, (3) turning a debugging solution into a skill, (4) checking memory health and capacity."
+---
+
+# Self-Improving Agent
+
+> Auto-memory captures. This plugin curates.
+
+Claude Code's auto-memory (v2.1.32+) automatically records project patterns, debugging insights, and your preferences in `MEMORY.md`. This plugin adds the intelligence layer: it analyzes what Claude has learned, promotes proven patterns into project rules, and extracts recurring solutions into reusable skills.
+
+## Quick Reference
+
+| Command | What it does |
+|---------|-------------|
+| `/self-improving-agent:review` | Analyze MEMORY.md — find promotion candidates, stale entries, consolidation opportunities |
+| `/self-improving-agent:promote` | Graduate a pattern from MEMORY.md → CLAUDE.md or `.claude/rules/` |
+| `/self-improving-agent:extract` | Turn a proven pattern into a standalone skill |
+| `/self-improving-agent:status` | Memory health dashboard — line counts, topic files, recommendations |
+| `/self-improving-agent:remember` | Explicitly save important knowledge to auto-memory |
+
+## How It Fits Together
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Claude Code Memory Stack                │
+├─────────────┬──────────────────┬────────────────────────┤
+│  CLAUDE.md  │   Auto Memory    │   Session Memory       │
+│  (you write)│   (Claude writes)│   (Claude writes)      │
+│  Rules &    │   MEMORY.md      │   Conversation logs    │
+│  standards  │   + topic files  │   + continuity         │
+│  Full load  │   First 200 lines│   Contextual load      │
+├─────────────┴──────────────────┴────────────────────────┤
+│              ↑ /self-improving-agent:promote        ↑ /self-improving-agent:review          │
+│         Self-Improving Agent (this plugin)               │
+│              ↓ /self-improving-agent:extract    ↓ /self-improving-agent:remember            │
+├─────────────────────────────────────────────────────────┤
+│  .claude/rules/    │    New Skills    │   Error Logs     │
+│  (scoped rules)    │    (extracted)   │   (auto-captured)│
+└─────────────────────────────────────────────────────────┘
+```
+
+## Installation
+
+This copy is deployed by the claude-dd repo's `install-dd-pipeline.sh` (it is in the `PROMOTED_SKILLS`
+list and is copied to `~/.claude/skills/self-improving-agent/`). Do not also install it from the upstream
+marketplace.
+
+## Memory Architecture
+
+### Where things live
+
+| File | Who writes | Scope | Loaded |
+|------|-----------|-------|--------|
+| `./CLAUDE.md` | You (+ `/self-improving-agent:promote`) | Project rules | Full file, every session |
+| `~/.claude/CLAUDE.md` | You | Global preferences | Full file, every session |
+| `~/.claude/projects/<path>/memory/MEMORY.md` | Claude (auto) | Project learnings | First 200 lines |
+| `~/.claude/projects/<path>/memory/*.md` | Claude (overflow) | Topic-specific notes | On demand |
+| `.claude/rules/*.md` | You (+ `/self-improving-agent:promote`) | Scoped rules | When matching files open |
+
+### The promotion lifecycle
+
+```
+1. Claude discovers pattern → auto-memory (MEMORY.md)
+2. Pattern meets the Promotion Criteria and scores high enough (both in reference/promotion-rules.md) → /self-improving-agent:review flags it as promotion candidate
+3. You approve → /self-improving-agent:promote graduates it to CLAUDE.md or rules/
+4. Pattern becomes an enforced rule, not just a note
+5. MEMORY.md entry removed → frees space for new learnings
+```
+
+## Core Concepts
+
+### Auto-memory is capture, not curation
+
+Auto-memory is excellent at recording what Claude learns. But it has no judgment about:
+- Which learnings are temporary vs. permanent
+- Which patterns should become enforced rules
+- When the 200-line limit is wasting space on stale entries
+- Which solutions are good enough to become reusable skills
+
+That's what this plugin does.
+
+### Promotion = graduation
+
+When you promote a learning, it moves from Claude's scratchpad (MEMORY.md) to your project's rule system (CLAUDE.md or `.claude/rules/`). The difference matters:
+
+- **MEMORY.md**: "I noticed this project uses pnpm" (background context)
+- **CLAUDE.md**: "Use pnpm, not npm" (enforced instruction)
+
+Promoted rules have higher priority and load in full (not truncated at 200 lines).
+
+### Rules directory for scoped knowledge
+
+Not everything belongs in CLAUDE.md. Use `.claude/rules/` for patterns that only apply to specific file types:
+
+```yaml
+# .claude/rules/api-testing.md
+---
+paths:
+  - "src/api/**/*.test.ts"
+  - "tests/api/**/*"
+---
+- Use supertest for API endpoint testing
+- Mock external services with msw
+- Always test error responses, not just happy paths
+```
+
+This loads only when Claude works with API test files — zero overhead otherwise.
+
+## Agents
+
+### memory-analyst
+Analyzes MEMORY.md and topic files to identify:
+- Entries that recur across sessions (promotion candidates)
+- Stale entries referencing deleted files or old patterns
+- Related entries that should be consolidated
+- Gaps between what MEMORY.md knows and what CLAUDE.md enforces
+
+### skill-extractor
+Takes a proven pattern and generates a complete skill:
+- SKILL.md with proper frontmatter
+- Reference documentation
+- Examples and edge cases
+- Ready for `/plugin install` or `clawhub publish`
+
+## Hooks
+
+### error-capture (PostToolUse → Bash)
+Monitors command output for errors. When detected, returns a short reminder to Claude
+(via `hookSpecificOutput.additionalContext`) containing the matched error pattern and a
+truncated context snippet, suggesting `/self-improving-agent:remember` to save the
+solution. It does not write to auto-memory itself — saving stays an explicit decision.
+
+**Token overhead:** Zero unless an error pattern matches; ~40 tokens when one does.
+This is text matching on the command's output, **not** exit status — the hook input carries
+no exit code field, so a command that succeeded while printing `failed` or `error:` also fires.
+
+## Platform Support
+
+| Platform | Memory System | Plugin Works? |
+|----------|--------------|---------------|
+| Claude Code | Auto-memory (MEMORY.md) | ✅ Full support |
+
+## Related
+
+- [Claude Code Memory Docs](https://code.claude.com/docs/en/memory)
+- [pskoett/self-improving-agent](https://clawhub.ai/pskoett/self-improving-agent) — inspiration

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/i/ielts-grading/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 根据用户提供的雅思写作或口语回答进行官方标准评分。使用前先联网检索并确认原始题目，再按本项目内评分标准逐维度打分、给出总分与可执行改进建议。适用于用户提到 IELTS/雅思、作文批改、口语评分、band 分数、Task 1/Task 2、speaking mock 等场景。

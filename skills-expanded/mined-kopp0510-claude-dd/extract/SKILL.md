@@ -1,0 +1,200 @@
+---
+name: extract
+description: "Turn a proven pattern or debugging solution into a standalone reusable skill with SKILL.md, reference docs, and examples."
+command: /self-improving-agent:extract
+---
+
+# /self-improving-agent:extract — Create Skills from Patterns
+
+Transforms a recurring pattern or debugging solution into a standalone, portable skill that can be installed in any project.
+
+## Usage
+
+```
+/self-improving-agent:extract <pattern description>                  # Interactive extraction
+/self-improving-agent:extract <pattern> --name docker-m1-fixes       # Specify skill name
+/self-improving-agent:extract <pattern> --output ./skills/            # Custom output directory
+/self-improving-agent:extract <pattern> --dry-run                     # Preview without creating files
+```
+
+## When to Extract
+
+A learning qualifies for skill extraction when ANY of these are true:
+
+| Criterion | Signal |
+|---|---|
+| **Recurring** | Same issue across 2+ projects |
+| **Non-obvious** | Required real debugging to discover |
+| **Broadly applicable** | Not tied to one specific codebase |
+| **Complex solution** | Multi-step fix that's easy to forget |
+| **User-flagged** | "Save this as a skill", "I want to reuse this" |
+
+## Workflow
+
+### Step 1: Identify the pattern
+
+Read the user's description. Search auto-memory for related entries:
+
+```bash
+# Claude Code replaces EVERY non-alphanumeric character in the resolved absolute path
+# with a single "-" (dots, spaces and CJK included).
+# The directory is keyed by the git repo root, not the cwd: subdirectories and worktrees
+# share the main checkout's directory (tested 2026-11-19). Outside a git repo it is the cwd.
+ROOT=$(g=$(git rev-parse --git-common-dir 2>/dev/null) && cd "$g" >/dev/null 2>&1 && pwd -P)
+case $ROOT in */.git) ROOT=${ROOT%/.git} ;; ?*) ROOT=$(git rev-parse --show-toplevel 2>/dev/null) ;; esac   # no /.git at the end: a submodule, keyed by its own root
+MEMORY_DIR="$HOME/.claude/projects/$(printf '%s' "${ROOT:-$(pwd -P)}" | sed 's/[^a-zA-Z0-9]/-/g')/memory"
+# Verify first; a missing directory means "wrong path", not "auto-memory has nothing".
+# Under LC_ALL=C sed goes per byte, so when the directory is missing, say so and list candidates
+# (find, not a glob: zsh aborts on an unmatched glob). A candidate is a project directory: its memory
+# is <candidate>/memory. If one is clearly this project and that directory exists, set MEMORY_DIR to it.
+# No candidate, or several and none clearly this project: say so, do not search any of them, and go on
+# from the user's description alone.
+[ -d "$MEMORY_DIR" ] || { echo "Memory directory not found: $MEMORY_DIR"; find ~/.claude/projects -maxdepth 1 -name "*$(basename "${ROOT:-$PWD}" | sed 's/[^a-zA-Z0-9]/-/g')"; }
+# Search once per keyword, not one phrase: a phrase misses entries worded differently.
+# Pick 2-4 distinctive words from the description (tool, file or command names, error text);
+# skip common words that would match everything. -F keeps dots and brackets literal.
+for k in "<keyword1>" "<keyword2>"; do grep -rniF -- "$k" "$MEMORY_DIR" 2>/dev/null; done
+```
+
+If found in auto-memory, use those entries as source material. If not, use the user's description directly.
+
+### Step 2: Determine skill scope
+
+Ask (max 2 questions):
+- "What problem does this solve?" (if not clear)
+- "Should this include code examples?" (if applicable)
+
+### Step 3: Generate skill name
+
+Rules for naming:
+- Lowercase, hyphens between words
+- Descriptive but concise (2-4 words)
+- Examples: `docker-m1-fixes`, `api-timeout-patterns`, `pnpm-workspace-setup`
+
+### Step 4: Create the skill files
+
+**Spawn the skill-extractor agent** for the actual file generation — Agent tool with
+`subagent_type: self-improving-agent:skill-extractor`. The namespace is the **plugin** name
+plus the agent name; the bare `skill-extractor` and the doubled `skill-extractor:skill-extractor`
+both resolve to nothing. If it returns `Agent type not found`, read
+`$HOME/.claude/skills/self-improving-agent/agents/skill-extractor.md` and apply its Constraints
+and Quality checks inline rather than generating the files without them.
+
+The agent creates:
+
+```
+<skill-name>/
+├── SKILL.md            # Main skill file with frontmatter
+├── README.md           # Human-readable overview
+└── reference/          # (optional) Supporting documentation
+    └── examples.md     # Concrete examples and edge cases
+```
+
+### Step 5: SKILL.md structure
+
+The generated SKILL.md must follow this format:
+
+```markdown
+---
+name: <skill-name>
+description: "<one-line description>. Use when: <trigger conditions>."
+---
+
+# <Skill Title>
+
+> One-line summary of what this skill solves.
+
+## Quick Reference
+
+| Problem | Solution |
+|---------|----------|
+| {{problem 1}} | {{solution 1}} |
+| {{problem 2}} | {{solution 2}} |
+
+## The Problem
+
+{{2-3 sentences explaining what goes wrong and why it's non-obvious.}}
+
+## Solutions
+
+### Option 1: {{Name}} (Recommended)
+
+{{Step-by-step with code examples.}}
+
+### Option 2: {{Alternative}}
+
+{{For when Option 1 doesn't apply.}}
+
+## Trade-offs
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| Option 1 | {{pros}} | {{cons}} |
+| Option 2 | {{pros}} | {{cons}} |
+
+## Edge Cases
+
+- {{edge case 1 and how to handle it}}
+- {{edge case 2 and how to handle it}}
+```
+
+### Step 6: Quality gates
+
+Before finalizing, verify:
+
+- [ ] SKILL.md has valid YAML frontmatter with `name` and `description`
+- [ ] `name` matches the folder name (lowercase, hyphens)
+- [ ] Description includes "Use when:" trigger conditions
+- [ ] Solutions are self-contained (no external context needed)
+- [ ] Code examples are complete and copy-pasteable
+- [ ] No project-specific hardcoded values (paths, URLs, credentials)
+- [ ] No unnecessary dependencies
+
+### Step 7: Report
+
+```
+✅ Skill extracted: {{skill-name}}
+
+Files created:
+  {{path}}/SKILL.md          ({{lines}} lines)
+  {{path}}/README.md         ({{lines}} lines)
+  {{path}}/reference/examples.md  ({{lines}} lines)
+
+Install: /plugin install (copy to your skills directory)
+Publish: clawhub publish {{path}}
+
+Source: MEMORY.md entries at lines {{n, m, ...}} (retained — the skill is portable, the memory is project-specific)
+```
+
+## Examples
+
+### Extracting a debugging pattern
+
+```
+/self-improving-agent:extract "Fix for Docker builds failing on Apple Silicon with platform mismatch"
+```
+
+Creates `docker-m1-fixes/SKILL.md` with:
+- The platform mismatch error message
+- Three solutions (build flag, Dockerfile, docker-compose)
+- Trade-offs table
+- Performance note about Rosetta 2 emulation
+
+### Extracting a workflow pattern
+
+```
+/self-improving-agent:extract "Always regenerate TypeScript API client after modifying OpenAPI spec"
+```
+
+Creates `api-client-regen/SKILL.md` with:
+- Why manual regen is needed
+- The exact command sequence
+- CI integration snippet
+- Common failure modes
+
+## Tips
+
+- Extract patterns that would save time in a *different* project
+- Keep skills focused — one problem per skill
+- Include the error messages people would search for
+- Test the skill by reading it without the original context — does it make sense?

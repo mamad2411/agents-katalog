@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/interview-writer/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: AI 采访式内容创作系统。不是人写，也不是 AI 自动写，而是 AI 分析后采访人再按人的风格写。通过问答不断沉淀用户画像（观点、写作风格、思考逻辑），持续迭代演进。支持博客、社交媒体、观点文章等场景。

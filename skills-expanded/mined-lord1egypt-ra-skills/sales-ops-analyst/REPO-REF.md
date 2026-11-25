@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_ncklrs_startup-os-skills_sales-ops-analyst/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Expert sales operations and analytics guidance for revenue teams. Use when designing CRM workflows, building sales dashboards, optimizing pipeline analytics, creating lead routing rules, designing ter

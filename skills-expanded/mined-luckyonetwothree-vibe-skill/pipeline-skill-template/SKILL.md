@@ -1,0 +1,142 @@
+---
+name: {domain}-{methodology-name}
+description: 当需要{触发场景}时使用。{一句话功能描述}。关键词：{关键词1}、{关键词2}、{关键词3}、{用户语言关键词1}、{用户语言关键词2}。
+metadata:
+  module: "{所属模块中文名}"
+  sub-module: "{所属子模块中文名}"
+  type: "pipeline"
+  version: "1.0"
+  interaction_mode: "ai_suggest_human_approve"
+  domain_tags: ["{行业标签1}", "通用"]
+  trigger_examples:
+    - "{用户可能说的自然语言示例1}"
+    - "{用户可能说的自然语言示例2}"
+---
+
+# {方法论名称}
+
+## 核心原则
+
+1. **{原则1名称}**——{原则1说明}
+2. **{原则2名称}**——{原则2说明}
+3. **{原则3名称}**——{原则3说明}
+4. **{原则4名称}**——{原则4说明}
+
+## 交互模式
+
+🤖→👤 AI建议人类审批
+
+## 执行深度控制
+
+遵循 [Execution Depth Protocol](../execution-depth-protocol.md)。默认 `execution_depth=standard`；快速草稿使用 `quick`，完整审计或高风险决策使用 `deep`。
+
+## 输入
+
+| 输入项 | 类型 | 必填 | 来源 | 说明 |
+|--------|------|------|------|------|
+| {输入名} | {JSON/markdown/string} | {是/否} | {上游Skill输出路径 / 用户提供} | {说明} |
+| execution_depth | enum | 否 | 用户提供 / 编排器传入 | quick / standard / deep，默认 standard |
+
+### Input JSON 示例结构
+
+```json
+{
+  "example_field": "示例值"
+}
+```
+
+## 执行步骤
+
+### Step 1: {步骤名称}
+
+{步骤描述}
+
+- {子步骤1}
+- {子步骤2}
+
+### Step 2: {步骤名称}
+
+{步骤描述}
+
+### Step N: {步骤名称}
+
+{步骤描述}
+
+## 输出
+
+输出文件：`output/{领域路径}/{skill-name}/{output-filename}`
+
+**输出Schema**：
+
+```json
+{
+  "type": "object",
+  "required": ["field1", "field2"],
+  "properties": {
+    "field1": {"type": "string", "description": "字段1说明"},
+    "field2": {"type": "object", "description": "字段2说明"}
+  }
+}
+```
+
+### Output JSON 格式
+
+```json
+{
+  "field1": "示例值",
+  "field2": {
+    "sub_field": "示例值"
+  }
+}
+```
+
+## 决策规则
+
+| 条件 | 决策 |
+|------|------|
+| {条件描述} | {决策动作} |
+
+## 质量检查
+
+- [ ] {检查项1}
+- [ ] {检查项2}
+- [ ] {检查项3}
+
+## 降级策略
+
+| 缺失的上游输入 | 降级方案 | 输出影响 |
+|---------------|---------|---------|
+| {上游文件} | {降级方案} | {影响说明} |
+
+数据获取说明：
+- 本Skill需要{输入说明}，请通过以下方式之一提供：
+  1. {方式1}
+  2. {方式2}
+  3. {方式3}
+
+## Reference（可选）
+
+当 SKILL.md 超过 500 行时，建议将以下内容拆分到 `Reference/` 文件夹：
+
+- **模板文件**：完整的文档结构模板、表格模板 → `Reference/{template-name}.md`
+- **JSON Schema**：输入/输出数据结构定义 → `Reference/input-schema.md`、`Reference/output-schema.md`
+- **示例数据**：完整的示例 JSON、示例文档 → `Reference/examples.md`
+
+拆分后，在 SKILL.md 对应章节保留概览表格，并通过链接引用：
+```
+**完整{内容}**：详见 [Reference/{file-name}.md](Reference/{file-name}.md)
+```
+
+## 上游变更响应
+
+当上游输入发生变更时，本Skill的响应策略：
+
+| 上游变更 | 影响范围 | 响应策略 |
+|----------|----------|----------|
+| {变更类型} | {影响范围} | {响应策略} |
+
+当本Skill自身变更时，对下游的通知机制：
+
+| 变更类型 | 影响范围 | 通知方式 |
+|----------|----------|----------|
+| {变更类型} | {下游Skill} | {通知方式} |

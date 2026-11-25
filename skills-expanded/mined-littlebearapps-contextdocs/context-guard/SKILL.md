@@ -1,0 +1,137 @@
+---
+name: context-guard
+description: Installs Claude Code hooks that keep AI context files fresh. Two-tier enforcement — Tier 1 nudges at session end, Tier 2 blocks commits when structural files are staged without context updates. Includes content filter, drift check, structural change reminder, SessionStart health check, and the context-updater agent.
+when_to_use: |
+  Trigger phrases:
+  - "install context guard hooks" or "install context-guard"
+  - "set up commit guards for context files"
+  - "prevent stale CLAUDE.md / AGENTS.md from being committed"
+  - "block commits when context files are out of date"
+  - "detect context drift after commits"
+  - "add content filter guards" or "stop content filter errors on LICENSE / SECURITY / CODE_OF_CONDUCT"
+  - "check context guard status" or "is context guard installed?"
+  - "uninstall context guard" or "remove context hooks"
+  - "install strict" / "tier 2" / "enforce context updates"
+  Skip when:
+  - The user is on a non-Claude Code platform (skill is Claude Code only)
+  - They want to generate context files (use ai-context)
+  - They want to validate health without installing hooks (use context-verify)
+  - The work is unrelated to context file freshness or hook installation
+---
+
+# Context Guard
+
+## What It Does
+
+Hooks and a quality rule to keep AI context files in sync with the codebase. Prevents content filter errors on standard OSS files. Two-tier enforcement for context doc freshness.
+
+**Primary platform: Claude Code** (full automation, 12 hook events). Other platforms with hook support — Gemini CLI (11 events), Copilot (8, preview), Cursor (4+), Cline (3) — can use adapted hooks from `platforms/` packages (coming soon). For platforms without hooks (Codex CLI, OpenCode, Windsurf), use `bin/context-verify.sh` as a manual or CI-based alternative.
+
+## Enforcement Tiers
+
+| Tier | Name | Mechanism | Behaviour |
+|------|------|-----------|-----------|
+| 1 | Nudge | Stop hook | Advisory — suggests updating context docs before session ends |
+| 2 | Guard | PreToolUse on `git commit` | Blocking — prevents commits when structural files staged without context updates (exit 2) |
+
+Default: Tier 1 only. Add Tier 2 with `install strict`.
+
+## Components
+
+### content-filter-guard.sh (PreToolUse → Write)
+
+- **HIGH-risk** (CODE_OF_CONDUCT.md, LICENSE, SECURITY.md): blocks write, returns fetch commands for canonical URL
+- **MEDIUM-risk** (CHANGELOG.md, CONTRIBUTING.md): allows write, advises chunked writing
+- **All other files:** passes through silently
+
+### context-structural-change.sh (PostToolUse → Write|Edit)
+
+Fires after creating/editing structural files. Reminds which context files may need updating:
+- `commands/*.md`, `.claude/skills/*/SKILL.md`, `.agents/skills/*/SKILL.md` → update `AGENTS.md` first, then `CLAUDE.md`, `llms.txt`, and any affected bridge files
+- `.claude/agents/*.md`, `.agents/agents/*.md` → `AGENTS.md`, `llms.txt`
+- `.claude/rules/*.md` → `AGENTS.md` and `CLAUDE.md` if rule references changed
+- Config files (`package.json`, `pyproject.toml`, etc.) → update `AGENTS.md` first, then only the bridge files with tool-specific command/tooling notes
+
+If your repository uses the `.agents/` layout instead of `.claude/`, apply the same AGENTS-first update order to the equivalent skill and agent paths above.
+
+### context-drift-check.sh (PostToolUse → Bash)
+
+Fires after `git commit`. Compares context file last-modified commit vs most recent source commit. Detects broken path references. Throttled to max once per hour via `.git/.context-guard-last-check`.
+
+### context-guard-stop.sh (Stop — Tier 1)
+
+Fires on session end. Checks for uncommitted structural changes without context updates. Returns `{"decision": "block"}` if drift detected. Checks `stop_hook_active` flag to prevent infinite loops.
+
+### context-commit-guard.sh (PreToolUse → Bash — Tier 2)
+
+Fires before `git commit`. Checks staging area for structural files without context files. Exit 2 blocks the commit.
+
+### context-session-start.sh (SessionStart)
+
+Fires at session start. Quick context health check: counts context files, detects stale files (source commits ahead), warns if aggregate line count exceeds budget. Advisory only — cannot block session start.
+
+### context-forced-eval.sh (UserPromptSubmit)
+
+Fires on every user prompt. Checks for context-related keywords and injects a skill evaluation sequence that instructs Claude to evaluate and activate ContextDocs skills before responding. Keyword-gated to avoid overhead on unrelated prompts. Advisory only — never blocks.
+
+### context-updater agent
+
+Autonomous agent (`.claude/agents/context-updater.md`) launched by Claude in response to hook output. Applies surgical, incremental context file updates. Uses `.git/.context-updater-running` flag for loop prevention.
+
+## Installation
+
+`/contextdocs:context-guard install` (Tier 1): copies hooks to `.claude/hooks/`, agent to `.claude/agents/`, rule to `.claude/rules/`, merges config into `.claude/settings.json`.
+
+`/contextdocs:context-guard install strict` (Tier 1 + 2): adds `context-commit-guard.sh` and its PreToolUse Bash entry.
+
+### Settings.json
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Write", "hooks": [{ "type": "command", "command": ".claude/hooks/content-filter-guard.sh" }] },
+      { "if": "Bash(git commit*)", "hooks": [{ "type": "command", "command": ".claude/hooks/context-commit-guard.sh" }] }
+    ],
+    "PostToolUse": [
+      { "if": "Bash(git commit*)", "hooks": [{ "type": "command", "command": ".claude/hooks/context-drift-check.sh" }] },
+      { "matcher": "Write|Edit", "hooks": [{ "type": "command", "command": ".claude/hooks/context-structural-change.sh" }] }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": ".claude/hooks/context-session-start.sh" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": ".claude/hooks/context-forced-eval.sh" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": ".claude/hooks/context-guard-stop.sh" }] }
+    ]
+  }
+}
+```
+
+The PreToolUse `if: Bash(git commit*)` entry for `context-commit-guard.sh` is only added with `install strict` (Tier 2).
+
+**`if:` vs `matcher:`** — Claude Code v2.1.85 added `if:` (permission-rule syntax, e.g. `Bash(git commit*)`) so hooks fire only on matching bash commands. Older versions ignore unknown `if:` — the in-script substring guards keep both safe. Use `matcher: "Bash"` when the hook needs every Bash invocation.
+
+## Uninstallation
+
+`/contextdocs:context-guard uninstall` removes all hook scripts, the context-updater agent, settings.json entries, and the quality rule.
+
+## Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| Hooks not firing | `chmod +x .claude/hooks/*.sh` |
+| No output after commit | Delete `.git/.context-guard-last-check` to reset throttle |
+| "jq: command not found" | Install jq: `apt install jq` or `brew install jq` |
+| Claude loops on stop | Verify `context-guard-stop.sh` checks `stop_hook_active` flag; or remove Stop entry from settings.json |
+| Tier 2 false positive | Stage a context file with a minor update, or remove the commit guard PreToolUse entry |
+
+## Untether Compatibility
+
+When running via [Untether](https://github.com/littlebearapps/untether) (Telegram bridge), `context-guard-stop.sh` checks `UNTETHER_SESSION` env var and exits immediately — Stop hook blocks would displace user content in Telegram output. All other hooks (drift check, structural reminders, content filter, commit guard) work normally. If you don't use Untether, this has no effect.
+
+## Hook System Reference
+
+For the complete hook event catalogue (17 events), handler types (command, http, prompt, agent), advanced features (async, once, timeout, matcher, updatedInput, CLAUDE_ENV_FILE), and settings.json schema, load the companion reference: `SKILL-reference.md`

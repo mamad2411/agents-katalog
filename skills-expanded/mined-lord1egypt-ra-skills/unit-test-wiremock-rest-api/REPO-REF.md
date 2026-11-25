@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_giuseppe-trisciuoglio_developer-kit_unit-test-wiremock-rest-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Provides patterns for unit testing external REST APIs using WireMock. Stubs API responses, verifies request details, simulates failures (timeouts, 4xx/5xx errors), and validates HTTP client behavior w

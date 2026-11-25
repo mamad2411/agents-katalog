@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/r/resume-parser/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 智能简历解析系统，支持PDF/Word/图片格式简历的结构化信息提取、岗位匹配度分析、优化建议生成。完全本地运行，无需外部API。使用场景：(1) 解析上传的简历文件提取核心信息，(2) 输入岗位JD计算简历匹配度，(3) 生成简历优化建议，(4) 导出结构化简历数据。

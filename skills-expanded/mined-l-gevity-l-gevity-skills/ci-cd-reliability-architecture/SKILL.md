@@ -1,0 +1,388 @@
+---
+name: ci-cd-reliability-architecture
+description: >-
+    Establishes idempotency, self-containment, immutable artifacts,
+    self-healing, zero-downtime, and zero-knowledge security for CI/CD
+    pipelines, including delivery-strategy choice, evidence-gated release, and
+    production promotion. Use
+    this skill when designing, auditing, or debugging any workflow, release, or
+    deployment pipeline.
+---
+
+# CI/CD Reliability Architecture
+
+> **Out of scope**: Business logic (`architecture-guidelines`), value-stream
+> optimization (`system-optimization`), release planning/versioning, and ongoing
+> production operations. This skill owns technical promotion from a verified
+> artifact through a bounded production-verification window and owner handoff.
+
+> **Core Directives**
+>
+> 1. **Idempotent** — converges to the same desired state when run or retried (§1).
+> 2. **Self-Contained** — explicit inputs, outputs, failure mode (§2).
+> 3. **Immutable Artifacts** — build once, promote; config at deploy time (§3).
+> 4. **Self-Healing** — retry transient, fail-fast permanent (§4).
+> 5. **Zero-Downtime** — chosen delivery strategy, verification beside
+>    production, then atomic promotion or a separately reversible exposure
+>    switch (§5).
+> 6. **Zero-Knowledge** — OIDC / federated identity, no standing cloud secrets (§6).
+> 7. **Evidence-Gated** — every merge and promotion is blocked by the earliest
+>    applicable verification gate (§9).
+
+---
+
+## 1. Idempotency
+
+| Anti-Pattern                   | Fix                                    | Why                      |
+| ------------------------------ | -------------------------------------- | ------------------------ |
+| `npm install`                  | `npm ci`                               | Lock-file exact match    |
+| `mkdir build`                  | `mkdir -p`                             | No-op if exists          |
+| Delete live resource first     | Create replacement; switch; delete old | Gap causes downtime      |
+| `git commit --amend` published | Create new commit                      | Never amend pushed work  |
+| Assume upstream state          | Explicit `needs:` + download artifacts | Prevents race conditions |
+
+**Checklist:**
+
+- [ ] Converges to the same desired state if skipped, run once, or retried
+- [ ] File operations use scoped idempotent flags and precondition checks
+- [ ] Secrets: create new first, apply everywhere, then delete old
+- [ ] DB updates use conditional writes (`WHERE version = X`)
+
+---
+
+## 2. Self-Contained Jobs
+
+Each job declares **inputs**, **steps**, **outputs**, **failure mode**.
+A platform-neutral job skeleton showing the four declarations, explicit
+artifact download, caching as a performance hint, fail-fast, and timeout is
+in [references/pipeline-patterns.md](references/pipeline-patterns.md) under
+*Self-contained job*.
+
+**Rules:**
+
+- Never assume upstream state; always download artifacts explicitly
+- Caching (dependencies, browsers, etc.) does not violate self-containment — it
+  is scoped performance optimization within job isolation
+- Namespace all artifacts uniquely with commit SHA or run ID; branch or PR
+  number is metadata, not the uniqueness key
+- Never write to shared paths without explicit scoping
+- Declare failure mode explicitly (`continue-on-error` or default fail-fast)
+
+---
+
+## 3. Immutable Artifacts
+
+**Principle**: Build once, promote the same artifact across environments. Never
+rebuild to change target environment.
+
+| Anti-Pattern                        | Fix                                                   | Why                                           |
+| ----------------------------------- | ----------------------------------------------------- | --------------------------------------------- |
+| Rebuild per environment             | Build once; promote the same output                   | Eliminates "works in staging" divergence      |
+| Bake URLs/secrets into build output | Inject config at deploy time (env vars, config files) | Same artifact, different config               |
+| Tag artifacts with branch name only | Tag with commit SHA (+ optional semver)               | SHA is immutable; branch names move           |
+| Store artifacts only in CI cache    | Publish to an artifact registry                       | Decouples build from deploy; enables rollback |
+| Keep every candidate for one default window | Retain by reader: candidates until their deploy reads them, promoted artifacts for the rollback window | Storage grows with no reader |
+
+**Rules:**
+
+- The build step produces a **versioned, immutable artifact** (archive, image,
+  bundle) tagged with the commit SHA
+- Environment-specific values (API URLs, feature flags, secrets) are injected at
+  **deploy time**, never at build time
+- Promoting to production means deploying the **same artifact** that passed
+  staging — not triggering a new build
+- Rollback means redeploying a **previous known-good artifact**, not reverting
+  code and rebuilding
+- **Retention follows the longest reader.** Set each stored artifact's
+  retention explicitly from its longest-lived consumer: a candidate that is
+  never promoted expires once its deploy or preview has read it; only promoted
+  artifacts stay for the rollback window the release record states, and no
+  rollback policy means no rollback retention. Fail any upload or publish step
+  that leaves retention to the platform default.
+- **Never delegate the build to the deploy platform's implicit builder** (Oryx,
+  Cloud Native Buildpacks, Vercel/Netlify auto-build, etc.). Platform builders
+  frequently report `success` even when a sub-build (TS compile, webpack, native
+  module) fails, silently shipping stale or incomplete artifacts. Run every
+  build in a dedicated CI step with `continue-on-error: false`, and pass the
+  pre-built output to the deploy action (`skip_app_build: true`,
+  `skip_api_build: true`, or equivalent)
+
+---
+
+## 4. Self-Healing
+
+| Failure Type                         | Retry? | Example                           |
+| ------------------------------------ | ------ | --------------------------------- |
+| HTTP 5xx, timeout, ECONNREFUSED      | Yes    | Retry 3x with 5s, 10s, 20s delays |
+| HTTP 4xx, missing file, syntax error | No     | Fail immediately; fix code        |
+| Disk full, out of memory             | No     | Escalate to ops                   |
+
+The backoff loop and the deploy → health check → rollback step shape are in
+[references/pipeline-patterns.md](references/pipeline-patterns.md) under
+*Self-healing steps*.
+
+**Rules:**
+
+- Always set an explicit timeout on every long-running step (prevents default
+  hangs)
+- Transient failures: retry 3x with exponential backoff + jitter
+- Permanent failures: fail fast, no retry
+- All deployments must emit a health signal; rollback on failure
+- Never apply partial state
+
+---
+
+## 5. Zero-Downtime
+
+**Choose the delivery strategy first.** Select it by how representative a
+non-production environment can be made, record it in the release record, and
+apply the same §9 gates in the stage the strategy provides:
+
+| Strategy | Shape | Choose when |
+| --- | --- | --- |
+| Permanent stages | Fixed test and acceptance environments ahead of production | Non-production can be kept representative and its drift from production is measured |
+| Ephemeral stages | Per-change preview or staging created on demand; production is the only permanent environment | Representative environments are cheap to create and costly to keep |
+| Production-only, progressive exposure | Development plus production; feature flags, rings, canaries, and dark launches bound who sees the change | No non-production environment is representative, or reproducing production is impractical |
+
+Choosing permanent stages creates an evidence obligation, not just a shape:
+the §9 environment-parity gate carries it. A permanent stage whose drift from
+production is never measured has the cost of a stage and the evidence value of
+none, and every check that stage runs inherits its unmeasured gap.
+
+Under production-only, the preview stage is the production deployment before
+exposure: the candidate runs behind a flag or in an empty ring with no user
+traffic, and the §9 preview checks run against it there. The strategy changes
+which stage is capable of an environment-dependent check; `defect-shift-left`
+still places each check at the earliest capable stage. The strategy bounds
+where such a check can run, never whether it runs.
+
+| Layer              | Pattern                                                                                  | Why                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Frontend**       | Deploy to the strategy's verification stage (per-change preview, or production behind a flag or empty ring); atomically promote or switch exposure | Users see only a verified candidate; safe to retry |
+| **Backend**        | Deploy to a staging slot or unexposed production instance; health-check; swap or shift traffic (platform handles connection draining) | Graceful shutdown; in-flight requests complete        |
+| **API versioning** | Additive changes for tolerant readers; version and deprecate breaking changes            | Clients remain backwards-compatible                   |
+| **PR concurrency** | Cancel in-progress runs for the same branch; only latest commit deploys                  | Prevent old commits overwriting newer deployments     |
+
+**Rules:**
+
+- Never force-stop running instances (drops in-flight connections)
+- Name the rollout shape honestly. Replacing two or more subsystems of one
+  release in parallel, each overwriting its predecessor where it stands, is an
+  **in-place subsystem replace**: no slot to swap, no single switch to
+  reverse, and old and new subsystems live together for the length of the
+  slowest job. It is zero-downtime only when every pair of coexisting
+  subsystem versions is compatible across that window — an
+  `evolutionary-database-design` question, not a deployment detail
+- Decouple deployment from release: where exposure is progressive, deploying
+  an artifact and exposing its behavior to users are separate, separately
+  reversible steps (flag, ring, or canary weight). Where promotion is atomic,
+  promotion is the release and its reversal is re-promoting the last
+  known-good artifact. State which of the two applies; a release with neither
+  a switch nor a re-promotable predecessor can only be undone by a redeploy
+- Always verify the candidate in the strategy's verification stage (permanent
+  stage, ephemeral preview, or unexposed production deployment) before users
+  see its behavior
+- Adding fields is compatible only when clients are tolerant readers; removing
+  or renaming fields breaks clients
+- If verification fails in the strategy's verification stage: block the merge
+  or withhold exposure; ephemeral previews are auto-cleaned on PR close
+- For multi-tenant data layers, apply the Expand/Contract pattern for schema
+  changes
+
+---
+
+## 6. Zero-Knowledge Secrets
+
+**Principle**: Minimize permanent credentials. For cloud auth, prove identity
+via challenge/signature (OIDC) instead of exchanging a stored password or token.
+Store unavoidable application secrets only in a managed secrets store with
+audit logging and rotation.
+
+| Credential Type        | Store as long-lived CI secret? | How to obtain at runtime                     | Notes                                      |
+| ---------------------- | ------------------------------ | -------------------------------------------- | ------------------------------------------ |
+| Cloud provider auth    | No                             | OIDC federated credential                    | Short-lived token; no password             |
+| API keys               | Only if no OAuth/OIDC exists   | OAuth, STS, or managed secrets store         | Prefer auto-expiring credentials           |
+| Encryption / HMAC keys | No CI copy; store in KMS/vault | KMS/vault lookup or managed key reference    | Rotate with create, apply, verify, delete  |
+| DB connection strings  | Avoid                          | Managed Identity / service binding           | Prefer no secret in CI                     |
+| OAuth client secrets   | Avoid                          | Certificate/private-key auth where supported | If required, store only in secrets manager |
+
+The OIDC login shape and the four-step zero-downtime rotation are in
+[references/pipeline-patterns.md](references/pipeline-patterns.md) under
+*Zero-knowledge secrets*.
+
+**Audit logging (mandatory):**
+
+- Log secret access where the secrets manager supports it: timestamp, actor,
+  resource, purpose
+- Never log secret values
+- Enable audit logging on your secrets manager
+
+**Secret hygiene:**
+
+- Enable secret scanning in your SCM (passive, on every push)
+- Block accidental commits of `.env`, keys, credentials via `.gitignore` +
+  pre-commit hooks
+- If a secret leaks: rotate immediately, revoke old credential, audit access
+  logs
+- Nice-to-have: rotate seed secrets quarterly and log each rotation
+
+---
+
+## 7. Infrastructure Idempotency
+
+For ad-hoc environment config, imperative CLI commands are acceptable when they
+are **idempotent** (create-or-update semantics, `--no-fail-on-existing` guards).
+They become fragile at scale.
+
+When managing infrastructure at scale (multi-tenant, scaling policies, resource
+groups), use **declarative IaC** (Bicep, Terraform, Pulumi). Declarative tools
+enforce idempotency by design; imperative scripts require manual guards.
+
+### Replacement Pattern (Immutable Resources)
+
+Some resources cannot be updated in place (security groups, identity
+policies, some Kubernetes objects). Hash the desired definition against the
+live one and skip when equal; preflight the replacement; then use the
+provider's atomic replace or create-before-delete. Delete-before-create is a
+provider-forced exception that needs rollback input and loud failure, never
+the default. The scripted pattern and its rules are in
+[references/pipeline-patterns.md](references/pipeline-patterns.md) under
+*Replacement pattern*.
+
+### Destructive-Change Gate
+
+Review reads the diff; the data loss is in the effect. One renamed parameter
+can delete a database, or leave it orphaned beside a new empty one the
+application now uses. A redeploy restores neither, so **gate the effect, not
+the text**:
+
+- Run the tool's effect preview (plan, what-if, preview) against the live
+  environment at review, and **again in the deploy job, immediately before
+  mutation**: the environment can change after approval. Where the tool saves
+  a plan, apply exactly that plan.
+- Fail on any deletion or replacement of a state-holding resource, and on any
+  new state-holding resource that replaces an existing one. Only a release in
+  the same change that names each resource passes it.
+- A mode that deletes undeclared resources (complete mode, prune) is opted
+  into per change, never the default.
+- State-holding resources carry provider deletion protection the deploy
+  identity cannot remove; removing it is its own change.
+
+The preview parsing and tool mapping are in
+[references/pipeline-patterns.md](references/pipeline-patterns.md) under
+*Destructive-change gate*.
+
+---
+
+## 8. Release and Production Promotion
+
+Promotion is an evidence-gated state machine, not a successful deploy command:
+
+```text
+BUILD-VERIFIED → RELEASE-READY → DEPLOYING
+→ PRODUCTION-VERIFYING → DEPLOYED-HEALTHY
+Any failed gate → BLOCKED or ROLLBACK
+```
+
+| Gate | Required evidence |
+| --- | --- |
+| Artifact | Commit, immutable digest, provenance; signing/SBOM when policy requires |
+| Test evidence | Applicable Stage 5–9 gates from §9 passed against the named commit or artifact digest |
+| Preflight | Config/schema, contract compatibility, migration reversibility, secrets, IAM and capacity checked before mutation |
+| Promotion | Same digest as verified; protected approval when required; one deployment owns the target environment |
+| Rollout | Atomic, blue/green, or canary strategy with explicit health thresholds; under progressive exposure the user-facing switch is a separate step from the deployment |
+| Verification | Bounded window checks health, error rate, latency and availability; breach triggers automatic rollback |
+| Record and handoff | Immutable release record names artifact, delivery strategy, checks, outcome, rollback result and operational owner |
+
+The skill's boundary ends at `DEPLOYED-HEALTHY`, when the verification window
+passes and the named operational owner accepts the handoff.
+
+---
+
+## 9. Verification Gates
+
+Verification is a staged evidence system, not a single `test` job. Place each
+check at the earliest stage capable of detecting its defect, following
+`defect-shift-left`. Every applicable check is blocking. A pipeline may mark a
+check not applicable only when it records the subsystem or risk evidence that
+justifies the omission.
+
+| Stage / trigger | Required verification | Gate behavior |
+| --- | --- | --- |
+| **Build / every PR** | Format and lint; strict type-check; build/package; architecture rules and fitness functions; secret scan; SAST; dependency/CVE and license audit; IaC scan when IaC exists; bundle/artifact budget | Block merge; branch protection requires the full-repository CI backstop |
+| **Unit / every PR** | Unit and property tests; project-owned coverage policy with no unexplained regression | Block merge; publish machine-readable results and coverage evidence |
+| **Integration / every PR** | Component/integration tests; API/schema contract and backward-compatibility tests; authorization negative-path tests; container/artifact reproducibility | Block merge; test the same output that becomes the immutable artifact |
+| **Preview / every deployable candidate** | Startup smoke; critical-journey E2E; supported-browser compatibility; visual regression where rendered UI is material; broken-link validation for navigable content | Block merge where the verification stage precedes merge, otherwise withhold exposure and block promotion; run against the strategy's verification stage using the candidate artifact |
+| **Frontend preview / applicable routes** | Bundle/resource budgets; Lighthouse performance, accessibility, best-practices, and SEO assertions as applicable; dedicated automated accessibility rules | Block merge on breached budgets or new violations, or withhold exposure when the verification stage follows merge; test representative public and authenticated routes under declared mobile/desktop profiles |
+| **Pre-deploy / every target environment** | Config/schema and feature-flag consistency; secret presence/expiry; migration dry-run and reversibility; deployed-contract diff; IaC effect preview with no unreleased deletion, replacement, or orphaning of a state-holding resource (§7); IAM/capacity/quota/cost projection; rollback-artifact availability | Abort before mutation; attach results to the release record |
+| **Environment parity / permanent stages only** | Measured drift of the verification stage from production: region and topology, runtime and dependency versions, configuration and feature-flag state, data shape and scale | Block promotion on undeclared drift; an unmeasured stage cannot carry the evidence §5 admitted it for |
+| **Deploy execution / every deployment** | Startup, readiness, dependency-connectivity, health, and rollback-trigger verification | Withhold traffic or roll back automatically on failure |
+| **Canary/staging / promotion and scheduled** | Performance regression, load/stress/soak as risk requires; resilience/fault-injection; rollback drill; backup-restore verification for stateful systems | Block promotion on threshold breach; expensive suites may be scheduled, but their evidence must be fresh enough for the release policy |
+| **Production / bounded verification window** | Health, availability, latency, error rate, saturation, and critical synthetic journeys | Roll back automatically on threshold breach; otherwise advance to `DEPLOYED-HEALTHY` |
+
+### Frontend Quality Rules
+
+- Run Lighthouse against the deployed preview, never only against a local dev
+  server; record the URL, profile, thresholds, report, commit, and artifact
+  digest
+- Select representative route classes instead of auditing only the home page:
+  public landing/content, authenticated application, and the most important
+  user journey where present
+- Treat Lighthouse accessibility as a fast automated gate, not proof of
+  accessibility conformance; keep a dedicated automated ruleset and a recorded
+  manual/semi-automated review policy for checks automation cannot decide
+- Calibrate performance budgets to stable CI runners and declared profiles;
+  do not turn a real regression into a non-blocking warning to avoid flakiness
+- Run SEO assertions only for pages intended for indexing; authenticated and
+  explicitly non-indexed routes must record that exclusion
+
+### Gate Evidence Contract
+
+Each gate declares and records:
+
+```
+Check:          <category and command/tool>
+Stage/trigger:  <PR | preview | pre-deploy | deploy | canary | production>
+Scope:          <subsystems, routes, contracts, or environment>
+Representativeness: <how the stage differs from production, measured; or n/a for a production check>
+Artifact:       <commit and immutable digest>
+Policy:         <threshold, baseline, compatibility rule, or expected result>
+Result:         <pass | fail | not-applicable + evidence>
+Report:         <durable artifact or log reference>
+Failure action: <block merge | abort deploy | withhold traffic | rollback>
+Owner:          <team or operational owner>
+```
+
+For an aspect coverage gate, `Scope` is the governed set from the
+architecture-as-code registry. `gate-lifecycle` keeps a gate proven, its
+baseline shrinking, and its suspensions expiring.
+
+Do not run every expensive test on every commit. Fast deterministic checks
+block the PR; environment-dependent checks block preview or promotion; costly
+load, soak, resilience, and restore suites run on a risk-based schedule and
+must satisfy the release's evidence-freshness policy.
+
+---
+
+## 10. Output Contract
+
+When applying this skill, emit a coder-facing pipeline decision record:
+
+```
+Scope:          <workflow / job / environment / deploy path>
+Decision:       Proceed | Block | Add gate | Split job | Make idempotent | Set retention | Promote | Rollback | Remove secret
+Risk:           <idempotency | timeout | mutable artifact | retention | deploy-build | secret | static-quality | unit | integration | contract | authorization | frontend-quality | accessibility | performance | migration | health-check | e2e | resilience | restore | concurrency | IaC | destructive-change | provenance | preflight | rollout | production-verification | handoff>
+Artifact:       <commit, digest, provenance, retention and its reader>
+Release state:  <BUILD-VERIFIED | RELEASE-READY | DEPLOYING | PRODUCTION-VERIFYING | DEPLOYED-HEALTHY | BLOCKED | ROLLBACK>
+Test evidence:  <applicable gates, reports, exclusions, and results>
+Preflight:      <checks and results>
+Strategy:       <permanent | ephemeral | production-only progressive exposure>
+Representativeness: <measured drift of the verification stage from production, or unmeasured>
+Rollout:        <atomic | blue/green | canary | in-place subsystem replace + health thresholds; exposure switch or re-promotion path>
+Zero-downtime:  <yes | no + why>
+Rollback:       <trigger, known-good artifact, result>
+Owner handoff:  <operational owner or missing>
+Evidence:       <workflow file, command, log, branch rule, secret path, or deployment behavior checked>
+Verification:   <window, signals, outcome / local command / dry run / Not run + reason>
+Next action:    <specific workflow edit, test, policy, or owner question>
+```

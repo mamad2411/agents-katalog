@@ -1,0 +1,521 @@
+---
+name: loxtep-ontology
+description:
+  Manage Loxtep ontology concepts and vocabulary terms via MCP. Use when
+  creating/updating concepts, linking vocabulary, or exploring ontology
+  structure for an organization. namespace mappings, or sync vocabularies. Part
+  in Meaning for defining shared language across systems.
+metadata:
+  documentation: https://github.com/LoxtepInc/loxtep-plugins-skills/blob/main/codex/skills/loxtep-ontology/SKILL.md
+---
+
+<!-- GENERATED FILE -- single source: loxtep/scripts/plugins-skills-generate-skills.mjs. From the loxtep root run `PLUGINS_SKILLS_ROOT=<plugins-skills> node scripts/sync-skills-to-plugins-skills.mjs` (or that generator with PLUGINS_SKILLS_ROOT set). Do not edit client copies; do not run sibling scripts/generate-skills.mjs. -->
+
+# Ontology, vocabulary, and namespace management
+
+Manage **ontology concepts**, **vocabulary terms** (thesaurus), and **namespace
+mappings** for the semantic layer.
+
+## Journey and completion
+
+This work can start and finish independently of data product promotion. Follow
+`loxtep-semantic-layer`'s shared meaning journey: scope/evidence → reuse → draft
+→ typed review → verify availability → optional product adoption. Terms,
+concepts, relationships, and shapes are distinct artifacts; a product is a
+consumer, not a prerequisite. Return verified artifact IDs and unresolved
+questions. Do not equate an accepted proposal with a materialized mapping or
+apply bronze/silver/gold readiness to shared meaning.
+
+## When to use
+
+- "**Thesaurus** terms", "**vocabulary** sync", "**ontology** concept",
+  "**namespace** mapping", "**canonical key**", "create/update/delete
+  **vocabulary** term", "register **namespace**"
+- "**Enterprise override**", "**semantic gap**", "**Minimal Ontology**",
+  "**divergence**", "**Govern step**", "resolve gap", "override coverage"
+
+## Organization inference controls
+
+Follow `loxtep-semantic-layer` for the full review journey. Hosted Meaning
+operations include `start_ontology_inference`, `get_ontology_inference_run`,
+`cancel_ontology_inference_run`, `list_inferred_ontology`, and
+`review_inferred_ontology`. These organization-inference controls are currently
+MCP-only; do not invent `client.meaning.*` SDK methods for them. Run IDs
+identify organization inference, not product mapping runs. A run may contain
+failed/skipped items or mappings auto-accepted under policy. Inspect actual
+effects before claiming completion. Accepted induction proposals return shared
+concept IDs and property mappings; use `get_ontology_concept` to verify them
+before optional product adoption.
+
+## Minimal Ontology Principle (MOP)
+
+Loxtep uses a **delta-first** semantic model: vocabulary **packs** supply
+baseline definitions; stewards record **enterprise overrides** only where
+meaning **diverges** from that baseline. Gold promotion measures **override
+coverage on divergent fields**, not blanket ontology binding on every schema
+field.
+
+### Precedence (context injection)
+
+When resolving meaning for a field or term:
+
+1. **Active enterprise override** (linked to the data product when scoped)
+2. **Organization thesaurus / steward edits**
+3. **Registered vocabulary pack** baseline
+4. **Inferred mapping** — auto-accept when confidence is at or above org
+   `auto_accept_threshold` and there is no active-override conflict. On the
+   **semantic connect** path only (`semantic-connect-proposals.ts`), any
+   `field_mappings[].needs_review` also forces the binding to
+   `needs_review=true` and `review_status=pending`, even when confidence clears
+   the threshold. Org-wide inference (`infer-organizations-ontology`) does not
+   apply that field-level gate.
+
+Induction does **not** guess identifiers or relations from a `_id` column name.
+A field becomes an identifier property when it is a declared key
+(`fields[].is_primary_key` or `schema.key`) on the **data-product schema** path
+(`data_products.schema`), or when Postgres / MySQL source catalog fields carry
+`is_primary_key` from the table PRIMARY KEY. Those catalog flags are stored on
+`connectors.metadata.entity_field_schemas` and become `declared_key` /
+`is_declared_key` in induction (tier B). JSON Schema snapshots still drop
+`is_primary_key` and `schema.key`. MongoDB, REST, and other connectors do not
+emit catalog keys. A shape field declares a reference with `references_shape`, a
+non-empty string (target shape name or canonical key). REST `ShapeFieldSchema`,
+MCP `SchemaFieldSchema`, proposal accept, `apply_definition_proposal`,
+data-product schema normalize, and schema cache sync keep it. An object, array,
+or empty string is HTTP 400, not dropped. The target shape does not have to
+exist. The SDK still has no `references_shape` or `is_primary_key` field. Studio
+has no picker. Graph sync reads `references_shape` as the target node scope and
+does not resolve it to a data product. Postgres and MySQL source foreign keys
+are still read from the database catalog as `references_shape` on the connector
+cache. Bootstrap induction tables are single-table, so a declared
+`references_shape` whose target is not in the same batch still resolves as not
+in the induction batch.
+
+Field-list cache (and therefore catalog-key induction) is only for `postgres`,
+`postgresql`, `mysql`, and `mysql-source`. When those types have no usable
+`entity_field_schemas` entry, induction **DEFERs** — it does not fall through to
+sample inference. Databricks, Snowflake, Redshift, BigQuery, and Athena still
+infer from samples. A column with FOREIGN KEY constraints to two tables is
+refused at Test / listing / sync (`AMBIGUOUS_CATALOG_FK`); drop or fix the
+duplicate constraint, then Test again so the cache can populate.
+
+### When to create an override
+
+Create an override when:
+
+- Pack baseline does **not** match how your business uses the field (Govern
+  step: "meaning differs from baseline" + required `divergence_reason`)
+- Inference conflict blocks auto-accept (connect-path field-level
+  `needs_review`, or `needs_review` plus an active override on the same key)
+- A **semantic gap** issue was opened (low-confidence context or decision-trace
+  override) and a steward resolves it manually
+
+**Do not** override when pack baseline is accurate — inherit pack descriptions
+and skip divergent-field promotion work.
+
+### Maintainability — document deltas or Gold is vacuously easy
+
+Gold **`override-coverage`** is the ratio of **divergent fields** that have an
+**active enterprise override**, vs total divergent fields (default threshold
+**80%**, org-configurable via
+`organizations.attributes.semantic.delta_coverage_threshold`).
+
+If **no field is flagged as divergent** (`semantic_divergence`,
+`divergence_reason`, or inference review conflict), divergent count is **zero**
+and coverage is **100%** without any overrides. That is intentional for products
+that truly match the pack — but teams must **flag real deltas** in the Govern
+step (or gap resolution) or Gold becomes easier than the legacy "bind every
+field" gate without documenting semantics.
+
+**Operational rule:** whenever steward meaning differs from baseline, flag the
+field and create an override before pursuing Gold.
+
+## Prerequisites
+
+- MCP auth. Operations are **organization**-scoped.
+
+## Happy-path flows
+
+### Flow — Enterprise override (Govern / manual)
+
+1. Confirm divergence is real (pack baseline is wrong for your org — not
+   preference).
+2. `create_enterprise_override` with:
+   - `canonical_key` (usually the schema field name)
+   - `enterprise_definition`, `divergence_reason` (required)
+   - `override_source`: `govern_step` | `manual` | `inferred_rejection` |
+     `agent_gap`
+   - `linked_data_product_ids`: scope override to the data product
+3. `list_enterprise_overrides` with optional `override_status`,
+   `override_source` filters — UI: **Semantics → Enterprise overrides**.
+
+Requires **`admin:vocabulary`** (or org admin).
+
+### Flow — Resolve semantic gap (convergence)
+
+1. List open gap issues (UI **Open Gaps** tab, or agent-orchestration issues
+   with `run_kind=semantic_gap_candidate`).
+2. Steward **names the term** and documents meaning — v1 does not auto-extract
+   from question text.
+3. `resolve_semantic_gap` with `issue_id`, `canonical_key`,
+   `enterprise_definition`, `divergence_reason` — creates override with
+   `override_source=agent_gap` and closes the issue.
+
+Requires **`semantic_gaps:resolve`** (plus override create permissions).
+
+### Flow — Read glossary terms in Vocabulary
+
+`list_terms` (`GET /graph/organizations/{organization_id}/thesaurus`) returns
+system field terms plus the organization's glossary projections.
+
+- An org glossary term with no linked thesaurus row is listed as scheme
+  `custom`. Its `term_id` is the glossary term id. The row includes `synonyms`
+  (strings) and `linked_schema_fields` (objects with `schema_id` and
+  `field_name`). Each synonym is also an alias with `system` `glossary_synonym`.
+- A thesaurus row linked to that glossary term keeps its own `term_id` and
+  carries the glossary `synonyms` and `linked_schema_fields`.
+- `get_term` accepts a thesaurus `term_id` or a glossary term id. For a linked
+  pair, both ids return the thesaurus row, and the row can include
+  `glossary_term_id`, `synonyms`, and `linked_schema_fields`. An unlinked
+  glossary term id returns the scheme `custom` projection above. An id that is
+  neither a visible thesaurus row nor an org glossary term returns 404
+  `Thesaurus term not found`.
+- A `domain` filter, or a `scheme` other than `custom`, omits unlinked glossary
+  projections. Deprecated glossary terms are omitted.
+- An org thesaurus row that shares the glossary term's canonical key and is not
+  linked to it fails the request with **409** when that row is already linked to
+  a different glossary term, or when the definitions differ. The message names
+  both ids and the canonical key:
+  `glossary term <glossary term id> and thesaurus term <thesaurus term id> share canonical_key "<canonical_key>" and are not linked`.
+  When that thesaurus row has no glossary link and its definition is blank or
+  equal to the glossary definition, the read keeps the thesaurus `term_id` and
+  attaches the glossary fields.
+- A blank glossary name, malformed glossary `synonyms` or
+  `linked_schema_fields`, or malformed thesaurus `aliases` fails the request. A
+  glossary term with no `created_at` or `updated_at` fails the request. The
+  error names the glossary or thesaurus term.
+
+Example shape asserted by the glossary projection unit test for an unlinked
+glossary term. These are fixture values from that test, not a live API response:
+
+```json
+{
+  "term_id": "33333333-3333-4333-8333-333333333333",
+  "glossary_term_id": "33333333-3333-4333-8333-333333333333",
+  "canonical_key": "customer lifetime value",
+  "scheme": "custom",
+  "synonyms": ["CLV"],
+  "linked_schema_fields": [
+    {
+      "schema_id": "44444444-4444-4444-8444-444444444444",
+      "field_name": "clv"
+    }
+  ],
+  "aliases": [{ "system": "glossary_synonym", "path": "CLV" }]
+}
+```
+
+### Flow — Vocabulary sync (bulk)
+
+1. `list_terms` to see current Vocabulary, including glossary projections. Pass
+   `domain` only when you want thesaurus rows in that domain. That filter omits
+   unlinked glossary projections.
+2. `sync_vocabulary` with `mode: "full_sync"` or `"additive_only"` and
+   `dry_run: true` to preview changes.
+3. `sync_vocabulary` with `dry_run: false` to apply.
+
+### Flow — Single term CRUD
+
+1. `create_term` with `canonical_key` and `aliases`. `scheme` is optional.
+   Allowed schemes are `field`, `entity`, and `custom`. Omit `scheme` and
+   MCP/API `create_term` defaults to `field` (a vocabulary key — not an ontology
+   concept).
+2. `get_term` by thesaurus `term_id` or by glossary term id to verify. See the
+   read flow above for glossary projections, `glossary_term_id`, and the 409.
+3. `update_term` for a partial change to a thesaurus row. Pass the thesaurus
+   `term_id`, or a `glossary_term_id` that is already stored on that row. An
+   unlinked glossary term id returns 404 `Thesaurus term not found`.
+4. `delete_term` soft-deletes (tombstone) a thesaurus row the same way. An
+   unlinked glossary term id returns 404 `Thesaurus term not found`.
+
+### Flow — Ontology concept creation
+
+1. `create_ontology_concept` with required `name`, `namespace`, and `node_type`
+   (optional `description`, `uri`, `parent_concepts`). In the Meaning ontology
+   canvas, a new non-class concept with no scheme saves as `custom` (not
+   `field`).
+2. `create_ontology_relationship` linking source → target entity types.
+3. `get_ontology_relationships` with filters to verify graph edges.
+4. `update_ontology_concept` / `delete_ontology_concept` as needed.
+
+The Meaning canvas and concept list show only thesaurus schemes `entity` and
+`custom`. `field` terms stay in Vocabulary. Scheme is not required on write:
+MCP/API `create_term` with no scheme becomes `field`; a new canvas concept with
+no scheme saves as `custom`. Existing terms that already have a missing or
+unknown scheme show a red **Thesaurus terms need scheme review** alert instead
+of becoming a concept. The canvas zero state appears when there are no ontology
+concepts — an org that only has field terms sees it. Correlation badges are not
+used.
+
+### Flow — Link a tenant class to a system-pack class
+
+1. Confirm the pack (`prov-o`, `dcat`, or `schema-org`) is activated for this
+   organization. Activation is required to author. It does not copy terms into
+   the tenant.
+2. `create_ontology_relationship` with `source_uri`, `predicate_uri`
+   `http://www.w3.org/2000/01/rdf-schema#subClassOf`, and `target_uri` equal to
+   the system class URI. Keep `http` and `https` as published.
+3. Read it back. The response includes the target URI, pack id, system
+   organization, and authored provenance. No tenant concept is created for the
+   system class.
+4. A missing, disabled, ambiguous, or non-class target is a reviewable error.
+   Nothing is written.
+5. Disabling or upgrading the pack later keeps the assertion. Reads mark the
+   target `inactive`, `version_drift`, or `unresolved`. Closure omits it until
+   it is active again. The stored URI is not rewritten.
+6. A stored class assertion is HTTP 422 `external_closure_target_incomplete`
+   only on the paths below. On the read path (`readExternalAssertionFields`:
+   relationships GET, ontology-export, publish, review, semantic bundle export,
+   restore's target-relation scan, and explain's live fetch), a `target_uri`
+   that is not a string (missing, null, number, object) returns null and is
+   listed or skipped as an ordinary edge. `''` and a whitespace-only string
+   throw that 422, as does a non-blank string `target_uri` whose
+   `target_system_node_id`, `target_pack_id`, or `target_pack_version` is not a
+   non-blank string. Explain annotate (`annotateExternalClosureRelations`)
+   passes a relation through when `assertion_kind` is not
+   `ontology_class_assertion` or `target_uri` is falsy (`''`, null, absent, `0`,
+   false). A whitespace-only string is truthy, so annotate throws the 422. A
+   truthy non-string such as `1` also throws there. Live explain fetches the
+   graph first, so `''` and whitespace already throw at fetch. Annotate's
+   pass-through for a falsy `target_uri` applies to stored snapshots that
+   explain annotates directly (`change_plan` restore and `vs_last_published`
+   base), after that live fetch succeeds. `error.details.missing` lists
+   `target_uri` first when that value fails, then the three ids that fail.
+   `error.details.edge_id` identifies the edge. `error.details.target_uri` is
+   the stored string, including whitespace, or null when the stored value is not
+   a string. The message names the missing fields and both repair routes. POST
+   matches a stored edge only by strict equality on `source_uri`,
+   `predicate_uri`, and `target_uri`, and the body `target_uri` must be an
+   absolute http(s) IRI, so a stored blank, whitespace-only, or non-string
+   `target_uri` is not re-pinned. Delete is the repair:
+   `DELETE /graph/organizations/{organization_id}/ontology/relationships/{edge_id}`
+   (a second delete is 404; this route does not remove other relationship
+   types). There is no MCP operation for that delete. Send the same three URIs
+   on that POST only when the stored `target_uri` is that absolute http(s) IRI
+   and one of the three ids is blank. That write re-pins the ids when the
+   content hash matches. Restore fetches the live graph, then runs the read path
+   on every target relation before it publishes an undo version or writes the
+   graph. A string `target_uri` that is empty or whitespace-only, or a blank
+   target id after a non-blank string `target_uri`, throws the 422 and writes
+   nothing. A missing, null, or non-string `target_uri` on that scan does not. A
+   refused restore leaves the working graph unchanged. The stored snapshot is
+   not rewritten. Delete the live assertion, or re-pin it when `target_uri` is
+   still an absolute http(s) IRI, and publish again before restoring a version
+   that still has the blank string fields.
+
+Do not create local copies of `prov:Entity`, `dcat:Dataset`, or Schema.org
+classes, and do not bulk-apply a review set from this operation. See
+`docs/concepts/external-class-assertions.md`.
+
+### Flow — Namespace registration
+
+1. `list_namespace_mappings` to see existing registrations.
+2. `register_namespace_mapping` with `prefix`, `uri`, and `mappings` array.
+3. `get_namespace_mapping` by prefix to verify.
+4. Use `import_process_graph` (in `loxtep_context`) — registered namespaces
+   auto-resolve during import.
+
+### Flow — Resolve canonical key
+
+1. `resolve_canonical_key` with an alias or variant spelling.
+2. Returns the canonical term with scheme and precedence.
+
+## MCP mapping
+
+| `operation`                    | Scope        | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_terms`                   | organization | System field terms plus org glossary projections. An unlinked glossary term is scheme `custom` under its glossary term id and includes `synonyms` and `linked_schema_fields`. A linked thesaurus row keeps its `term_id` and carries those fields. Filters: `scheme`, `domain`, `canonical_key_prefix`. A domain filter or a non-`custom` scheme omits unlinked glossary projections. 409 when an unlinked org row shares the glossary canonical key and the definitions differ or the row is linked to another glossary term. A blank glossary name, malformed glossary synonyms or linked_schema_fields, or malformed thesaurus aliases fails the request. |
+| `get_term`                     | organization | Thesaurus `term_id` or glossary term id. A linked pair returns the thesaurus row and can include `glossary_term_id`, `synonyms`, and `linked_schema_fields`. An unlinked glossary id returns the scheme `custom` projection. Same 409 and malformed-glossary failures as `list_terms`. Unknown id: 404 `Thesaurus term not found`.                                                                                                                                                                                                                                                                                                                           |
+| `create_term`                  | organization | Conflict error if `canonical_key` exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `update_term`                  | organization | Partial update of a thesaurus row by `term_id` or a linked `glossary_term_id`. An unlinked glossary term id returns 404 `Thesaurus term not found`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `delete_term`                  | organization | Soft-delete of a thesaurus row by `term_id` or a linked `glossary_term_id`. An unlinked glossary term id returns 404 `Thesaurus term not found`. Warns if referenced.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `sync_vocabulary`              | organization | Bulk sync with `dry_run` support                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `resolve_canonical_key`        | organization | Alias → canonical resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `get_ontology_relationships`   | organization | Filters: `source_entity_type`, `target_entity_type`, `relation_type`, `namespace`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `create_ontology_concept`      | organization | Required: `name`, `namespace`, `node_type`; optional: `description`, `uri`, `parent_concepts`. URI uniqueness enforced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `create_ontology_relationship` | organization | Name path validates both entity types. URI path (`source_uri`, `predicate_uri`, `target_uri`) links a tenant class to an activated system-pack class and does not copy it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `update_ontology_concept`      | organization | Partial field updates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `delete_ontology_concept`      | organization | Soft-delete; warns about dependent relationships                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `register_namespace_mapping`   | organization | Additive merge by default; `overwrite: true` replaces                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `list_namespace_mappings`      | organization | Includes system-scoped (W3C PKO) + org-scoped                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `get_namespace_mapping`        | organization | Full mapping table for a prefix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `create_enterprise_override`   | organization | `canonical_key`, `enterprise_definition`, `divergence_reason`; optional `baseline_assumption`, `linked_data_product_ids`, `override_source`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `list_enterprise_overrides`    | organization | Filters: `override_status`, `override_source`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `resolve_semantic_gap`         | organization | `issue_id` + override fields; marks AO issue done, `override_source=agent_gap`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+All rows above are MCP `loxtep_meaning` operations (Meaning review path).
+
+**Define meaning** = vocabulary **terms** + domain **shapes**. Ontology concepts
+are for **graph types and relationships** between them — not a substitute for
+terms/shapes.
+
+## SDK mapping (`client.meaning` / `client.define.shapes`)
+
+Prefer Phase D namespaces. Thesaurus CRUD + sync + enterprise overrides are on
+`client.meaning.thesaurus`. Ontology concepts/relationships are on
+`client.meaning.ontology`. Domain shapes (canonical schemas) are on
+`client.define.shapes` (distinct from `client.define.schemas` data-product
+schemas). Proposal review: `client.meaning.proposals`. Bundle import:
+`client.meaning.bundles.import`.
+
+| MCP `operation`                                                              | SDK                                                                         |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `list_terms` / `get_term` / `create_term` / `update_term` / `delete_term`    | `client.meaning.thesaurus.*` (same verb names)                              |
+| `sync_vocabulary`                                                            | `client.meaning.thesaurus.sync_vocabulary({ … })`                           |
+| `create_enterprise_override`                                                 | `client.meaning.thesaurus.create_enterprise_override({ … })`                |
+| `list_ontology_concepts`                                                     | `client.meaning.ontology.list_concepts()`                                   |
+| `get_ontology_concept`                                                       | `client.meaning.ontology.get_concept(concept_id)`                           |
+| `create_ontology_concept`                                                    | `client.meaning.ontology.create_concept({ name, namespace, node_type, … })` |
+| `update_ontology_concept`                                                    | `client.meaning.ontology.update_concept(concept_id, { … })`                 |
+| `delete_ontology_concept`                                                    | `client.meaning.ontology.delete_concept(concept_id)`                        |
+| `create_ontology_relationship`                                               | `client.meaning.ontology.create_relationship({ … })`                        |
+| `get_ontology_relationships`                                                 | `client.meaning.ontology.get_relationships({ … })`                          |
+| `create_schema` / `list_schemas` / `apply_schema` / align via `patch_schema` | `client.define.shapes.create` / `.list` / `.apply` / `.align`               |
+| pack activate / status                                                       | `client.meaning.packs.*`                                                    |
+
+MCP-only (no SDK method yet): `list_enterprise_overrides`,
+`resolve_semantic_gap`, namespace-mapping CRUD.
+
+```ts
+const term = await client.meaning.thesaurus.create_term({
+  canonical_key: 'customer_id',
+  scheme: 'field',
+  aliases: [{ path: 'customer.id' }],
+});
+const shape = await client.define.shapes.create({
+  name: 'PersonIdentity',
+  format: 'json-schema',
+  fields: [{ name: 'email', type: 'string' }],
+});
+await client.define.shapes.align({
+  schema_id: shape.schema_id,
+  aligned_to_concept_uri: 'https://example.org/Person',
+});
+const concept = await client.meaning.ontology.create_concept({
+  name: 'Customer',
+  namespace: 'org.example',
+  node_type: 'entity',
+  description: 'Paying account holder',
+});
+await client.meaning.ontology.create_relationship({
+  source_entity_type: 'org.example.Customer',
+  target_entity_type: 'org.example.Order',
+  relation_type: 'places',
+});
+```
+
+Do **not** market a governed metrics/cube layer from this skill — meaning here
+is terms, shapes, ontology graph types, namespace mappings, and packs.
+
+## Prerequisites
+
+- MCP auth. Operations are **organization**-scoped.
+- Override CRUD: **`admin:vocabulary`**. Gap resolve:
+  **`semantic_gaps:resolve`**.
+
+## Pitfalls (MOP-specific)
+
+- **Skipping divergent flags:** Gold promotion passes with zero overrides if no
+  field is marked divergent — flag deltas in Govern when meaning differs.
+- **Override without reason:** `divergence_reason` is required — audits and
+  promotion gates depend on it.
+- **CDLC orgs:** new overrides may default to `proposed`; only **`active`**
+  overrides count toward Gold coverage and context injection.
+- **Duplicate canonical_key:** POST returns **409** — update existing term
+  instead.
+- **Unlinked glossary id:** `list_terms` and `get_term` return it as scheme
+  `custom`. `update_term` and `delete_term` resolve only thesaurus rows (by
+  `term_id` or a linked `glossary_term_id`) and return 404
+  `Thesaurus term not found` for that id.
+- **Shared canonical key, not linked:** `list_terms` and `get_term` return 409
+  when an org thesaurus row shares the glossary canonical key, is not linked to
+  that glossary term, and either the definitions differ or the row is linked to
+  a different glossary term. The message names both ids and the canonical key.
+- **Field terms are not ontology concepts.** `scheme: field` is for vocabulary /
+  correlation keys. Do not expect those terms on the ontology canvas.
+- **High confidence is not enough to auto-accept on connect.** On the semantic
+  connect path, any field-level `needs_review` keeps the inferred binding
+  pending. Org-wide inference still auto-accepts on threshold plus override
+  conflict only.
+
+## Pitfalls (general)
+
+- **Runtime intelligence** (entity context, decision traces) is
+  **`loxtep_context`** — different facade. This Agent-Scope Skill is for
+  **schema/vocabulary management**, not runtime queries.
+- **Process graph CRUD** (procedures, steps, import/export) is
+  **`loxtep_context`** — different facade. Ontology concepts describe the
+  _types_ in the graph; procedures are the _instances_.
+- **Catalog search** is **`loxtep_query`** — use that for discovery across all
+  artifact types. This Agent-Scope Skill manages the underlying ontology that
+  catalog entries reference.
+- **`sync_vocabulary` with `full_sync`** will tombstone terms not in the
+  submitted set — use `additive_only` if you only want to add/update.
+- **Namespace mappings** are used by `import_process_graph` (in
+  `loxtep_context`) to auto-resolve external ontology terms. Register mappings
+  _before_ importing graphs that use custom namespaces.
+- **W3C PKO** (`https://w3id.org/pko`) is pre-registered as a system-scoped
+  mapping — no need to register it manually.
+- **`delete_term`** and **`delete_ontology_concept`** use soft-delete (tombstone
+  pattern). They warn about dependents but do not cascade.
+
+### Graph serve (COA parity on `loxtep_query`)
+
+- `translate_sparql` — NL → SPARQL for DynamoDB graph (`execute=true` optional).
+- `graph_traversal` — lineage / related / sparql_neighbors (never Neptune).
+- Attribution: `translate_sparql` → this skill; see also
+  `platform-backend/ai/lib/tools/docs/coa-mcp-serve-parity.md`.
+
+<!-- BEGIN loxtep skill-scope (skill-package-v1) -->
+
+## Agent-Scope Skill scope (`.loxtep/skills/loxtep-ontology.yaml`)
+
+Resource scope and operation permissions for this Agent-Scope Skill, conformant
+with the [`skill-package-v1`](https://loxtep.io/schemas/skill-package-v1.json)
+schema. Any resource type or operation not listed is **denied (fail-closed)**.
+Identifier lists are empty placeholders — fill them with the specific resources
+in your workspace. This declaration does not change the hosted MCP config
+(`mcp.loxtep.io`).
+
+```yaml
+# .loxtep/skills/loxtep-ontology.yaml
+# Conforms to https://loxtep.io/schemas/skill-package-v1.json
+# Fail-closed: this skill's facades are RBAC-governed and carry no data-mesh resource scope.
+name: loxtep-ontology
+description: Ontology, vocabulary, and namespace management — RBAC-governed; no data-mesh resource scope.
+scope:
+  data_products: []
+  connectors: []
+  workflows: []
+  domains: []
+  queues: []
+permissions: {}
+```
+
+<!-- END loxtep skill-scope (skill-package-v1) -->
+
+## Skill attribution (required)
+
+MCP tool calls need a resolvable skill name. Prefer
+`_metadata: { "skill_name": "loxtep-ontology" }`; otherwise the server infers
+from the operation map or `X-Skill-Name`. Unresolvable calls are denied
+(`MISSING_SKILL_ATTRIBUTION`). The skill name also drives scope checks.
+
+## Auth
+
+`loxtep-auth` / login.
+
+## References
+
+- [User story catalog](../../../docs/skills-user-stories.md)
+- [COA MCP serve parity](../../../platform-backend/ai/lib/tools/docs/coa-mcp-serve-parity.md)

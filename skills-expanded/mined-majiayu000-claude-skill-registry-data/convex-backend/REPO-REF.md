@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/convex-backend/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Build real-time, reactive backend applications with Convex using TypeScript queries, mutations, and actions with automatic reactivity and optimistic updates. Use when building real-time collaborative 

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/l/linkpix-seedance-2-sales/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 帮助电商运营、广告创意、直播团队通过青虎AI完成“Seedance 2.0 电商带货视频”：具备强大的多参考图和首尾帧控制能力，支持对运动轨迹的精确控制，能够制作连贯、流畅且富有故事性的商品展示剧情。适配淘宝天猫详情页、京东主图视频、拼多多大促种草、Amazon品牌故事、TikTok Shop广告素材、Shopee短视频等平台需求。尤其适合服饰鞋包、户外运动等需要动态展示多角度、多动作卖点的商品。

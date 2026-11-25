@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/kotlin/kotlin-agent-skills (path: skills/kotlin-tooling-cocoapods-spm-migration/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Migrate KMP projects from CocoaPods (kotlin("native.cocoapods")) to Swift Package Manager (swiftPMDependencies DSL) — replaces pod() with swiftPackage(), transforms cocoapods.* imports to swiftPMImpor

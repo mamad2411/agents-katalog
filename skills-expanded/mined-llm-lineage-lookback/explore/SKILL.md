@@ -1,0 +1,66 @@
+---
+name: explore
+description: Suggest Claude Code plugins to explore, matched offline against the locally cached marketplace catalogue using what the user actually spends time on. Use when the user asks what plugins they should try, what else might help their workflow, what is available for their stack, or says /lookback:explore.
+---
+
+# Plugins worth trying
+
+```sh
+lookback collect && lookback explore --json
+```
+
+## How the match is made
+
+A usage signature is built from the command prefixes that appear most in the
+user's history, with generic shell utilities excluded — `grep` and `cat` are the
+most frequent commands on any machine and say nothing about what someone works
+on. What is left is the ecosystem: `cargo`, `gh`, `terraform`, `aws`, `npm`.
+
+Those terms are matched as **whole words** against the plugin catalogue already
+cached on this machine, skipping anything already enabled, and ranked by how
+many people have installed it.
+
+## Two things to say plainly
+
+**Nothing was fetched and nothing was sent.** The catalogue is a file that was
+already on disk. Exploring plugins does not tell anyone what the user works on.
+
+**These are suggestions to look at, not installations.** Lookback installs
+nothing, and neither should you. Give the user the names and what prompted each,
+and let them decide.
+
+## Rules
+**If `lookback` is not on `PATH`, do not improvise.** `lookback: command not found`
+means one specific thing: a repository has declared this plugin in its
+`.claude/settings.json`, and this machine has never installed the binary. A settings
+file carries the plugin; it cannot carry an executable. Hand over the one line that
+fixes it and stop there:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/LLM-Lineage/lookback/main/install.sh | sh
+```
+
+Do not build it from source, and do not install anything named `lookback` from a
+package registry — that name belongs to a different project by somebody else.
+
+**If the command prints an update notice on stderr, pass it on.** It names the
+running version, the newer one and the command. Say it once, plainly, and carry on
+with the answer the user asked for — it is a courtesy, not a finding, and not a
+reason to stop. Do not run the update yourself: `lookback self-update` and the
+installer replace a binary, which is the user's call.
+
+
+Always show the observation next to the suggestion — "`aws` appears in 434
+commands" is what makes `deploy-on-aws` a recommendation rather than an
+advertisement. A suggestion with no observation behind it should not be offered.
+
+If the finding is absent, say there was no confident match — and say *why*.
+Running `lookback explore` without `--json` prints the reasoning behind a zero:
+which commands this scope is made of, which were left out as too widespread to
+describe anything, and which the cached catalogue simply has no entry for. "Your
+signature here is `cargo`, and the catalogue has nothing for that ecosystem" is a
+real answer; silence is not.
+
+Padding the list with weak matches is the other failure, and the worse one. A
+term with no catalogue entry means there is nothing to suggest, not that
+something nearby will do.

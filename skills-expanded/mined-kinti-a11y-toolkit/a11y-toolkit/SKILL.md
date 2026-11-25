@@ -1,0 +1,137 @@
+---
+name: a11y-toolkit
+description: Use for ALL accessibility work — WCAG 2.2 audits of URLs or HTML, real rendered contrast checks (including text over images, pixel-level), color-pair contrast and nearest passing color, European Accessibility Act / RD 1112/2018 accessibility statements, pre-deploy regression detection (accessible names, tab order), aria-live announcement monitoring, keyboard/focus review. Triggers on "accessibility", "a11y", "WCAG", "contrast", "screen reader", "accesibilidad", "contraste", "auditoría", "EAA", "declaration", "declaración", "target size", "focus order", "aria".
+---
+
+# Skill: A11Y Toolkit — the WCAG 2.2 loop for agents
+
+Audit → fix → document → watch, with zero-dependency tools. Prefer the MCP tools
+(`a11y_*`) when the a11y-toolkit MCP server is connected; otherwise run the same
+engine via `uvx` — no clone, no venv:
+
+```bash
+uvx --from a11y-toolkit a11ytoolkit pair "#1f2328" "#fbfaf7"          # color pair
+uvx --from a11y-toolkit a11ytoolkit audit --url https://example.com   # static audit
+uvx --from a11y-toolkit a11ytoolkit image hero.jpg --text "#fff" --region 120,40,420,90
+uvx --from a11y-toolkit a11ytoolkit declaration --entity "Acme" --url https://acme.example --status partial --framework eaa --lang en --output decl.html
+```
+
+All output is English by default; pass `--lang es` (or the `lang: "es"` MCP argument) for Spanish.
+
+## Decide in one step
+
+| The user asks about… | Use |
+|---|---|
+| "is this site/page accessible?" | `a11y_audit_url` (fast, static, 0-100 score) then `a11y_audit_dom` if Playwright exists |
+| real text contrast, incl. over images/gradients | `a11y_contrast_pair` / `a11y_contrast_image` / `a11y_audit_dom` (now pixel-samples image/gradient zones) |
+| "measure THIS element against its background" (live page) | `a11y_contrast_dom` (url + selector: captures, samples, excludes text pixels — auto-region) |
+| "what color passes AA here?" | `a11y_suggest_color` (target 4.5 normal, 3.0 large/UI) |
+| legal accessibility statement (EU/Spain) | `a11y_generate_declaration` |
+| "did the deploy break a11y?" | `a11y_snapshot` + `a11y_diff` (or `a11y_diff_urls`) |
+| "what does the screen reader hear?" | `a11y_aria_live_snippet` injected via Playwright + the snapshot's focus order |
+| keyboard/zoom/manual items | do them yourself as the agent — checklist in `references/wcag22-manual-checklist.md` |
+| "what does criterion X.Y.Z mean?" | `a11y_criterion` (code like `1.4.3`, `2.5.8`) |
+| "watch the site / only NEW regressions should block" | `a11ytoolkit budget`: accept the baseline once, then only new blocking findings fail (exit 2). Recipe: `examples/a11y-watch.yml` (weekly GitHub Action) |
+| "put these findings in the PR / code scanning" | `a11ytoolkit sarif --from-audit audit.json -o a11y.sarif` → upload with github/codeql-action/upload-sarif |
+| "a badge for the audited site" | `a11y_badge` (score + date + "automated screening" scope — never claims conformance) |
+| "audit the section, not just one page" | `pages` parameter (or `a11ytoolkit audit --pages N`): sitemap-first same-domain crawl (links fallback), aggregated by mean/worst score |
+| "the staging site is behind a login" | rendered tools accept `auth_state`: path to a Playwright storage_state JSON exported from a logged-in session — file stays local |
+| "what does the W3C validator say?" | `a11y_html_validate` (Nu parser: doctype, structure, authoritative alt/lang/role; self-hosted vnu for sensitive pages) |
+| "does the form explain what went wrong?" (3.3.1/3.3.3) | `a11y_forms`: fills invalid data, really submits, judges error identification/announcement in the post-submit DOM |
+| "record what I verified by hand/agent" | pass `verified` (criterion codes) to `a11y_evidence`: they become agent-verified in the matrix; automated-fail never erases |
+| "which criteria actually apply to this product?" | `a11y_scope`: applicability from what the audit SAW (features block) — machine proposes structural exclusions (no video → 1.2.x, no forms → 3.3.x), human confirms via `answers`; only confirmed exclusions become not-applicable downstream, each with its reason. `standard=en301549` adds EN 301 549 V4.1.1 clauses (EAA procurement, Canada ICT) |
+| "produce something a human auditor can sign" | `a11y_evidence`: the verifiable pack (criteria matrix + hashed artifacts + empty signature block). Vendor-neutral — any qualified human |
+| "a VPAT for the US market (ADA)" | `a11y_generate_vpat`: VPAT 2.5 (WCAG edition) draft from the pack — Remarks auto-filled, levels Not Evaluated until a qualified human sets them (`overrides`) and signs (hash-referenced). Draft until signed |
+| "a machine-readable ACR for US procurement (GSA OpenACR)" | `a11y_generate_openacr`: OpenACR YAML from the same pack — chapters A/AA, hyphenated adherence levels in the YAML, human sets them via `overrides` (same vocabulary as the VPAT). Render/validate in the GSA OpenACR editor |
+| "export findings as ACT Rules / EARL" | `a11ytoolkit earl --from-audit audit.json -o earl.json` (curated ACT map; failures asserted, absence never asserted as pass) |
+| "FIX it for me" (zoom blocked, missing autocomplete, missing lang/title) | `a11y_autofix`: deterministic safe fixes + the accessible form-error layer (3.3.1/3.3.3, skips forms with their own handling); judgment fixes come back as `not_applied` + remediation. Never promise overlay-style full fixes |
+| "does it scroll sideways on mobile?" (1.4.10) | `a11y_reflow` (320px viewport, real overflow + offenders) — axe/Lighthouse don't automate this |
+| "is the modal a keyboard trap?" (2.1.2) | `a11y_keyboard`: real Tab walk + cycle detection + Escape release test. Correct modals pass; traps are high severity |
+| "infinite scroll / feed / more posts keep loading" | `a11y_scroll`: real scroll batches — focus survival (2.4.3), announcements (4.1.3), end or load-more (Deque/APG Feed). Best on feeds you own or can log into |
+| "can a blind user actually DO this?" (task usability, not rules) | the `blindfold-task` prompt: attempt the task perceiving ONLY the accessibility tree — your browser's own accessibility snapshot each step (it preserves filled forms and open dialogs; `a11y_sr_transcript` once at start for the linearized prose) — acting by accessible name and keyboard; log friction per step; close with `a11y_journey_verdict` — scored pass/partial/fail/blocked, criteria-mapped, pack-ready (`report:journey`) |
+
+## 1. Audit
+
+`a11y_audit_url` = express static pass: 20+ signals across 17 WCAG criteria with a
+weighted **0-100 score** (alt, accessible names, labels, autocomplete 1.3.5, keyboard
+onclick, unknown ARIA roles, broken aria-labelledby, unnamed duplicated landmarks,
+meta refresh, skip mechanism, lang validity, title, headings, zoom, captions, autoplay,
+generic/duplicated link text, tabindex, aria-hidden-on-focusable, tables, duplicate ids,
+accesskeys). Each finding carries a concrete `remediation`. **Always relay finding +
+remediation + WCAG criterion to the user, grouped by severity; quote the score with the
+score_note caveat.** When you need to explain a criterion, call `a11y_criterion`.
+
+`a11y_audit_dom` = rendered audit in Chromium: computed text contrast against
+effective backgrounds with alpha compositing (1.4.3), 24×24 minimum target size
+(2.5.8 — new in WCAG 2.2), visible focus indicator heuristic (2.4.7),
+**:focus/:hover state contrast** (disabled controls are WCAG-exempt — say so),
+and **same-origin iframes scanned too**, same 0-100 score. If Playwright is
+missing, fall back to the static audit and say so.
+
+`a11y_audit_url` also accepts raw HTML you already fetched (`html` argument) —
+audit without re-fetching.
+
+**Honesty rule (non-negotiable):** automation ≈ 1/3 of WCAG. Every audit report
+must say so and then cover what you CAN check manually as the agent — that is
+what separates a real audit from a lint run. Use the manual checklist.
+
+## 2. Fix contrast
+
+Colors accept `#hex`, `rgb()`, `hsl()`, CSS color names; alpha composites over
+the background. The pair tool returns per-criterion verdicts (1.4.3 AA, 1.4.6
+AAA, 1.4.11 non-text) and the nearest passing color. Apply the suggestion to the
+source, then re-verify the pair. For text over an image, NEVER trust a pair
+check against a guessed color: screenshot the region and use `a11y_contrast_image`
+— if `area_passes_aa_normal_text_4_5` < 100%, you need a scrim, a crop, or to move
+the text (`worst_zone` tells you where).
+
+## 3. Document (EU law)
+
+`a11y_generate_declaration`: `framework="eaa"` for the European Accessibility Act /
+Ley 11/2023 (private sector), `framework="rd1112"` for art. 10 RD 1112/2018 (Spanish
+public sector). Collect missing legal fields (feedback contact, claim procedure,
+evaluation method/dates) before generating; derive `inaccessible_content` from
+audit findings. The statement must be linked from every page.
+
+## 4. Watch regressions
+
+Before deploy: `a11y_snapshot` (also captures the computed accessibility tree) → save
+JSON. After: snapshot again, `a11y_diff` (now also reports accessibility-tree changes).
+For continuous watching, set up the error budget: `a11ytoolkit budget --init` from today's
+audit, then every run only flags NEW blocking signals — recommend it for every client.
+`ok: false` = interactives added/removed/renamed or focus-order changed. Elements
+without `id` are matched by tag+name+href — recommend stable ids for fine-grained
+diffs. This is a great pre-deploy gate: audit + diff, then GO/NO-GO.
+
+## 5. The aria-live monitor (arialive.js)
+
+Inject via `page.evaluate` (Playwright) or as a bookmarklet; `lang` argument or
+`window.ALM_LANG='en'` localizes the panel. It logs every live-region
+announcement with time, politeness, role, text.
+
+**Bug already fixed — do not reintroduce:** the panel must NOT carry `role="log"`
+and must exclude itself from the MutationObserver; a `role="log"` panel matches
+its own selector and creates an infinite self-observation loop that hangs the
+page. If a run hangs, look for orphan chromium processes and retry.
+
+## Blindfold golden rules (do not skip)
+
+- Perception = accessibility tree ONLY. If a step needed something the tree
+  didn't expose, that IS a finding — do not fall back to vision to "help".
+- Navigate like a screen-reader user: HEADINGS and LANDMARKS first, Tab as
+  the fallback. List them from each snapshot and jump by them — broken
+  heading hierarchies and missing landmarks are findings (2.4.6 / 2.4.1),
+  not inconveniences. This is the navigation real users run on every page.
+- Keep the SAME browser tab across steps (state matters); snapshot after
+  every action, before deciding the next.
+- Log friction at the step it happened, with the pattern key — post-hoc
+  reconstruction loses the sequence, and sequence is the evidence.
+- Run journeys at 320px viewport for mobile too: the tree changes, and
+  2.5.8/1.4.4-class failures show up only there.
+
+## Notes
+
+- Images: Pillow if present, else macOS `sips`; PPM always — zero deps otherwise.
+- The math is identical to the public web version: https://jquin.net/lab/
+- Canonical source + MCP install: https://github.com/kinti/a11y-toolkit
+- Test suites: `tests/test_audit.py`, `tests/test_contrast.py`, `tests/test_dom.py`, `tests/test_mcp.py` (plus v32/cli/solido).

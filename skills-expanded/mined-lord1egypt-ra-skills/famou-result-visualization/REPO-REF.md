@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/f/famou-result-visualization/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 为 FaMou 进化算法生成可行解的 Python 代码解生成可视化结果页面。当用户提到"FaMou 可视化"、"把这个解可视化"、"可行解结果展示"、"evolution 结果"、"evolve 可视化"，或者提供了 Python 代码形式的问题解（路径规划、排课、背包、TSP、调度、机器学习等）需要直观展示效果时，必须使用此技能。即使用户只说"帮我可视化这个解"、"画出来看看"、"展示一下结果

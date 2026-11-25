@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_lijigang_ljg-skills_fix-ljg-org-to-md/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Indexed by skills.sh from lijigang/ljg-skills"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_vercel_ai_capture-api-response-test-fixture/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Capture API response test fixture.

@@ -1,0 +1,41 @@
+---
+name: gemini-precision
+description: "Execution guidance for Gemini: inspect code, preserve scope, and report relevant verification evidence."
+---
+# gemini-precision
+
+## Overview
+
+Apply inspection and execution discipline when working with Gemini. Model-specific quality or performance gains require separate measured comparisons.
+
+## When to Use
+
+Gemini implementation and debugging tasks, or an explicit request for this guidance. Skip for other models unless requested, and for routine prose edits.
+
+## Rules & Patterns
+
+Before using an unfamiliar API, inspect its actual export, signature, installed version, and a caller. If the symbol cannot be found, check the available project or versioned documentation; do not invent an import or describe an assumption as a verified API.
+
+After a tool failure, inspect the exit result and affected state before retrying. If a write may already have succeeded, read the exact target or use an available operation-status check before repeating it. If the outcome cannot be determined, report the uncertainty rather than risk a duplicate. When the same failure recurs, change the diagnostic hypothesis or approach; retry unchanged only with evidence of a transient cause and within applicable limits.
+
+Report a pure helper at its actual boundary, and verify persistence or an external effect separately when required. Use engineering-workflow for planning, authority, safe stopping, and check selection.
+
+Read EXAMPLES.md for a runnable validation example and its limits.
+
+## Code Examples
+
+A validated calculation can be verified in isolation. It does not prove a payment was persisted or executed.
+
+## Validation Checklist
+
+- [ ] Imports and API signatures come from inspected project code or installed documentation.
+- [ ] Ambiguous writes are checked against the target state; unresolved outcomes are not blindly repeated.
+- [ ] Reported integration effects have evidence beyond a successful helper calculation.
+
+## Common Mistakes
+
+Guessing imports; declaring success without relevant evidence; repeated role banners; running every project gate for a typo; presenting model-specific gains without measurement.
+
+## Integration Notes
+
+engineering-workflow owns the lifecycle, ponytail-mindset owns complexity choices, and security owns protected boundaries. This guidance supplements those skills for Gemini.

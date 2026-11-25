@@ -1,0 +1,98 @@
+---
+name: resume-tailor
+description: This skill should be used when the user wants to tailor or customize their resume for a specific job or company. Triggers on phrases like "tailor resume for [company]", "customize resume for [job]", "generate resume for [company]", "adapt resume to this job posting", "create resume for [company] role".
+---
+
+# Resume Tailor (evidence-only, with skill confirmation)
+
+Tailors the current CV DOCX for one job using `cv_tailor.py`. Claude does the comparison and asks
+the user which missing skills they really have; the script applies the edits and exports a PDF (the temporary DOCX is deleted).
+No Gemini call, so it uses none of the 20/day free quota.
+
+**Several postings at once** (user gives 2+ URLs): use the batch flow below instead of repeating the steps per job.
+
+## Batch flow (several postings)
+
+0. Run the tracker check (step 0 below) for every URL; list all hits together and ask once before going on.
+1. `python cv_tailor.py jds <scratchpad>/jds <url1> <url2> ...` fetches all JDs in parallel into
+   `jd_1.txt`, `jd_2.txt`, ... (input order). For any line marked FAILED, open the page in the browser
+   or ask the user to paste it.
+2. Read the CV(s) once (`cv`, and the AI CV with `BASE_CV_DOCX=...` if any posting is AI-focused).
+3. Compare each JD (step 3 below) and draft each job's tailored Summary (step 5 below). Ask ONE AskUserQuestion round for all jobs: merge the missing
+   skills across postings and ask each skill once (a confirmed skill counts for every job that needs it).
+4. Write `<scratchpad>/batch.json`:
+   `[{"company": "Acme Backend", "base": "main", "edits": {"replace": [...], "add_skills": [...]}}, ...]`
+   `base` is `main` (BASE_CV_DOCX) or `ai` (BASE_CV_DOCX_AI). Use a distinct `company` per posting
+   (e.g. company + role) so the PDFs don't overwrite each other.
+5. `python cv_tailor.py apply-batch <scratchpad>/batch.json` (optional `--workers N`, default 3).
+   All edits are checked before any PDF is made; PDFs export in parallel, one Word instance per worker.
+6. Report per job as in step 8 (one table per job is fine), including the tailored summary.
+
+## Steps
+
+0. **Check the tracker first (always, before any other step).** Run
+   `python .claude/skills/search/scripts/search_tracker.py "<url>"`, then again with the company name once you
+   know it (from the JD title or page). Compare the company's rows with this posting's role title. If the same or a
+   near-identical role is already tracked (applied, in progress or rejected, including reposts under another URL),
+   **stop and tell the user first**: show the matching rows with status and comments, and say e.g. "already rejected
+   in row 410, another application still open in row 454". Continue only if the user says so. Other roles at the same
+   company are just mentioned in one line, no stop.
+1. **Get the job description.** Run `python cv_tailor.py jd "<url>"`. Any job link works: LinkedIn,
+   Welcome to the Jungle, Ashby and Greenhouse use the site's own data for a clean description;
+   other sites (company career pages, Workday, etc.) fall back to reading the page. If it fails
+   (login walls, closed jobs), ask the user to paste the description.
+2. **Read the CV.** Run `python cv_tailor.py cv` (prints each paragraph of the base CV DOCX).
+3. **Compare.** List the JD's skills/requirements, in English even if the JD is French. Split them into:
+   - already on the CV (nothing to do, or surface better wording if the evidence is there)
+   - missing from the CV
+4. **Ask with multi-select.** Use AskUserQuestion with `multiSelect: true`: up to 4 questions of up
+   to 4 missing skills each, mandatory JD skills first. Question text like "Which of these have you
+   used in real work?". The user can type extra detail in "Other" (e.g. the tool they used).
+   If a confirmed skill needs context to be described honestly (where/how), ask a short follow-up.
+5. **Tailor the Summary (AI CV only).** The main CV has NO Summary since 2026-11-05 (removed to keep it to 1 page;
+   the real-time/post-trade line moved into the NASDAQ SMARTS bullet), so skip this step for `main`; `apply` skips the
+   check too. The AI CV has a `Summary` paragraph right after the contact line (one plain run). Rewrite it for this JD as a `replace` whose `old` is the whole summary text from step 2:
+   2-3 lines, lead with the JD's top requirement that the CV can prove (e.g. Java/Spring backend, architecture
+   and mentoring for lead/staff roles, LLM work for AI roles), mirror the JD's role title when it fits,
+   keep "11+ yrs", and use only facts already on the CV or confirmed in step 4. Never name a skill the user
+   didn't confirm, and don't claim the JD's stack (e.g. "Ruby") to match it. `apply` prints a WARNING if no edit touches the summary.
+6. **Draft the other edits** (rules below) and write them to a JSON file in the scratchpad:
+   `{"replace": [{"old": "...", "new": "..."}], "add_skills": ["..."]}`.
+   Each `old` must sit inside ONE run of the DOCX. Bold highlights are separate runs, so keep each
+   edit within a plain or a bold segment of the paragraph text from step 2.
+7. **Apply.** Run `python cv_tailor.py apply "<Company>" <edits.json>`.
+8. **Report** the "Words changed" output from `apply` (shown as removed -> added), the confirmed skills added, the page count,
+   the JD skills still missing, and the output paths.
+
+## Edit rules
+
+- Only facts on the CV or confirmed by the user in step 4. Never invent tools, numbers or domains.
+- Keep content intact: never delete Projects, the NDS acquisition note, education details or the
+  word "fintech" in the SMARTS bullet. No "| Fintech" in the title line.
+- Confirmed skills go into the `Frameworks & Tools:` line via `add_skills`, not into a specific
+  job's bullet, unless the user said where they used it.
+- "Agent guardrails" is added to the AI skills line of EVERY tailored CV by `apply`
+  (`CV_ALWAYS_AI_SKILLS` in `config.py`; `AI & Upskilling:` on the main CV, `AI & LLM:` on the AI CV).
+  Don't put it in `add_skills` or a `replace` yourself. Mention it in the step 8 report.
+- AI CV only: `apply` also runs `CV_AI_DEFAULT_REPLACE` from `config.py` (adds the weekly HR agent to the
+  job-search project bullet). Don't repeat it in your edits; mention it in the report.
+- Never write "learning / deepening / upskilling in X" for a gap.
+- English only. Do not switch to the JD's language.
+- Going over 1 page is acceptable. Prefer edits that don't add lines, and say when the CV grows.
+
+## Output
+
+`resume_adjusted\resume_<company>.pdf` only (folder from `RESUME_OUTPUT_DIR` in `config.py`).
+An existing file with the same name is overwritten.
+
+Base CV: `BASE_CV_DOCX` in `config.py`
+(override with `BASE_CV_DOCX` in `config.py`). PDF export needs Microsoft Word.
+
+AI-focused roles ("use AI resume"): prefix both `cv` and `apply` with the env var
+`BASE_CV_DOCX="<path>"`, where `<path>` is `BASE_CV_DOCX_AI` in `config.py`.
+It has an `AI & LLM:` skills line; put confirmed AI skills there with a `replace`, not `add_skills`.
+
+## Legacy
+
+`resume_tailor.py` (Gemini, batch from tracker) targets the OLD CV layout (fixed paragraph
+numbers) and a PDF base path, so it does not work with the current CV. Use the steps above.

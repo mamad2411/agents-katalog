@@ -1,0 +1,375 @@
+---
+name: data-product-modeling
+description:
+  Use when the user wants to design or model a data product — define its output
+  shape, trace where fields come from, and plan how sources connect. Design
+  only; creation happens through data-workflows. Part of Products.
+metadata:
+  documentation: https://github.com/LoxtepInc/loxtep-plugins-skills/blob/main/cursor/skills/data-product-modeling/SKILL.md
+---
+
+<!-- GENERATED FILE -- single source: loxtep/scripts/plugins-skills-generate-skills.mjs. From the loxtep root run `PLUGINS_SKILLS_ROOT=<plugins-skills> node scripts/sync-skills-to-plugins-skills.mjs` (or that generator with PLUGINS_SKILLS_ROOT set). Do not edit client copies; do not run sibling scripts/generate-skills.mjs. -->
+
+# Data product design
+
+Design data products using output-first methodology — define the desired shape,
+trace provenance backward, resolve gaps, specify transforms, and wire the
+pipeline via **`data-workflows`** (bundle + deploy).
+
+## Creation guardrail (CRITICAL — read first)
+
+**Do not call `create_data_product` to provision new source or consumer data
+products.**
+
+| Phase   | This skill (`data-product-modeling`)                                                                                                                                  | **`data-workflows`**                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Design  | Output schema, provenance, transforms, trust plan                                                                                                                     | —                                                                                                                                                                   |
+| Create  | **Never** — no standalone MCP create                                                                                                                                  | `data-products/{id}.json` in `save_workflow_bundle`                                                                                                                 |
+| Runtime | Trust promotion (medallion) and delivery. Product **display name** is `name` in the checked-in `data-products/{id}.json`, then lint → push → scoped `deploy_workflow` | `deploy_workflow` → **per-instance** runtime bindings (queues/bots). Legacy `deployment_bindings` is a primary-instance mirror — not a global singleton (ADR 0013). |
+
+Do not set a product, bot, or queue display name with `update_data_product`.
+That leaves the runtime label out of the package. Declare a queue label with
+`output_queue_display_name` or `error_queue_display_name` on the owning node (or
+`output_queue_display_name` on the data product for its upstream writer's output
+queue), then lint, push, and scoped deploy. See **`data-workflows`** (Display
+names). If that field is missing from the schema the platform is running, report
+the gap. Do not rename the queue through an API.
+
+A correctly provisioned DP has `workflow_id`, `managed_by: "design-time"`,
+`deployed_by: "workflow-deployment"`, and per-instance runtime bindings after
+deploy (see `GET …/runtime-bindings` / primary mirror on `deployment_bindings`)
+— not a standalone `create_data_product` response.
+
+**Promote the flow** to another environment by deploying design-time to that
+instance with rebinding (sibling products + connection instance bindings). Do
+**not** treat “deploy the same project to prod” as identity promotion across
+stage and prod.
+
+When the user says "**create** a data product", treat it as: **design here →
+author bundle → deploy → verify with `get_data_product`.**
+
+## When to use
+
+- "Design a **data product**", "**model** a source", "**output-first**", "what
+  should this **data product** look like", "**schema** design", "**lineage**
+  mapping", "work **backward** from the desired output", "**source** data
+  product", "**consumer** data product"
+
+**Not this skill:** building or deploying — use **`data-workflows`**.
+
+## Core Concepts
+
+### Source vs Consumer
+
+| Aspect      | Source (kind: source)                               | Consumer (kind: consumer)                                                                                           |
+| ----------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Nature      | Atomic, domain-owned                                | Composed, projected                                                                                                 |
+| Origin      | External system ingestion                           | Derived from source DPs                                                                                             |
+| Workflow    | connector-ingestion, webhook, sdk (Trigger at head) | delivery workflow (`workflow_type: "delivery"`, `data-product-trigger` head, Target at tail, then a delivery grant) |
+| Trust level | Draft → validated                                   | Validated → delivery-ready                                                                                          |
+| UI route    | /source/data-products                               | /consumer/data-products                                                                                             |
+
+### Terminology Note
+
+- **Trigger** — Connector at the **ingest head** (`connections/{id}.json` +
+  `connector_id`).
+- **Target** — Connector at the **delivery tail** (`connections/{id}.json` +
+  `connector_id`). Prefer this in `save_workflow_bundle` for outbound flows.
+- **Delivery workflow** — A workflow with `workflow_type: 'delivery'` that
+  pushes data to external systems. **Never** use `consumption` as
+  `workflow_type`. Author outbound Targets with `save_workflow_bundle`
+  (`workflow_type: "delivery"` + Target connection), then `deploy_workflow`.
+  List delivery workflows with `list_workflows`.
+
+## Happy-path flows
+
+### Flow — Demand-Driven Source Modeling (output-first)
+
+1. **Define desired output:** Write the finished schema as if it already exists.
+   Include field names, types, required flags, descriptions, PII markers.
+2. **Trace provenance:** For each field, identify the source system and field.
+3. **Identify source systems:** Group fields by origin system.
+4. **Gap analysis:** Which fields aren't available? What needs to be created?
+5. **Specify transforms:** For each field: source_format → desired_format.
+6. **Architecture decision:** Single source DP with multi-source workflow, or
+   multiple source DPs + consumer composition?
+7. **Wire the pipeline:** Hand off to **`data-workflows`** — embed the designed
+   schema in `data-products/{id}.json` within `save_workflow_bundle`
+   (`dry_run: true` first), then `deploy_workflow`. **Do not** call
+   `create_data_product`.
+8. **Verify after deploy:** `get_data_product` — confirm `workflow_id` and
+   `deployment_bindings` are present.
+
+### Flow — Demand-Driven Consumer Modeling (output-first)
+
+1. **Define delivery contract:** What does the destination system expect? (e.g.,
+   HubSpot contact properties, webhook payload shape)
+2. **Trace provenance:** For each output field, identify which source DP
+   provides it.
+3. **Identify existing source DPs:** Check catalog for available sources.
+4. **Gap analysis:** Which source DPs don't exist yet? Design + deploy them via
+   **`data-workflows`** first (not `create_data_product`).
+5. **Specify transforms:** JOIN keys, aggregations, derivations, filters.
+6. **Design workflow:** `data-product-trigger` head (`source_data_product_id`) →
+   transform chain → **Target** connection at the tail
+   (`workflow_type: "delivery"`). Do **not** put a `data-products` node at the
+   head.
+7. **Wire consumer DP:** **`data-workflows`** Flow D — Target
+   `connections/{id}.json` in the delivery bundle, then `save_workflow_bundle`
+   (`workflow_type: "delivery"`), `save_delivery_grant` (or `grants/{id}.json`),
+   and `deploy_workflow`. **Do not** call `create_data_product`. List with
+   `list_workflows`.
+8. **Verify after deploy:** `get_data_product` / `get_runtime_mapping` — confirm
+   Target container bindings.
+
+### Flow — Review and publish as validated (draft → trusted)
+
+1. `get_data_product` and confirm `schema.fields` is a non-empty list. If it is
+   empty, stop. `create_schema` / `apply_schema` first. A
+   `metadata.schema_version` string is not a schema. Do not mark a primary key,
+   bind glossary terms, create quality rules, or call `promote_data_product`
+   until fields exist.
+2. `get_promotion_readiness` with `data_product_id` to see prerequisite
+   checklist.
+3. Remediate each unsatisfied prerequisite:
+   - Schema version: `update_data_product` with schema `version: "1.0"`.
+   - Field descriptions: `update_data_product` with all fields described.
+   - PII classified: `tag_pii_fields` via `loxtep_define`.
+   - Quality rules: `list_quality_rules` with `view: "effective"` and
+     `data_product_id`. Add or override with `create_quality_rule` via
+     `loxtep_define`. The gate checks each blocking rule's own `threshold`. A
+     failed effective-rules lookup throws. Readiness does not substitute a
+     3-rule or 80% gate. Catalog rules are definitions only: hand off to
+     **`data-workflows` → Quality evaluation node (required for live quality)**
+     to add one `quality-rules/{id}.json` node for this product, deploy it, send
+     a batch, and confirm `get_quality_score` returns a measured score via
+     `loxtep_observe`.
+   - Glossary terms: `append_synonym` via `loxtep_meaning` for each field.
+   - Primary entity: `update_data_product` with
+     `entities[].is_primary + natural_key`.
+4. `get_promotion_readiness` again to verify all prerequisites satisfied.
+5. `promote_data_product` to advance trust tier (see
+   **`promote-data-product`**).
+
+### Flow — Review and publish for delivery (validated → delivery-ready)
+
+1. `get_promotion_readiness` with `data_product_id` to see delivery-ready
+   prerequisites.
+2. Remediate each unsatisfied prerequisite:
+   - Ontology bindings: `bind_field_to_ontology` for each unbound field via
+     `loxtep_meaning`.
+   - Data contract: `create_data_contract` with SLA terms and
+     `schema_version_id` via `loxtep_build`. That id is stored as `schema_ref`
+     and does not write `schema.key`.
+   - Delivery Target: **`data-workflows`** Flow D — `data-product-trigger` head
+     with Target connection and grant via `save_workflow_bundle`
+     (`workflow_type: "delivery"`) then `deploy_workflow`; list with
+     `list_workflows`.
+   - Graph sync: auto-handled by prior promotion.
+   - Upstream lineage (Ready / gold): deploying the workflow records the catalog
+     edge from its wiring. When readiness names the missing edge, redeploy the
+     workflow or run the catalog-lineage-backfill migration. If it says the
+     wiring lookup failed, the lookup did not succeed. A manual edge is
+     `POST /dataproducts/lineage` (not `update_data_product.lineage` JSON). For
+     `derives_from` / `depends_on`, use **PROV orientation**: `source_id` = this
+     (derived) product, `target_id` = upstream product. A connection uses
+     `produces` (`source_id` = the connector, `target_id` = this product). Then
+     re-check with `get_promotion_readiness` and `target_tier: gold`.
+3. `get_promotion_readiness` with `target_tier: gold` again to confirm.
+4. `promote_data_product` to mark delivery-ready (see
+   **`promote-data-product`**).
+
+### Flow — Schema Design
+
+1. Start from desired output fields (demand-driven).
+2. Use `snake_case` naming, business vocabulary (not system names).
+3. Mark PII fields, set governance classification.
+4. Version: additive = minor bump, breaking = major bump.
+5. `update_data_product` with versioned schema in the `schema` field.
+
+### Flow — Bind an existing runtime queue (BYOL)
+
+Use when a Lambda is already registered on the instance bus (skill
+**loxtep-instances** BYOL) and the org wants a catalog data product on that
+queue. Do **not** add a Studio workflow node to “connect” the Lambda. Connector
+Trigger/Target and Studio custom-code hops remain valid on the same instance —
+bind each product to the queue that hop owns (hybrid; see BYOL guide **When to
+use which**).
+
+1. Confirm the publish queue name: `{bot_id}-out` (default custom-bot
+   destination). Leave `-in` / `-errors` unbound as the product stream.
+2. Bind via `POST /dataproducts/dataproducts/runtime-queue-reconciliation` with
+   `dry_run: true`, then `false` (needs `system:admin` | `data_products:admin` |
+   `instances:update`). List stubs with `synthetic_visibility=include`. Confirm
+   `deployment_bindings.queue_name` on the product matches `{bot_id}-out`.
+3. Retire duplicate synthetic stubs after the canonical product is correct.
+4. SDK: `data_products.get_writer` / `get_reader` with optional `bot_id` = the
+   custom bot id for checkpointing.
+
+Operator detail: `docs/operations/runtime-queue-link-queue-workflow.md`.
+Customer guide: `/docs/guides/bring-your-own-lambda`.
+
+### Flow — Lineage Documentation
+
+1. Deploy the workflow so catalog lineage is recorded from its wiring. For an
+   edge the workflow does not carry, create it with `POST /dataproducts/lineage`
+   (that call emits `lineage-created`; harvest writes the graph edge). A repeat
+   POST of the same active edge is rejected and does not emit again.
+2. **`derives_from` / `depends_on` orientation (PROV):** `source_id` = derived
+   product, `target_id` = upstream origin. Do **not** reverse this to “feeder →
+   consumer” — that inverts Ready-gate and cache semantics for these
+   relationship types.
+3. Other types (`produces`, `transforms`, …) use data-flow orientation:
+   `source_id` = feeder, `target_id` = consumer.
+4. For each field: upstream_dp.field → [transform] → this_dp.field.
+5. Inspect with `graph_traversal` (`loxtep_query`, mode `lineage`) and
+   `get_data_product.lineage` (`upstream_count`). `get_lineage_impact` is
+   **downstream impact only** — it will not prove Ready upstream lineage.
+
+## Provenance Card Template
+
+For each field in the desired output:
+
+```
+Target Field:     [name]
+Source System:    [system]
+Source DP:        [existing DP or "TO BE CREATED"]
+Source Field:     [field path]
+Transform:        [direct | derived | aggregated | filtered | joined]
+Transform Logic:  [expression]
+```
+
+## MCP mapping
+
+| `operation`                                                                                                  | Facade         | Scope        | Notes                                                                                                     |
+| ------------------------------------------------------------------------------------------------------------ | -------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
+| `list_data_products`                                                                                         | `loxtep_build` | organization | Filters: `kind`, `domain_id`, `status`, `medallion`                                                       |
+| `get_data_product`                                                                                           | `loxtep_build` | organization | Full ODPS document by `data_product_id`                                                                   |
+| `get_lexicon`                                                                                                | `loxtep_build` | organization | Glossary/lexicon for a data product                                                                       |
+| `create_data_product`                                                                                        | `loxtep_build` | organization | **Agents: do not use** for new DPs. Author via workflow bundle + deploy.                                  |
+| `update_data_product`                                                                                        | `loxtep_build` | organization | Partial update; use for schema, metadata, status                                                          |
+| `delete_data_product`                                                                                        | `loxtep_build` | project      | Remove a data product by `project_id`, `data_product_id`                                                  |
+| `get_entity_schemas` / `save_workflow_bundle` / `save_delivery_grant` / `deploy_workflow` / `list_workflows` | `loxtep_build` | project      | Delivery: DPT head + Target + grant (`workflow_type: "delivery"`); list via `list_workflows`.             |
+| `get_promotion_readiness`                                                                                    | `loxtep_build` | organization | Check prerequisites, progress, promotability for a data product.                                          |
+| `promote_data_product`                                                                                       | `loxtep_build` | organization | Execute tier transition (Silver/Gold). Validates prerequisites server-side.                               |
+| `create_data_contract`                                                                                       | `loxtep_build` | organization | Create contract with SLA terms. Pass `schema_version_id` as `schema_ref`. It does not write `schema.key`. |
+| `list_data_contracts`                                                                                        | `loxtep_build` | organization | List contracts, optionally filtered by `data_product_id`.                                                 |
+
+## Decision tree
+
+```
+"I need a data product that looks like X"
+  │
+  ├── Design output schema + provenance (this skill — no MCP create)
+  │
+  ├── Single source system provides all fields?
+  │   └── YES → Source DP in ingestion bundle (kind: source) → **`data-workflows`**
+  │
+  ├── Need to combine multiple sources?
+  │   └── YES → Consumer DP in delivery bundle (`workflow_type: "delivery"`) → deploy source DPs first via **`data-workflows`**
+  │
+  └── Primary source + supplementary enrichment?
+      └── Source DP with enrichment transform → **`data-workflows`** (enrichment workflow)
+```
+
+## Pitfalls
+
+- **Direct `create_data_product`** — Bypasses workflow graph, queues, and
+  deployment bindings. Design in this skill; provision via **`data-workflows`**
+  bundle + deploy — **except** when binding an existing BYOL runtime queue via
+  runtime queue reconciliation (sets `deployment_bindings.queue_name`). That
+  path does not need a new workflow node.
+- **Studio graph for BYOL** — Do not invent a workflow edge onto `w-…-queue-…`
+  container queues to attach a customer Lambda. Bind the product to
+  `{bot_id}-out` instead.
+- **Delivery create/list** — Use `save_workflow_bundle`
+  (`workflow_type: "delivery"` + Target connection) then `deploy_workflow`; list
+  with `list_workflows`.
+- **`workflow_type: "consumption"`** — Removed. Use **`delivery`**.
+- **Supply-driven thinking** — Don't start with "what data do we have?" Start
+  with "what data do we need?" and work backward.
+- **God data product** — One DP with 200+ fields serving all use cases.
+  Decompose.
+- **Trust inflation** — Publishing as delivery-ready without contracts/SLAs.
+  Enforce promotion checklist.
+- **Missing lineage** — Consumer DP with no documented upstream. Always trace
+  provenance.
+- **Schema drift** — Source system changes without DP update. Add validation in
+  workflow.
+- **Orphan consumer** — Consumer DP whose upstream source was deprecated.
+  Monitor lineage.
+
+## Coupling with other Agent-Scope Skills
+
+- **loxtep-ontology:** Vocabulary terms, concept definitions → bind to DP
+  glossary
+- **org-semantics-quality:** Quality rules, governance → bind to DP quality
+  config
+- **loxtep-procedures:** Process graphs → map to workflow pipelines
+- **loxtep-process-intel:** Runtime entity context → validate DP data at runtime
+- **discover-govern-lineage:** Catalog discovery, governance policies
+- **data-workflows:** Bundle authoring, deploy, runtime verification (mandatory
+  for creation)
+- **loxtep-instances:** BYOL register → then runtime reconciliation binds
+  `{bot_id}-out` on `deployment_bindings.queue_name`
+
+<!-- BEGIN loxtep skill-scope (skill-package-v1) -->
+
+## Agent-Scope Skill scope (`.loxtep/skills/data-product-modeling.yaml`)
+
+Resource scope and operation permissions for this Agent-Scope Skill, conformant
+with the [`skill-package-v1`](https://loxtep.io/schemas/skill-package-v1.json)
+schema. Any resource type or operation not listed is **denied (fail-closed)**.
+Identifier lists are empty placeholders — fill them with the specific resources
+in your workspace. This declaration does not change the hosted MCP config
+(`mcp.loxtep.io`).
+
+```yaml
+# .loxtep/skills/data-product-modeling.yaml
+# Conforms to https://loxtep.io/schemas/skill-package-v1.json
+# Scoped to ONLY the identifiers listed; least-privilege per operation. Fail-closed.
+name: data-product-modeling
+description: Model data products and read their owning domains.
+scope:
+  data_products: []
+  connectors: []
+  workflows: []
+  domains: []
+  queues: []
+permissions:
+  data_products: [read, create, write, delete]
+  domains: [read]
+```
+
+<!-- END loxtep skill-scope (skill-package-v1) -->
+
+## Implementation notes
+
+**Medallion tiers (internal quality model):**
+
+| Tier   | Meaning                                                   |
+| ------ | --------------------------------------------------------- |
+| Bronze | Raw ingested, minimal schema, domain-internal             |
+| Silver | Curated, validated, schema versioned, cross-domain OK     |
+| Gold   | Contracted, SLA-bound, delivery-ready, external-facing OK |
+
+Promotion MCP calls use `target_tier: "silver"` / `"gold"` — map to validated /
+delivery-ready in user language. See **`promote-data-product`** for the full
+checklist.
+
+## Skill attribution (required)
+
+MCP tool calls need a resolvable skill name. Prefer
+`_metadata: { "skill_name": "data-product-modeling" }`; otherwise the server
+infers from the operation map or `X-Skill-Name`. Unresolvable calls are denied
+(`MISSING_SKILL_ATTRIBUTION`). The skill name also drives scope checks.
+
+## Auth
+
+`loxtep-auth` / login.
+
+## References
+
+- [User story catalog](../../../docs/skills-user-stories.md)
+- Comprehensive methodology: `.agents/skills/data-product-modeling/SKILL.md`
+  (main repo)

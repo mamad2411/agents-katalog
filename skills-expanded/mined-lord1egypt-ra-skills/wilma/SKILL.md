@@ -1,0 +1,243 @@
+---
+name: wilma
+version: 2.5.0
+description: Access Finland's Wilma school system from AI agents, for parents (and students with their own login). Fetch schedules, homework, exams, grades and the gradebook, lesson notes (merkinnät) and absence summaries, messages with replies, news, printouts and linked news resources — through the WilmAI MCP tools (`wilma_*`) when connected, or the wilma CLI. Start with a summary, drill into messages and news, and fetch linked attachments. Requires wilma-cli 2.0+.
+metadata:
+  {
+    "openclaw":
+      {
+        "requires":
+          {
+            "bins": ["wilma"],
+            "configPaths": ["~/.config/wilmai/config.json"],
+          },
+        "install":
+          [
+            {
+              "id": "node",
+              "kind": "node",
+              "package": "@wilm-ai/wilma-cli",
+              "bins": ["wilma"],
+              "label": "Install Wilma CLI (npm)",
+            },
+          ],
+        "credentials":
+          {
+            "note": "Requires a Wilma login: either the local config file (~/.config/wilmai/config.json or $XDG_CONFIG_HOME/wilmai/config.json) created by `wilma login`, with the password in that file (the default) or in the OS keychain if the user chose `wilma config secrets auto`, or WILMA_TENANT / WILMA_USERNAME / WILMA_PASSWORD (and WILMA_TOTP_SECRET for two-step verification) set in the agent's secret settings.",
+          },
+      },
+  }
+---
+
+# Wilma Skill
+
+## Overview
+
+Wilma is the Finnish school information system used by schools and municipalities to share messages, news, exams, schedules, homework, and other student-related updates with parents/guardians. Students can use WilmAI with their own login too; it then covers just that student.
+
+There are two ways to reach Wilma. Both return the same data, in the same JSON shape.
+
+1. **MCP tools** — if tools named `wilma_*` are available (the WilmAI connector, desktop extension or plugin), use them. No shell needed.
+2. **CLI** — otherwise use the `wilma` (or `wilmai`) command. It prints JSON when you run it (no `--json` needed), and `wilma help <command>` shows usage, examples and the JSON shape.
+
+Both cover **every child by default**; pass `student` / `--student <number|name>` to narrow to one. Results come per child: `{ students: [{ student: { studentNumber, name, wilma? }, … }] }`. Times are Finnish time with their offset (`2026-10-02T13:37:00+03:00`) — report them as they are, without converting. When you write dates for the user, follow the language you answer in: Finnish `ke 7.10.` (with the final period), English `Wed 7 Oct`. Wilma's own texts use the Finnish style; convert it instead of mixing the two (not `Wed 7.10`).
+
+| MCP tool | CLI command |
+|---|---|
+| `wilma_summary` | `wilma summary [--since <date>]` |
+| `wilma_schedule` | `wilma schedule [today\|tomorrow\|week\|next-week\|<date>\|<weekday>]`, `wilma schedule --from <date> [--to <date>]` |
+| `wilma_homework` | `wilma homework` |
+| `wilma_upcoming_exams` | `wilma exams` |
+| `wilma_grades` | `wilma grades [--from <date> [--to <date>]]` |
+| `wilma_gradebook` | `wilma gradebook` |
+| `wilma_contacts` | `wilma contacts` |
+| `wilma_lesson_notes` | `wilma notes [--date <date> \| --days N \| --from <date> [--to <date>]]` |
+| `wilma_lesson_notes_summary` | `wilma notes summary` |
+| `wilma_list_messages` / `wilma_read_message` | `wilma messages` / `wilma messages <id>` |
+| `wilma_list_news` / `wilma_read_news` | `wilma news` / `wilma news <id>` |
+| `wilma_get_news_attachment` | `wilma news <id> download <resource>` |
+| `wilma_list_printouts` / `wilma_get_printout` | `wilma printouts` / `wilma printouts <id>` |
+| `wilma_account` | `wilma students`, `wilma accounts` |
+| `wilma_find_school` | `wilma find-school <city>` |
+| — | `wilma home` (WilmAI Home, the desktop app: where to download it) |
+| `wilma_login` | `wilma login` |
+| `wilma_logout` | `wilma logout` |
+
+Dates are `YYYY-MM-DD`, `today`, `yesterday` or `tomorrow`.
+
+## Logging in
+
+The user logs in once; the login is saved on their computer.
+
+- **On the user's own computer:** run `wilma login` (or call `wilma_login`). It opens a page in the user's browser where they pick their school's Wilma and log in. Wait for the command to finish.
+- **On a cloud computer the user can't see** (no browser they can reach):
+  1. Ask which city their children's school is in (or the school's name). Run `wilma find-school <city>` (or call `wilma_find_school`) and let the user pick from the results — one city often has several Wilmas (city schools, private schools, colleges).
+  2. Ask the user to add `WILMA_USERNAME` and `WILMA_PASSWORD` to your secret or environment settings, plus `WILMA_TOTP_SECRET` if the account uses two-step verification, and set `WILMA_TENANT` to the Wilma address they picked. Every command then works without a saved login. Alternatively: `wilma login --tenant <url> --username <name> --password-stdin`.
+- Don't run `wilma` without arguments to look things up: in a terminal it opens a menu for people (from a program it prints the help).
+- **Never ask the user to type their Wilma password into the chat.**
+- **Children on different Wilmas** (e.g. a city school and a private school): the user adds each login on the login page ("Add another school's Wilma") or with another `wilma login`. All saved logins are used together; children then carry a `wilma` field naming their Wilma. `wilma accounts` lists the logins, with `role: "student"` for a student's own login. A child the user unticked on the login page (a profile Wilma lists twice) isn't read, and `wilma accounts` lists it under `hidden`. When a parent's and a child's own login on the same Wilma are both saved, the child is read through the parent's (wilma-cli 2.4+).
+
+Commands continue the last Wilma session instead of logging in each time (each login would log the parent out of Wilma in their own browser), so running several commands in a row is fine.
+
+### Where the password is kept (wilma-cli 2.5+)
+
+By default the saved password is in WilmAI's config file, readable only by the user's account. A user can keep it in the operating system's keychain instead (the macOS Keychain, Windows Credential Manager, a Linux desktop's Secret Service): `wilma config secrets auto` moves the saved logins there without logging in again, `wilma config secrets` shows where each one is, and `wilma config secrets file` moves them back.
+
+- **Suggest the keychain only on a computer a person uses and logs in to**, and only if they want it. It's their choice; the file works everywhere.
+- **On a server, keep the file.** That includes a cloud computer, a computer that runs you or other agents unattended, and **a Mac used as a server**: on a Mac, `auto` always picks the Keychain, and the Keychain can be locked after a restart before anyone has logged in, or over a remote (SSH) session. Saved sessions keep working, but the next new Wilma login then fails with `secret_refused`, and nobody is there to unlock it. Don't run `wilma config secrets auto` or `keychain` there.
+- **If a command fails with `secret_refused` or `secret_unavailable` (exit code 4):** the password is still saved, so don't start a new login yourself, and never ask for the computer's password or the Wilma password in the chat. For `secret_refused`, ask the user to unlock the keychain (on a Mac: sign in at that computer's own screen), then try again. On a computer that runs unattended, then run `wilma config secrets file`: it moves the password back to the file without a new Wilma login, so it can't happen again. While the keychain is still locked (or with `secret_unavailable`, where there's no keychain to read), that command can't move the password ("Not moved", exit code 4), but it does send new logins to the file: the user then runs `wilma login` once, and the login is saved in the file.
+- `WILMAI_SECRET_STORE=file|auto|keychain` decides where new logins go for one process; it never moves saved logins.
+
+If the user wants to use Wilma in their browser, or asks you to log out, run `wilma logout` or call `wilma_logout` (wilma-cli 2.2+). It ends WilmAI's Wilma session and keeps the saved login. Don't run other Wilma commands after that unless the user asks: the next one logs in again, and that logs them out of Wilma in the browser.
+
+## Install
+```bash
+npm i -g @wilm-ai/wilma-cli
+```
+
+## Core tasks
+
+### Daily briefing (start here)
+```bash
+wilma summary
+wilma summary --since yesterday
+```
+Per child: today's and the next school day's lessons, upcoming exams (with start times when given), recent homework, lesson notes since the previous school day (teachers' feedback and absences), recent bulletins, and recent and unread messages (`unread`, `replyCount`). `--since <date>` keeps only what is from that day on — use it for scheduled daily runs. If Wilma couldn't give a part, `unavailable` names it.
+
+### Schedule
+```bash
+wilma schedule tomorrow
+wilma schedule week
+wilma schedule next-week
+wilma schedule 2026-03-10
+wilma schedule thu --student <number|name>
+```
+Default: this week. `tomorrow` is the next school day; a weekday (`mon`…`sun`, or Finnish `ma`…`su`) is its next occurrence. Lessons include the teacher(s) and, when Wilma gives one, the `room`. `--from <date>` reads any other week (to that week's Friday) or, with `--to`, a period of up to 31 days, e.g. a few weeks to see the usual school days (wilma-cli 2.4+).
+
+### Homework and exams
+```bash
+wilma homework
+wilma exams
+```
+Each exam has its date, subject, name, topic (what to study) and teacher; `time` is the start time when the school gives one (otherwise null).
+
+### Grades
+```bash
+wilma grades                     # recent exam grades
+wilma grades --from 2026-08-01   # every exam since then, graded or not yet
+wilma gradebook                  # course and report-card grades
+```
+`grades --from` (wilma-cli 2.4+) reads Wilma's list of past exams for a period, as far back as the school keeps them; an exam still waiting for its grade has `grade: null`. The gradebook (Suoritukset) is a tree: subject → syllabus → course, each with `grade`, `credits` and completion `date`. Course codes ending in `LV` are usually school-year (report card) grades. An empty list means nothing has been graded yet.
+
+### Class and teachers
+```bash
+wilma contacts
+```
+The child's class, class teacher and other supervisors (`role` as Wilma names it, e.g. Luokanvalvoja), and their own teachers with the `subjects` each teaches them in this and next week's timetable (wilma-cli 2.4+). Use it for "who is the class teacher" or "who teaches maths".
+
+### Lesson notes (merkinnät)
+```bash
+wilma notes --date yesterday
+wilma notes --days 14
+wilma notes summary
+```
+Teachers' per-lesson notes: positive feedback, behavioural remarks, missing books or homework, and absence categorisations (medical, explained, unexplained). One day (default today), `--days N` for the last N days, or `--from`/`--to` (`--to` can be ahead of today: a teacher may note a make-up exam on a coming lesson). Teachers usually fill notes during or after class, so for a morning run use the previous day (the summary already does). When the teacher wrote something, it's in `note`.
+
+`notes summary` counts the notes by `typeLabel` for this school year (or `--from`/`--to`), e.g. how many lessons were missed for health reasons.
+
+Each note has `start`/`end` times from Wilma's hour grid (accurate to the lesson hour). `subject` is the course code (e.g. `MA_8LV` = math, 8th grade; empty when the note isn't about a lesson) and `typeLabel` is Wilma's Finnish label.
+
+### Messages and bulletins
+```bash
+wilma messages
+wilma messages --folder appointments
+wilma messages <id>
+wilma news
+wilma news --older
+wilma news <id>
+```
+Message lists mark `unread` messages and `replyCount`; `wilma messages <id>` returns the thread with its `replies`. The `appointments` folder holds event invitations (parents' evenings, learning discussions) with the family's answer as Wilma lists it (wilma-cli 2.4+): `invitationStatus` `"Applied"` (signed up, the time in `invitationInfo`), `"ExpiredReg"` (sign-up closed), or null; reading the invitation gives its time slots. The summary's invitations carry the same fields. `wilma news` returns the newest dated bulletins plus every pinned one (`pinned: true`, e.g. the school-year bulletin); `--older` adds older bulletins (`archived: true`, dated once read). Reading an item needs no `--student` unless several Wilmas are connected.
+
+### Printouts
+```bash
+wilma printouts
+wilma printouts <id> --output <directory>
+```
+PDF documents the school offers, such as report cards or absence reports (it varies by school).
+
+### Bulletin attachments
+
+Always inspect the `resources` array returned by `wilma news <id>`. Each resource has:
+
+- `id` — stable within the bulletin (`resource-1`, `resource-2`, …); the download command also accepts the bare number (`1`).
+- `label` — the link text from the bulletin.
+- `url` — absolute URL.
+- `authContext` — `"wilma"`: a download uses the Wilma session. `"external"`: a download uses an isolated, unauthenticated fetch that never sends Wilma credentials (like opening the link in a signed-out browser).
+- `fileName` — naming hint when the URL path looks like a file; may be null even for real files.
+
+**Any resource can be attempted.** There is no reliable way to know in advance whether a URL serves a file publicly, requires sign-in, or is a plain web page — so the CLI does not guess: it attempts the download and reports what actually happened. When a document is relevant to the user's request, attempt it:
+
+```bash
+wilma news <news-id> download <resource-id> --output <directory>
+```
+
+Handle the returned `status`:
+
+- `downloaded` — the file was written. Use the returned absolute `path`, and trust `contentType`/`sizeBytes` over any guess from the bulletin label.
+- `not_a_file` — the link answered with a web page instead of a file. This usually means the document requires signing in (for example a private cloud-drive sharing link), or the link is simply a web page. Report this to the user; if access matters, open the `url` in a user-authorized browser session that has the external service's authentication. Never retry the download in a loop.
+- An error (see below) — the attempt itself failed (HTTP error, network problem, size limit). Report the `message`.
+
+Keep downloads in a task-scoped directory via `--output` (defaults to the current working directory). Existing files are never overwritten — a numeric suffix is appended.
+
+Prefer resource metadata over URLs embedded in `content`; `content` is prose and can be null for link-only bulletins.
+
+With the MCP tools, `wilma_get_news_attachment` returns the file itself (text inline, images as images, other files such as PDFs as an embedded file) plus the same `not_a_file` handling. Pass `save: true` to also save a copy to the user's `Downloads/WilmAI` folder.
+
+### Choosing a child
+
+`--student` takes a student number, the full name, or the start of a first or last name (`Kiia` for "Kiia Example"). An unknown or ambiguous name is an error (`unknown_student` / `ambiguous_student`) that lists the children, so pass a number or full name from `wilma students` when unsure.
+
+## Errors
+
+Errors are JSON too: `{ "status": "error", "code": "…", "message": "…" }` (sometimes with `hint` and `cause`). Exit code 2 means a usage error (`invalid_argument`, `unknown_command` — fix the command; `wilma help <command>`), 3 means `not_logged_in` (see Logging in), 1 anything else: `unknown_student`, `ambiguous_student`, `not_found`, `login_failed` (the saved password no longer works — ask the user to run `wilma login` again), `mfa_required` / `mfa_failed`, `network`, `wilma_error`. Exit code 4 means the password is in the keychain and couldn't be had (wilma-cli 2.5+): `secret_missing` (the entry is gone — ask the user to run `wilma login`), `secret_refused` (the keychain is locked or said no) or `secret_unavailable` (no keychain this copy can use). For the last two, don't start a new login yourself: the password is saved. Tell the user what the message says, and follow "If a command fails with `secret_refused`" under Where the password is kept.
+
+## MFA (two-step verification)
+If the Wilma account has MFA/TOTP enabled, logins need the authenticator setup key (a base32 key or `otpauth://` URI) so they can run unattended:
+
+- **`wilma login`:** the login page asks for the setup key when Wilma requires it and saves it with the login.
+- **Environment:** set `WILMA_TOTP_SECRET`.
+- **One-off:** `--totp-secret <base32-key|otpauth://...>` works on any command, but a key on the command line ends up in shell history; prefer the two above.
+
+## Notes
+- If the CLI says no saved login, run `wilma login` (logging in to the same Wilma again replaces that login). `wilma accounts` lists saved logins and `wilma accounts remove <number>` removes one; `wilma config clear` deletes every saved login.
+- This skill is for WilmAI CLI 2.x. If `wilma --version` prints 1.x, run `wilma update` (until then `scripts/wilma-cli.sh` runs 2.x through npx).
+- **Updates.** When a newer WilmAI is out, commands print `Update available: <old> → <new>` on stderr (at most once a day). Finish the user's request first, then run `wilma update`, or tell the user if you can't install software here.
+- **Replying, signing up, reporting an absence.** WilmAI only reads Wilma. When the user wants to reply to a message, sign up for an event or report an absence, say so and point them to Wilma, or to WilmAI Home, the desktop app from the same project, which does these (`wilma home` gives the download for their computer; without the CLI, https://wilm.ai/home). Mention Home only then, or when the user wants a Wilma app of their own; downloading and installing it is their step.
+- The 1.x spellings (`kids list`, `tenants`, `attendance list`, `<command> list`, `messages read <id>`, `news read <id>`, `news resource download …`, `--all-students`) still work.
+- **TLS errors on managed machines.** If a command fails with code `network` and a `cause` such as `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, the network is intercepting TLS and re-signing certificates with a private root CA that Node does not trust. Read the `hint` and report it rather than retrying. The fix is to run the CLI with `NODE_USE_SYSTEM_CA=1` (Node >=22.19/>=24.6), or `node --use-system-ca "$(command -v wilma)"` (Node >=22.15). Never suggest `NODE_TLS_REJECT_UNAUTHORIZED=0`; it disables verification entirely. A working `npm install` does not prove TLS is healthy — the npm registry is commonly exempt from inspection.
+
+## Actionability guidance (for parents)
+
+Wilma contains a mix of urgent items and general info. When summarizing for parents, prioritize **actionable** items:
+
+**Include** items that:
+- Require action or preparation (forms, replies, permissions, materials to bring).
+- Are lesson notes about missing study materials or homework, behaviour, or unexplained absences.
+- Are replies in a thread the parent started (`replyCount` in message lists).
+- Announce a deadline or time-specific requirement.
+- Describe a schedule deviation or noteworthy event (trips, themed days, school closures, exams).
+- Mention homework, exams, or upcoming deadlines.
+
+**De-prioritize** items that:
+- Are purely informational with no action, deadline, or schedule impact.
+- Are generic announcements unrelated to the target period.
+
+When in doubt, **include** and let the parent decide. Prefer a short, structured summary with dates and IDs.
+
+## Scripts
+
+`scripts/wilma-cli.sh` runs the installed `wilma` (or `wilmai`) when it is 2.x or newer, and otherwise the latest 2.x release through `npx`.
+
+## Links
+- **GitHub:** https://github.com/aikarjal/wilmai
+- **Website:** https://wilm.ai

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_infquest_vibe-ops-plugin_audio-transcribe/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 使用 Whisper 将音频/视频转换为文字，支持词级别时间戳。Use when user wants to 语音转文字, 音频转文字, 视频转文字, 字幕生成, transcribe audio, speech to text, generate subtitles, 识别语音.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/b/baby-record/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 宝宝每日护理记录技能。支持通过拍照纸质表单或口语描述快速录入宝宝每日数据（体温、黄疸、沐浴、体重、睡眠、喂养、排泄等），数据存储为 JSON 文件。当用户提到以下内容时触发：记录宝宝今天数据、宝宝每日汇总、今天体温多少、今天喝了多少奶、宝宝最近数据、帮我看看这张表（图片）、宝宝日记、baby record、每日情况汇总。

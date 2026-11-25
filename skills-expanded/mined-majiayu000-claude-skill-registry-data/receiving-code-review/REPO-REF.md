@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: quality/receiving-code-review-hydrosolutions-sapphire-forecast-to/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative

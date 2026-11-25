@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/p/polyv-live-cli/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 保利威官方 skill。通过 npm 发布版 polyv-live-cli 管理保利威云直播服务。用于查询或管理直播频道、推流地址和状态、商品、优惠券、回放、文档、场次、聊天、签到、问答、问卷、抽奖、打赏、观众、观看条件、白名单、平台设置、播放器、卡片推送、推广渠道、转播频道、AI 数字人、监控面板、场景初始化和直播统计。

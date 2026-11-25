@@ -1,0 +1,91 @@
+---
+name: grant-budget-justification
+description: Generate narrative budget justifications for NIH/NSF applications
+version: 1.0.0
+category: Grant
+tags: []
+author: AIPOCH
+license: MIT
+status: Draft
+risk_level: Medium
+skill_type: Tool/Script
+owner: AIPOCH
+reviewer: ''
+last_updated: '2026-02-06'
+---
+
+# Grant Budget Justification
+
+Narrative budget explanations for grant proposals.
+
+## Use Cases
+- Equipment purchases
+- Personnel costs
+- Supplies and reagents
+- Travel and dissemination
+
+## Parameters
+
+| Parameter | Type | Default | Required | Description |
+|-----------|------|---------|----------|-------------|
+| `--input`, `-i` | string | - | Yes | Path to budget items file (JSON/CSV) |
+| `--justification-type` | string | - | Yes | Type of justification (Equipment, Personnel, Other) |
+| `--agency` | string | NIH | No | Funding agency (NIH, NSF) |
+| `--output`, `-o` | string | stdout | No | Output file path |
+| `--format` | string | text | No | Output format (text, markdown, docx) |
+
+## Returns
+- Narrative justification text
+- Cost-benefit rationale
+- Compliance with agency requirements
+
+## Example
+Input: $50,000 for mass spectrometer
+Output: Justification emphasizing essentiality and cost-sharing
+
+## Risk Assessment
+
+| Risk Indicator | Assessment | Level |
+|----------------|------------|-------|
+| Code Execution | Python/R scripts executed locally | Medium |
+| Network Access | No external API calls | Low |
+| File System Access | Read input files, write output files | Medium |
+| Instruction Tampering | Standard prompt guidelines | Low |
+| Data Exposure | Output files saved to workspace | Low |
+
+## Security Checklist
+
+- [ ] No hardcoded credentials or API keys
+- [ ] No unauthorized file system access (../)
+- [ ] Output does not expose sensitive information
+- [ ] Prompt injection protections in place
+- [ ] Input file paths validated (no ../ traversal)
+- [ ] Output directory restricted to workspace
+- [ ] Script execution in sandboxed environment
+- [ ] Error messages sanitized (no stack traces exposed)
+- [ ] Dependencies audited
+## Prerequisites
+
+No additional Python packages required.
+
+## Evaluation Criteria
+
+### Success Metrics
+- [ ] Successfully executes main functionality
+- [ ] Output meets quality standards
+- [ ] Handles edge cases gracefully
+- [ ] Performance is acceptable
+
+### Test Cases
+1. **Basic Functionality**: Standard input → Expected output
+2. **Edge Case**: Invalid input → Graceful error handling
+3. **Performance**: Large dataset → Acceptable processing time
+
+## Lifecycle Status
+
+- **Current Stage**: Draft
+- **Next Review Date**: 2026-03-06
+- **Known Issues**: None
+- **Planned Improvements**: 
+  - Performance optimization
+  - Additional feature support

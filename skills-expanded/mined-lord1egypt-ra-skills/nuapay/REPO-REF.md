@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/n/nuapay/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Nuapay integration. Manage data, records, and automate workflows. Use when the user wants to interact with Nuapay data."

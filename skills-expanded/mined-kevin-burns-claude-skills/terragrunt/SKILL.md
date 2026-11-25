@@ -1,0 +1,481 @@
+---
+name: terragrunt-skill
+license: MIT
+description: >-
+  Generate, validate, review and debug Terragrunt 1.x configurations (root.hcl, terragrunt.hcl, terragrunt.stack.hcl, units, stacks, catalogs) on AWS, Azure and GCP. Use whenever the user mentions Terragrunt, root.hcl, stack files, run --all, dependency blocks, DRY remote state or HCL orchestration of OpenTofu/Terraform, shows Terragrunt HCL, or asks to scaffold, lint or diagnose a multi-environment IaC layout.
+---
+
+# Terragrunt (1.x)
+
+Single skill for all Terragrunt work, organized as a router: identify the task mode below,
+read ONLY the listed reference(s), then act. References are grep-friendly — prefer
+`grep` lookups over reading whole files.
+
+## Hard policy
+
+1. **Post-1.0 CLI only.** Never generate or recommend pre-1.0 forms: `run-all`,
+   `plan-all`, `hclfmt`, `hclvalidate`, `graph-dependencies`, `validate-inputs`,
+   `terragrunt-` prefixed flags, the `skip` attribute, `retryable_errors`, or bare
+   `find_in_parent_folders()` pointing at a root `terragrunt.hcl`. If user code contains
+   these, flag them and propose the 1.x form. **Emit the replacement, never just the ban:**
+   `run --all`, `hcl fmt`, `hcl validate`, `dag graph`, **`hcl validate --inputs`** (add
+   `--strict` to fail on inputs the module does not declare), the unprefixed flag, the
+   `exclude` block, `errors { retry { retryable_errors = [...] } }` (the attribute name is
+   unchanged; what moved is its position, so a bare top-level `retryable_errors` is the
+   pre-1.0 form and the nested one is current), and `find_in_parent_folders("root.hcl")`.
+
+   > `hcl validate --inputs` is spelled out here because an ablation showed it is the one
+   > banned form this policy was carrying on its own. With the ban removed, every other form
+   > held at zero violations — the surrounding 1.x examples were enough — while
+   > `validate-inputs`, removed in v1.0.0, accounted for **16 of 16** remaining violations. It was the only one
+   > with no correct form shown anywhere in this file. See `evals/RESULTS.md`.
+2. **Fact-based generation.** Every generated pattern must trace to a documented Gruntwork
+   pattern (references here carry doc links to docs.terragrunt.com). Don't invent layouts.
+3. **Knowledge freshness. This skill does not assert what the current Terragrunt release is.**
+   That claim has a half-life of about six weeks and it expired unnoticed: this line said
+   "current stable v1.1.2" while the binary on the author's own machine was already v1.1.3.
+   Run **`scripts/preflight.py`** instead — it reads `terragrunt --version` and reports which
+   of the gates below your build satisfies, which it does not reach, and which upgrade hazards
+   are in effect on it. Everything that follows is a fact about *when a feature landed*, which
+   does not rot. **v1.1.0 graduated six experiments to
+   GA** — `stack-dependencies`, `cas`, `catalog-redesign`, `mark-many-as-read`,
+   `opt-out-auth`, `dag-queue-display` — so their features are now **enabled by default**;
+   passing the old `--experiment`/`TG_EXPERIMENT` value only prints a "completed experiment"
+   warning. The stack-dependency features (`autoinclude`, `unit.<name>.path` /
+   `stack.<name>.path`, `dependency` on stack dirs via `autoinclude`) and the CAS attributes
+   (`update_source_with_cas`, `mutable`) therefore require **v1.1.0+** — flag them and do NOT
+   emit them for repos pinned to ≤1.0.x.
+
+   **v1.1.1 added two experiments** (opt-in, not GA), both on the `terraform` block and both
+   requiring **v1.1.1+**: `oci` (module sources from OCI registries via `oci://`) and
+   `version-attribute` (a `version` constraint for `tfr://` registry modules); **both GA in
+   v1.2.0**. Syntax and the gating rules are in `references/hcl-blocks.md` under `## BLOCK: terraform`. v1.1.1 was
+   otherwise a bug-fix release — it introduced no new GA surface.
+
+   **v1.1.2 added no new GA surface either, but two of its fixes change what to advise.**
+   Recommend **v1.1.2+** rather than v1.1.1 wherever either applies:
+   - The **provider cache server**'s archive-download endpoint did not require the run's
+     token before v1.1.2, so another local process could use a running cache server to pull
+     from a private registry with the starting user's registry credentials. Relevant on
+     shared CI runners. See `references/scale-and-performance.md`.
+   - **v1.1.1 specifically broke `iam_role`** (and `--iam-assume-role` / `TG_IAM_ASSUME_ROLE`)
+     when combined with static AWS credentials: backend operations assumed the role a second
+     time, so it tried to assume itself and AWS returned `AccessDenied`. The error points at
+     the trust policy, but editing the trust policy is the wrong fix — upgrading is. See
+     `references/hcl-blocks.md` under `## BLOCK: iam_role`.
+
+   **v1.1.3 graduated nothing.** No experiment stabilised, so the "enabled by default" list
+   above is unchanged from v1.1.0. It is twelve bug fixes and five new experiments, but two
+   items in it change what to advise and one changes behaviour whether or not you opt in.
+
+   **Recommend v1.1.3+ wherever `--provider-cache` is used, or wherever two Terragrunt runs
+   can overlap on one machine.** Two separate race conditions were fixed, and both are the
+   same shape as the v1.1.2 provider-cache issue above:
+   - The cache server could start answering requests before it had finished preparing its
+     directories. A provider requested in that window had its archive and lock file written
+     **relative to the working directory**, leaving zip files loose in the project.
+   - Two concurrent runs staged provider downloads at the same path, so the first to finish
+     could delete an archive the other was still unpacking, failing it with
+     `failed to open zip archive`. Relevant to any parallel CI matrix on a shared runner.
+   See `references/scale-and-performance.md`.
+
+   **THE ONE THAT BITES WITHOUT OPTING IN: `(` and `)` are now reserved in `--filter`.** The
+   `bounded-discovery` experiment introduces an inline `(dir)` boundary operand, and reserving
+   those characters **changes how `--filter` parses everywhere, not only when the experiment is
+   enabled**. `--filter '1...(foo | bar)'` previously matched a unit literally named `(foo` or
+   `bar)`; on v1.1.3 it is rejected as a malformed boundary. Wrap a name or path containing
+   parentheses in braces — `--filter '{./weird(name)}'` — to keep it literal. This is the
+   v1.1.1-`iam_role`-shaped item for this release: an upgrade can break a working invocation
+   with nothing enabled. Check filter strings and unit names for parentheses before upgrading.
+
+   **v1.1.3 added five experiments, all opt-in, none GA:** `block-iteration` (reserves the
+   `expansion` block for iterating `dependency`/`unit`/`stack` over `count`/`for_each`, plus an
+   `enabled` attribute on `unit` and `stack` — **reserved only in this release, enabling it has
+   no behavioural effect**, but writing `expansion` *without* it is now an error rather than a
+   silent discard), `bounded-discovery` (above), `browse-tui` (`terragrunt browse`, a
+   three-column TUI estate browser), `mutable-generate` (see the collision warning below) and
+   `optional-dependency-outputs` (`--no-dependency-outputs`, the global form of
+   `skip_outputs`). Syntax and gating in `references/hcl-blocks.md`. **All but `browse-tui`
+   are GA in v1.2.0**, and `block-iteration` stopped being reserved-only there: `expansion`
+   really iterates.
+
+   **NAME COLLISION — `mutable` now means two different things.** On the **`unit`** block it is
+   GA since v1.1.0 and needs no experiment. On the **`generate`** block it is new in v1.1.3 and
+   requires `--experiment mutable-generate` on v1.1.3–v1.1.6; setting it without the experiment
+   is an error there, and earlier versions reject the attribute outright. **From v1.2.0 it is
+   GA, and generated files are read-only CAS links unless `mutable = true`.** Do not carry the v1.1.0 gate across to
+   `generate`. Both are in `references/hcl-blocks.md`.
+
+   **Experiments are not a short list, and they move in patch releases.** Alongside the two
+   above, `azure-backend`, `deep-merge`, `dependency-fetch-output-from-state`,
+   `hook-context-env`, `iac-engine`, `optional-hooks`, `slow-task-reporting` and `symlinks`
+   were active as of v1.1.1, and **v1.1.2 added `otel-logs`** (OpenTelemetry logs signal via
+   `TG_TELEMETRY_LOGS_EXPORTER`) **and `profiling`** (pprof CPU/heap/goroutine collection for
+   debugging Terragrunt itself, not the infrastructure it manages) — twelve active as of
+   v1.1.2 — **and that count was already short by one: `catalog-format` was active and is not
+   in the list above.** The authoritative list gives **eighteen active as of v1.1.3**, so do not
+   reach the number by adding this release's five to a previous total; read the page.
+   v1.1.2 also changed two existing ones: `azure-backend` went from inert to
+   functional (see `references/azure-backend.md` — this reverses a long-standing "Terragrunt
+   never bootstraps Azure state" rule), and `oci` gained CAS caching plus Docker
+   credential-helper auth. These references cover only some of them, so an unfamiliar
+
+   **v1.1.4 graduated nothing either, and its most important content is two bugs it FIXES that
+   have been live since v1.1.0.** Both entered when CAS became the default path for git
+   sources, and both went four releases unnoticed because neither reads like a Terragrunt
+   problem:
+   - **A `source` URL carrying the go-getter `depth` query parameter has not downloaded since
+     v1.1.0.** `...vpc.git?depth=1&ref=v5.21.0` — CAS lifts `ref` out of the URL but left
+     `depth` in place, so `git` receives `...vpc.git?depth=1` and rejects it as an invalid
+     repository name. A `depth` with no `ref` fails identically. **This presents as "my module
+     source is wrong", not "my Terragrunt is old"**, which is exactly why it is worth knowing.
+     The clone depth comes from `--cas-clone-depth` (default 1) and a `depth` on the URL is
+     *never* applied to a CAS clone, so the parameter can simply be deleted — that fixes it on
+     every version, without upgrading.
+   - **With CAS on, reading a local source that has already been initialised** failed and fell
+     back to the slower standard copy, logging `CAS processing failed ... source escapes
+     repository root` when generating a stack. Provider caching was the cause: both the
+     Provider Cache Server and the Automatic Provider Cache Dir leave `.terraform` pointing
+     into a shared cache outside the source, and CAS read that as the source escaping itself.
+     v1.1.4 leaves `.terraform` and `.terragrunt-cache` out of local sources while keeping
+     `.terraform.lock.hcl`, so `tofu init` in a source directory no longer changes its CAS key.
+
+   **THE ONE THAT BITES WITHOUT OPTING IN, this release: binary selection when `--tf-path` is
+   unset.** Terragrunt used to choose between `tofu` and `terraform` by running `tofu -version`,
+   a process launch on every command including `find` and `list` that never run the binary.
+   That launch is gone — `terragrunt --version` benchmarks ~1.7× faster — but the selection
+   changed with it. **Terragrunt now picks `tofu` whenever `tofu` is on `PATH`, and reports the
+   failure if it cannot run, where it previously fell back to `terraform` silently.** A machine
+   with a broken or half-installed `tofu` stops working on upgrade. Set `--tf-path` or
+   `TG_TF_PATH` explicitly if you were relying on that fallback.
+
+   **`terragrunt scaffold` is now interactive from a terminal.** It opens the same form the
+   Catalog TUI uses instead of writing `# TODO` placeholders — listing a source's variables for
+   a module or template, and the `values.*` references a unit or stack makes, which are written
+   to `terragrunt.values.hcl`. **Dismissing it with `esc` writes nothing at all.** The old
+   placeholder behaviour still applies under `--non-interactive`, when `stdin` is not a
+   terminal, or when the source asks for nothing — so CI is unchanged, but **a scripted runbook
+   or an agent driving a PTY will meet a form where a file used to appear.** Pass
+   `--non-interactive` in anything automated.
+
+   **v1.1.4 added one strict control: `duplicate-dependency-labels`.** Two `dependency` blocks
+   sharing a label parsed without error and silently resolved every reference to whichever came
+   last. That now warns, and is an error under
+   `--strict-control duplicate-dependency-labels`. See `references/hcl-blocks.md` under
+   `## BLOCK: dependency`.
+
+   **v1.1.5 graduated nothing, is mostly performance, and carries four behaviour changes.**
+   - **`base64gzip()` returns the v1.1.3 bytes again.** v1.1.4 was built with Go 1.27, which
+     changed the encoded bytes, so a resource comparing them (an EC2 instance with
+     `user_data_base64` and `user_data_replace_on_change = true`) **planned a replacement** on
+     upgrade. **Do not recommend v1.1.4 wherever `base64gzip()` feeds such a resource.** v1.1.5
+     warns once per run that this is legacy behaviour. `base64gzip_compat()` (behind
+     `--experiment base64gzip-compat`) keeps the v1.1.3 bytes permanently.
+   - **`get_repo_root()` and friends no longer run `git`.** They look for a `.git` entry
+     themselves, so `GIT_DIR`, `GIT_WORK_TREE` and `core.worktree` are **ignored**, and the
+     `safe.directory` ownership check is not applied. `GIT_CEILING_DIRECTORIES` still works. A
+     config that relied on those Git settings to find the root now finds a different one.
+   - **Files from `generate` blocks are created `0600`, not `0644`.** Anything that expected
+     another user or group to read a generated file loses access.
+   - **A current flag name now beats its deprecated name at the same level.** Before,
+     `TERRAGRUNT_LOG_LEVEL=debug` overrode `TG_LOG_LEVEL=info` set beside it. A CLI argument still
+     beats an environment variable under either name.
+   It also extended `duplicate-dependency-labels` to **two labels pointing at the same
+   `config_path`**, which drift apart as soon as one gains `mock_outputs`. It added two
+   experiments: `offline-cas` (the CAS records probe answers; unlocks `--cas-offline`,
+   `--cas-refresh` and `--cas-probe-ttl`) and `base64gzip-compat`. `tg-login` is reserved and
+   does nothing yet. `run --all` over units sharing one git module now makes one remote probe,
+   not one per unit. That is performance only and needs no advice.
+
+   **v1.1.6 is one Windows fix**: `find`, `list` and `browse` with a Git filter found nested units
+   again. No new surface.
+
+   **v1.2.0 (released 2026-10-21) completed eleven experiments.** `azure-backend`,
+   `block-iteration`, `bounded-discovery`, `catalog-format`,
+   `dependency-fetch-output-from-state`, `mutable-generate`, `oci`,
+   `optional-dependency-outputs`, `optional-hooks`, `profiling` and `version-attribute` are on
+   by default, and their `--experiment` flags only warn. On v1.2.0+ emit them without a flag;
+   **below v1.2.0 every gate above still applies.** The release candidates (rc1 2026-09-24 to
+   rc3 2026-10-15) do not count: the preflight reports an rc as below the v1.2.0 gate.
+   What changes on upgrade without opting in (the preflight lists all of these as hazards):
+   - **`base64gzip()` returns the Go 1.27 bytes**, so the replacement described under v1.1.5
+     comes back on purpose. Where the encoded value must stay stable, use `base64gzip_compat()`
+     — still behind `--experiment base64gzip-compat`.
+   - **S3 state bucket bootstrap no longer adds the `RootAccess` policy statement** (`s3:*`
+     for the whole account). `skip_bucket_root_access` is deprecated; the opt-in is
+     `enable_bucket_root_access = true`. Buckets that already have the statement keep it.
+   - **Generated files are read-only CAS links by default.** A hook or script that edits a
+     generated file in place fails with a permission error; set `mutable = true` on that
+     `generate` block, or run with `--no-cas`.
+   - **`--backend-bootstrap` now creates Azure state resources** (resource group, storage
+     account, container) it used to skip, and converges versioning and soft delete on
+     existing accounts. New accounts get minimum TLS 1.2 (`minimum_tls_version` raises it).
+   - **Dependency outputs are read straight from S3, GCS or azurerm state**, falling back to
+     `output -json` on an unsupported backend or a permission error.
+     `--no-dependency-fetch-output-from-state` forces the old path.
+   - **Output and validation that scripts and CI see:** `info print --all` writes JSON Lines;
+     `catalog` writes `jsonl` instead of opening the TUI off a terminal; `hcl validate` fails on
+     a `dependency` whose unit is gone; a malformed `exclude` block is an error rather than
+     silently dropped; and `-destroy=true` now counts as a destroy for `prevent_destroy`.
+   - **New, no gate to check beyond v1.2.0:** OpenTofu 1.13 functions in Terragrunt HCL
+     (`assume*`, `templatestring`, `urldecode`, `cidrcontains`, …); an expanded unit is
+     referenced as `unit.<name>[key].path`; S3 bucket names ending `-<account>-<region>-an`
+     are created in the account regional namespace.
+   - **For agents:** the `mcp-command` experiment (`terragrunt mcp`) is still an experiment and
+     will not stabilise before v1.3; it starts no subprocesses without `--allow=exec`. The public
+     **Terragrunt docs MCP server** at `https://mcp.docs.terragrunt.com/mcp` (public beta) is a
+     first-party source for the "look it up" rule below.
+
+
+   **v1.2.1 (released 2026-10-23) graduated nothing and carries behaviour changes.** Recommend it
+   over v1.2.0: it is built with Go 1.27.3, a security fix in certificate verification
+   (CVE-2026-111943) that covers every HTTPS connection Terragrunt makes.
+   - **`exclude` cannot reference dependency outputs**, on any command. It never worked under
+     `run --all`, which ignored the block and ran the unit. Base it on a `feature` or a local.
+   - **A file read with `read_terragrunt_config` is isolated from its reader:** its `include`
+     and `feature` blocks no longer see the reader's `local` and `feature` values. Define the
+     value in the file being read. Both of these fail with errors in `error-patterns.md`.
+   - **New strict control `dependency-config-path-file`.** `config_path` naming a file now
+     warns, and is an error under the control. Emit the directory, `../db`, never
+     `../db/terragrunt.hcl`.
+   - **`run_cmd` results are cached per environment and exact arguments,** so a shared call no
+     longer hands the first unit's credentials' output to every unit, and concurrent units
+     share one run.
+   - **`-detailed-exitcode` no longer reports a failure with no exit code as success.** Below
+     v1.2.1 such a unit recorded `0`, so do not trust a green plan gate there.
+   - **Scripts:** `hcl validate` text output changed, so parse `--json`, which did not.
+     `--out-dir` puts units a Git filter selects under `@<ref>/` directories.
+   - **New, no gate beyond v1.2.1:** `use_path_style` in `remote_state` is honoured by
+     Terragrunt's own S3 requests. The preflight lists all of this.
+
+   **v1.2.2 (released 2026-11-11) graduated nothing; configs can newly fail.** Built with Go
+   1.27.4, which Gruntwork says changes no behaviour. Recommend it over v1.2.1.
+   - **A `dependency` with `config_path = null` is an error unless `enabled = false`.** It used
+     to be dropped silently, so a reference to it failed later and an included block could not
+     be removed by nulling its path. Emit `enabled` alongside any conditional `config_path`;
+     a disabled block keeps its `mock_outputs`. Reproduced on 1.2.2.
+   - **An `exclude` block whose `if` is null or missing fails `run --all`** while the queue is
+     built (`Unsuitable value: null value is not allowed`). It used to exclude nothing, so the
+     dependencies `exclude_dependencies = true` was meant to keep out still ran. Always emit
+     `if` as a boolean. Reproduced on 1.2.2.
+   - **`run --all` now obeys the unit's own blocks over included ones:** `actions = []` in a
+     unit's `exclude` turns off an included `exclude`, and a unit that overrides (or disables)
+     an included `dependency` is ordered after the new path only.
+   - **New strict control `cas-source-inside-stack`** (also in `deprecated-configs`). A
+     `unit`/`stack` with `update_source_with_cas` whose source sits inside its own stack
+     directory warns: generation copies that directory whole, so `run --all` also runs a copy
+     without its values. Put the stack in a subdirectory of the catalog and select it with
+     `//`, e.g. `source = "../catalog//stacks/bar"`. Reproduced on 1.2.2.
+   - **Reading and Git filters do not see a file read in `inputs`.** Read it in `locals` (or
+     `mark_as_read` it) and reference the local; the new `inputs-read-not-tracked` tip points
+     at each such read. A read in a stack's `unit`/`stack` `values` is now tracked. Reproduced
+     on 1.2.2: `--filter 'reading=…'` matched nothing until the read moved to `locals`.
+   - **`--all` honours filters outside `run`:** `render`, `info print` and
+     `aws-provider-patch` used to act on every unit, and `backend bootstrap|delete --all`
+     ignored `.terragrunt-filters`. A script that relied on that now acts on fewer units.
+   - **Fixes worth knowing:** `remote_state` `encryption` on existing plaintext state works
+     with `fallback = { method = "unencrypted" }` for one apply; `update_source_with_cas` works
+     in stacks sourced from OCI or HTTP archives; CAS honours `sshkey`; `scaffold` resolves
+     `--output-folder` and `--var-file` against `--working-dir`; S3 bootstrap no longer
+     crashes on a store that returns an empty encryption document; `--provider-cache` uses a
+     per-user `$TMPDIR/terragrunt-<uid>`; dependency discovery is linear in unit count.
+   - **Experiments (opt-in, do not emit unless the repo enables them):** `variables-block`
+     adds a `variables` block whose `kind` passes inputs as `TF_VAR_` env (default), a
+     `terragrunt.auto.tfvars` or `.json` file — for units whose inputs exceed the OS
+     environment limit; `no-dot-terragrunt-cache` adds `terraform { no_dot_terragrunt_cache =
+     true }` to run a source-less unit in place. `mcp-command` gains `catalog`, `fmt`,
+     `scaffold` tools and `--allow=docs`. **Telemetry users:** `otel` span attributes were
+     renamed (`terraformCommand`/`terraform_command` → `tofu_command`,
+     `terraform_cli_args` → `tofu_cli_args`) and `<command>_duration` has one label, `dir`.
+
+   These references cover only some of the active experiments, so an unfamiliar `--experiment` value
+   is not evidence that it is wrong — look it up rather than flagging it. For anything newer,
+   niche, or not found in the references, look it up — do not guess. In order:
+   (1) the **Terragrunt docs MCP server** if it is connected (`terragrunt-docs`; add it with
+   `claude mcp add -s user --transport http terragrunt-docs https://mcp.docs.terragrunt.com/mcp`).
+   It is first-party and answers **pinned to a Terragrunt version**, so ask for the version
+   `scripts/preflight.py` reports rather than the latest. It is in public beta with no
+   availability guarantee, so if it is absent or failing, move on. (2) The C7 search skill
+   (Context7). (3) Fetch docs.terragrunt.com directly. Say which one the answer came from.
+4. Terragrunt orchestrates **OpenTofu or Terraform**; don't assume one unless the user's
+   repo indicates it (`.terraform-version`, `terraform_binary`, provider constraints, or an
+   `engine` block — the latter is gated behind the `iac-engine` experiment and is not covered
+   in `references/hcl-blocks.md`, so look it up before editing one).
+
+## Terminology (1.0)
+
+**Unit** = directory with `terragrunt.hcl` deploying one module. **Stack** = group of units;
+*implicit* (directory tree) or *explicit* (`terragrunt.stack.hcl`). **Catalog** = library of
+reusable unit/module definitions. Targeting uses `--filter` expressions.
+
+## Mode router
+
+| Task | Mode | Read first |
+|---|---|---|
+| "Create/scaffold/set up" configs, envs, stacks | GENERATE | references/architecture-patterns.md + relevant templates/ |
+| "Validate/lint/check/CI" existing configs | VALIDATE | validate.sh header (abs path in VALIDATE workflow); references/cli-reference.md as needed |
+| "Review/audit/best practice" a repo or file | REVIEW | references/best-practices.md |
+| Error message pasted / "why is this failing" | DIAGNOSE | grep references/error-patterns.md |
+| "What does X do" (block/function/command) | LOOKUP | grep the matching reference below |
+| Complex/edge-case examples (multi-account, CI, mocks) | EXAMPLES | references/advanced-examples.md |
+| Anything Azure backend/provider (state, auth, gotchas) | (any mode) | **also** references/azure-backend.md |
+| "Only run changed units", slow `run --all`, CI fan-out, performance at scale | SCALE | references/scale-and-performance.md |
+| CI/CD pipeline, OIDC auth to AWS/GCP/Azure, saving plans between plan and apply | CICD | references/cicd.md |
+| Look up a module, a resource type, or their inputs/outputs — before pinning a `source` or writing `inputs` | *(hand off)* | the [`terraform-registry`](https://github.com/kevin-burns/claude-skills/tree/main/terraform-registry) skill, not this one |
+| "Migrate to stacks", convert an `_envcommon`/tree layout to `terragrunt.stack.hcl` | MIGRATE | references/architecture-patterns.md `## PATTERN: migrate an existing tree to explicit stacks` |
+
+## Reference index (grep, don't read whole files)
+
+**Quick navigation.** Every reference is written to be grepped by a heading convention, so
+the fastest route to an answer is the grep handle, not the filename.
+
+| Reference | Holds | Entries | Grep handle |
+|---|---|---|---|
+| `error-patterns.md` | diagnosed errors: likely causes for every one, a fix for 57 | 69 | `^## ERROR:` |
+| `functions.md` | built-in functions by category | 31 | `^## FUNCTION:` |
+| `best-practices.md` | practices, plus comparisons and decision guides | 29 / 7 / 3 | `^## PRACTICE:` `^## COMPARISON:` `^## DECISION:` |
+| `cli-reference.md` | the 1.x command tree and the `--filter` system | 24 | `^## COMMAND:` |
+| `hcl-blocks.md` | every HCL block and attribute | 15 / 10 | `^## BLOCK:` `^## ATTRIBUTE:` |
+| `advanced-examples.md` | worked examples: multi-account/subscription/project, CI, mocks, AVM, CFT, own-module | 28 | `^## EXAMPLE:` |
+| `architecture-patterns.md` | layout patterns, catalog/live repo shape, migration to stacks | 7 | `^## PATTERN:` |
+| `cicd.md` | OIDC per cloud, plan-then-apply across a stack | — | grep a `^## ` heading |
+| `azure-backend.md` | Azure state, auth and provider gotchas | — | read whole; it is short |
+| `scale-and-performance.md` | run only what changed, cache, parallelism | — | read whole; it is short |
+
+Two of the ten carry no heading convention because they are short enough to read end to end.
+Counts are verified against the files, not asserted: regenerate with
+`grep -c '^## ERROR:' references/error-patterns.md` and so on.
+
+
+- `references/architecture-patterns.md` — layout patterns, env-agnostic root rule, unit/stack
+  model, dependency wiring, runtime control. Headings: `## PATTERN:`
+- `references/hcl-blocks.md` — all HCL blocks (terraform, remote_state, dependency, include,
+  generate, locals, inputs, feature, exclude, errors...). `grep '^## BLOCK: dependency'`
+- `references/functions.md` — built-in functions by category. `grep '^## FUNCTION: get_env'`
+- `references/cli-reference.md` — full 1.0 command tree + `--filter` system.
+  `grep '^## COMMAND: stack run'`
+- `references/error-patterns.md` — 69 diagnosed errors. Every one names likely causes; **57
+  carry a fix**, and an entry with no `**Solutions:**` section has none to give — say so
+  rather than improvising one. Grep error keywords first:
+  `grep -in 'state lock' references/error-patterns.md`
+- `references/best-practices.md` — practices with priority/rationale/antipatterns, plus
+  `## COMPARISON:` (e.g. dependency vs dependencies) and `## DECISION:` guides
+- `references/advanced-examples.md` — 28 worked examples. `grep '^## EXAMPLE:'`
+- `references/azure-backend.md` — Azure (`azurerm`) remote state + provider setup and
+  gotchas: whether Terragrunt bootstraps Azure depends on version (no below v1.1.2; yes on
+  v1.1.2–v1.1.6 with `--experiment azure-backend`; yes by default on v1.2.0+), backend key list, auth methods,
+  `use_azuread_auth`/Entra ID, provider v4 `subscription_id`, RBAC + shared-key gotchas,
+  OIDC for CI. Read this for ANY Azure backend/provider task.
+- `references/cicd.md` — CI/CD: OIDC to AWS (incl. the immutable `sub` claim that breaks
+  pipelines on repos created from 2026-07-15), GCP Workload Identity Federation, a pointer to
+  the Azure section, and `--out-dir` for saving a plan per unit between plan and apply. Read
+  for anything about pipelines or CI authentication.
+- `references/scale-and-performance.md` — running only changed units/stacks at scale:
+  `--filter` git+graph targeting (`--filter-affected`), `find --json` CI matrices, provider
+  cache server, CAS, dependency-output-from-state, parallelism, per-unit overhead, OSS vs
+  paid Scale. Read for "only plan/apply what changed", slow `run --all`, or CI fan-out.
+
+## Templates
+
+- `templates/root/root.hcl` — root config (environment-agnostic)
+- `templates/child/terragrunt.hcl` — unit including root + env.hcl
+- `templates/env/env.hcl` — per-environment locals
+- `templates/stack/terragrunt.stack.hcl`, `templates/catalog/` — explicit stacks & catalog units
+- `templates/module/terragrunt.hcl` — standalone unit
+- `templates/backends/` — remote_state for S3/GCS/Azure, essential + advanced tiers.
+  **Azure caveat:** by default `azurerm` passes through to the native backend and
+  Terragrunt does NOT bootstrap/migrate/delete Azure storage below v1.2.0, so the
+  account/container must pre-exist — which is what these templates assume. On **v1.1.2–v1.1.6
+  with `--experiment azure-backend`**, and **by default on v1.2.0+**, that reverses and
+  Terragrunt does manage them (`--backend-bootstrap` creates them). Establish
+  the version before advising; full detail in `references/azure-backend.md`.
+- `templates/providers/` — provider `generate` blocks for all three clouds
+  (`aws-generate-provider.hcl`, `azure-generate-provider.hcl`, `gcp-generate-provider.hcl`).
+  **Each cloud constrains the target differently, and one of them does not constrain it at
+  all:** AWS has `allowed_account_ids`; `azurerm` v4+ makes `subscription_id` **required**
+  (see `references/azure-backend.md`); the `google` provider has **no equivalent and no
+  required argument whatsoever**, so an unset `project` falls through to `GOOGLE_PROJECT`,
+  then ADC, then whatever `gcloud config set project` last selected. Derive `project` from
+  the directory tree rather than typing it.
+
+Replace ALL placeholder variables before presenting (`{{mustache}}` in templates/backends and
+templates/providers; `[BRACKET]` style everywhere else); never leave placeholders or invent
+secrets/account IDs — ask or use obvious dummies labelled as such.
+
+## GENERATE workflow
+
+1. Determine pattern via references/architecture-patterns.md, then **print the pattern
+   selection checklist from that file before writing anything.** Not a summary of it, not
+   "the pattern is X" in prose — the filled-in block. Three recorded runs of this workflow
+   skipped it and two of those chose a layout the request had explicitly ruled out; the
+   checklist is where the account-vs-region decision is forced into the open. If accounts
+   and regions both vary, read `## PATTERN: two accounts, many regions` first.
+2. Read the relevant template(s); adapt, don't freestyle.
+3. Verify the include/read graph: every `find_in_parent_folders`/`read_terragrunt_config`
+   target must exist from the referencing file's location.
+4. Validate if tooling exists (see VALIDATE); otherwise state what wasn't validated.
+5. Present: directory tree, file list, run commands (`terragrunt run --all plan`), and any
+   placeholders the user must fill.
+
+## VALIDATE workflow
+
+> **Bundled scripts run by absolute path.** They live in this skill's base directory (announced
+> when the skill loads, usually `~/.claude/skills/terragrunt-skill`). You'll be working inside an
+> IaC repo, so a relative `scripts/…` won't resolve — always use the base-dir path. The Python
+> helper is stdlib-only: prefer `uv run python <path>`, falling back to `python3 <path>` if uv
+> isn't on PATH (`UV="$(command -v uv || ls "$HOME/.local/bin/uv" /opt/homebrew/bin/uv /usr/local/bin/uv 2>/dev/null | head -1)"`).
+
+`bash ~/.claude/skills/terragrunt-skill/scripts/validate.sh [DIR]` runs the layered suite:
+`hcl fmt --check`, `hcl validate`, tflint, Trivy, dag check, optional plan. Control via env
+vars: `SKIP_PLAN`, `SKIP_SECURITY`, `SKIP_LINT`, `SKIP_INIT`, `SKIP_BACKEND_INIT=true`
+(CI/offline: init with `-backend=false`), `SOFT_FAIL_SECURITY`. No terragrunt binary available?
+Fall back to static review: check 1.0-only policy violations, include-graph integrity, then
+REVIEW mode checklist. `uv run python ~/.claude/skills/terragrunt-skill/scripts/detect_custom_resources.py [DIR]`
+finds non-registry providers/modules needing research.
+
+## DIAGNOSE workflow
+
+1. Extract distinctive tokens from the error (e.g. "state lock", "Could not find").
+2. `grep -in '<token>' references/error-patterns.md`; read matched `## ERROR:` sections.
+3. No match → the docs MCP server (version-pinned), then C7 search, then docs.terragrunt.com
+   troubleshooting; say the pattern wasn't in the
+   embedded set.
+
+## REVIEW workflow
+
+Audit against best-practices.md as a checklist; report findings ordered by priority with the
+practice name, why it matters, and the doc link. Include 1.0-policy violations (Hard policy
+item 1) as findings.
+
+## Provenance
+
+This skill is MIT licensed. It is **not** wholly original, and the parts that are not are
+named here.
+
+**Harvested content.** Five reference files — `advanced-examples.md`, `best-practices.md`,
+`error-patterns.md`, `functions.md` and `hcl-blocks.md` — began as curated data from
+[omattsson/terragrunt-mcp-server](https://github.com/omattsson/terragrunt-mcp-server)
+(MIT), restructured here for grep-based lookup and since re-checked against
+docs.terragrunt.com. Each file repeats this in its own header. Together they are roughly
+two-thirds of the reference corpus by size, so it is the single largest input to this skill
+after the Terragrunt documentation itself.
+
+  Two things follow, and both matter. **MIT permits the reuse and requires the notice**, which
+  is why this paragraph exists. And that repository's last commit predates Terragrunt v1.0.0
+  by five weeks, so anything harvested from it is **pre-1.0 material by default** — the
+  re-checks are what make it safe, not the source. Where a re-check has not happened, treat
+  the entry as suspect rather than current. `references/hcl-blocks.md` is known to still carry
+  three pre-1.0 retry blocks for exactly this reason.
+
+**Layout and scaffolding guidance** describes, but does not copy, Gruntwork's published
+reference repositories:
+[terragrunt-infrastructure-catalog-example](https://github.com/gruntwork-io/terragrunt-infrastructure-catalog-example)
+(MPL-2.0),
+[terragrunt-infrastructure-live-example](https://github.com/gruntwork-io/terragrunt-infrastructure-live-example)
+(Apache-2.0), and [gruntwork-io/boilerplate](https://github.com/gruntwork-io/boilerplate)
+(MPL-2.0), the templating engine behind `scaffold` and `catalog`.
+
+**Terragrunt** is © Gruntwork, Inc. (MIT). This skill is not affiliated with or endorsed by
+Gruntwork. The bundled `scripts/validate.sh` invokes external tools when present —
+`terragrunt`, `tflint` (MPL-2.0) and `trivy` (Apache-2.0) — but does not bundle them; their
+own licenses apply.

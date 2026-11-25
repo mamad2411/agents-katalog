@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/a/ai-video-auto-generator/skills/agnes-ai/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Agnes AI 纯生成 Skill

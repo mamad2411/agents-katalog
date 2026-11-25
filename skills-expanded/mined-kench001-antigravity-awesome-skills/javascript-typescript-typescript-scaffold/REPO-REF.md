@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/kench001/antigravity-awesome-skills (path: plugins/antigravity-awesome-skills-claude/skills/javascript-typescript-typescript-scaffold/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: You are a TypeScript project architecture expert specializing in scaffolding production-ready Node.js and frontend applications. Generate complete project structures with modern tooling (pnpm, Vite, N

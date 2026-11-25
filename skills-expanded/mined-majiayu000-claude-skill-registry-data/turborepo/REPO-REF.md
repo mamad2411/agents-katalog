@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/turborepo/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Turborepo monorepo 构建系统指导。触发词：turbo.json、task pipelines、dependsOn、caching、remote cache、turbo CLI、--filter、--affected、CI optimization、environment variables、internal packages、monorepo structure/best pra

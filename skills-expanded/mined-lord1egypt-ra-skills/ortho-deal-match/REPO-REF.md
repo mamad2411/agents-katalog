@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/o/ortho-deal-match/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 骨科供需撮合台。买方发布需求、卖方发布能力，自动按分类/工艺/材料/资质/市场五维打分撮合，双方都确认意向后才交换联系方式。内置实名登记、反骚扰承诺、配额限速、拒访名单、角色权限分派与哈希链审计；可从骨科展会名录（L1 公开级）导入线索做获客。当用户提到骨科撮合、找代工、发布需求、供需对接、获客、搭接买卖双方时使用。

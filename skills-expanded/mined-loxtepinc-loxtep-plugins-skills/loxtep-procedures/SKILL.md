@@ -1,0 +1,245 @@
+---
+name: loxtep-procedures
+description:
+  Use when the user wants to manage business process graphs — list, get, create,
+  update, or delete procedures, import/export process graphs, or query procedure
+  dependencies.
+metadata:
+  documentation: https://github.com/LoxtepInc/loxtep-plugins-skills/blob/main/codex/skills/loxtep-procedures/SKILL.md
+---
+
+<!-- GENERATED FILE -- single source: loxtep/scripts/plugins-skills-generate-skills.mjs. From the loxtep root run `PLUGINS_SKILLS_ROOT=<plugins-skills> node scripts/sync-skills-to-plugins-skills.mjs` (or that generator with PLUGINS_SKILLS_ROOT set). Do not edit client copies; do not run sibling scripts/generate-skills.mjs. -->
+
+# Procedures & Process Graph
+
+Manage **business procedures**, their **step graphs**, and **inter-procedure
+dependencies** in the process graph. Import/export JSON-LD graphs.
+
+## When to use
+
+- "**List procedures**", "**get procedure**", "create/update/delete
+  **procedure**"
+- "**Import** process graph", "**export** process graph", "**JSON-LD**"
+- "**Procedure dependencies**", "upstream/downstream procedures"
+- "**Decisions**", "**triggers**", "**steps**" within a procedure
+
+## Prerequisites
+
+- MCP auth. Operations are **organization**-scoped.
+
+## Happy-path flows
+
+### Flow — Browse and inspect procedures
+
+1. `list_procedures` (optional filters: `status`, `domain_id`, `name`).
+2. `get_procedure` for full step graph including decisions, triggers, and
+   dependencies.
+
+### Flow — Create procedure with full step graph
+
+1. `create_procedure` with required `organization_id` and `name` (optional
+   `description`, `status`, `domain_id`, `steps`, `decisions`, `triggers`,
+   `dependencies`, and `metadata`).
+2. `get_procedure` to verify the created structure.
+3. `update_procedure` for partial updates (submit complete arrays per field to
+   replace).
+
+### Flow — Import JSON-LD graph
+
+1. `import_process_graph` with inline `graph` (≤ 4 MB), or `s3_reference`
+   (`{s3_bucket, s3_key}`) when that JSON-LD object is already in the platform
+   data-products bucket (`DATA_PRODUCTS_BUCKET_NAME`) under
+   `organizations/{organization_id}/`. Any other bucket or key is **403**
+   `org_graph_s3_location_rejected`. There is no customer upload that writes a
+   graph file onto that prefix.
+2. Response includes `procedure_id`, `action` (created | updated), counts, and
+   any `unmapped_terms`.
+3. Optionally pass `procedure_id` for idempotent re-imports (upsert).
+4. Pass `skip_catalog: true` to suppress automatic catalog entry creation.
+
+### Flow — Export for round-trip
+
+1. `export_process_graph` with `procedure_id` and `format`:
+   - `jsonld` — valid PKO-compliant JSON-LD, round-trippable through
+     `import_process_graph`.
+   - `yaml` — Loxtep-standard YAML (procedure, steps, decisions, triggers,
+     dependencies, metadata).
+   - `summary` — concise metadata: name, step count, decision count, trigger
+     types, dependents, last modified.
+2. Pass `preserve_namespaces: true` to include original import URIs in the
+   export.
+
+### Flow — Query dependency chain
+
+1. `get_procedure_dependencies` with `procedure_id`, `direction` (upstream |
+   downstream | both), optional `depth` (default 3, max 10).
+2. Optionally filter by `relationship_types` (feeds_into, depends_on, triggers,
+   supersedes).
+3. Response includes edges with procedure metadata at each hop and a
+   `cycles_detected` flag.
+
+### Flow — Soft-delete a procedure
+
+1. `delete_procedure` — soft-deletes (tombstones) the procedure and all child
+   nodes (steps, decisions, triggers).
+2. Response includes warnings listing downstream dependents.
+3. Tombstoned procedures are excluded from `list_procedures` results.
+
+### Flow — List PKO procedure runs for a data product
+
+1. `list_runs` with required `data_product_id` (MCP session org applies).
+2. Response includes `runs[]` with `procedure_run_id`, `status`,
+   `approval_request_id`, `procedure_id`, `current_step_order`, `context`.
+3. Use this to answer “did enqueue happen?” — do **not** scrape HITL rows for
+   run ids.
+4. **`start_run` is not on customer MCP.** Enqueue is event-driven (`pko-engine`
+   / `process-pko-run-start-requested`). Operators can still read the same rows
+   via REST `GET /agent-orchestration/procedure-runs/{data_product_id}` or SQL
+   table `procedure_runs` (org-scoped).
+
+## MCP mapping
+
+| `operation`                  | Facade           | Scope        | Notes                                                                                                                                                                                                                    |
+| ---------------------------- | ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_procedures`            | `loxtep_context` | organization | Filters: `status`, `name`, `domain_id`, …                                                                                                                                                                                |
+| `get_procedure`              | `loxtep_context` | organization | Full step graph with decisions, triggers, dependencies, metadata                                                                                                                                                         |
+| `list_runs`                  | `loxtep_context` | organization | PKO pipeline runs for a `data_product_id` (status, HITL link)                                                                                                                                                            |
+| `create_procedure`           | `loxtep_context` | organization | Required: `organization_id`, `name`; optional graph fields                                                                                                                                                               |
+| `update_procedure`           | `loxtep_context` | organization | Partial updates; arrays use full-replacement semantics                                                                                                                                                                   |
+| `delete_procedure`           | `loxtep_context` | organization | Soft-delete (tombstone); warns about downstream dependents                                                                                                                                                               |
+| `import_process_graph`       | `loxtep_context` | organization | Inline JSON-LD (≤ 4 MB). `s3_reference` only when the object is already under `organizations/{organization_id}/` on the platform data-products bucket; otherwise 403 `org_graph_s3_location_rejected`. Idempotent upsert |
+| `export_process_graph`       | `loxtep_context` | organization | Formats: `jsonld`, `yaml`, `summary`; `preserve_namespaces` option                                                                                                                                                       |
+| `get_procedure_dependencies` | `loxtep_context` | organization | Direction: upstream/downstream/both; depth 1–10; cycle detection                                                                                                                                                         |
+
+## SDK mapping (`client.context.procedures`, `@loxtep/sdk@0.9.7+`)
+
+Procedure CRUD + import/export are shipped on the Phase D context namespace (CLI
+mirrors the same verbs). Causal / similar-decision surfaces for Studio live
+under `client.context.process_intelligence`. Customer-facing placement follows
+Connect → Products ↔ Meaning → Use; Inbox and Observe are cross-cutting.
+
+| MCP `operation`              | SDK                                                                         | Notes                              |
+| ---------------------------- | --------------------------------------------------------------------------- | ---------------------------------- |
+| `list_procedures`            | `client.context.procedures.list({ … })` / `.list_procedures({ … })`         | shipped                            |
+| `get_procedure`              | `client.context.procedures.get(id)` / `.get_procedure(id)`                  | shipped                            |
+| `create_procedure`           | `client.context.procedures.create({ name, … })`                             | shipped                            |
+| `update_procedure`           | `client.context.procedures.update(id, { … })`                               | shipped                            |
+| `delete_procedure`           | `client.context.procedures.delete(id)`                                      | soft-delete                        |
+| `import_process_graph`       | `client.context.procedures.import_process_graph({ graph \| s3_reference })` | shipped                            |
+| `export_process_graph`       | `client.context.procedures.export_process_graph({ procedure_id, … })`       | shipped                            |
+| `get_procedure_dependencies` | MCP `loxtep_context` only                                                   | still MCP-ahead — do not claim SDK |
+
+```ts
+const listed = await client.context.procedures.list({ status: 'active' });
+const created = await client.context.procedures.create({
+  name: 'Order-to-cash',
+  description: 'Business process graph for O2C',
+});
+const exported = await client.context.procedures.export_process_graph({
+  procedure_id: created.procedure_id,
+  format: 'jsonld',
+});
+```
+
+This skill is **not** an agent build/deploy runtime and does **not** ship a
+custom-connector backend — keep procedure authoring inside the existing Meaning
+and Products surfaces.
+
+## Pitfalls
+
+- **Data mesh workflows** (`create_workflow`, `patch_workflow_graph`) live under
+  **`loxtep_build`** / **`data-workflows`** Agent-Scope Skill — different
+  product object.
+- **Platform PKO procedures** — stable `@id` values like
+  `procedure#connect-external-system`. Use `get_procedure` to read step
+  `metadata.skill_ref` / `metadata.api_ref` / HITL gates; use
+  **`loxtep-journey-orchestrator`** to walk P0–P7.
+- **Ontology/vocabulary management** (thesaurus terms, ontology concepts,
+  namespace mappings) is **`loxtep_meaning`** — different facade. Procedures are
+  _instances_ in the graph; ontology concepts describe the _types_.
+- **`delete_procedure` uses soft-delete** (tombstone pattern). The procedure and
+  all children are marked with `tombstoned_at` and excluded from queries. A
+  background TTL process purges tombstoned records after the retention period.
+  There is no hard-delete via MCP.
+- **Large graphs (`s3_reference`)**: Inline `graph` is limited to 4 MB (below
+  API Gateway's 6 MB limit with overhead). A body with `s3_reference` can read
+  up to 50 MB, and only when `s3_bucket` is the platform data-products bucket
+  for this environment (`DATA_PRODUCTS_BUCKET_NAME`) and `s3_key` is an object
+  key under `organizations/{organization_id}/` for that same organization. The
+  key must not start with `/`, must not contain `\`, and must not contain an
+  empty, `.`, or `..` segment. Anything else is **403** with
+  `error.details.code` `org_graph_s3_location_rejected`. `error.message` is one
+  of: `s3_bucket is not the platform data-products bucket for this environment`,
+  `s3_key must be an org-prefixed object key`,
+  `s3_key must be under organizations/{organization_id}/ for this organization`,
+  or
+  `DATA_PRODUCTS_BUCKET_NAME is not set; refusing to read a caller-supplied S3 object`.
+  `s3_reference` only accepts an object that is already in that bucket under
+  that prefix. MCP, the SDK, and the UI have no upload that puts a graph file
+  there.
+- **`update_procedure` uses full-replacement semantics** per array field —
+  submit the complete desired `steps`/`decisions`/`triggers` array to replace
+  all existing entries. Top-level scalars (name, description, status) are
+  individually updatable.
+- **Renamed operation**: `get_procedure_workflow` is now `get_procedure`. The
+  old name is no longer valid.
+- **Dependency forward references**: `dependencies` can reference a
+  `target_procedure_id` that doesn't exist yet — it will be marked `unresolved`
+  until the target is imported/created.
+- **Namespace resolution on import**: `import_process_graph` auto-resolves W3C
+  PKO terms and any registered namespace mappings (see `loxtep-ontology`
+  Agent-Scope Skill). Unregistered namespace terms are flagged as
+  `unmapped_terms` in the response without failing the import.
+
+<!-- BEGIN loxtep skill-scope (skill-package-v1) -->
+
+## Agent-Scope Skill scope (`.loxtep/skills/loxtep-procedures.yaml`)
+
+Resource scope and operation permissions for this Agent-Scope Skill, conformant
+with the [`skill-package-v1`](https://loxtep.io/schemas/skill-package-v1.json)
+schema. Any resource type or operation not listed is **denied (fail-closed)**.
+Identifier lists are empty placeholders — fill them with the specific resources
+in your workspace. This declaration does not change the hosted MCP config
+(`mcp.loxtep.io`).
+
+```yaml
+# .loxtep/skills/loxtep-procedures.yaml
+# Conforms to https://loxtep.io/schemas/skill-package-v1.json
+# Fail-closed: this skill's facades are RBAC-governed and carry no data-mesh resource scope.
+name: loxtep-procedures
+description: Process-graph procedures (distinct from data-mesh workflows) — RBAC-governed; no data-mesh resource scope.
+scope:
+  data_products: []
+  connectors: []
+  workflows: []
+  domains: []
+  queues: []
+permissions: {}
+```
+
+<!-- END loxtep skill-scope (skill-package-v1) -->
+
+## Implementation notes
+
+All MCP operations in this skill use the **`loxtep_context`** job facade (the
+former procedures-only facade was folded into this surface).
+
+**Platform PKO procedures** — stable `@id` values like
+`procedure#connect-external-system`. Use `get_procedure` to read step
+`metadata.skill_ref` / `metadata.api_ref` / HITL gates; use
+**`loxtep-journey-orchestrator`** to walk Connect → Products ↔ Meaning → Use.
+
+## Skill attribution (required)
+
+MCP tool calls need a resolvable skill name. Prefer
+`_metadata: { "skill_name": "loxtep-procedures" }`; otherwise the server infers
+from the operation map or `X-Skill-Name`. Unresolvable calls are denied
+(`MISSING_SKILL_ATTRIBUTION`). The skill name also drives scope checks.
+
+## Auth
+
+`loxtep-auth` / login.
+
+## References
+
+- [User story catalog](../../../docs/skills-user-stories.md)

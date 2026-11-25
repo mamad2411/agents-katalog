@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/soccer-predict/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 足球博彩预测 / Football Betting Prediction

@@ -1,0 +1,103 @@
+---
+name: benchmark-report
+description: Design, run, audit, revise, and release evidence-backed benchmark reports that compare systems, providers, models, tools, or versions. Use for benchmark methodology, scoring, result dashboards, reproducibility, independent result review, or publication. Not for a standalone editorial article without benchmark maintenance.
+---
+
+# Benchmark report
+
+Produce a report whose conclusions can be traced to frozen inputs, measured outputs, scoring rules, and the declared result-review coverage. Optimize for a reader deciding what the benchmark means, not for preserving the author's workflow.
+
+Reports are optional; `AGENTS.md` owns the build and publication authorization rule.
+
+Read the repository's `AGENTS.md` first. Project rules override this general skill. Before changing a benchmark, read [evaluation design](references/evaluation-design.md). Before reviewing scores or deciding whether to rerun, read [audit and revision](references/audit-and-revision.md). Before building or publishing a report, read [report and release](references/report-and-release.md) and [presentation quality](references/presentation-quality.md).
+
+Before expensive collection, follow the shared [execution contract](../../../docs/benchmark-execution.md).
+Plan dependent stages and shared resources, measure a bounded readiness/throughput
+sample, and freeze concurrency, pacing, call budgets and timing scope. Reuse the
+shared scheduler and registered adapters. Review unexplained global serialization
+or repeated initialization before a full run. New tracks must register an execution
+owner and behavior tests alongside their report template.
+
+Before writing report HTML, resolve the track through `scripts/report_template.py`. Inspect the maintained implementation and its pinned example. Reuse that implementation and its release checks; a different cohort or diagnostic evidence state calls for a data adapter or explicit mode. If no track fits, create the smallest reusable renderer with a synthetic runnable example and behavioral checks, then register it in `configs/report-templates.json`. Improve the owning template and this skill from demonstrated gaps, without embedding run-specific prose or copying old measurements. A report must carry the selected template identity and input hashes so its release check can detect a bypass.
+
+Track-specific report rules live in the guides that `AGENTS.md` lists: Web Fetch cohort, diagnostic, local-audit and oversized-report rules in the [Web Fetch guide](../../../src/harness/web_fetch/README.md#certified-cohorts-and-report-builds), Search relevance, SERP and comparison rules in the [Web Search guide](../../../src/harness/web_search/README.md).
+
+## Web Fetch scope selection
+
+Before a new Web Fetch evaluation, explicitly present **Full content (default)**
+and **Main content** and ask the user to select one. Full content checks the
+complete task contract; main content checks its independently annotated body and
+core records. Do not collect new calls while this choice is pending. If the user
+already selected a scope, or is resuming a frozen run, use that selection without
+asking again. Non-interactive skill invocations select full content unless explicitly configured.
+
+For scope-annotated inputs, pass the choice explicitly: `--content-scope full --score-scope full` or
+`--content-scope main --score-scope main`. Compute both only when requested with
+`--score-scope both`, retaining the chosen acquisition scope for retry decisions.
+Legacy inputs keep their original complete task contract without scope flags; main
+or both requires independent scope annotations. Record the choice in the run and report. A report shows one scope; rebuilding an
+existing report retains its explicit selection unless the user changes it.
+
+An explicitly requested diagnostic report may be delivered separately from a certified benchmark release. Use the diagnostic build/check entry, label its evidence state and certification gaps on every page, preserve saved scores and outputs, and do not upgrade certification. When the user requests ranks, explicitly select ranked presentation. Require complete shared task populations and one recorded scorer identity per ranked table; otherwise retain scores with a visible explanation and no ranks or winner highlights. Equal scores share ranks. Show descriptive ranks with the recorded acceptance rules and configuration-selection limits; do not imply an untuned controlled comparison. It does not waive any certified-release reference or review gate. Presentation fixes add no provider calls. Update only the owning code, relevant instructions and demonstrated regression scenarios; do not mechanically modify every skill or copy report-specific conclusions into instructions.
+
+## Dataset maintenance
+
+Use the shared publisher in `harness.benchmarks.publication` for HF definition updates, and the existing snapshot publisher for URL bindings. Both must propose PRs even when the credential can write to main. Do not substitute an ad hoc API upload. Repository creation, settings and documentation-only maintenance can use authorized writes; dataset selection configuration follows the data-review rule. Before proposing a version, follow [dataset revision rules](../../../docs/benchmarks.md#historical-bindings-and-new-revisions) and run the publication behavior tests. Pending receipts identify `pr_revision`; only an active, reviewed main commit can become a data-lock selection. A Search report needed during dataset review may use the existing pending-proposal input mode: bind the immutable PR commit, manifest and complete archive as report assets, replay its evidence offline, and display its pending state on every page. Keep main activation separate; never relabel the pending proposal as a released dataset.
+
+## Working contract
+
+`AGENTS.md` owns the version rule; [report languages](../../../docs/report-hosting.md#report-languages) owns language selection.
+
+1. Establish the decision being supported, the measured unit, cohort, versions, execution location, freshness policy, and intended deliverable. Inspect the actual dataset, runner, outputs, scorer, prior review evidence, and current report. Do not infer them from screenshots or prose.
+2. Freeze a machine-readable evaluation contract before expensive calls. It must identify the exact cases and methods, run count, timeout, concurrency policy, input and output contract, scoring provenance, reference state, and publication target when one exists. Existing compiled reference answers are frozen by default; the [Web Fetch guide](../../../src/harness/web_fetch/README.md#certified-cohorts-and-report-builds) owns the live-exact exception and compiled reruns. Partial or uncertified cohorts remain diagnostic evidence and cannot enter a release.
+3. Follow [equivalent opportunity](references/evaluation-design.md#fairness-means-equivalent-opportunity). For fixed-native cohorts, declare the input media type independently of URL patterns and expected answers, freeze the class-level route and transport parameters before calls, and verify the retained request receipts at aggregation and release.
+4. Preserve evidence as an append-only chain by default: task definition, reference, provider call, raw artifact, normalized artifact, score, review, revision, and release. If the user explicitly requests deletion of superseded history, validate the chain first and use the existing owner's current-only authority described in [audit and revision](references/audit-and-revision.md); remove obsolete full snapshots rather than storing reverse patches. Keep current provider outputs, call identities, real scoring sources and necessary review evidence immutable. Routine refresh and publication reuse current inputs without redundant historical snapshots. A presentation or scoring change must not masquerade as a new provider result. Declare the native answer fields and validate their structural projection before accepting a scored artifact. Adapters must not remove returned candidates by URL meaning or consult expected answers when selecting candidate fields. Apply privacy redaction only to separately identified public views after scoring, preserving the private originals and distinguishing original, scored and public-view hashes.
+5. Separate retrieval success, task acceptance, content quality, latency, cost, and freshness. Treat missing telemetry as unavailable. A request that received no first byte contributes to total latency, but not to first-byte or body-transfer stage means; show each stage’s observed population. A missing or partial reference makes the affected metric unavailable or scoped; it does not prove success or failure. Do not derive binary acceptance from an unrelated aggregate similarity score.
+   Every report type must cover latency and cost/pricing for every participant. The shared template resolver supplies this metric contract automatically to existing and newly registered tracks. Freeze timer boundaries before calls, retain success and failure timers, report mean/P50/P95 with one population, and retain retry execution cost separately. Price comparisons need official sources, verification dates, commitments and billing units; use USD per 1,000 requests where a defensible conversion exists. Keep estimates, native usage and actual charges distinct. Decide whether CPU and memory measurements are applicable during design, with a reason when omitted. Release checks must verify participant coverage; unavailable values require an evidenced reason and affected count, never a substituted zero.
+6. For heterogeneous same-window latency evidence, preserve the full predeclared task-by-method matrix. Show all-call latency on that common denominator separately from successful-call latency on each method's conditional subset. Treat the all-method shared-pass intersection as a diagnostic, never as a post-outcome selector or ranking sample.
+7. At aggregate and publication boundaries, apply the aggregation rule in `AGENTS.md`, and verify delivered-file artifacts as well before release.
+   When a saved-input handoff needs host-metadata redaction, use the shared publication privacy owner. Preserve private originals and distinguish original from public file hashes; rebind dependent metadata references and disclose auxiliary debug-log projections. Never rewrite original scored answers, references or response payloads as a privacy repair. When a scored answer or native envelope itself contains private values, create a separately identified post-score public view through the shared privacy owner, verify its native-field projection and unchanged task verdict, and disclose that omitted original bytes cannot be reconstructed from the public copy. A public frozen presentation must explicitly bind its complete view inventory, verify displayed bytes against those views, keep acquisition gates strict, and distinguish preserved original diagnostics from what redacted text can reproduce. Verify unchanged verdicts, timings and review decisions, and rebuild from the public inputs. Keep regenerated package/report wrappers outside the original-input projection receipt so normal rebuilding does not invalidate it or create circular hashes.
+8. Independent result review is opt-in: do not start it unless the user explicitly requests review. When requested without a broader scope, review machine failures only; review machine passes or every attempt only when the user explicitly asks for full review. Label a review performed with known machine outcomes as an evidence audit, separately from independent blind-review coverage; a fresh review-origin tag alone does not establish blindness. Keep the initial verdict blind, but do not equate agreement with correctness: run the anomaly investigation in [audit and revision](references/audit-and-revision.md) for triggered results before calling the review complete. For a large independent review that is safely batchable, prefer resumable jobs with an exact model ID, read-only sandbox, strict output schema, non-overlapping packets, and bounded concurrency; persist each completed packet so a retry never repeats substantive review. Record the exact reviewed/total coverage, accepted unreviewed passes, reviewer, disagreements, adjudications, anomalies, and unresolved items. A review summary never replaces per-attempt evidence.
+For an explicitly requested full review, set `independent_result_review_scope: all` in the report profile and carry it into the assembled dataset comparison. The release boundary must reject failure-only review, missing attempts and accepted unreviewed passes. Reuse an existing content judgment only when the raw answer and acceptance contract are unchanged; verify each new call identity separately. For failed calls, inspect the current runtime evidence even when the answer is unchanged or empty: the same empty output can hide different failures. Changed evidence needs supplemental review, not another review of the unchanged population.
+
+9. Rerun only calls whose inputs, provider route/version, runtime contract, or source validity changed, or that hit a declared infrastructure failure. Recompute downstream scores and reports without provider calls when only scoring, annotations, or presentation changed. Never retry merely to obtain a better result; a predeclared failure retry is part of the run contract. A reference or verdict correction must identify the shared root cause and add executable positive/negative controls through the production scorer; bind those regression IDs in the revision receipt instead of patching stored verdicts.
+10. Build the public report from the frozen evidence. Every page should answer a reader question. Show task and run identifiers, the exact expected-versus-actual evidence behind a verdict, denominators and unavailable metrics, method differences, limits, concise reproduction instructions, and a compact review history.
+11. Release only after code tests, evidence integrity, report links, deterministic interaction checks, secret scans, target-site checks, and deployed-output verification pass, plus the one-pass top-level-page reader review when measured results, rendered layout or content hierarchy changed. Responsive and theme matrices belong to shared renderer tests when those owners change; do not replay them for every report release. Preserve earlier sites unless replacement was explicitly requested.
+12. Present one authoritative logical result per method and task. The frozen protocol chooses the score-bearing execution; a renderer must never silently replace that rule. Keep every physical call in the evidence chain and retain accumulated execution cost separately from the declared primary latency metric. State whether primary latency measures the final call or the complete user-visible operation; retries never increase the logical-result denominator. Do not make execution ordinal labels part of the public comparison unless retry behavior is the declared subject.
+13. When native output types are scored separately, keep their participants, input fields, primary metrics and detail views separate through the release check. A source-ranking metric, an answer-word match and generated-answer correctness answer different questions.
+    Introduce the benchmark tasks, scored fields and primary metrics before the first comparison. State whether scores are independent or cumulative, and derive participant lists and populations from verified views. Field qualification statistics and mixed request settings must remain visible in the relevant capability and measurement views.
+14. Apply the track-independent presentation contract in [report and release](references/report-and-release.md) to every report, including a new track. Wire semantic checks into its release command; prose instructions alone are not a release gate.
+15. When publication is requested and authorized, publish to the Artifact Site host and site bound by the track's current profile, following that host's current `for-agents.md`. Never embed a default deployment hostname or borrow a target from another report. Build and validate before the external write, bind the returned slug, share URL, and version in the current profile, use optimistic locking for later updates, and verify the unauthenticated share page. Use the track's `make` target or publish command when available (`uv run --frozen python -m harness.<track> --help` lists its commands); do not reconstruct a target from prose or an earlier receipt. Export the whole deployed tree only when the specific report publisher requires it or when diagnosing a release failure.
+16. Make summary and interpretation routes presentation-ready and run the language passes described in [presentation quality](references/presentation-quality.md#reader-facing-structure).
+
+## Frozen report extensions
+
+When adding saved methods to an existing publication, inspect both frozen task
+contracts and scorer identities before combining ranks. Different editions retain
+their own saved values and evidence. Default to unranked presentation; when the user
+explicitly requests unified descriptive ranks, select the composition owner's
+ranked presentation, retain scoring provenance on the methodology page, and derive
+ranks and directional highlights from all displayed methods. Do not label stored
+numeric comparisons as common-scorer certification. Use the existing saved-report composition owner and its
+published-extension mode described in the Web Fetch guide. Bind source audits,
+method configurations, pricing sources and the exact publication baseline outside
+Git. Verify nested evidence loading and immutable data-pack reuse before updating
+the original site. Do not replace a historical contract merely to make reports
+look comparable.
+Keep generated language editions aligned on comparison populations and evidence
+links; retain each original language edition as a frozen source when rebuilding
+extended views through the maintained localization owner.
+Retain each source's review coverage and protocol with source labels, including
+paragraph-only disclosures; matching section titles do not establish shared review scope.
+
+## Stop conditions
+
+Do not publish while the exact method matrix is incomplete, references required for the claimed metrics are unverified, an explicitly requested review scope is incomplete, unresolved adjudications remain, output identities cannot be reproduced, or the publication target is ambiguous. Report unreviewed scope honestly; do not imply that failure-only review covered machine passes.
+
+When finished, give the report and code-review links, measured and reviewed coverage, unresolved count, rerun scope, material limitations, and verification status. Keep internal notes and agent transcripts out of the public report.
+
+Conciseness must preserve the evidence needed for the decision. Keep each independent
+benchmark’s primary quality measures and denominator visible in the home comparison;
+do not replace them with a narrow diagnostic or hide them inside disclosure controls.
+Reorganization must account for each substantive finding, calculation and evidence
+entry before retiring a section.

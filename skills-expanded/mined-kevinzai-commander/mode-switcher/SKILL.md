@@ -1,0 +1,141 @@
+---
+name: mode-switcher
+description: Switch between optimized workflow modes — design, saas, marketing, research, writing, night, yolo, unhinged, caveman, adhd, ponytail, normal
+tags: [mode, workflow, configuration]
+---
+
+# Mode Switcher
+
+> One command to reconfigure Claude Code for a specific workflow. Loads skills, sets behavioral rules, adjusts permissions.
+
+## What Modes Do
+
+A mode is a **preset configuration** that:
+1. **Loads specific skills** — CCC domains and individual skills relevant to the workflow
+2. **Sets behavioral instructions** — how Claude should think, respond, and prioritize
+3. **Configures permissions** — acceptEdits (confirm changes) vs autoAccept (fully autonomous)
+4. **Emphasizes hooks** — which automated checks matter most for this workflow
+5. **Sets context strategy** — when to compact, what to prioritize in context window
+
+Modes are not exclusive — you can switch at any time. Switching modes replaces the previous mode's instructions.
+
+## Usage
+
+```
+/cc mode <name>        # Switch to a mode
+/cc mode               # Show current mode + list all
+/cc mode normal        # Reset to default
+```
+
+Or reference naturally in conversation: "switch to design mode", "go yolo", "enter night mode".
+
+---
+
+## Available Modes
+
+| # | Mode | Loads | Permission | Key Behavior |
+|---|------|-------|------------|--------------|
+| 1 | **normal** | — | acceptEdits | Default balanced workflow. Standard coding with full confirmation. |
+| 2 | **design** | ccc-design | acceptEdits | Visual-first. Impeccable suite. Component-focused. Screenshots/previews encouraged. |
+| 3 | **saas** | ccc-saas + ccc-devops | acceptEdits | Full-stack SaaS. Auth, billing, DB, CI/CD. Production-readiness focused. |
+| 4 | **marketing** | ccc-marketing + ccc-seo | acceptEdits | Content creation, SEO, CRO. Copywriting focused. A/B test suggestions. |
+| 5 | **research** | ccc-research | acceptEdits | Parallel agent research. Extended thinking. Deep analysis. Source attribution. |
+| 6 | **writing** | — | acceptEdits | Minimal tech noise. Prose-focused. Grammar/style. Long-form content. |
+| 7 | **night** | all relevant CCC domains | autoAccept | Fully autonomous overnight. Auto-checkpoints. Self-verify. Detailed logs. |
+| 8 | **yolo** | user's choice | autoAccept | Max speed. Skip confirmations. Hooks as safety net. Minimal explanation. |
+| 9 | **unhinged** | all CCC domains | autoAccept | YOLO + max creativity. Bold architecture. Aggressive refactoring. Comprehensive testing. |
+| 10 | **caveman** | — | acceptEdits | Token-saving mode. ~75% less output tokens. Three levels: lite/full/ultra. Code stays normal. |
+| 11 | **adhd** | — | acceptEdits | Answer-first output. Fix, then command, then file:line — context last. Based on ayghri/i-have-adhd (MIT). Stacks with caveman. |
+| 12 | **ponytail** | — | acceptEdits | Smallest complete change. Reuse before writing, no unasked-for abstractions, never cut validation or security. Based on DietrichGebert/ponytail (MIT). Levels: lite/full/ultra. |
+
+---
+
+## Mode Details
+
+### normal (default)
+The baseline. No special skills loaded, standard confirmation flow. Use this when switching away from a specialized mode or when doing general-purpose work that doesn't fit a category.
+
+**When to use:** General coding, maintenance, debugging, mixed tasks.
+
+### design
+Activates the full ccc-design ecosystem: animations, visual effects, Impeccable polish suite, landing page builder, component design. Claude prioritizes visual output, suggests screenshots/previews, and thinks component-first.
+
+**When to use:** UI work, landing pages, design systems, animations, visual polish.
+
+### saas
+Loads ccc-saas (auth, billing, DB, API, frontend, growth) plus ccc-devops (CI/CD, infrastructure, monitoring). Claude thinks in production terms — error handling, scaling, security, billing edge cases.
+
+**When to use:** Building or extending SaaS products. Full-stack feature work.
+
+### marketing
+Combines ccc-marketing (content, email, ads, social) with ccc-seo (technical SEO, content SEO, analytics). Claude writes like a marketer — compelling copy, conversion-focused, data-driven recommendations.
+
+**When to use:** Content creation, SEO optimization, email campaigns, landing page copy, CRO.
+
+### research
+Activates ccc-research for deep analysis workflows. Claude uses extended thinking, spawns parallel research agents, cites sources, and produces structured findings.
+
+**When to use:** Technical research, competitive analysis, architecture evaluation, deep dives.
+
+### writing
+No special skills — just behavioral tuning. Claude minimizes technical jargon, focuses on prose quality, grammar, flow, and structure. Ideal for long-form content, documentation, blog posts.
+
+**When to use:** Blog posts, documentation, copywriting, any prose-heavy work.
+
+### night (autonomous overnight)
+The overnight workhorse. All relevant CCC domains loaded, full auto-accept permissions. Claude auto-checkpoints every 5 edits, self-verifies before marking tasks done, saves session before compacting, and writes detailed execution logs.
+
+**When to use:** Large batch tasks you want done by morning. Set task list, enter night mode, walk away.
+
+### yolo (speed mode)
+Full auto-accept with whatever skills you choose. Claude skips explanations, minimizes confirmation overhead, and just builds. Hooks remain active as the safety net.
+
+**When to use:** When you know exactly what you want and speed matters more than discussion.
+
+### unhinged (max creativity + autonomy)
+Everything YOLO offers plus maximum creative freedom. All CCC domains loaded. Claude makes bold architectural choices, aggressively refactors, and pushes boundaries — but backs it up with comprehensive testing.
+
+**When to use:** Greenfield projects, major refactors, creative exploration where you trust Claude to make big moves.
+
+### caveman (token-saving communication)
+Ultra-compressed output mode. Strips articles, filler, pleasantries, and hedging from all prose responses. Technical content — code blocks, error messages, exact terms — is untouched. Three intensity levels: lite (no fluff, grammar intact), full (fragments, no articles), ultra (telegraphic, abbreviations, arrow notation). Stacks with any other mode.
+
+**When to use:** Long debugging sessions, architecture discussions, any work where explanation volume is high and you want to cut output costs by ~65-75%. Deactivate with `/caveman off`.
+
+### adhd (answer-first output)
+
+Reorders every response so the fix leads and the reasoning follows: answer/command/file:line first, context last. This is a **priority reorder**, not a compression mode — full accuracy stays, only the order changes. Based on `ayghri/i-have-adhd` (MIT). Stacks with caveman: caveman governs length, adhd governs order — together the fix comes first, in the fewest words. Full contract: `commander/cowork-plugin/skills/ccc-adhd/SKILL.md`. Toggle with `/ccc-adhd on|off|status`, or say "stop adhd mode".
+
+**When to use:** You want the fix first, every time, without asking — beginners especially benefit since the answer is always the first line. Debugging loops where "what do I run right now" matters more than narrative.
+
+### ponytail (smallest complete change)
+
+Governs how much code gets written, not how replies read. Before writing, reuse what the codebase, standard library or installed dependencies already have; skip features nobody asked for and name them in one line; finish every caller, test and fixture the change touches. Never cuts validation at trust boundaries, error handling that prevents data loss, security or accessibility. Based on `DietrichGebert/ponytail` (MIT). Full rules: `skills/ponytail/SKILL.md`. Levels: lite (build what was asked, name the smaller option), full (default), ultra (also push back on unjustified parts of the request). Stacks with caveman and adhd. Deactivate with "stop ponytail" or "normal mode".
+
+**When to use:** A codebase that keeps growing wrappers and options nobody uses, greenfield work prone to over-engineering, or reviews where "do we need this?" is the main question.
+
+---
+
+## Switching Protocol
+
+When a mode is activated:
+
+1. **Acknowledge** — Confirm the mode switch with a brief status line
+2. **Load** — Reference the mode file from `modes/{name}.md`
+3. **Pre-flight** — Run the mode's pre-flight checklist
+4. **Context check** — Verify context window has room for the mode's skills
+5. **Activate** — Apply behavioral instructions for the remainder of the session
+
+When switching between modes, the previous mode's instructions are fully replaced (not layered).
+
+---
+
+## Mode Files
+
+Each mode is defined in `modes/{name}.md` with:
+- Overview of what the mode optimizes for
+- Skills loaded (CCC domains + individual skills to suggest)
+- Behavioral instructions (how Claude should operate)
+- Hook emphasis (which hooks matter most)
+- Context strategy (pre-flight context check, compaction thresholds)
+- Pre-flight checklist (what to verify before entering)

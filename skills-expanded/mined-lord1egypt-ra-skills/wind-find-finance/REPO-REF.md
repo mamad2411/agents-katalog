@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_wind-information-co-ltd_wind-skills_wind-find-finance-skill/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 万得金融能力发现与安装路由入口。用于金融数据、行情查询、市场分析、今日大盘、市场主线、板块轮动、资金流向、估值、选股、复盘、仓位、交易计划、回测等任务。必须先读取 catalog 判断必需数据 skill / 工作流 skill；缺失时必须展示安装选项，用户确认后由 AI 直接安装，不得只给命令或用通用分析替代。

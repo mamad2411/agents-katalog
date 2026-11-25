@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/g/gate-exchange-flashswap/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Gate Flash Swap skill. Use when the user asks to instantly convert or exchange cryptocurrencies without placing an order book trade. Triggers on 'flash swap', 'convert USDT to BTC', 'swap multiple coi

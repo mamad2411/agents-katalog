@@ -1,0 +1,379 @@
+---
+name: editor
+description: Local, open-source video editor that agents drive with FFmpeg and whisper.cpp. Use when the user wants to edit a video file - cut out silence, pauses or dead air; remove repeated takes or cut words using the transcript; add captions or subtitles; make a vertical 9:16 (Shorts, Reels, TikTok), square or 4:5 version; cut clips or shorts from a long video or podcast; even out the volume (loudness normalization); trim, split, join or crossfade clips; add text, title cards or zoom; clean up a talking-head video, screen recording, tutorial or podcast; render an mp4; or export the cut to Final Cut Pro, DaVinci Resolve or Premiere Pro (FCPXML / XML). Runs offline with no API key; every timeline edit can be undone; no generative AI.
+license: MIT
+compatibility: Requires Node 24+. FFmpeg is auto-downloaded via ffmpeg-static on first use; override with MAKEMYCLIP_FFMPEG_PATH. Transcription (transcript cuts, retakes, captions) needs a user-installed whisper.cpp and a model file set in MAKEMYCLIP_WHISPER_MODEL.
+metadata:
+  author: makemyclip
+  homepage: https://github.com/MakeMyClip/editor
+  runtime: node
+  install: npx skills add MakeMyClip/editor
+---
+
+# MakeMyClip Editor — Agent Skill
+
+Drive a local video editor by chatting. When triggered, this skill shells out to the `clip` CLI via `npx` (auto-downloaded on first use, cached after). No MCP setup, no global install, no config edits.
+
+## When to invoke
+
+Trigger this skill when the user asks to:
+
+- Edit, trim, cut, or splice a video file
+- Cut the silence, pauses, or dead air out of a recording ("tighten it up", "remove the gaps")
+- Remove repeated takes or bad takes, or cut a sentence or words by the transcript
+- Clean up a talking-head video, tutorial, lecture, or video podcast
+- Cut clips or vertical shorts (Shorts, Reels, TikTok) out of a long video, webinar or podcast
+- Add captions or subtitles timed to the speech, or titles and lower-thirds
+- Zoom, pan, or apply Ken Burns to a region of a clip
+- Assemble multiple clips into one (concat, montage)
+- Render a screen recording into a demo or social clip
+- Hand a cut to Final Cut Pro, Premiere Pro or DaVinci Resolve (FCPXML / XML project export)
+
+Do **not** invoke for: pure transcription (use a speech-to-text skill), thumbnail-only image work, or live streaming.
+
+## How to use
+
+### Probe a media file (implemented)
+
+```bash
+npx -y @makemyclip/editor ingest <input>
+```
+
+Returns metadata as JSON — duration, video stream (codec, dimensions, fps), audio stream (codec, sample rate, channels), plus a deterministic `mediaId` derived from the absolute path:
+
+```json
+{
+  "mediaId": "m_a1b2c3d4e5f6",
+  "ref": {
+    "path": "/abs/path/screen.mp4",
+    "durationSec": 83.5,
+    "video": { "codec": "h264", "width": 1920, "height": 1080, "fps": 30 },
+    "audio": { "codec": "aac", "sampleRate": 48000, "channels": "stereo" }
+  }
+}
+```
+
+Call this first to ground yourself in what the source actually contains — duration for trim calculations, dimensions for zoom/overlay placement, presence of audio before suggesting `add_audio`. Same input path always returns the same `mediaId`.
+
+### Split a clip at a point (implemented)
+
+```bash
+npx -y @makemyclip/editor split <input> <atSec>
+```
+
+Divides a clip into two halves at `atSec`. Stream-copy (no re-encode), so it's fast — both halves are produced in parallel. Returns paths to both:
+
+```json
+{ "before": "/var/folders/.../split-before-abc.mp4", "after": "/var/folders/.../split-after-xyz.mp4", "atSec": 12.5, "durationMs": 38 }
+```
+
+Keyframe-accurate (not frame-exact) because stream-copy can't decode-and-cut mid-GOP. If you need a frame-exact split, run `render` first to re-encode, then `split`.
+
+### Trim a clip (implemented)
+
+```bash
+npx -y @makemyclip/editor trim <input> <start> <end>
+```
+
+Timecodes accept `HH:MM:SS[.ms]`, `MM:SS`, or seconds as a number. The output is JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/trim-abc123.mp4", "durationMs": 14 }
+```
+
+Trim is stream-copy (no re-encode), so it's fast and lossless. Output lands in `$MAKEMYCLIP_WORKSPACE` (defaults to `os.tmpdir()/makemyclip-editor`).
+
+### Add a text overlay (implemented)
+
+```bash
+npx -y @makemyclip/editor add_text <input> <text> <position> <startSec> <endSec>
+```
+
+Burns a text overlay into a copy of the video.
+
+- `<position>` is one of: `top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right`
+- `<startSec>` / `<endSec>` are seconds from the start of the input
+- Defaults: font size 48, white text, translucent black background box for readability
+
+Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/add-text-abc123.mp4", "durationMs": 412 }
+```
+
+The text is written to a temp file before being passed to ffmpeg, so quotes, colons, commas, brackets, and most Unicode work without manual escaping. Caveat: literal `%{...}` in the text would be interpreted as a drawtext expression (rare in real captions; avoid).
+
+### Stitch clips together (implemented)
+
+```bash
+npx -y @makemyclip/editor concat <input1> <input2> [<input3> ...]
+```
+
+Concatenates two or more clips back-to-back into a single output, stream-copy (no re-encode), so it's fast and lossless.
+
+Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/concat-abc123.mp4", "durationMs": 95, "inputCount": 3 }
+```
+
+All inputs must have matching codecs and resolution; if they don't, ffmpeg will fail with a clear error and the agent should re-encode (e.g. via `add_text` with a no-op text, or a future `render` call) before concatenating. The combined `trim → concat` flow is the bread-and-butter highlight-reel workflow: trim N segments, then concat them in order.
+
+### Extract a preview frame (implemented)
+
+```bash
+npx -y @makemyclip/editor preview <input> <atSec>
+```
+
+Extracts a single JPEG frame at the given timecode. Use this **after every mutating edit** to verify the output before moving on — text overlays land where you intended, trim cuts at the right point, concat seams line up. Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/preview-abc123.jpg", "atSec": 1.5, "durationMs": 12 }
+```
+
+Fast (~10-50 ms) because it uses ffmpeg's input-seek (`-ss` before `-i`) — keyframe-accurate, not frame-exact, which is fine for thumbnails. The user can open the JPEG to confirm; agents that support image inputs can read it back to self-correct.
+
+### Transition between two clips (implemented)
+
+```bash
+npx -y @makemyclip/editor transition <inputA> <inputB> [<kind>] [<durationSec>]
+```
+
+Crossfades, slides, or fades-through-black/white between two clips. The tool auto-probes clip A to compute the right offset, so the agent never has to know clip durations.
+
+- `<kind>` is one of: `fade`, `fadeblack`, `fadewhite`, `dissolve`, `wipeleft`, `wiperight`, `wipeup`, `wipedown`, `slideleft`, `slideright`, `circleopen`, `circleclose`. Defaults to `fade` (safest, most invisible).
+- `<durationSec>` defaults to `1`. Capped at 10.
+
+Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/transition-abc.mp4", "durationMs": 320, "offsetSec": 4, "hasAudio": true }
+```
+
+Audio: if both inputs have audio, the tool wires an `acrossfade` of the same duration. If neither has audio, the output is silent. If exactly one has audio, the tool fails with a clear message — re-encode the silent one with a silent audio track first.
+
+Combined with `concat` and `add_text`, this is the polish layer that makes multi-clip outputs feel intentional rather than abrupt.
+
+### Re-encode for export or normalization (implemented)
+
+```bash
+npx -y @makemyclip/editor render <input> [<format>] [<crf>] [<preset>] [<maxWidth>]
+```
+
+Re-encodes a video to a specific format/quality. Useful for final export, normalizing inputs before `concat`/`transition` when codecs don't match, or downsizing for web delivery.
+
+- `<format>` is one of: `mp4` (default, h264+aac), `mov` (h264+aac), `webm` (vp9+opus)
+- `<crf>` is the quality knob (0 = lossless, 51 = worst). Default `23` is a good baseline; lower for higher quality
+- `<preset>` controls libx264 speed/efficiency tradeoff: `ultrafast` … `veryslow`. Default `medium`. Ignored for webm
+- `<maxWidth>` (optional) caps width in pixels. Preserves aspect ratio; never upscales
+
+Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/render-abc.mp4", "format": "mp4", "durationMs": 412 }
+```
+
+### Add audio — mix or replace (implemented)
+
+```bash
+npx -y @makemyclip/editor add_audio <input> <audio> [<mode>] [<audioVolume>] [<startSec>]
+```
+
+Add a background-music bed, a voiceover, or replace the original audio entirely.
+
+- `<mode>` is `mix` (default — keeps base audio, overlays new audio) or `replace` (drops base audio, uses new audio only)
+- `<audioVolume>` is the overlay volume multiplier (0–2, default `0.5` — sensible background-music level; use `1.0` for voiceover)
+- `<startSec>` is when the overlay starts (default `0`)
+
+Returns JSON:
+
+```json
+{ "path": "/var/folders/.../makemyclip-editor/add-audio-abc.mp4", "mode": "mix", "durationMs": 412 }
+```
+
+Mix mode requires the input video to have an audio track (use `ingest` to confirm first). Output duration matches the original video — overlay audio is truncated if longer, padded with silence if shorter.
+
+### Crop / rotate / flip / scale (implemented)
+
+```bash
+npx -y @makemyclip/editor transform crop   <input> <x> <y> <width> <height>
+npx -y @makemyclip/editor transform rotate <input> <90|180|270>
+npx -y @makemyclip/editor transform flip   <input> <horizontal|vertical>
+npx -y @makemyclip/editor transform scale  <input> [<width>] [<height>]
+```
+
+Geometric operations on a single video. `transform scale` uses `-2` for an omitted dimension (auto-fit preserving aspect, even-pixel for H.264). Rotation is 90° increments only — for arbitrary angles, use `render` with a custom filter graph.
+
+### Adjust color / brightness / contrast / saturation / volume (implemented)
+
+```bash
+npx -y @makemyclip/editor adjust <input> --brightness N --contrast N --saturation N --volume N
+```
+
+One unified panel. Any subset of knobs can be set; at least one is required.
+
+| Knob | Range | No-op value |
+|---|---|---|
+| `--brightness` | -1 (black) … 1 (white) | 0 |
+| `--contrast` | 0 … 4 | 1 |
+| `--saturation` | 0 (grayscale) … 3 (vivid) | 1 |
+| `--volume` | 0 (mute) … 2 (double) | 1 |
+
+Stream-copies whichever stream isn't being adjusted (e.g. only `--volume` set → video stream-copies, fast).
+
+### Speed up / slow down / reverse (implemented)
+
+```bash
+npx -y @makemyclip/editor speed <input> [<factor>] [<reverse>]
+```
+
+Multiplier semantics: `factor=2` is double speed, `factor=0.5` is half (slow-mo). `reverse=true` plays backwards (audio reversed too). Either `factor != 1` or `reverse=true` is required (no-ops are rejected).
+
+Audio handling uses `atempo` which is range-limited to [0.5, 2.0]; wider factors chain multiple `atempo` links internally so `factor=4` and `factor=0.125` both work.
+
+### Picture-in-picture / image overlay (implemented)
+
+```bash
+npx -y @makemyclip/editor overlay <base> <overlay> [<position>] [<scaleToWidth>] [<startSec>] [<endSec>]
+```
+
+Place a video or image on top of the base. Same 9 named positions as `add_text`. Optional `scaleToWidth` to resize the overlay first (height auto-fits even-pixel). Optional time window via `startSec` + `endSec` (or just `startSec` for "from this moment to the end").
+
+### Ken Burns / focus zoom (implemented)
+
+```bash
+npx -y @makemyclip/editor zoom_pan <input> [<fromZoom>] [<toZoom>] [<centerX>] [<centerY>]
+```
+
+Smoothly zoom from `fromZoom` to `toZoom` over the full clip duration, centered on `(centerX, centerY)` in normalized `[0, 1]` coordinates. Defaults: `fromZoom=1`, `toZoom=1.5`, center is `(0.5, 0.5)`. Use `fromZoom > toZoom` for zoom-out. Tool probes the input to match output resolution and fps.
+
+### Add a title card (implemented)
+
+```bash
+npx -y @makemyclip/editor add_title_card <input> <text> [<durationSec>] [<background>] [<fontSize>] [<fontColor>]
+```
+
+Generates a full-screen colored card (default 2 s, black background, white text) with centered title, then concatenates it before the input. Auto-probes the input to match dimensions, fps, and audio sample rate so the join is seamless.
+
+### Add multiple captions in one call (implemented)
+
+```bash
+npx -y @makemyclip/editor add_captions <input> <cuesJson>
+```
+
+`cuesJson` is a JSON array of `{ text, startSec, endSec, position? }`. Loops `add_text` per cue. **Does not transcribe** — the agent (or user) supplies the cues. Composability beats coupling: pair this with a separate transcription step when needed.
+
+### Remove silence (implemented)
+
+```bash
+npx -y @makemyclip/editor silence_remove <input> [<noiseDb>] [<minSilenceSec>]
+```
+
+Detects silent regions via ffmpeg's `silencedetect` filter, then trims the non-silent regions and concatenates them. Defaults: `noiseDb=-30`, `minSilenceSec=0.5`. Pure-FFmpeg, no Python `auto-editor` dependency.
+
+### Build a highlight reel (implemented)
+
+```bash
+npx -y @makemyclip/editor highlight_reel <input> <segmentsJson> [<transitionKind>] [<transitionSec>]
+```
+
+`segmentsJson` is a JSON array of `{ startSec, endSec }`. Trims each segment in parallel (stream-copy, fast), then either concatenates with hard cuts (no `transitionKind`) or chains the transitions tool pairwise to crossfade between them. The classic "best moments of a long video" workflow as a single agent-callable tool.
+
+### Green-screen / color keying (implemented)
+
+```bash
+npx -y @makemyclip/editor chroma_key <foreground> <background> [<color>] [<similarity>] [<blend>]
+```
+
+Removes a color from the foreground video and composites it over the background. The background can be a video OR a still image (auto-detected, looped to match foreground length).
+
+- `<color>` defaults to `green`. Named colors, `#RRGGBB`, or `0xRRGGBB`
+- `<similarity>` (0..1, default 0.3) — how close a pixel must be to count as the key color
+- `<blend>` (0..1, default 0.1) — soft-edge amount; 0 = hard cut, higher = softer
+
+Audio is taken from the background by default (the "scene"). Override with `preferForegroundAudio=true` if the foreground holds the voice.
+
+### Stabilize shaky footage (implemented)
+
+```bash
+npx -y @makemyclip/editor stabilize <input> [<shakiness>] [<smoothing>] [<accuracy>] [<zoom>]
+```
+
+Two-pass `vidstab`: pass 1 (`vidstabdetect`) analyzes motion and writes a transforms file; pass 2 (`vidstabtransform`) warps each frame to follow a smoothed camera path. Defaults are sensible (5, 10, 9, 5) — bump `shakiness` for very erratic input, `smoothing` for a more cinematic feel, `zoom` to hide warp borders.
+
+Requires `vidstab`-enabled ffmpeg. The bundled `ffmpeg-static` includes it; the tool fails with a clear error otherwise.
+
+### Build a multi-clip composition — the timeline (implemented)
+
+The single-file tools above each produce a new output file. To assemble several clips into one edit — with non-destructive trims, transitions, and **undo/redo** — drive the **timeline**: a composition document that is the source of truth for the assembled edit. The CLI, the browser UI, and this skill all mutate the same document.
+
+```bash
+npx -y @makemyclip/editor timeline new                       # start an empty composition
+npx -y @makemyclip/editor timeline add-media intro.mp4       # ingest + append a clip
+npx -y @makemyclip/editor timeline add-media demo.mp4
+npx -y @makemyclip/editor timeline transition <afterClipId> fade 0.5
+npx -y @makemyclip/editor timeline show                      # read tracks, clips, timings
+npx -y @makemyclip/editor timeline export final.mp4          # compile the document to a render
+npx -y @makemyclip/editor timeline export cut.fcpxml         # or hand it to Final Cut / Resolve (cut.xml: Premiere)
+```
+
+Prefer the timeline over chaining single-file tools whenever the user is *assembling* a video (multiple clips, transitions, a final render): edits are non-destructive and reversible (`timeline undo` / `redo`, `timeline log`), and `timeline at <sec>` / `timeline frame <sec>` give you read-only eyes on the current document before you change it. Run `npx -y @makemyclip/editor timeline --help` for the full subcommand list.
+
+To cut the pauses out of a talking clip already on the timeline, use `timeline silence <clipId>` instead of the single-file `silence_remove`: it splits the clip into back-to-back sub-clips that keep the speech, moves later clips on the track up, and lands as one edit that `timeline undo` reverses. `--sensitivity` (0–1, default 0.5) cuts more as it rises; `--dry-run` prints the kept source windows and the seconds removed without changing the document. Later clips on other tracks don't move.
+
+After cutting, run `timeline check` before exporting: it lists every hard cut whose audio is loud right at the join (usually a clipped word or a click) and writes a contact sheet (`--sheet out.jpg`) with the outgoing clip's last frame and the incoming clip's first for each cut. Open the sheet to see the jumps. A flagged cut is a reason to trim or move that boundary, not a verdict. Export fades the audio over 8 ms on each side of every hard cut, so a cut through steady sound doesn't click; the check still flags cuts in sound, since those can clip a word.
+
+To read what's said in a clip, run `timeline transcribe <clipId>`: it returns the clip's words with their timeline times, so you can find a sentence before cutting around it. For a long recording, read `timeline transcribe --sentences` instead: one line per sentence of the whole timeline (`12:34  #1400–1413  clip_ab12  text`, the time, the word indices, the clip it starts in), and `--from S --to S` for a stretch; pipe it through `head` to read a page at a time. Transcription is optional and runs a local whisper.cpp; if it isn't set up, the command says how (install whisper.cpp, download a model, set `MAKEMYCLIP_WHISPER_MODEL`). The first run per source file takes a while; later runs reuse the stored transcript. Whisper tends to leave out filler words like "um", so don't rely on the transcript to find them.
+
+To cut by words, use the `index` values from `timeline transcribe`: `timeline cut-words <clipId> <fromIndex> <toIndex>` removes those words (inclusive) and moves later clips on the track up. Add `--transcript <transcriptId>` from the same `timeline transcribe` output so the cut is refused, not misplaced, if the clip was transcribed again since. The transcript also lists `retakes`, phrases said twice in a row; `timeline remove-retakes <clipId>` cuts the earlier take of each (`--dry-run` lists them first). Each is one edit that `timeline undo` reverses. A cut splits the clip, so transcribe the resulting clips again before the next cut, and run `timeline check` afterwards.
+
+To caption speech, run `timeline captions` once the cuts are done: it turns the stored transcripts into text clips on a `captions` track above the video, timed to the words, and export burns them in. With no clip id it captions every transcribed clip and replaces the whole caption track; `timeline captions <clipId>` replaces only the captions over that clip. Captions are short phrases (up to 7 words, broken at pauses and sentence ends); `--words 1` shows one word at a time. Style with `--font <size> --color <color> --anchor <position> --background <color|none>` (default white on a dark box, bottom center). On a vertical (portrait) canvas captions sit above the bottom quarter and keep 14% in from each side, clear of the Shorts, Reels and TikTok overlays; `--margin <px>` sets the distance from the bottom (or top) edge. A line never gets wider than fits at its font size (22 characters at the default size on 1080x1920), so a bigger `--font` makes shorter lines. Captions don't move with later cuts, so run it again after one. It's one edit that `timeline undo` reverses, and `timeline frame <sec>` shows a captioned frame. Text outside Latin (Cyrillic, Chinese, Japanese, Korean) is drawn with an installed font that has its glyphs; if none does, export says which characters are missing — install a font (for CJK, Noto Sans CJK) or set `MAKEMYCLIP_FALLBACK_FONT` to a font file. Nothing is downloaded.
+
+To make a vertical (9:16), square (1:1) or feed (4:5) version, run `timeline reframe 9:16`. It changes the canvas shape, keeping its short side (1920x1080 becomes 1080x1920), and fills it: `--fit cover` (the default) crops what overflows, `--fit contain` shows the whole picture with bars. Look at `timeline frame <sec>` first to see where the speaker is, then pass `--x` (0 shows the left edge of the source, 0.5 the center, 1 the right edge; `--y` likewise, top to bottom) to keep them in frame. `--x` sets every media clip on the timeline now; clips added later start centered. To frame one clip differently, run `timeline framing <clipId> --x 0.3` (also `--scale` 1–4 to punch in, `--fit cover|contain|inherit`, `--reset`). Check with `timeline frame <sec>` after; the `timeline check` contact sheet shows the source frames, not the crop. Captions keep their size, since the short side doesn't change. Each is one edit that `timeline undo` reverses. A reframed cut exports as mp4; the editor-project export refuses it.
+
+To even out the volume of the exported mp4, run `timeline loudness -14` (YouTube, Shorts, Reels, TikTok) or `-16` (podcasts); `off` turns it off. Export then measures the finished mp4 and normalizes it to that integrated loudness in a second pass (EBU R128, true peak at most -1.5 dBTP), and reports `loudness` with the measured before and after values. `mode: dynamic` means loudnorm couldn't apply one gain (steady or very short audio, a wide loudness range, or peaks); `skipped` means the audio was silent or too short to measure. It's one setting on the timeline that `timeline undo` reverses, it applies to the mp4 only, and it doesn't even out clips recorded at different levels.
+
+To cut vertical shorts out of a long recording, transcribe it and make the cuts you want everywhere (pauses, retakes) on the main timeline first, then read `timeline transcribe --sentences`, pick each moment as whole sentences and run `timeline short <id> <clipId> <fromIndex> <toIndex>` with their word indices, where `<id>` is a new name such as `best-1`. Pick whole sentences, 15–60 s in all; you choose the moments, the editor doesn't score them. The short is a timeline of its own, cut from main's clips (main's cuts carry in, main itself doesn't change): it cuts each edge inside the pause the audio shows there, keeping 0.1 s of room tone, so it never keeps the next sentence's first syllable, fills a 9:16 frame, sets -14 LUFS and burns in captions. More `<clipId> <from> <to>` triples join several moments in the order given, so a later line can open the short as its hook. Options: `--x 0..1` to keep the speaker in frame, `--aspect 1:1|4:5`, `--words N` per caption, `--no-captions`, `--loudness <LUFS|off>`, `--source <timeline>`, `--dry-run` (prints the pieces), `--replace` to rebuild it. Its `warnings` name a range that starts or ends mid-sentence (widen it to the sentence's edge unless the cut is meant) and an edge with no clear pause in the audio (music under the speech, or no break), which follows the transcript instead: look at that edge or listen to it. Every other command works on a short with `--timeline <id>`: look at it with `timeline --timeline best-1 frame 3 check.jpg`, adjust with `timeline --timeline best-1 reframe 9:16 --x 0.3`, and render it with `timeline --timeline best-1 export best-1.mp4` (`timeline export --all <dir>` renders every short as `<dir>/<id>.mp4`). `timeline list` shows every timeline, `timeline --timeline best-1 undo` takes the short apart, and `timeline delete best-1` removes it. Over MCP, it's the `make_short` verb in `timeline_edit` with `timeline` set to the new id; every timeline tool takes `timeline`, and `timeline_show` lists them all.
+
+To hand the cut to an editor app, export the timeline as an editor project instead of a render. `timeline export cut.fcpxml` (or `--format fcpxml`) writes FCPXML 1.10 for Final Cut Pro and DaVinci Resolve; `timeline export cut.xml` (or `--format xmeml`) writes Final Cut Pro 7 XML for Premiere Pro, which Resolve reads too. Premiere doesn't import FCPXML, so use `xmeml` for it. Both reference the source files by absolute path (nothing is copied, so keep the sources where they are), place camera files by their start timecode, and keep the mp4's timing: clips, gaps, fades, volume, fade/dissolve transitions (as cross dissolves) and black or colored cards. Text over the picture becomes titles in FCPXML; in the Premiere XML it goes to `.srt` caption files next to the XML, since Premiere drops that format's titles. What the file can't hold — speed, color adjustments, chroma key, a reframe's fill, zoom or position (set the timeline to `--fit contain` and reset clip framing to carry it), rotation, wipe/slide/circle transitions, audio-only tracks, media on two tracks, a frame rate editors don't offer — is refused with the fix to make; what it holds only in part (text styling, caption boxes) is listed in the output's `notes`.
+
+### Open the local UI (implemented)
+
+```bash
+npx -y @makemyclip/editor ui
+```
+
+Starts a tiny local server on `http://127.0.0.1:5573` and opens your browser. The UI renders the session log (every op the agent has run), shows result paths and timestamps, and lets the user click an op to play its output. Useful as a companion to the chat-driven workflow — the user can watch the session evolve in real time and check outputs without touching the terminal.
+
+Local-only. The UI is a dark timeline editor: drag-drop import, a monitor (the composited frame at the playhead), an editable timeline (select a clip to trim / split / move / transition / remove, or frame it: fill, zoom, position), the output shape and loudness (the timeline's Output button: 16:9, 9:16, 1:1, 4:5; off, -14 or -16 LUFS), captions from transcripts (the timeline's Captions button), one-click export (the Export caret also writes a project for Final Cut Pro, Resolve or Premiere), timeline undo/redo, and snapshot — so the user can take over visually whenever the agent goes off-script.
+
+### Session safety — snapshot, undo, inspect, delete (implemented)
+
+Every successful tool call is logged to `$MAKEMYCLIP_WORKSPACE/session.json`. The agent can inspect that log, snapshot the current state, undo, or remove individual ops.
+
+```bash
+npx -y @makemyclip/editor snapshot [<label>]            # Save the current session as <label>.json (default: snap-<N>)
+npx -y @makemyclip/editor undo [<snapshotLabel>]        # Pop the last op, OR restore a named snapshot
+npx -y @makemyclip/editor inspect [<limit>]             # Show recent ops with one-line summaries
+npx -y @makemyclip/editor delete <id> [<removeFile>]    # Remove an op (and optionally unlink its output file)
+```
+
+These are the recovery loop the council called must-haves. Snapshot before any uncertain edit; undo if it didn't land right; inspect to remember what you did.
+
+## Safety
+
+- FFmpeg is spawned with arguments as an array — no shell interpolation, no injection.
+- All file paths resolve against a workspace directory by default.
+- The skill makes no network calls beyond the one-time `npx` download of the package itself.
+
+## Install
+
+```bash
+npx skills add MakeMyClip/editor
+```
+
+That's it. Or, as a Claude Code plugin: `/plugin marketplace add MakeMyClip/editor`, then `/plugin install makemyclip-editor@makemyclip`. If a command fails with a setup error (FFmpeg, its drawtext filter, whisper.cpp, a font, the workspace), or the user asks whether their setup works, run `npx -y @makemyclip/editor doctor`: it lists each check with the fix for anything missing.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lucasnad27/claude-plugins (path: plugins/research-plan-implement/skills/setup/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Generate project-specific research/plan/implement workflow by analyzing your project and intelligently adapting reference templates

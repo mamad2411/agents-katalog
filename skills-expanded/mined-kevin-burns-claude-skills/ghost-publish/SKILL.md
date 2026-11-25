@@ -1,0 +1,421 @@
+---
+name: ghost-publish
+description: >-
+  Publish, update, schedule and verify Ghost blog posts from a markdown file with the official `ghst` CLI: push a draft, update a post, schedule it, set tags, slug, excerpt or feature image, and check that what Ghost holds matches the source. Also for a Ghost upload gone wrong: front matter showing in the post, a stale draft, missing tags, a post that reads differently on the site. Not for writing the prose (clear-and-human).
+license: MIT
+---
+
+# Ghost Publish
+
+Drives [`ghst`](https://github.com/TryGhost/ghst), Ghost's official CLI, to get a markdown
+file onto a Ghost blog and then **prove** that what arrived is what you sent.
+
+The proving is the point. Ghost's import is lossy in ways that are invisible from the CLI's
+own output: a successful `post update` returns a clean JSON object while YAML front matter
+sits in plain sight above the first paragraph of the published post.
+
+## Boundary
+
+This skill does **not** write, edit, or improve the prose. It moves an already-final file and
+checks it. For the writing itself use `clear-and-human`; for a CV use `cv-and-human`.
+
+It does not publish or schedule unless told to in the current turn. Scheduling with a
+newsletter attached sends email to real subscribers at the scheduled moment with no second
+confirmation — treat it as irreversible and outward-facing.
+
+It does not configure Ghost, Docker, DNS, or any reverse proxy. If `ghst` cannot reach the
+site, that is the user's infrastructure to fix; see [Connection](#connection) for how to tell
+that apart from a skill problem.
+
+## Connection
+
+> **If your blog sits behind an access gateway — Cloudflare Access, Tailscale, Authelia,
+> an SSO proxy — `ghst` cannot get past it, and neither can this skill.** That is not a defect
+> in either. The gateway is doing exactly its job: refusing an unauthenticated request.
+> Resolving it is the operator's side of the line, and this section says how. Do not report it
+> as a skill bug, and do not work around it by weakening the gateway until you have tried the
+> routes below — the usual answer costs one header and changes no security posture at all.
+>
+> **Gateway, not identity provider, and the distinction is load-bearing here.** Cloudflare
+> Access federates out to an identity provider — Google, GitHub, a one-time PIN — and is not
+> one itself. This section is entirely about WHICH COMPONENT is refusing the request, because
+> the gateway and Ghost refuse for different reasons and only one of them is yours to fix. An
+> earlier version of this section called the gateway an IdP throughout, which muddied the one
+> thing it exists to teach.
+
+**Assume nothing about auth. Test it first, in one call:**
+
+```bash
+ghst post list --json --jq '.posts[0].title'
+```
+
+A title means you are connected and can skip the rest of this section. Anything else is a
+setup problem the user has to resolve before this skill can do anything.
+
+Two things make that test fail in ways worth naming, because both look like CLI bugs:
+
+**`ghst auth login` fails behind an authenticating proxy.** Cloudflare Access, any Zero Trust
+gateway, or an SSO proxy answers the discovery request with a redirect to its login host.
+`ghst` reads that as the site's real origin and aborts with `USAGE_ERROR: Ghost Admin discovery
+resolved to '<gateway-host>' instead of '<your-host>'`. **Do not follow its advice to re-run
+with the gateway's URL** — that points the CLI at a login page, not a Ghost site. Skip `auth login`
+entirely and use environment variables, which sit third in `ghst`'s connection-resolution
+order, ahead of the config files that `auth login` would have written:
+
+```bash
+export GHOST_URL="https://ghost.example.internal"
+export GHOST_STAFF_ACCESS_TOKEN="{id}:{secret}"
+```
+
+**Ghost 301-redirects to its own configured `url` when it thinks the connection is
+insecure.** A Ghost that serves `https://blog.example.com` but listens on plain HTTP behind a
+proxy will bounce a direct internal request straight back out to the public hostname — and
+into whatever gateway you were trying to avoid. The fix is one request header, `X-Forwarded-Proto:
+https`, which is what the reverse proxy in front of it already sets on the public path. `ghst`
+has no flag for sending headers, so this belongs in a proxy rule rather than in the CLI, e.g.
+in Caddy:
+
+```
+reverse_proxy ghost-host:2368 {
+        header_up X-Forwarded-Proto https
+}
+```
+
+The explicit `header_up` is required, not cosmetic: Caddy derives `X-Forwarded-Proto` from the
+incoming scheme, which is `http` on an internal hop, reproducing the redirect.
+
+Diagnose which of the two you have with one call each — no auth needed:
+
+```bash
+curl -s -o /dev/null -w '%{http_code} -> %{redirect_url}\n' https://your-blog/ghost/api/admin/site/
+curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-Proto: https' http://internal-host:2368/ghost/api/admin/site/
+```
+
+A 302 to the gateway's login host is the first problem. A 301 to your own public URL that becomes 200 with the
+header is the second.
+
+## Publishing a file
+
+**Never send the source file directly.** `--markdown-file` transmits bytes verbatim, and
+Ghost has no concept of front matter — unlike Hugo or Jekyll, a leading `---` block renders as
+body text. Strip it first, and pass what it contained as real Ghost fields:
+
+```bash
+uv run ~/.claude/skills/ghost-publish/scripts/prepare_post.py post.md --out /tmp/body.md
+```
+
+It writes the body without front matter and prints the `ghst` flags the front matter implies.
+
+**It also removes the drafting scaffolding under the front matter**, which is a separate
+failure and cost a public post to find. A leading `# H1` duplicates the title Ghost renders
+from its own field, and an author note — an italic line saying who the post is for — is an
+internal aside. Neither is front matter, so an earlier version of this script left both on a
+published post while reporting success. Removed now: one leading H1, one author-note line
+(italic-only, containing `Audience:` or starting `Draft`), and a horizontal rule under either.
+
+Only at the very top, and **every removal is printed to stderr** — a silent strip is how you
+lose an H1 somebody meant to keep. An italic first line that does not match the author-note
+shape is reported and **kept**, because eating a legitimate epigraph is the worse error.
+`--keep-scaffolding` turns the step off when the H1 really is part of the post.
+
+Then create or update:
+
+```bash
+# new post -- note there is NO --slug on `post create`
+ghst post create --title "..." --markdown-file /tmp/body.md \
+  --tags "Writing,Python" --json --jq '.posts[0].id'
+
+# existing post
+ghst post update <post-id> --markdown-file /tmp/body.md --tags "Writing,Python" --json
+```
+
+**A post's slug is not settable by flag.** `post create` has no `--slug`, and `post update
+--slug` is a *lookup* that selects a post rather than renaming one. The only route is a JSON
+payload, which `prepare_post.py --payload` writes for you:
+
+```bash
+uv run scripts/prepare_post.py post.md --out /tmp/body.md --payload /tmp/post.json
+ghst post create --from-json /tmp/post.json --markdown-file /tmp/body.md --json
+```
+
+Pages are the exception and take the flag directly — `page create --slug my-page` sets it. Pass
+`--target page` to `prepare_post.py` and it renders `--slug` among the flags. Verified on 0.18.2 and 0.19.1.
+
+`--tags` replaces the tag set rather than adding to it, so pass the full list every time.
+Slug, excerpt and feature image survive an update untouched — but verify rather than trust,
+because that is a behaviour, not a guarantee.
+
+### Updating a post that is already live
+
+Measured on 0.16.6, 2026-08-19, against a published post rather than a draft, and **not
+re-measured on 0.18.2 or 0.19.1**, which were tested on drafts only. All of these are behaviours rather
+than promises, so re-check them after an upgrade:
+
+| what | what happened |
+|---|---|
+| `status` | stayed `published`. The update does not knock a live post back to draft. |
+| `published_at` | **unchanged.** The edit landed in `updated_at` only. |
+| RSS `pubDate` | unchanged, so the post does not jump the feed or re-notify readers. |
+| email | none. Email fires on the publish transition, and an update is not one. |
+| slug, tags, excerpt, feature image | all survived. |
+
+`published_at` holding still is the one worth knowing, because the alternative is loud: a
+post that re-dates on every typo fix climbs back to the top of the feed and reaches everyone
+subscribed to it again.
+
+**There is no staging step.** `post update --markdown-file` rebuilds the whole document, so a
+live post is briefly whatever you just sent while you are still finding out whether it was
+right. Run `verify_post.py` immediately after, not at the end of the session, and keep the
+edit small enough that you would be comfortable with a reader seeing it mid-flight.
+
+**The feature image is a separate upload.** `ghst image upload` returns a URL; setting it on
+the post is its own step. As of ghst 0.18.2 the MCP server has `ghost_image_upload` and feature
+image fields on post create and update, so this is no longer a gap between the two; this skill
+drives the CLI throughout because its checks are written against the CLI's output.
+
+**`image upload --json` nests the URL twice, and the obvious path returns `null`.** Measured on
+0.16.6, 2026-08-20, and unchanged on 0.19.1 (2026-11-20, where `post update --feature-image`
+with the returned URL set it on a draft). The payload is `{"images":[{"images":[{"url":…,"ref":null}]}]}`, so:
+
+```bash
+ghst image upload hero.webp --json --jq '.images[0].images[0].url'   # the URL
+ghst image upload hero.webp --json --jq '.images[0].url'             # null, silently
+```
+
+`--jq` on a missing key prints `null` and exits 0, so a script that pipes the result straight
+into a post body writes the literal string `null` as an image source and nothing fails until a
+reader sees a broken image. Fetch the URL and check it returns 200 before using it.
+
+**An in-body image must be absolute before it goes to Ghost.** A relative path that works in the
+repo — `![alt](diagram.webp)` — is transmitted verbatim and resolves against the post's own URL,
+which is not where the file is. Upload first, then substitute the returned URL.
+
+**`custom_excerpt` is capped at 300 characters and Ghost rejects the whole post over it.**
+Measured 2026-08-20: a 421-character excerpt returned `422 Validation error, cannot save post`
+with `Validation failed for custom_excerpt` and `maxLength / limit: 300`. Nothing is created.
+The failure names the field, so it is quick to diagnose — but it arrives at create time, after
+the body has been prepared, and it is the one front-matter field with a hard server-side limit.
+Check it before the call:
+
+```bash
+python3 -c "import re,sys;e=re.search(r'^excerpt: \"(.*)\"$',open(sys.argv[1]).read(),re.M);print(len(e.group(1)))" post.md
+```
+
+**`feature_image_alt` is capped at 191 characters, and it is a different limit from the
+excerpt's 300.** Measured 2026-08-20: a 316-character alt returned `422 Validation error,
+cannot edit post` with `Value in [post_revisions.feature_image_alt] exceeds maximum length of
+191 characters`. Nothing is written. 191 is short for a genuinely descriptive alt, so write to
+the limit deliberately rather than truncating a longer one and losing its subject.
+
+**The feature image needs two calls.** `post update` has `--feature-image` for the URL and no
+flag for the other two fields, so alt and caption go through a JSON patch:
+
+```bash
+ghst post update <id> --feature-image "$URL" --json
+ghst post update <id> --from-json /tmp/image.json --json   # feature_image_alt, feature_image_caption
+```
+
+> **Never send a write to `/dev/null`.** Every cap on this page fails with a 422 that names the
+> field, and every one of them is invisible if the response is discarded. A suppressed
+> `post update` looks exactly like a successful one: no output, exit 0, nothing written. That
+> is how the 191-character cap above went unnoticed through a first attempt. Read the response,
+> or read the field back afterwards.
+
+## Cards
+
+Most cards need nothing: Ghost's markdown conversion produces native `image`, `extended-quote`, `codeblock`, `html`, `horizontalrule` and `embed` cards from ordinary markdown, and an image must never sit inline in a sentence. Galleries and embeds from a bare URL need `enrich_cards.py`. For the conversion table, the gallery and oEmbed workflow, iframe placement and centring, and the editor's embed limit, read `references/cards.md` before touching cards or embeds.
+
+## Pages
+
+Everything here works on a Ghost **page** as well as a post, because a page holds the same
+Lexical document. Swap the noun in the command and nothing else changes:
+
+```bash
+ghst page create --title "..." --markdown-file /tmp/body.md --slug my-page --tags "..." --json
+ghst page get <page-id> --json --jq '.pages[0].lexical' > /tmp/lexical.json
+ghst page update <page-id> --lexical-file /tmp/enriched.json --json
+```
+
+Note the `.pages[0]` accessor rather than `.posts[0]` — that is the only shape difference, and
+getting it wrong yields `null`, which reads as an empty document rather than as a bad query.
+`prepare_post.py --target page`, `verify_post.py` and `enrich_cards.py` all take the document
+itself and neither know nor care which kind it came from.
+
+**The one real asymmetry is slug, and it favours pages.** `page create --slug` sets the slug.
+`post create` has no such option, so a post's slug has to go through `--from-json` as described
+under [Publishing a file](#publishing-a-file). Verified on 0.18.2 and 0.19.1.
+
+## Social and SEO fields, and the three names each one has
+
+Ghost calls these something different in the API, in the admin UI, and in the rendered page,
+which makes them hard to talk about and easy to set twice. Mapped 2026-08-20 against the
+[Ghost SEO](https://ghost.org/help/seo/) and [site setup](https://ghost.org/help/site-setup/)
+docs, plus the rendered HTML of a live post.
+
+| API field | Ghost UI | rendered as | `ghst` |
+|---|---|---|---|
+| `feature_image` | Post settings → feature image | `og:image`, `twitter:image` | `--feature-image` |
+| `custom_excerpt` | Post settings → Excerpt | `description`, `og:description`, `twitter:description` | `--excerpt` |
+| `meta_title` / `meta_description` | **Meta data** | `<title>`, `description` | `--meta-title` / `--meta-description` |
+| `og_title` / `og_image` | **Facebook card** | `og:title` / `og:image` | `--og-title` / `--og-image` |
+| `og_description` | **Facebook card** | `og:description` | **no flag — `--from-json`** |
+| `twitter_title` / `twitter_description` / `twitter_image` | **X card** (was Twitter card) | `twitter:*` | **no flag — `--from-json`** |
+
+**"og" appears nowhere in the UI.** Anyone verifying your `--og-image` in Ghost is looking for
+a Facebook card, and anyone looking for a Twitter card now finds one labelled **X card**.
+
+**Most of the time you should set none of them.** Measured on a live post that sets only a
+title, an excerpt and a feature image, Ghost emitted a complete set on its own: `og:title` and
+`twitter:title` from the post title, `description` and both social descriptions from the
+custom excerpt, `og:image` and `twitter:image` from the feature image, plus `canonical`,
+`og:type`, `og:site_name`, `twitter:card=summary_large_image` and one `application/ld+json`
+block. Set a social field only when you want the card to differ from the page.
+
+**Which makes the excerpt cap sharper than it first looks.** `custom_excerpt` is not merely a
+card subtitle — it is the meta description and both social descriptions as well. One 300-
+character field is doing four jobs, and the 422 above is the only thing that tells you when it
+cannot.
+
+**Ghost serves the card image at `/size/w1200/`**, derived from whatever you uploaded, so a
+2000–2752px original is right and no hand-resizing for social is needed.
+
+**Setting `og_image` does NOT settle `twitter_image`, and the fallback is not the one you would
+guess.** Measured 2026-08-20 on a post carrying a feature image and an `og_image`, with
+`twitter_image` left null:
+
+```
+og:image       →  the og_image
+twitter:image  →  the FEATURE IMAGE, not the og_image
+```
+
+X has its own card and its own lineage. It does not inherit the Facebook card's image; it falls
+back past it to the feature image. So a post that sets `og_image` alone ships **two different
+pictures** — the Open Graph one on Facebook and LinkedIn, the feature image on X — and nothing
+warns you, because both fields are populated and both render.
+
+A second probe with a **different image in all three slots** completes the rule:
+
+| `feature_image` | `og_image` | `twitter_image` | → `og:image` | → `twitter:image` |
+|---|---|---|---|---|
+| set | unset | unset | feature | feature |
+| set | set | unset | og | **feature** |
+| set | set | set | og | twitter |
+
+So each card reads its own field first and falls back to `feature_image` — never to the other
+card. The feature image is not used by either card once both are set explicitly.
+
+If the social card should be the same everywhere, set `og_image` **and** `twitter_image`.
+Everything except `og_image` needs `--from-json`; only that one has a flag.
+
+## Verify — the step that earns this skill
+
+Run it every time, before publishing and again after. It has caught a stale draft, a
+front-matter leak, and content that never reached Ghost at all.
+
+```bash
+ghst post get <post-id> --json --jq '.posts[0].lexical' > /tmp/lexical.json
+uv run ~/.claude/skills/ghost-publish/scripts/verify_post.py /tmp/body.md /tmp/lexical.json
+```
+
+**Assert both directions.** This is the rule the script exists to enforce, and it came from a
+check that passed sixteen out of sixteen expectations while YAML sat above the first
+paragraph. A verification that only asks *"is what I wanted present?"* is blind to everything
+that should not be there. So the script compares the whole document both ways and reports
+sentences in the source but not in Ghost **and** sentences in Ghost but not in the source.
+
+Three facts about reading a Ghost post back, each of which produces a convincing false alarm:
+
+- **`post get` has no `html` field by default.** It returns `lexical` and `mobiledoc` only.
+  Asking for `.posts[0].html` yields `null`, and a naive checker reads five bytes of nothing as
+  total content loss. `ghst post get <id> --formats html` adds it: the option was already in
+  0.16.6, verified on 0.19.1 (2026-11-20), and this file missed it until then.
+- **`post update --markdown-file` converts to native Lexical.** The document becomes heading
+  and paragraph nodes, not a markdown card. A reader that looks only for markdown cards
+  reports zero words. The source is **not** recoverable from Ghost after this.
+- **An inline `?formats=html` query string is refused by the CLI**, not by Ghost: `Endpoint
+  path must not include query parameters. Use --query instead.` The error names the fix, and
+  `ghst api /posts/<id>/ --query formats=html` **does** return rendered HTML — on 0.16.5 and
+  0.16.6 alike. An earlier version of this file called that workaround closed; it was wrong,
+  and wrong when written rather than broken by an upgrade.
+  Prefer the Lexical tree anyway, for a reason that survives: `html` is Ghost's *rendered
+  output*, so diffing against it compares your source with a renderer. `lexical` is the
+  document Ghost stores. The script walks it for you.
+
+Check the metadata separately, since none of it lives in the body:
+
+```bash
+ghst post get <post-id> --json \
+  --jq '.posts[0] | {status, slug, tags: [.tags[]?.name], excerpt_len: (.custom_excerpt|length), feature_image}'
+```
+
+## Publishing and scheduling
+
+Email fires on the **publish transition**, not on create — so the newsletter flags belong on
+`publish`, `schedule` or `update`, never on `create`:
+
+```bash
+ghst post publish <post-id>                                    # no email
+ghst post publish <post-id> --newsletter weekly                # sends email now
+ghst post schedule <post-id> --at <future-UTC-ISO-8601>        # e.g. 2099-01-01T06:00:00Z; publishes then, no email
+ghst post unschedule <post-id>
+```
+
+Scheduling is core Ghost and works on self-hosted instances; it is not a Ghost(Pro) feature.
+Set `status` to `scheduled` with a future `published_at` and, in Ghost's words, *"the post
+will be published, email newsletters will be sent (if applicable), and the status of the post
+will change to `published`"*.
+
+**A missed schedule publishes late, not never.** If the instance is down at the scheduled
+moment, Ghost's default scheduler detects a past-due job and forces it through when it comes
+back — the source comments the case explicitly as *"case blog is down"*. What moves is the
+email: a post set for 07:00 that publishes at 09:30 mails subscribers at 09:30.
+
+The admin UI's Drafts / Scheduled / Published tabs are `status` filters, so the same views are
+available without a browser:
+
+```bash
+ghst post list --filter "status:scheduled" --json --jq '.posts[] | {title, published_at}'
+```
+
+## Before you publish
+
+**Run the preflight check first.** One command, offline, no network:
+
+```bash
+python3 ~/.claude/skills/ghost-publish/scripts/preflight.py
+```
+
+It compares the installed `ghst` against the version the traps below were verified on. `ghst`
+is pre-1.0 and moves fast — 27 tags and 30 commits in the thirty days to 17 August 2026 — and
+the behaviours this skill leans on are undocumented, so no semver promise covers them. **Drift
+warns and names what to re-verify; it does not block.** A check that refuses to run the day
+`ghst` ships a patch is a check that gets commented out, and then the real drift arrives
+unannounced. Use `--strict` in CI, where stopping is the right answer.
+
+Then two habits that belong to the post rather than to Ghost, both learned by getting them
+wrong:
+
+**Re-check anything anchored to a live web page.** Citations of papers stay put; a link count
+on someone's website, a page that has since 404'd, or a vendor's claim about their own product
+all rot between drafting and publishing. Those are the facts to verify last, not first.
+
+**If the post reports numbers about itself, measure after the final edit.** Any change moves
+them. Batch every edit, then measure once — `clear-and-human`'s `register_report.py` does this
+for register figures. Scope the measurement explicitly ("everything above this heading"),
+because a section reporting a document's own numbers is part of that document.
+
+## Provenance
+
+Wraps [`ghst`](https://github.com/TryGhost/ghst) (TryGhost, MIT), installed separately with
+`npm i -g @tryghost/ghst`. This skill bundles no credentials and stores none; connection comes
+from your own environment.
+
+**`ghst` is beta** (README title, first released February 2026). Its behaviour has been
+verified against **0.19.1** (2026-11-20, throwaway draft) — re-check the traps above after an upgrade, since several of them
+are undocumented behaviours rather than promises.
+
+The scripts under `scripts/` are standard library only and need **Python 3.12+**. They read
+and compare; they never call Ghost and never write to it. `preflight.py` is the one that shells
+out at all, and only to `ghst --version`, which runs the local binary and touches no network —
+so it can tell you the tool is the one these traps were written against, and cannot tell you
+your credentials work.

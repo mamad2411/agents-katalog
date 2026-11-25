@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_mims-harvard_tooluniverse_tooluniverse-gwas-snp-interpretation/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Interpret a single GWAS SNP across multiple databases — GWAS Catalog hits, LD/haplotype context, eQTL evidence, regulatory annotation, ClinVar pathogenicity, gnomAD frequency. Use for 'what does this 

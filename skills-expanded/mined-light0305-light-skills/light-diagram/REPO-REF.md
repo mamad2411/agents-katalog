@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/light0305/light-skills (path: light-diagram/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 统筹非数据科研图的完整制作：从论文或构想提炼图意，调用 light-diagram-prompt 生成提示词，实际生图并核查，再按编辑需求选择 Illustrator、PowerPoint 或 Visio 重建、验证和交付；也支持已有参考图直接复现、只要提示词或只要生图。

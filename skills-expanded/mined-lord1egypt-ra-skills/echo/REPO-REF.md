@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/e/echo/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Echo - A warm and caring virtual girlfriend AI"

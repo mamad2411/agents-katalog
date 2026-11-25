@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_pika-labs_pika-plugins_founder-product-video/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: founder-product-video

@@ -1,0 +1,3 @@
+---
+name: stock-deep-dive
+description: Stable modular deep stock research for Alpha-Seeker War Room. Triggered by "stock-deep-dive on [TICKER]". Full flow: scripts/collect.py (parallel analyze/fund/div/tavily), score.py (conviction), build.py (validate), save_deploy.py (/war-room/reports + Vercel). Deps: stock-analysis, stock-fundamentals, openclaw-tavily-search (install first). Use for reliable stock analysis (no LLM parse/exec fragile). Darwin optimized 98/100. Telegram bullet format only (no table break). Parse RSI/vol/RSI_status from analyze text. See test-prompts.json.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/g/guaikei-video-subtitle-transcript/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 将已完成的点播视频转写为文字与结构化文案。当用户提供本地视频文件或抖音、小红书等公网视频链接，要求视频转文字、视频转稿、字幕提取、视频总结、会议纪要、课程拆解、二创改写时使用。不支持实时直播流、需登录的加密视频与纯音乐无人声视频；转写后可按自定义 Prompt 生成总结、金句、分镜头、翻译等"

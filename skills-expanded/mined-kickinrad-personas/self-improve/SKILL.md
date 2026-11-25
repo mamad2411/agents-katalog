@@ -1,0 +1,35 @@
+---
+name: self-improve
+description: Improve a persona. Use when asked to self-improve, review local procedures, promote repeated corrections into a rule, or turn recurring work into a skill. Not for framework structure or native adapter activation (use persona-dev).
+---
+
+# Self-improve
+
+Improve the persona without duplicating authority.
+
+## Route the change
+
+- Identity, role, craft, voice, and role-specific boundaries belong in
+  `AGENTS.md`; rules every persona shares belong in the plugin's `PERSONAS.md`.
+- A recurring multi-step procedure belongs in one portable role skill.
+- Explicit persona memory belongs in `user/memory/MEMORY.md` with user
+  approval; commit it only where the persona tracks `user/`.
+- Stable knowledge belongs in its owning external system, with only the minimum
+  useful persona-local pointer.
+- Claude- or Codex-only mechanics belong in the matching runtime adapter.
+- Framework structure belongs in Personas and routes to `persona-dev`.
+
+## Promote evidence
+
+After repeated real friction, cite the persona-local evidence and propose one
+concise rule, one reusable skill, an existing integration, or removal of stale
+material. Promote the smallest rule that changes the observed behavior; do not
+generalize one correction into policy for all personas. Wait for approval before
+changing identity, rules, tools, skills, connections, or external services.
+
+## Audit
+
+Review the portable definition, explicit memory, profile, skills, adapters,
+integrations, and loose files. Report proposed additions, updates, and removals
+with evidence. Apply approved changes to one owning surface, inspect the exact
+diff, and propose a persona-local commit.

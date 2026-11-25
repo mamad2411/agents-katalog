@@ -1,0 +1,85 @@
+---
+name: research-scanner-workflow
+skill_type: workflow
+description: >-
+  Discover research papers using ScholarX and bulk ingest them into the Arbora Knowledge Graph
+domain: development-workflows
+agent: dev_ops_engineer
+team_config:
+  name: development_operations_team
+  task_pattern: development workflow automation
+  execution_mode: parallel
+  specialist_ids:
+    - scanner-agent
+    - builder-agent
+    - validator-agent
+    - publisher-agent
+  tool_assignments:
+    scanner-agent: [rep_rm_workspace, rep_rm_git]
+    builder-agent: [rep_rm_projects]
+    validator-agent: [rep_rm_projects, gl_pipelines]
+    publisher-agent: [rep_rm_git, gl_merge_requests]
+tags: [dev-workflows, research-scanner]
+concept: CONCEPT:DEV-001
+metadata:
+  version: '1.6.2'
+---
+
+# Research Scanner Workflow
+
+**CONCEPT:DEV-001**
+
+Discover research papers using ScholarX and bulk ingest them into the Arbora Knowledge Graph
+
+## Steps
+
+### Step 0: collect-research-request [skill: user-interaction]
+**Agent**: `scanner-agent`
+**Tools**: `rep_rm_workspace, rep_rm_git`
+
+Get the user's research focus query, lookback days, specific target scientific sources (e.g., arxiv, biorxiv), and maximum results.
+
+### Step 1: search-papers [skill: scholarx-mcp]
+**Agent**: `builder-agent`
+**Tools**: `rep_rm_projects`
+
+Search for the research papers based on the search parameters using the `scholarx_search` action with `action='search'`.
+
+### Step 2: download-papers [skill: scholarx-mcp]
+**Agent**: `validator-agent`
+**Tools**: `rep_rm_projects, gl_pipelines`
+
+Submit bulk download jobs for the discovered paper IDs via `scholarx_download_papers`. Check the download queue status via `action='status'`.
+
+### Step 3: Arbora
+**Agent**: `publisher-agent`
+**Tools**: `rep_rm_git, gl_merge_requests`
+
+Ingest the newly downloaded research PDFs into the Knowledge Graph via the ingest action `mcp_arbora_graph_ingest` with `action='ingest'`.
+
+### Step 4: present-research-summary [skill: user-interaction]
+**Agent**: `scanner-agent`
+**Tools**: `rep_rm_workspace, rep_rm_git`
+
+Display the completed research summary and details of the ingested papers to the user.
+
+### Step 5: KG Persistence [depends_on: Step 0, Step 4]
+**Agent**: `publisher-agent`
+**Tools**: `graph_write`
+
+Persist workflow results as nodes and edges in the Knowledge Graph.
+Create appropriate typed nodes with metadata and link to existing domain entities.
+
+## Output
+- Research Scanner results persisted in KG
+- Structured report (MD/PDF)
+- Audit trail with timestamps and agent attributions
+
+## Execution
+
+Run this workflow as a dependency-ordered DAG. Steps with no unmet `depends_on` run in parallel; dependents run after their prerequisites complete.
+
+- **Run first (in parallel):** Step 0 — collect-research-request; Step 1 — search-papers; Step 2 — download-papers; Step 3 — Arbora; Step 4 — present-research-summary
+- **After level 0:** Step 5 — KG Persistence
+
+**Execution:** If arbora is reachable, offload the whole DAG via `graph_orchestrate action=execute_workflow` (or the `kg-delegate` skill) for true parallel/swarm execution. Otherwise execute the steps natively in dependency order: run steps with no unmet `depends_on` in parallel, then their dependents.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/h/humanize-mba-text-skill/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 去除中文文本中的 AI 生成痕迹，使其更符合中国 MBA 毕业论文的自然写作风格。当用户提到"去 AI 痕迹"、"去除 AI 写作痕迹"、"MBA 论文改写"、"让这段文字更像人写的"、"去除机器感"等关键词时触发。适用于需要降低文本 AI 特征、提升学术写作自然度的场景。

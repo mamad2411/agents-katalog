@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/kench001/antigravity-awesome-skills (path: plugins/antigravity-awesome-skills-claude/skills/ai-engineering-toolkit/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 6 production-ready AI engineering workflows: prompt evaluation (8-dimension scoring), context budget planning, RAG pipeline design, agent security audit (65-point checklist), eval harness building, an

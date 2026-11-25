@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/q/qfnulife/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 曲阜师范大学（曲阜师大 / 曲师 / QFNU / 曲园）在校生校园生活与学业事务助手。用于回答选课与教务系统操作、学分绩点(GPA)与学位/推免门槛、转专业与辅修微专业、奖学金助学金与勤工助学、图书馆与自习座位预约、一网通办与统一身份认证、校园网 QFNU 与校园一卡通、宿舍公寓与食堂、校历放假与报到注册、就业与考研、心理咨询、校区与学院分布、交通快递等一切校园事务，并可计算平均学分绩点。当用户

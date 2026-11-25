@@ -1,0 +1,117 @@
+---
+name: sparebank1-shared
+description: Runtime contract for the `sb1` CLI (SpareBank 1 personal banking). Covers install, BankID login, secret-storage backends, output formats, global flags, the command map, and error handling. Use this as the foundation before any other sparebank1 skill, or whenever a user asks to check Norwegian bank accounts, balances, or transactions via sb1.
+compatibility: Requires the `sb1` binary installed and a registered SpareBank 1 developer app. Network access to api.sparebank1.no. BankID is needed for the initial login.
+---
+
+# sparebank1-shared
+
+Foundation skill for the `sb1` CLI, a client for the
+[SpareBank 1 personal banking API](https://developer.sparebank1.no). Read this
+before using any other `sparebank1` skill.
+
+**This is real money and real bank data. Be conservative.** Never invent account
+numbers or amounts; only act on what commands return or what the user states.
+
+## Install & first-time setup
+
+```bash
+cargo install sparebank1-cli          # installs the `sb1` binary
+```
+
+One-time setup the user must do themselves (requires their BankID):
+
+1. Register a **personal client** app at https://developer.sparebank1.no
+2. Set its redirect URI to exactly `http://localhost:12345/callback`
+3. Put `CLIENT_ID` / `CLIENT_SECRET` in a `.env` (git-ignored) or env vars
+4. `sb1 login`, opens the browser for BankID, stores the token
+
+Do not run `sb1 login` on the user's behalf without asking; it triggers an
+interactive BankID flow.
+
+## Authentication & storage
+
+```bash
+sb1 status     # logged in? token expiry? which storage backend?
+sb1 refresh    # force a token refresh
+sb1 logout     # remove the token (add --all to also drop client credentials)
+sb1 status --profile <profile-name>
+sb1 refresh --profile <profile-name>
+```
+
+Each local profile has its own credentials and tokens. `sb1 status` lists
+profiles and marks the default. Read commands and `hello` use the default unless
+`--profile <profile-name>` is supplied. `sb1 login --profile <profile-name>`
+creates a profile after confirmation or reauthenticates it; each person
+completes their own BankID login. Use a separate personal client for each
+independently authenticated profile. `CLIENT_ID` and `CLIENT_SECRET` in `.env`
+provide one credential pair for initial setup; pass another profile's client
+credentials with `--client-id` and `--client-secret` (or environment
+variables). `sb1 profile set-default <profile-name>` changes the designation.
+`sb1 profile rename <old-name> <new-name>` changes a profile's local name
+without requiring a new BankID login; the default designation follows the rename.
+`refresh` and `logout` require `--profile` when multiple profiles exist.
+Repeat `--profile` to select a subset for combined reads. Commands requiring
+one profile reject multiple selected profiles. Repeated names are queried once.
+Read-only commands accept `--all-profiles` to combine results from every
+configured profile: `hello`, `accounts`, `account`, `balance`, `transactions`,
+`transaction`, `export`, and `summary`. This option is mutually exclusive with
+`--profile` and is not supported for status, login, logout, refresh, profile
+management, or transfers.
+Aggregate account lists deduplicate accounts by the bank account key. Shared
+accounts are counted once in balances and summaries; transaction and export
+rows include the profile used to fetch them. JSON aggregate responses contain
+`complete` and `errors`; in table or CSV mode, read stderr warnings for partial
+failures. Never describe an incomplete result as complete. If an account
+reference is ambiguous, use `--profile` or its exact bank account key.
+
+Tokens auto-refresh before expiry; the user normally does not re-login between
+sessions. Secrets live in one of three backends, chosen by `SB1_STORE`:
+
+| `SB1_STORE` | Where |
+|---|---|
+| _unset_ / `keychain` | OS keychain (macOS Keychain / Linux keyutils / Windows Credential Manager), **default** |
+| `op` / `1password` | 1Password via the `op` CLI (`SB1_OP_VAULT`, `SB1_OP_ACCOUNT`) |
+| `file` | `~/.config/sparebank1-cli/*.json` (0600), **plaintext, opt-in** for headless/automation |
+
+When more than one profile exists, transfers also require `--profile`. The
+confirmation summary names the selected profile. `accounts --all` selects all
+account types independently of profile selection. `accounts --all-profiles`
+keeps normal type filters; add `--all` or individual type flags when needed.
+Combined summaries describe accessible accounts and expose balance maps by
+currency plus `cashFlowByCurrency`. Interpret each currency separately and
+preserve source attribution. Single-profile JSON keeps the released fields.
+
+If a command reports "not logged in" or the client secret is rejected, tell the
+user to run `sb1 login` (the secret has limited validity and may need rotating
+in the developer portal). Do not retry in a loop.
+
+## Output & flags
+
+- Default output is human-readable tables (Norwegian amounts: `kr 1 234,56`).
+- Add `--json` to **any** command for machine-readable output, always use this
+  when parsing programmatically.
+- Errors print to stderr with a non-zero exit code.
+
+## Command map
+
+| Command | Purpose | Skill |
+|---|---|---|
+| `login` / `logout` / `refresh` / `status` / `hello` | auth & health | this skill |
+| `accounts` | list accounts | sparebank1-accounts |
+| `account <ref> [--details\|--roles]` | one account | sparebank1-accounts |
+| `balance <number>` | balance by account number | sparebank1-accounts |
+| `transactions ...` | list/filter/export transactions | sparebank1-accounts |
+| `transaction <id>` | one transaction's details | sparebank1-accounts |
+| `export ...` | server-side CSV export | sparebank1-accounts |
+| `transfer debit\|creditcard\|pension` | move money | sparebank1-transfers |
+| `summary [--months N]` | net worth + cash flow + categories | sparebank1-accounts |
+
+`<ref>` for an account accepts its **name** ("Brukskonto"), **key**, or
+**number**, the CLI resolves it. Verify with `sb1 accounts` first when unsure.
+
+## Etiquette (API terms)
+
+The bank enforces rate limits and monitors usage. Do **not** add retry/polling
+loops or try to bypass limits. On HTTP 429 the CLI reports a `Retry-After`; wait,
+don't hammer. Usage is strictly personal; never expose credentials in output.

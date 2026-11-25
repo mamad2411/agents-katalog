@@ -1,0 +1,218 @@
+---
+name: issueops-verify
+description: Use when "issueops next" reports the verify stage, or when the user asks to verify a sealed IssueOps implementation before publication.
+---
+
+# IssueOps Verify
+
+이 스킬의 일은 **봉인된 변경이 정말 통과하는지 확인하고 그 판정을 기록하는 것**이다.
+파일은 하나도 바꾸지 않는다. 고칠 것이 나오면 앞 단계로 돌아간다.
+
+- 전체 흐름과 단계 판별: [`issueops`](../issueops/SKILL.md)
+- 게이트 원장: [`gates-ledger`](../gates-ledger/SKILL.md)
+- 적대 리뷰: [`issueops-review`](../issueops-review/SKILL.md)
+- 이전 단계: [`issueops-docs`](../issueops-docs/SKILL.md)
+- 커밋: [`atomic-commit-push`](../atomic-commit-push/SKILL.md)
+
+## 이 스킬이 맞는지 확인
+
+```bash
+issueops next --id "$ISSUEOPS_ID" --json
+```
+
+`stage.key`가 `verify`면 이 스킬이다. `clean`이나 `docs`면 봉인이나 문서 반영이
+아직이므로 그 단계로 돌아간다.
+
+## 파일을 만지지 않는다
+
+change fingerprint는 `git diff <base>..HEAD`와 `git status`가 가리키는 **모든 경로의
+내용 해시**다. untracked 파일도 들어간다. 그래서 이 단계에서 파일을 하나라도 바꾸면
+정리 단계의 봉인과 문서 단계의 판정이 동시에 stale이 된다.
+
+이 단계의 명령은 전부 읽기이거나 record 기록이다. record 기록은 durable state를 바꾸지만
+워크트리 파일을 바꾸지 않으므로 fingerprint에 영향이 없다.
+
+검증이 실패해 코드를 고쳐야 하면 4단계로 돌아가 구현·정리·재봉인·문서 반영을 다시
+밟는다. `next`가 `clean`으로 되돌리는 것이 그 신호다.
+
+## 프로젝트 문서 확인
+
+실행할 검증을 고르기 **전에** 저장소가 요구하는 검증 기준을 읽는다. 무엇이 필수 명령인지는
+이 문서들이 정하고, 게이트 원장은 그중 이번 변경에 해당하는 부분만 담는다.
+
+- `.issueops/TESTING.md`: 필수 검증 배터리와 "검증됨"이라고 말할 수 있는 기준
+- `.issueops/AGENT_WORKFLOW.md`: 검증에서 완료 보고까지의 흐름
+- endpoint·DTO·OpenAPI가 바뀌었으면 `.issueops/OPEN_API_SPEC.md`
+- 같은 검증이 반복해서 실패하면 `.issueops/CAUTIONS.md`
+
+report의 검증 절에는 따른 문서 경로와 그 문서가 요구한 명령을 짝지어 적는다. 문서가
+요구했지만 실행하지 않은 명령은 사유와 함께 `Not Run`으로 적는다.
+
+## 0 재사용을 확인하고 필요한 작업을 병렬 실행한다
+
+봉인된 fingerprint와 1절의 증거 재사용 조건을 먼저 확인한다. 유효한 증거가 없는 필수
+작업(게이트 원장·검증 배터리, 스키마 실측, 구현 리뷰, `review.frontend`가 true일 때의
+화면 QA)만 **같은 fingerprint에 대해 동시에** 시작한다. 원장은 `gates status`로 읽는다.
+`gates check`는 미충족 게이트를 실행해 원장 파일을 고치므로 4·5단계가 소유한다. **결과를 모두 모은 뒤 판정을 기록한다.**
+배터리가 실패하거나 필수 증거가 빠졌으면 먼저 도착한 리뷰 `pass`를 기록하지 않고 4단계로
+돌아간다. 정리(5단계)·문서 반영(6단계)과는 동시에 실행하지 않는다. 그 둘은 파일을 쓰므로
+봉인을 바꾼다. 공유 상태 검증의 순서, 화면 QA 입력 매핑과 보고서 경로, 실패율 판단, 리뷰어에게
+넘길 증거 구분은 [병렬 실행 세부](references/parallel-run.md)를 병렬 작업을 시작하기 전에 읽는다.
+
+## 1 검증 증거 확인과 필요한 재검증
+
+게이트 원장을 읽기 전에 봉인 intent 문서(`<artifact_dir>/intent.md`, 없으면
+`status --json`의 `.intent`)의 성공 기준과 비목표를 읽는다. 원장의 G 항목과 이슈의 완료
+기준이 그 성공 기준을 모두 덮는지 대조하고, 덮지 않는 성공 기준은 report의 `## 의도 대조`
+절에 적어 4절의 readiness 판정에서 blocker로 다룬다. 봉인 뒤 intent가
+다시 기록됐으면 `status --json`의 `.intent`가 최신이다.
+
+원장은 눈으로 읽지 않는다. 체크박스와 EVIDENCE 줄은 주장이고, 원장의 실제 상태는 파서가 읽은 값이다.
+먼저 `issueops gates status --file "$LEDGER" --cwd "$WORKTREE" --workspace-root "$WORKTREE" --json`을
+실행해 게이트마다 `state`와 `has_check`를 본다. `met`이 아니거나 `has_check`가 false인 게이트는 `[x]`여도
+미충족이다. met인 게이트도 그 CHECK가 성공 기준의 동작을 실제로 관찰하는지 본다. 관계없는 기존 테스트나
+EXPECT 없는 빌드는 그 게이트의 증거가 아니다.
+
+현재 fingerprint에 대한 성공 기록이 있고 명령·입력·의존성·환경이 같으며 외부 상태의
+유효기간도 지나지 않았으면 그 결과를 재사용한다. 단계가 바뀌었다는 이유만으로 같은
+명령을 다시 실행하지 않는다. 하나라도 확인할 수 없거나 저장소가 새 실행을 요구하면
+다시 실행한다. fingerprint 변경·실패·새 검증 항목은 재검증 사유다.
+
+```bash
+# 위 조건을 만족하면 기존 EVIDENCE를 읽는다. status는 CHECK를 실행하지 않는다.
+issueops gates status --file "$LEDGER" --cwd "$WORKTREE" --workspace-root "$WORKTREE" --json
+
+# 새 실행이 필요하면(fingerprint 변경·실패·새 항목) 이 단계에서 gates check를 돌리지 않는다.
+# check는 원장 파일을 고쳐 봉인을 stale로 만들므로, 4·5단계로 돌아가 거기서 gates check를 실행한다.
+
+# 게이트 CHECK에서 이미 실행한 명령은 중복 실행하지 않는다. 필수 검증 중 게이트에 없는
+# 테스트·스크립트가 남으면 4단계로 돌아가 게이트로 올린다(원장은 4·5단계 소유).
+# verify-work는 git·preflight·guard 증거를 모으고, `--` 뒤에는 읽기 전용 allowlist
+# 명령만 받는다(프로젝트 스크립트와 테스트는 정책이 거부한다).
+issueops verify-work --json
+```
+
+위 명령은 모두 순서대로 실행하는 목록이 아니다. 재사용할 때는 원래 명령·결과·시점과
+현재 입력이 같다는 근거를 보고한다. 실행하지 않은 명령을 새 PASS로 기록하거나 stale
+판정을 덮어쓰지 않는다. 필수 리뷰·readiness·lease 검사는 그대로 수행한다.
+
+issueops 하네스 저장소 자체를 바꾸는 사이클이면 [self-verify 배터리](references/issueops-self-verify.md)를 읽고 따른다.
+
+- endpoint·DTO·OpenAPI가 바뀌었으면 `.issueops/OPEN_API_SPEC.md` 게이트를 적용하고
+  `issueops api-doc check --json <바뀐 controller·DTO 파일...>`을 실행한다. 인자가 없으면 staged
+  변경만 보므로 커밋 전에는 건너뛰어 통과처럼 보인다. 대상 저장소에
+  `npm run swagger:check` 같은 wrapper가 있으면 그것을 먼저 실행한다.
+- `verify-work`와 이 단계에서 직접 실행한 검증은 명령과 결과를 evidence로 남긴다. 게이트 결과는
+  `gates status`의 EVIDENCE를 인용한다. 실행하지 않은 검증을 pass로 적지 않는다.
+- report의 검증 절은 명령마다 한 행을 쓴다:
+  `| 요구한 문서 경로 | 그 문서의 해당 문장 인용 | 명령 | 결과 또는 Not Run 사유 |`.
+  문서가 요구하지 않았지만 실행한 명령은 문서 칸에 `게이트 원장`이나 `스킬`처럼 실제 출처를 적는다.
+- 미충족 게이트가 남으면 여기서 멈추고 4단계로 돌아간다. 원장을 고쳐 통과시키지 않는다.
+
+## 2 스키마 실측과 기록
+
+변경 집합에 마이그레이션·엔티티·`.sql`·`schema.prisma` 파일이 있을 때만 활성화된다.
+없으면 이 게이트는 뜨지 않는다.
+
+활성화되면 추정이 아니라 **실제 데이터베이스 관찰값**을 요구한다. 대상 테이블의 기존
+인덱스 현황과 row 수, 그리고 그 값을 어디서 봤는지다. 조회 방법과 커넥션 주의,
+waive 규칙은 [스키마 실측 세부](references/schema-evidence.md)를 읽는다.
+
+```bash
+issueops schema-evidence record --id "$ISSUEOPS_ID" \
+  --measurement "orders: 8.4M rows(reltuples), idx_orders_user_id 없음" \
+  --source "mcp db-bc-prod execute_sql_bc_prod_market" \
+  $RECORD_ACTOR_FLAGS --json
+```
+
+- measurement와 source는 짝이다. 출처 없는 수치는 추정과 구분되지 않는다.
+- rationale 없는 waive는 게이트를 열지 않는다.
+
+## 3 구현 리뷰
+
+[`issueops-review`](../issueops-review/SKILL.md) 스킬 파일을 열고, 대상 `diff`로 그 `## 실행` 절을 따른다.
+`--target diff`는 CLI 명령이 아니라 그 스킬의 대상 구분이다(`issueops review` 명령은 없다). 리뷰는 이 세션이
+지금 delegation 도구로 띄우는 빈 컨텍스트 서브에이전트이며, 명령 파일에 적어 두고 끝내지 않는다. 띄울 수
+없으면 판정 없이 그 사실과 이유를 보고한다. 판정은 서브에이전트가 돌려준 결과로만
+`issueops implementation-review record`에 기록한다. 사용자가 서브에이전트 없이 inline 리뷰를 명시적으로 지시한 경우만
+예외이고, 그 기록 방법은 `issueops-review`가 정한다. 루프 절차는 그 스킬이 소유한다. 이 단계가 아는 것은 여섯이다.
+
+- 리뷰어에게 diff와 **계획을 함께** 준다. 무엇을 하기로 했는지 모르는 리뷰어는 구현이
+  계획에서 벗어났는지 판정할 수 없다.
+- `pass`만 통과한다. `revise`면 지적을 고쳐야 하므로 4단계로 돌아간다. 이 단계에서
+  고치면 fingerprint가 바뀌어 앞 판정이 전부 stale이 된다.
+- 모드에 따른 면제는 없다. execution이 있는 사이클은 전부 이 게이트의 대상이다.
+- **계획 리뷰가 남긴 주장을 함께 준다.** `issueops status --id "$ISSUEOPS_ID" --field devils_advocate_review --json`의
+  `devils_advocate_review.findings`와 `history`의 finding을 "검증할 주장 목록"으로
+  프롬프트에 넣는다. 리뷰어는 diff 전체를 탐색하기 전에 그 주장이 실제로 지켜졌는지
+  확인한다. 계획 리뷰에서 살아남은 위험이 구현에서 되살아났는지가 가장 싸게 잡히는 결함이다.
+- **코드베이스 존중 렌즈는 `next.review.lenses`만 적용한다.** `issueops next --id "$ISSUEOPS_ID" --json`이
+  돌려주는 티어와 렌즈를 프롬프트에 넣고 그 목록만 검토하게 한다. `docs-only` 티어는
+  side effect 렌즈 하나다.
+- **`review.frontend`가 true면 UI 렌즈를 더한다.** diff 리뷰 프롬프트의 "검증할 주장
+  목록"에 4단계 report의 `## UI 판단` 절을 넣고, 렌즈 목록에 접근성·반응형 상태·모션
+  감소 세 항목을 덧붙인다. 이 셋이 [`ui-ux-craft`](../ui-ux-craft/SKILL.md)가 소유한
+  판단이며, frontend 사이클의 리뷰 finding에 이 렌즈 언급이 하나도 없으면 프롬프트가
+  실패한 것이다.
+
+`next.review.tier`가 `schema-auth`이고 `git -C "$WORKTREE" diff --stat "$BASE_SHA"`의
+변경 줄 수가 500을 넘을 때만 렌즈 네 개를 서브에이전트 넷으로 나눈다. 합치는 규칙은
+"필수 결함이 하나라도 있으면 `revise`"다. 그 밖의 티어에서는 나누지 않는다 — 조정
+비용이 절약한 시간을 넘는다. 이 분할 조건은 이 문장이 단독으로 소유하며 코드에는 없다.
+
+## 4 호환성 재확인과 readiness
+
+strict readiness `warnings`의 `base_advanced`는 차단이 아니다. 그 경고가 있을 때만
+`issueops execution sync-base --id "$ISSUEOPS_ID" --preview $ACTOR_FLAGS --json`으로 충돌
+유무를 확인해 report에 적고 **스스로 apply하지 않는다.** preview는 원격 작업 브랜치가 있어야 하므로,
+아직 push 전이면 `unmet gates: remote_branch_present`로 멈춘다. 그때는 충돌 확인을 push
+뒤로 미루고 그 사실을 report에 적는다. apply는 봉인된 변경 집합에 base의
+파일을 끌어들여 fingerprint를 바꾸고, 정리·구현 리뷰·문서 반영 판정이 한꺼번에 stale이
+되어 5단계부터 다시 밟게 만든다. 머지는 PR 병합 시점에 provider가 한다. 충돌이 있으면 그
+사실을 PR 본문의 위험 절에 적는다. 예외는 셋이다: 사용자가 base 반영을 명시적으로 요청했거나,
+`remote merge-pr`가 `merge_conflict`를 보고했거나, preview의 `conflict_files`가 비어 있지 않고
+머지까지가 승인 범위인 경우다. 마지막은 머지가 어차피 `merge_conflict`로 막히므로 PR 전에 한 번만
+재봉인하는 편이 낫다. 그때는 preview가 준 apply를 실행하고
+`issueops next`가 안내하는 재봉인 순서(정리 → 리뷰 → `phase --to pr`)를 그대로 밟는다.
+
+구현된 diff가 계획 시점의 compatibility review와 다르면 durable 판정을 최신으로 맞춘다.
+1절의 `## 의도 대조`에 미충족 항목이 있으면 approved로 기록하지 않는다.
+
+```bash
+issueops compatibility review --id "$ISSUEOPS_ID" \
+  --backward-compatibility "<실제 diff 기준>" --side-effect "<실제 diff 기준>" \
+  --rollback-plan "<실제 되돌리는 방법>" --verification "<이 단계에서 실행한 검증>" \
+  --approved $RECORD_ACTOR_FLAGS --json
+
+issueops pr-readiness --id "$ISSUEOPS_ID" --strict --json
+```
+
+strict readiness의 `missing`이 `worktree_clean`, `upstream`, `upstream_fetch`,
+`upstream_synced`의 부분집합이면 남은 일은 8단계 커밋·푸시다(fetch 실패·behind는 그 경고를 따른다). 그 밖의 키가 남으면
+`next`가 가리키는 단계로 돌아간다. 특히 `gates_incomplete:*`와 `*_stale`은 앞 단계로
+되돌아가라는 뜻이다.
+
+## 출구
+
+다음은 8단계 커밋·푸시다. [`atomic-commit-push`](../atomic-commit-push/SKILL.md)로
+plan.md, gates.md, verified-execution report, 문서, 구현을 커밋·푸시하고, `next`가 렌더한
+`phase --to pr`를 실행한다.
+
+## 나쁜 예
+
+- 배터리가 실패했는데 동시에 돌던 리뷰의 `pass`를 기록한다. 그 판정은 무효인 diff에
+  대한 것이다.
+- 검증 단계에서 `gates check`를 실행한다. 미충족 게이트가 있으면 원장이 바뀌어 봉인이 stale이 된다.
+
+전체 표는 [나쁜 예](references/bad-examples.md)에 있다. 이 단계에서 파일을 고치거나 커밋하지 않는다.
+예외는 보고서 `.issueops/issues/<n>/verified-execution-report.md` 하나다. 그 파일은 봉인 fingerprint에서
+빠지므로 검증 절을 써도 정리·리뷰 봉인이 stale이 되지 않는다. 다른 이름으로 쓰면 이 예외가 적용되지 않는다.
+
+## 검증
+
+- `issueops pr-readiness --id "$ISSUEOPS_ID" --strict --json`의 `missing`이
+  커밋·푸시로 해소되는 키만 남았다.
+- `issueops status --id "$ISSUEOPS_ID" --field implementation_review --field schema_evidence --json`의 `implementation_review`와
+  `schema_evidence`(활성화된 경우)가 현재 fingerprint에 묶여 있다.
+- `git -C "$WORKTREE" status --porcelain`이 이 단계 시작 때와 같다. 달라졌으면 이 단계가
+  파일을 바꾼 것이다.

@@ -1,0 +1,100 @@
+---
+name: wiki-lint
+description: Run 15 health checks on wiki/ (structural, semantic, provenance). Use weekly or after wiki-ingest batches. Read-only — does not auto-fix. Do NOT use to fix issues (use wiki-ingest / wiki-cross-linker). Obsidian wiki 健全性チェック・健康檢查。
+---
+
+# Wiki Lint — Health Check on the Wiki Layer
+
+Runs 15 health checks across the wiki and reports issues without modifying pages. User decides which fixes to apply.
+
+See [lint-checks.md](references/lint-checks.md) for full check definitions.
+
+## Pre-flight
+
+1. Read `.obsidian-wiki.config` for `OBSIDIAN_WIKI_VAULT_PATH` (defaults `wiki/`). If only legacy `.env` exists, instruct user to run `/wiki-setup` to migrate.
+2. If wiki/ doesn't exist or is empty, exit with "nothing to lint, run `/wiki-setup` and `/wiki-ingest` first".
+
+## STEP 1 — Inventory the wiki
+
+Build:
+- List of all wiki pages by category
+- All wikilinks (source page → target wikilink string)
+- All page titles + filename slugs (for reverse lookup and broken-link detection)
+- Frontmatter dump per page (for L01/L02 checks)
+- Parsed `wiki/.manifest.json` (for L10 check)
+
+## STEP 2 — Run the 15 checks
+
+Execute all 15 checks defined in [lint-checks.md](references/lint-checks.md):
+
+**Structural (must-fix):**
+- L01: Frontmatter completeness (per-page-type field set)
+- L02: Summary length
+- L03: Required body sections (per-page-type section set)
+- L04: Wikilink format
+- L05: Mermaid placement
+
+**Semantic (should-fix):**
+- L06: Orphan pages
+- L07: Broken wikilinks (intra-wiki only; reference-page `## Source` wikilinks are handled by L14)
+- L08: Stale pages
+- L13: Aliases required on cross-language slug (slug language ≠ body language → frontmatter `aliases:` should be present and non-empty; authority: [references/language-policy.md](references/language-policy.md))
+- L15: Near-duplicate pages (read-only all-pairs sweep for two pages describing the same real-world entity under different filenames; HIGH/MID surfaced → `/wiki-merge`)
+
+**Provenance (advisory):**
+- L09: Provenance drift
+- L10: Manifest divergence
+- L11: Contradictions surfaced (intra-page self-declared)
+- L12: Cross-page numeric / claim disagreement (advisory; user judgment required)
+- L14: Reference page `## Source` wikilink format (basename / no path / no `.md`; basename matches `source_path` stem)
+
+Severity: L01–L04, L07 → **error** (L14 path/extension violations also → **error**). L05, L06, L08, L09, L10, L12, L13, L14 (missing/empty/basename-mismatch), L15 → **warning**. L11 → **info**.
+
+The mechanical subset (L01–L04, L07, L14 — both its error and warning forms — plus a `PARSE` error lane for unreadable pages) can be run in seconds via `scripts/wiki_lint_check.py` instead of manually — read-only, same as this skill's charter.
+
+## STEP 3 — Report
+
+Use the format in [lint-checks.md](references/lint-checks.md). Group by severity (errors first), then by check ID. Show file path with line number where applicable.
+
+### Limit output
+
+If errors > 50, collapse to "showing first 50 of N errors" and ask if user wants to see all. Long lint reports are signal — propose a remediation strategy rather than dumping everything.
+
+## STEP 4 — Append to log
+
+Append to `wiki/log.md`:
+
+```markdown
+| YYYY-MM-DD | lint | scope=full | <E> errors, <W> warnings, <I> info |
+```
+
+## STEP 5 — Recommend remediation
+
+Group issues by their fix recipe (per the table in [lint-checks.md](references/lint-checks.md)):
+
+```
+Top fixes (by impact):
+  1. Re-run `/wiki-ingest` on 3 sources → resolves 8 issues (L01, L09)
+  2. Run `/wiki-cross-linker` → likely resolves most L06 orphans
+  3. Hand-fix 2 broken wikilinks (L07) — see report above
+  4. Run `/wiki-auto-research` on 5 Open Questions surfaced (L11)
+```
+
+## What wiki-lint does NOT do
+
+- ❌ Does not modify any wiki page (read-only on `wiki/<category>/*.md`)
+- ❌ Does not run web search (lint is local-only)
+- ❌ Does not auto-fix — every fix is user-initiated via another skill or hand-edit
+- ❌ Does not scan source notes (only audits the wiki layer itself)
+
+**Write scope**: only appends one entry to `wiki/log.md` per run (audit trail). No other writes.
+
+## When to invoke
+
+| Trigger | Why |
+|---|---|
+| Weekly cadence | Catch stale pages, orphans, broken links from organic drift |
+| After large `/wiki-ingest` batch (>10 pages) | Verify format compliance before pages compound |
+| Before `/wiki-auto-research` campaign | Identify Open Questions inventory to prioritize |
+| After page-format spec changes | Mass re-validate against new spec |
+| On-demand when wiki "feels off" | Exploratory diagnostic |

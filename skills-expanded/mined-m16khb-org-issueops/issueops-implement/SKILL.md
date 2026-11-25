@@ -1,0 +1,204 @@
+---
+name: issueops-implement
+description: Use when "issueops next" reports implement.enter or implement, or for "구현 시작", "구현 이어서 해줘", "이슈 구현해줘", "child로 나눠서 구현해줘". Runs TDD in the canonical worktree under the lease.
+---
+
+# IssueOps Implement
+
+**implement 단계 하나**를 맡는다. 승인된 plan을 canonical worktree에서 lease를 지키며
+TDD로 구현하고 증거와 함께 ai-slop-clean으로 넘긴다. 승인된 종료점 전에는 완료로 끊지 않는다.
+
+본문만 주입하거나 이 스킬만 복사해도 아래 계약을 적용한다. sibling 스킬은 설치되어
+있을 때만 협업에 쓰고, 없으면 이 본문과 CLI의 exact `next_command`로 진행한다.
+필수 입력·명령을 확인할 수 없으면 그 지점을 보고하고 멈추며 evaluator 자료를 요구하지 않는다.
+선택적 [실패 예시](references/implementation-examples.md)는 symlink를 해소한 이 파일 기준이다.
+
+진행 순서: 시작 게이트 → lease·worktree 확인 → 직접 TDD 또는 child 위임 →
+focused verification → 워크트리 안 report 초안 → `ai-slop-clean`.
+
+## 시작 게이트
+
+```bash
+issueops next --id "$ISSUEOPS_ID" --json
+```
+
+`stage.key`가 `implement.enter`나 `implement`면 이 스킬이다.
+선택한 ID는 인계·압축 뒤에도 유지한다. `blocked.*`는 우회하지 않는다.
+ID가 없고 후보를 구별할 근거가 없을 때만 사용자에게 선택을 묻는다.
+
+- `claim`이면 `next_command`가 돌려주는 `execution claim --claim-current-token` 명령을
+  정확히 한 번 실행하고 `next`를 다시 돌린다. released는 `replace --preview`, revoking은
+  `replace --finalize-preview`로 시작하는 회복 체인을 따른다.
+- `plan.*`이면 [`issueops-plan`](../issueops-plan/SKILL.md)이, `clean`이면
+  [`issueops-slop-clean`](../issueops-slop-clean/SKILL.md)이 맞다.
+- `none`이면 사이클이 아직 없다. [`issueops-create-issue`](../issueops-create-issue/SKILL.md)로
+  시작한다. 상태만 보고하고 "진행 방향은 사용자 결정"으로 멈추는 것은 게이트 통과가
+  아니라 라우팅 누락이다.
+
+편집 대상을 실측한다.
+```bash
+cd "$WORKTREE" && issueops execution whoami --json   # cd와 같은 명령에서 실행한다. 호출마다 셸 cwd가 초기화되는 호스트(Claude Code)에서도 --cwd가 워크트리로 나온다
+git -C "$WORKTREE" rev-parse --abbrev-ref HEAD
+git -C "$WORKTREE" status --porcelain
+```
+
+holder/generation 불일치는 아래 회복 표를 따른다. branch·HEAD 불일치나 무관한 dirty 변경은 stop이다.
+
+진입 전에 인계 결정 기록과 원래 요청의 승인 범위·종료점을 `status`로 대조하고, 보류·phase·claim·`--approved`는
+구현이나 publication 승인으로 보지 않는다([진입 대조](references/handoff-entry.md)를 읽고 따른다).
+준비 세션은 같은 worktree에서 Herdr를 먼저 확인한다. 선택 순서와 인계 자료·release·새 세션 절차는
+[`session-choice.md`](../issueops/references/session-choice.md)와
+[`handoff-observation.md`](../issueops/references/handoff-observation.md)를 따른다. 실행 방식 메뉴를 묻지 않고,
+최신 명시적 current/new-session/hold가 우선한다. 런처 설치·worktree 재생성·모호한 launch 재시도는 금지한다.
+인계문이 있으면 현재 HEAD, 계획 digest, 인계 자료 digest를 현재 worktree와 대조하고, stale하거나 누락된
+근거는 필요한 범위만 다시 확인한다. 서로 다른 host의 session ID는 이식 가능한 identity가 아니다.
+
+### 인계 관찰과 writer 종료
+
+외부 launcher로 인계할 때는 [세부 계약](references/handoff-observation.md)을 읽고 본문 계약으로 적용한다.
+
+
+### base가 앞서 나갔는지 본다
+
+구현 `next`는 readiness 경고를 주지 않는다. claim 뒤 active(self)에서 `issueops execution sync-base --id "$ISSUEOPS_ID" --preview $ACTOR_FLAGS --json`으로 직접 관측한다.
+preview 결과별 처리는 [세부 절차](references/sync-base.md)를 읽고 따른다.
+
+## 진입 절차
+
+`implement.enter`면 아래 순서를 지킨다.
+
+```bash
+# next의 missing에 plan_path가 있으면 next_command(봉인된 계획 경로가 채워진 link-plan)를 실행한다.
+# 계획에 3단계의 네 필수 절이 없으면 연결이 거부된다(절 이름과 이유는 references/implementation-rules.md).
+issueops link-plan --id "$ISSUEOPS_ID" --plan-path "$WORKTREE_PLAN" \
+  $RECORD_ACTOR_FLAGS --json
+
+issueops compatibility review --id "$ISSUEOPS_ID" \
+  --backward-compatibility "<기존 호출자에게 무엇이 그대로인가>" \
+  --side-effect "<파일·원격·상태에 남는 변화>" --rollback-plan "<되돌리는 방법>" \
+  --verification "<무엇으로 확인하는가>" --approved $RECORD_ACTOR_FLAGS --json
+
+# 계획의 수용 기준을 게이트 원장 파일로 만든다(gates-ledger).
+issueops gates init --file "$WORKTREE/.issueops/issues/$ISSUE/gates.md" --scope "$ISSUE" \
+  --gate "G1: <결과> | CHECK: <명령> | EXPECT: <문자열>" --json
+
+issueops phase --id "$ISSUEOPS_ID" --to implement $RECORD_ACTOR_FLAGS --json
+```
+
+blocker가 하나라도 있으면 compatibility review는 승인되지 않는다. blocker를 먼저 없앤다.
+
+저장소에 `.gitmodules`가 있거나 source checkout이 sparse checkout이면 [저장소 형태별 준비](references/repo-shapes.md)를 따른다.
+
+compatibility review를 기록하기 전에 계획이 고치거나 재사용한다고 적은 코드를 열어 계획의 단언을 확인한다. 계획이 문서 규칙이나 실제 코드와 충돌하면 구현하지 않고 `--blocker`로 기록해 [`issueops-plan`](../issueops-plan/SKILL.md)의 검토 루프로 돌려보낸다. 충돌 기록 절차와 blocker 근거를 기록 직전에 다시 확인하는 규칙은 [근거 확인 규칙](references/plan-conflict-evidence.md)을 읽고 따른다.
+
+## 프로젝트 문서 확인
+
+코드를 고치기 **전에** 이 변경을 제약하는 운영 문서를 읽는다. 계획의
+`## 적용되는 결정과 주의사항`은 계획 시점의 대조 결과라서, 구현 중 새로 닿는 모듈의 규칙은
+여기서 다시 확인해야 한다.
+
+- `.issueops/CONVENTIONS.md`: 코드 작성 규칙과 레이어 경계
+- `.issueops/TESTING.md`: RED 테스트 설계와 필수 검증 명령
+- `.issueops/CAUTIONS.md`: 색인과 변경 모듈의 반복 실수
+- 새 패키지·컴포넌트를 추가하거나 책임을 옮기면 `.issueops/ARCHITECTURE.md`
+- endpoint·DTO·OpenAPI를 바꾸면 `.issueops/OPEN_API_SPEC.md`
+
+코드를 바꾸기 직전에 그 변경을 정한 문서 규칙을 verified-execution report의 `## 적용한 문서 규칙` 절에 규칙마다 한 행으로 적는다.
+행 형식과 적용할 규칙이 없을 때의 처리는 [구현 규칙](references/implementation-rules.md)을 읽고 따른다.
+
+## 구현 루프
+
+- behavior change는 focused failing test에서 시작한다:
+  RED→GREEN→SURFACE→CLEAN. RED에서 새 테스트가 곧바로 통과하면 버그 이해가
+  틀린 것이므로 수정에 착수하지 않고 보고한다. 테스트 프레임워크가 없으면 수정 전에 실패하는
+  gate CHECK(예: `.issueops/TESTING.md` 실행 명령의 기대 출력)가 RED다.
+- 크기·시간과 무관하게 canonical worktree에서만 수정한다. source checkout 구현은 금지다.
+- focused 검증 명령·결과를 그대로 기록한다. 실행하지 않은 검증은 `pass`가 아니다.
+- `phase --to implement`·`ai-slop-clean` 전이가 `.issueops/issues/<n>/`에 쓰는 추적 사본은 직접 고치지 않는다. 보고 방식과 첫 커밋 포함 규칙은 [보충 규칙](references/gate-extras.md)을 읽고 따른다.
+- commit·push는 승인된 종료점에 포함되어 있으면 [`atomic-commit-push`](../atomic-commit-push/SKILL.md)로
+  이어가며 허용된 issue branch의 publication을 다시 묻지 않는다.
+- API/DTO/OpenAPI 변경은 `.issueops/OPEN_API_SPEC.md` gate를 적용한다. 문서가 없는 대상의 처리는 [보충 규칙](references/gate-extras.md)을 따른다.
+- RED/GREEN 증거는 [`gates-ledger`](../gates-ledger/SKILL.md)로
+  `.issueops/issues/<n>/gates.md`에 `gates check --file .issueops/issues/<n>/gates.md`로 채운다. `--file`이 없으면
+  base에 커밋된 다른 사이클의 원장까지 함께 읽어 보고한다.
+
+계획과 코드베이스를 존중하는 네 규칙: 재사용을 먼저 본다(계획의 `## 재사용하는 기존 구현`에 없는 새 추상화
+금지), 계약 표면은 이슈와 계획이 명시한 것만 바꾼다, hot path를 건드리면 전후를 측정한다, side effect를
+목록으로 적는다. 전문은 [구현 규칙](references/implementation-rules.md)을 읽고 따른다.
+
+`next.review.frontend`가 true이거나 schema를 바꾸면 [보충 규칙](references/gate-extras.md)을 읽고 적용한다.
+
+
+같은 focused test가 **두 번** GREEN에 실패하면 세 번째를 추측으로 시도하지 않고 [`issueops-debugging`](../issueops-debugging/SKILL.md)으로 넘긴다. 세 번째 실패는 `verified-execution`의 목표 종료와 같은 카운터이며 4단계를 멈추고 보고한다. 세부는 [GREEN 실패 처리](references/green-failure.md)를 읽고 따른다.
+
+구현 도중 사용자가 요구사항을 바꾸면(완료 기준·범위 변경) `feedback add --classification contract_change`로
+시작해 이슈 본문 갱신 → `intent record` → 게이트 원장·`decision add` 수정 → `feedback resolve` 순서로 반영한다.
+추적 `plan.md`와 구현 진입 뒤의 `artifact/`는 승인 사본이라 고치지 않고, 구현 중에는 `regress`를 쓰지 않는다.
+전체 순서는 [구현 규칙](references/implementation-rules.md)을 읽고 따른다.
+
+## Lease fencing
+
+`execution whoami --json`의 `record_actor_flags`를 `$RECORD_ACTOR_FLAGS`로,
+`claim_actor_flags`를 `$ACTOR_FLAGS`로 그대로 쓴다. 손으로 조합하지 않는다.
+durable mutation(phase·record·artifact) 직전 exact ID·generation·native actor·canonical cwd를
+record와 대조한다. record 기록은 전자, lease 전이·publication은 후자다.
+편집 배치마다 pwd·branch·HEAD·source/canonical status를 실측하고 도구 루트를 canonical로 둔다.
+잘못된 root에 썼으면 멈추고 자기 변경만 옮긴 뒤 양쪽 status를 확인한다.
+불일치나 다른 holder는 stop이다. 사용자의 구두 확인은 quiescence 증거가 아니다.
+feedback 기록·원격 쓰기·명령 존재 확인 규칙은 [보충 규칙](references/gate-extras.md)을 읽고 따른다. 원래 승인 범위 밖 commit·push·publication·merge·cleanup은 하지 않는다.
+
+
+## 회복은 next_command 체인만
+
+lease 부재·다른 holder·모호한 mutation은 아래에서 시작해 반환된 exact `next_command`만 따른다.
+
+| 상황 | 첫 명령 |
+|---|---|
+| 방향을 모르겠다 | `execution status --id ID --json` |
+| holder 교체·회수가 필요하다 | `execution replace --id ID --preview`의 generation·inventory·quiescence 검증 체인 |
+| provisioning·publication 결과가 모호하다 | `execution reconcile --id ID --preview` 후 `--confirm` |
+
+- `--revoke`·`--finalize`·`--reseed`·fingerprint는 preview가 준 값만 쓴다.
+- 회복의 종착은 `claim`이다.
+- 모호한 prepare/create는 흔적이 안 보여도 반복하지 않는다. reconcile이 처분한다.
+- legacy도 CLI가 반환한 체인을 따른다. 추가 설명은 [`execution.md`](../issueops/references/execution.md)에 있다.
+
+## Child 위임
+
+원격 parent/child 분리는 [`issueops-create-issue`](../issueops-create-issue/SKILL.md)가
+소유한다. 실행 중 만드는 delegated child cycle은 그것과 별개다.
+
+세 조건이 모두 참일 때만 위임한다: parent가 implement phase다, architecture·compatibility·
+devil's-advocate 리뷰가 approved 또는 waive다, plan이 sub-agent pattern·scope·acceptance·
+verification·fallback·tradeoff·기대 이득을 기록한다.
+
+위임하면 [Child 위임 세부 규칙](references/child-delegation.md)을 읽고 따른다. `child start`·`child status`
+명령, verdict(`accept`·`reject`·`drop`뿐), branch·worktree·lease 소유권, scope drift 처리와 한 세션이 child까지
+직접 할 때의 순서가 거기에 있다. parent가 child worktree를 직접 만들지 않는다.
+
+- 인계 준비나 최신 사용자 취소·범위 축소 뒤에는 새 쓰기 작업과 하위 작업 dispatch를 중지하고, child와
+  worker의 writer와 자손 프로세스가 실제로 종료됐는지 확인한다. 인계 자료에 남길 항목은
+  [인계 진입 대조](references/handoff-entry.md)를 읽고 따른다.
+
+## 종료 게이트
+
+1. focused verification 증거가 명령·결과로 남아 있고, 위임한 child가 전부 accepted
+   또는 dropped다. ai-slop-clean 전이는 이를 검사하지 않지만 `child_incomplete`·`child_unvalidated`가
+   남으면 pr 진입(strict readiness)이 거부되므로 여기서 끝낸다.
+2. verified-execution report 초안을 워크트리 **안** `.issueops/issues/<n>/verified-execution-report.md`에 쓴다.
+   이 이름만 봉인 fingerprint에서 빠지므로 뒤 단계가 고쳐도 봉인이 stale이 되지 않는다. 최종 확정은 5단계 정리가 한다.
+3. 저장소에 커밋 훅이 있으면 worktree에서 `git add -A && git hook run --ignore-missing pre-commit`으로
+   지금 돌린다. 훅이 파일을 고치면 확인하고 테스트를 다시 돌린다. 훅 종류와 이유는
+   [보충 규칙](references/gate-extras.md)을 읽고 따른다.
+4. `issueops phase --id ID --to ai-slop-clean $RECORD_ACTOR_FLAGS --json`
+   으로 전이한다. 다음은 [`issueops-slop-clean`](../issueops-slop-clean/SKILL.md)이다.
+5. 이 단계에서는 커밋·푸시나 ai-slop-clean·구현 리뷰 기록을 하지 않는다. 정리·문서·검증이
+   먼저이고 커밋은 8단계다. 승인된 종료점까지 같은 ID의 `next`로 이어간다.
+
+`execution complete`는 pr phase의 검증된 remote artifact URL·final head·report가 있어야 한다.
+"구현 완료"는 여기서 phase 전이이며 complete 호출이 아니다.
+
+## 모호할 때
+
+시작 게이트·lease·child verdict·리뷰 게이트·종료 게이트 중 하나라도 모호하면
+durable mutation을 하지 않고 현재 상태와 막힌 지점을 보고한다.

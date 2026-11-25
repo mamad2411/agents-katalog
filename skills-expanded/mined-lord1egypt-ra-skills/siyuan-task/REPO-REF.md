@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/siyuan-task-skill/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Manage tasks in SiYuan Note via its HTTP API. Create, query, update, and organize tasks stored in the 任务清单 document (with a TASK database) and sub-documents for related materials. Use when the user me

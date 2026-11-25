@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/m/movie-search/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 搜索电影/电视剧的下载和在线观看资源链接。当用户输入电影或电视剧片名（中文或英文，可附带年份），搜索各大资源网站并返回可用的下载链接和观看地址，按资源类型分组展示。触发条件：用户说"帮我找XXX的下载"、"XXX在哪里看"、"XXX有没有资源"、"搜索XXX电影"、"find movie"、"movie download"等，无论是否明确说"skill"都应使用本skill。

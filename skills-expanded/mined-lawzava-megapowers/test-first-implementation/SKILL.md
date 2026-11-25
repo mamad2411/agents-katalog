@@ -1,0 +1,57 @@
+---
+name: test-first-implementation
+description: "For executable behavior, including a bug fix with a known cause, run a test that fails for the missing behavior before changing production code; preserve scope. Low-impact copy, styling, or config-value edits need existing checks, not new tests. Load for non-trivial implementation, test-boundary choices, or refactoring risks, not mechanical edits or settled red/green loops. Diagnose unknown causes first."
+---
+
+# Test-First Implementation
+
+Production code follows a failing test.
+
+First inspect the entry point, callers, nearest convention, and coverage.
+Use `systematic-debugging` for unknown causes.
+
+## Red, green, refactor
+
+Test real behavior at a stable observable boundary, not through mock assertions
+or a side-channel query. Take expected values from the specification or a worked
+example, never from a recomputation of the code. Confirm the test fails for the
+missing behavior before writing production code; when you force red by mutating
+code, diff against the pristine file to prove the mutation landed. Implement
+only what satisfies that test without speculative options, abstractions, or
+adjacent cleanup, run the focused test to confirm green, and refactor while
+green before moving to the next behavior.
+
+Understand dependencies before mocking. Do not add production APIs only for
+tests. Run the broader suite at task or milestone completion, before claiming success.
+
+## Code judgment
+
+Before writing custom code, check existing code, the standard library, native
+platform features, and installed dependencies. Require behavioral fit; justify
+new dependencies by missing capability or maintenance benefit.
+
+When simplifying changed code, preserve public contracts, trust-boundary
+validation, data-loss error handling, security, accessibility, and required
+tests. Do not sacrifice readability or correctness for line count. One caller
+or implementation does not make a boundary unnecessary.
+
+For a deliberate simplification with a known limit, comment its ceiling and
+revisit condition using local conventions. Ordinary code needs no debt marker.
+
+Validate untrusted data once at entry and make error ownership explicit:
+expected, retryable, or terminal.
+
+Load exactly one language reference when local code cannot settle a
+language-specific engineering decision:
+
+- Go: [references/go.md](references/go.md)
+- Python: [references/python.md](references/python.md)
+- TypeScript: [references/typescript.md](references/typescript.md)
+
+For generated output, prototypes destined for deletion, or prose-only
+configuration without executable behavior, use the nearest deterministic check.
+A reversible, low-impact edit such as copy, styling, or a config value needs
+the existing checks, not a new test; a test that restates the implementation
+proves nothing. Never exempt product behavior. If a direct executable oracle beats a brittle
+characterization test, record the exception. Confirm the pre-change deficiency
+and run that oracle before and after the change.

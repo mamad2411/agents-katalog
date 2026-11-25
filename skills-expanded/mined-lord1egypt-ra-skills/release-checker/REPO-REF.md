@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/r/release-checker/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Release Checker - 一体化发版兼容性检查工具

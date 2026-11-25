@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_songguoxs_seedance-prompt-skill_seedance/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: This skill should be used when the user asks to "generate video prompts", "create Seedance prompts", "write video descriptions", mentions "Seedance", "seedance", "即梦", "即梦平台", "视频提示词", "视频生成", "AI视频",

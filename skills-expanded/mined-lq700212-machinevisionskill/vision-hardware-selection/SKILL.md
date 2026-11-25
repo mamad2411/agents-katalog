@@ -1,0 +1,628 @@
+---
+name: vision-hardware-selection
+description: "机器视觉硬件选型专家，根据检测需求自动完成工业相机、镜头、光源的选型计算与方案文档生成。当用户提到机器视觉选型、工业相机选型、镜头选型、光源选型、视觉检测方案、AOI硬件选型、尺寸测量硬件选型、缺陷检测硬件选型时使用。"
+---
+# 视觉硬件选型技能
+
+> **⚠️ 开发者入口**：如果你的任务是修改/迭代本 skill（代码、文档、硬件库），先读本目录
+> `AGENTS.md`（开发规范与事故档案），再动手。
+>
+> **运行时省 token 指引**：标准任务只照本文件「标准作业流程」的**⚡ 最短路径**三步执行
+> （工作区 config 已就绪时），**不要读本文件全文**。本文件其余内容按需查阅：
+> 新项目需求登记（同章节）、扩库/库保鲜（数据库扩库流程节）、验收排障（FAIL 对照表/教训节）。
+
+## 功能描述
+机器视觉硬件选型专家。根据检测需求，按行业标准方法论自动完成**需求归一化 → 分辨率/倍率推导 → 相机选型 → 镜头联动匹配 → 光源推荐 → 全项核验 → 模板PPT生成**。
+
+## 触发条件
+机器视觉选型、工业相机选型、镜头选型、光源选型、视觉检测方案、AOI硬件选型、尺寸测量硬件选型、缺陷检测硬件选型。
+
+---
+
+## 选型方法论（已固化到脚本，AI无需重新推导）
+
+### 第1步 需求归一化（口径先分清，再谈算法）
+
+**第一件事：分清客户给的是"测量精度"还是"公差"。两者不是一回事，禁止互相顶替。**
+
+| 客户原话 | 含义 | 填哪个字段 | 换算 |
+|---------|------|-----------|------|
+| "测量精度/检测精度 0.5mm" | 视觉系统要保证的指标 | `precision_requirement: 0.5` + `precision_basis: "measurement_accuracy"` | 0.5 ÷ 3 = 166.7μm/px（**不再分摊**） |
+| "±0.5mm"（图纸公差） | 双向公差，带宽 2×0.5=1.0mm | `tolerance: 0.5` + `tolerance_type: "bilateral"` | 1.0 × 30% ÷ 3 = 100μm/px |
+| "公差带 0.5mm"（已给总带宽） | 单向总带宽 0.5mm | `tolerance: 0.5` + `tolerance_type: "total"` | 0.5 × 30% ÷ 3 = 50μm/px |
+| "像素精度 0.01mm/pixel" | 直接指定像素当量 | `pixel_precision: 0.01` | 直接采用 |
+| 只说"精度 0.5mm"（无限定词） | **口径不明** | 先问用户，禁止猜 | 脚本 exit 2 并给原话问法 |
+
+> 口诀：**"测量精度 X" = 用 X 直接算；"±X" = 带宽 2X 再分配。**
+> 客户说"测量精度 0.5mm"却按 ±0.5 算，带宽多一倍、再乘分配比例，最后严约 20 倍。
+
+**分配比例默认 30%（行业常规）**：视觉占整机公差 1/3，再除以 3 像素亚像素判据，
+等效"整机公差 ÷ 9"，与基恩士/HSM 的"像素当量 = 公差带 ÷ 10"同一量级。
+旧默认 10% 再 ÷3 = ÷30，比行业严 3 倍，会把相机选贵一个档。
+
+| 输入 | 公式 | 示例 |
+|------|------|------|
+| 测量/检测精度 → 像素当量 | **精度 ÷ pixel_factor** | 0.5 ÷ 3 → 166.7μm/px |
+| 公差 → 视觉允许误差 | **公差带 × allocation_ratio（默认 0.3）** | ±0.5 → 带宽1.0 × 30% = 300μm |
+| 视觉直测 → 像素当量 | **公差带 ÷ 10**（测量）/ 4（外观）/ 6（定位） | 0.5 ÷ 10 → 50μm/px |
+| 工件尺寸/检测区域 → 视野 | **视野 = 尺寸 × 余量(1.2或1.5)** | 50x30 ×1.2 → 60x36mm |
+| 直接给视野 | 不加余量 | fov:60x40 → 60x40mm |
+
+#### ⚠️ 三套精度口径不可叠加（2026-11-22 修正）
+
+| 口径 | 公式 | 何时用 | 依据 |
+|------|------|--------|------|
+| **A 客户测量精度** | 像素当量 = 精度 ÷ 3 | 客户明确说"测量精度/检测精度 X" | 3~5 像素亚像素判据 |
+| **B 整机公差分配** | 像素当量 = 公差带 × 分配比例(默认30%) ÷ 3 | 客户给的是整机贴合/装配公差（±X） | 误差预算（视觉占1/3）+ 亚像素判据 |
+| **C 视觉直测** | 像素当量 = 公差带 ÷ K（测量10/外观4/定位6） | 视觉独占整个公差带（合同精度即视觉指标） | 基恩士/HSM |
+
+A 与 B 的区别只在"这个数字是谁的指标"：A 的数字本来就是视觉的，不能再分配；
+B 的数字是整机的，必须先分给视觉。禁止把 B 的 ÷3 再叠到 C 的 ÷10 上
+（旧版 `公差÷30` 的 bug，比行业严 3 倍）。现由 `precision_model` 显式选择：
+
+```json
+"precision_model": {
+  "mode": "system_budget",          // 或 direct_measurement
+  "application": "positioning",     // positioning / measurement / defect
+  "tolerance_type": "bilateral",    // unilateral=给定值即带宽；bilateral=±值带宽×2；total=已给总带宽
+  "allocation_ratio": 0.3,          // 视觉占比，行业常规 1/3；保守项目 0.1~0.2
+  "pixel_factor": 3.0
+}
+```
+
+判别口诀：**公差是"产品允许差多少"，精度是"视觉要测多准"**。
+客户说"测量精度 0.5mm"就填 `precision_requirement=0.5` + `precision_basis=measurement_accuracy`，
+直接 ÷3；客户说"±0.5mm"就填 `tolerance=0.5` + `tolerance_type=bilateral`，带宽 2×0.5。
+脚本对"未声明 `precision_basis`、`precision_requirement ≥0.2mm` 且定位/贴装"的项目
+会**直接中止(exit 2)**并给出原话问法；用户明确回答"就是测量/检测精度"后
+填 `precision_basis: "measurement_accuracy"` 才继续。
+
+### 第2步 分辨率需求（需求侧推导，与硬件无关）
+```
+system_budget:       像素当量上限 = 视觉允许误差 / pixel_factor（默认3，亚像素判据）
+direct_measurement:  像素当量上限 = 公差带 / direct_factor（测量10 / 外观4 / 定位6）
+所需像素 = 视野 ÷ 像素当量上限（逐轴，向上取整）
+```
+
+### 第3步 相机选型（视野+精度双约束的必要条件）
+```
+相机分辨率 ≥ 所需像素        （等价于存在可行倍率窗口）
+帧率 ≥ 1.5 × 节拍频率
+运动/飞拍场景 → 必须全局快门（卷帘快门逐行曝光，工件一动就拖影/果冻）
+接口带宽：需求帧率下的数据率 ≤ 接口有效带宽
+          MB/s = 宽 × 高 × 位深/8 × fps ÷ 1e6
+          GigE≈110、USB3≈350、10GigE≈1100（均为有效值，非理论值）
+```
+**标称帧率 ≠ 工作帧率**：5MP×24fps 黑白在 GigE 上约 121MB/s，已超 1Gbps
+有效带宽，相机跑不到标称帧率（降帧/开 ROI 后才可用）。带宽按 `1.5/节拍`
+的实际需求帧率核，不用 max_fps 冒充工作点。
+
+### 第4步 镜头联动匹配（倍率闭区间 + 工作距离硬约束，杜绝"假设倍率"）
+```
+精度下限: 倍率 ≥ 像元尺寸 / 像素精度上限
+视野上限: 倍率 ≤ 传感器尺寸 / 所需视野
+可行镜头 = 倍率落在区间内 + 像圆覆盖靶面 + 卡口匹配
+         + 实际视野≥所需视野 + 工作距离∈镜头可用范围 [mod, wd_max]
+```
+**光学质量三件套**（分辨率够 ≠ 成像够）：
+- **景深**：`DOF_total ≈ 2·N·c·(1+β)/β²`（N=F数，c=像元×1）。厂家标
+  `depth_of_field=±X mm` 优先；无厂家值时按公式估算并标"估算"。景深必须
+  ≥ 工件高度波动，否则高度差一点就失焦（微距/大倍率最敏感）。
+- **镜头解析力**：MTF30 应 ≥ 相机奈奎斯特 `1000/(2×像元μm)` lp/mm。
+  低于该值说明镜头是瓶颈，换更高像素相机拿不到额外细节。
+- **光圈衍射**：艾里斑 `2.44·λ·F#`（λ≈0.55μm）应 ≤3×像元。收小光圈会增加
+  景深但衍射变差，超过 3 像元后提高像素/倍率都无效。
+**工作距离必须先于倍率参与判定**：WD 小于镜头 MOD（最近摄距）时，
+无论倍率多"合适"都合不了焦。`project_config.json` 必须填 `working_distance`；
+选型器读 `wd_range`/`mod` 过滤，核验器复查同一口径。缺 `mod` 的镜头标
+`unknown`，**不得默认可用**。
+
+评分偏好：倍率靠近视野上限（视野利用充分、精度余量大）、低畸变、高远心度、
+WD 原生匹配（优于需接圈的型号）。
+
+**尺寸测量场景的远心优先策略**（判定条件：detection_type 含测量关键词或精度≤0.01mm）：
+先只搜远心镜头（物方/双远心/百万像素远心均算）；库内远心无匹配时**自动回退普通镜头**，
+标记 telecentric_fallback，核验报告出 WARNING 提示透视误差风险（建议扩库远心并向
+用户说明）——回退是权宜方案不拦死，但必须让用户知情。
+
+**库外型号必须官网核查，禁止用"库里没有"当排除理由**（2026-11-20 事故）：
+库是候选池不是全集。用户/客户/评审提出库外型号时，先跑
+`python tools/lens_audit.py --model 型号 --wd 300 --fov 24x19.2 --pixel-size 3.45 --sensor 2/3`
+（库内直接判定；库外须补 `--mod/--mag/--distortion/--sensor-support`），
+查完把结论写进 `hardware_database.json` 的 `external_candidates` 留档。
+**没有官网核查记录的型号，不得写进"已排除"结论。**
+
+**注意：工作距离-倍率关系不能用薄透镜公式跨型号推算**。
+实际镜头主面位置不同，同标 75mm 的两支镜头在 WD=300mm 的倍率可能差 50%
+（Computar M7528-MP 官方表 0.214x vs 薄透镜估算 0.333x）。必须用厂家
+WD-倍率表；厂家不给表时标注"估算，待实测"。
+
+**WD 不只决定能否合焦，还决定倍率是多少**（2026-11-20 第二轮事故）：
+定焦/微距镜头的倍率随 WD 连续变化，库里的 `magnification` 只是某个 WD 的
+单点值，不能当全行程通用值。数据库有 `wd_mag_table`（厂家 WD-倍率表）时，
+`magnification_at_wd()` 按 1/β=(WD-h)/f 拟合取实际倍率；无表才退回薄透镜
+估算并出 WARNING。**选型报出的"实际视野"必须基于需求 WD 处的倍率。**
+
+例（MVL-MF7538M-ML，官方 250mm/0.46x、400mm/0.24x、550mm/0.16x）：
+```
+WD300 → β≈0.350x，视野 24.1mm（相对 24mm 需求余量≈0，危险）
+WD320 → β≈0.322x，视野 26.3mm（余量 9.4%，推荐）
+WD330 → β≈0.308x，视野 27.4mm（余量 14%）
+```
+设计工作点应留 **≥8% 视野余量**；零余量方案在装配误差/标定误差下会盖不住。
+
+**工作距离/镜头被机械结构锁死时，先反推最小靶面，再选相机**：
+```
+最小靶面宽 = 所需视野宽 × 镜头倍率
+例：24mm × 0.333 = 8.0mm → 必须 2/3"（8.45mm）
+    1/1.8"（7.2mm）只能成 21.6mm，覆盖不了 24mm
+```
+此时像素数由靶面规格决定（2/3" 在售主流即 500 万），不是"按精度算出
+144px 就选小相机"——**先满足视野，再看精度余量**。
+
+### 第5步 光源推荐（品牌优先级 + 角度档位 + 诚实降级）
+
+**数据源唯一**：`config/hardware_database.json` 的 `light_sources`。
+库内无匹配型号时输出"待选型（需扩库）"，**禁止用"品牌+尺寸+角度+颜色"拼型号**
+（历史事故：`OPT RL-150-120-W` 就是这样拼出来的，官网根本不存在）。
+
+**品牌优先级**（默认，config 可用 `light_brand_priority` 覆盖）：
+`追光者 > 孚根 > OPT > CCS`，逐层降级：追光者层有合适型号就只用它。
+
+**角度按应用选，不是随便 45°**：
+
+| 应用 | 角度档位 | 原因 |
+|------|----------|------|
+| 定位/测量/孔中心/贴装引导 | **高角度 60~90°** | 孔边倒角受光均匀、阴影短，边缘位置真实；低角度会把孔壁拉出长阴影，圆心系统性偏移 |
+| 表面划痕/纹理/凹凸/字符 | **低角度 10~30°** | 掠射增强微观起伏对比度 |
+| 通用外观 | 45° | 兼顾均匀性与轻微立体感 |
+
+**几何约束**：
+- 外径 ≥ 视野对角线 × 1.1（照射范围）
+- 内径 ≥ 视野对角线 × 1.1（内孔不足会遮挡视野四角；缺内径=WARNING 待核验）
+- 光源 WD < 镜头 WD；实际安装取 `max(经验公式最小值, 镜头WD-100)`，再封顶到
+  `镜头WD-15`（环光不能顶到镜头）。`calculate_light_working_distance()` 已内置
+  该封顶并返回 `capped_by_camera`
+- 工作距离经验公式 = 视野对角线 × 角度系数(30°:0.6/45°:0.8/60°:1.0/90°:1.5) × 1.2
+
+**飞拍/运动场景必须频闪**：光源 `strobe` 是三态——
+`true`=已核验支持（再比 `min_exposure_us` 与系统最大曝光）；`false`=明确不支持
+（硬排除）；缺字段/`null`=厂商资料未给、**未核验**（保留但核验 WARN，必须向
+供应商确认 μs 级频闪与最短脉宽后补库）。**未核验 ≠ 不支持**，不得静默丢弃，
+也不得当已支持放行。
+
+### 第6步 全项核验（相当于发版前回归测试，有FAIL直接中止）
+| 核验项 | 判据 |
+|--------|------|
+| 精度口径 | `precision_model` 已声明且与客户确认=PASS；只给公差按默认 1/10 兜底=WARN |
+| 精度链 | 像素当量 ≤ 上限（system_budget=允许误差÷3；direct_measurement=公差带÷10/4/6），余量≥1.3x为佳 |
+| 工作距离/MOD | 需求 WD ∈ 镜头 [mod, wd_max]；超范围=FAIL，缺 mod=WARN |
+| 倍率依据 | 有厂家 WD-倍率表=按表插值(PASS)；薄透镜估算/单点倍率=WARN |
+| 视野覆盖 | 实际视野(相机+镜头闭环) ≥ 所需视野；靠 2% 容差过线=WARN（零余量） |
+| 倍率窗口 | 镜头倍率 ∈ [精度下限, 视野上限] |
+| 像圆覆盖 | 镜头像圆 ≥ 相机靶面对角线 |
+| 卡口匹配 | 相机lens_mount = 镜头mount |
+| 帧率余量 | ≥ 1.5×节拍频率 |
+| 接口带宽 | 需求帧率下数据率 ≤ 接口有效带宽；>80%=WARN，>100%=FAIL |
+| 快门类型 | 运动/飞拍必须全局快门（卷帘=FAIL）；缺字段=WARN |
+| 景深 | 厂家值优先、无值按公式估算；景深 < 工件高度波动=FAIL；未给高度波动=INFO 待确认 |
+| 镜头解析力 | MTF30 ≥ 相机奈奎斯特；低于=WARN，未给=INFO 待核验 |
+| 光圈衍射 | 艾里斑 ≤3×像元；超过=WARN（收小光圈只会更差） |
+| 飞拍频闪 | strobe=true 且曝光≥最短脉宽=PASS；false=FAIL；缺字段/未核验=WARN |
+| 远心必要性 | 测量场景优先远心；库内无匹配回退普通镜头时WARNING提示透视误差风险（须向用户说明） |
+| 型号可查证 | verified标记 + 官网链接 |
+| 光源可查证性 | 光源 verified=true + 官网链接；库内查无型号时提示疑似编造 |
+| 光源内径覆盖 | 内径 ≥ 视野对角线×1.1（缺内径=WARNING 待核验） |
+
+### 核心原则：参数必须有明确来源
+- **不能从型号名称猜参数**（如DTCM110-64H的"64"≠0.64x，实际0.259x）
+- 精度/公差、工件尺寸/检测区域/视野、**工作距离**必须来自用户或资料，否则询问用户
+- 数据库中倍率未确认的镜头（如DTCM110-56-AL）不参与自动选型
+- **库外型号的排除结论必须附官网核查记录**（链接 + MOD + 畸变 + 靶面），
+  没有核查记录的"库里没有所以不行"是无效结论
+
+---
+
+## 标准作业流程（模型无关：任何模型照此执行即可复现交付效果）
+
+> 本节为弱模型防呆指引，也是**日常续跑的唯一入口**。计算/选型/PPT/验收全由脚本完成，
+> 模型只需要执行三步并看一行结论，不需要专业判断。
+
+### ⚡ 最短路径（工作区 project_config.json 已就绪的续跑场景）
+
+前提：工作区 `project_config.json` 已就绪（口径由用户拍板，记录在 config 内）。
+满足前提直接执行下面步骤，**不要重新分析需求、不要改 config、不要自己算参数**：
+
+**第0步 配置自检（强烈建议，几秒出结论，不选型不生成PPT）**：
+```bash
+python "C:\Users\Administrator\.agents\skills\视觉硬件选型\tools\vision_proposal_generator.py" --check-config "<工作区>\project_config.json"
+```
+退出码 0=参数合法（可继续）；2=口径/字段有问题（脚本已给修正指引）。
+想先确认"这个需求能不能选出硬件"，用同一命令加 `--dry-run`：只跑选型+核验并
+保存 `selection_result.json`，不生成PPT。
+
+**第1步 一条命令生成**（自动选型→核验→PPT→规则自查→导页面图→清理旧版本）：
+```bash
+python "C:\Users\Administrator\.agents\skills\视觉硬件选型\tools\vision_proposal_generator.py" --config "<工作区>\project_config.json" --output "<工作区>\output" --auto
+```
+
+**第2步 只看退出码 + 验收结论行**（以退出码为准，不靠读日志猜）：
+
+| 退出码 | 含义 | 你要做的 |
+|:---:|------|----------|
+| `0` | 成功：PPT 在 `output\` 根目录，规则自查 FAIL=0 | 交付，跳第3步 |
+| `1` | 未生成或未通过验收（PPT 若已生成也已被移入 `output\_rejected\`） | 读 `output\acceptance_report.txt` 尾部对照表处置；处置不了就原样报告用户并停止 |
+| `2` | 缺字段 / 口径需用户拍板（脚本已给出原话问法） | 把脚本里的问题**原样转问用户**，答复前不要重跑 |
+
+> 核验报告里的 `[INFO]` 是"厂家未给数据、无法判定"的待确认项（如镜头没给
+> MTF30、没给工件高度波动），**不影响退出码、不阻断交付**；汇报时如实写
+> "待确认"即可，禁止自己补一个数字把它变成 PASS。
+
+- `[无解诊断]` / `✅ 标准口径有解` → 按 ⛔ 防死循环铁律处理
+- **`output\_rejected\` 里的任何文件都不是交付物**：禁止改名、复制回 `output\` 或写进汇报
+- **禁止加 `--no_verify`**：跳过验收 ≠ 通过，只用于人工排障，产物不得交付
+- **禁止自行填 `precision_basis: "measurement_accuracy"`**：该字段只能由用户明确回答
+  “是测量/检测精度、不是公差”后填写。模型自己加 = 发明口径
+- **禁止读取 `output\ppt_review\` 里的图片**（slide_N.png/overview.png）——那是给用户
+  看的预览；质量把关靠规则自查（纯文本机检），模型读图浪费大量 token 且不需要
+
+**第3步 按此模板汇报**（仅退出码=0 时使用，不要展开更多细节）：
+> 已生成视觉检测方案PPT：`output\<文件名>`（验收 FAIL=0）。
+> 选型：<相机型号> + <镜头型号>（倍率X，像素精度X mm/pixel）+ <光源型号>。
+> 页面预览图在 `output\ppt_review\`，可抽查。
+
+### 禁止事项（违反即事故）
+1. **禁止口述/手写方案代替脚本生成；禁止用代码手改 PPT**——方案只能由一条命令产出
+2. **禁止修改** `project_config.json` 的 `precision_requirement` / `pixel_per_precision` /
+   检测区域字段（那是用户拍板的口径，改了=发明口径）
+3. **禁止在工作区创建任何 Python 脚本**；所有逻辑都在 skill 里，只能调用不能重写
+4. **禁止拼造光源型号**（"品牌+尺寸+角度+颜色"拼出来的型号官网通常不存在）。光源只能
+   来自 `hardware_database.json.light_sources`；库内无匹配时必须输出"待选型（需扩库）"，
+   并向用户说明需扩库或送样打光验证，**不得兜底填一个型号**
+5. **禁止用 `--no_verify` 交付**；**禁止把 `output\_rejected\` 里的文件改名/复制当成果**
+   ——那是被规则自查判 FAIL 的产物，只作排障留证
+6. **禁止自行填 `precision_basis: "measurement_accuracy"`**。脚本因"精度口径偏大"中止(exit 2)时，
+   只能把确认问题转问用户；用户明确说"是测量/检测精度、不是公差"后才可填
+7. 标准任务只读本节（最短路径三步）；本文件其余内容（使用方式/扩库/排障）按需查阅
+
+### 新项目从0：需求登记（唯一需要AI理解的环节）
+1. **--text 模式（推荐）**：AI 读用户图片/文档/口述后，把其中的数字信息**原样抄录**给脚本
+   （不要自己解读成参数），脚本负责解析与口径判断：
+   ```bash
+   python "C:\Users\Administrator\.agents\skills\视觉硬件选型\tools\vision_proposal_generator.py" --text "视觉精度≤0.03mm，生产节拍3秒，检测区域38.5x22mm，检测XX尺寸38.50±0.25..." --output "<工作区>\output" --auto
+   ```
+   图片必须 AI 直接读图抄字（勿依赖 OCR）。
+2. **config 模式**：复制 skill 目录的 `config_template.json` 为工作区 `project_config.json`，
+   把 null 换成真实值。**先跑 `--check-config` 自检**（几秒出结论，见最短路径第0步），
+   通过后再生成。字段说明与**口径决策表**都写在模板内：
+    - 精度口径四选一：用户明说"像素精度X mm/pixel" → `pixel_precision`（mm/pixel，脚本×亚像素因子自动换算）；明确说"测量精度/检测精度 X mm" → `precision_requirement: X` + `precision_basis: "measurement_accuracy"`（数字直接÷3，不再分配）；"±X mm"图纸公差 → `tolerance: X` + `tolerance_type: "bilateral"` + `precision_model`（带宽2X再按分配比例换算）；只说"精度X"没说限定词 → **先问用户**。**不确定就问用户，不要发明口径**
+    - **口径第4种：用户拍板指定相机（客户无精度要求）** → 用 `pixel_precision` 反推：基准=视野长边÷相机水平像素，再放宽使余量比>1.3（相机评分进"最佳区间"，--auto 自然选中指定相机，精度链余量也达标）。例：指定2000万（5472宽）+视野128 → 基准0.0234，取0.031
+    - **单位铁律**：`precision_requirement` 的单位是毫米（视觉测量/检测精度），不是像素精度(mm/pixel)！像素当量上限 = precision_requirement ÷ pixel_per_precision（0.5÷3=0.167mm/pixel）。用户明说"像素精度是X mm/pixel"时填 `pixel_precision` 字段，**禁止塞进 precision_requirement**（会被再÷3，差3倍导致无解）
+   - 尺寸三选一：`detection_area`（检测区域，推荐）> `part_size`（整体外形）> `field_of_view`（最终视野）
+   - 光源（可选）：`light_brand_priority` 指定品牌优先级（默认追光者>孚根>OPT>CCS）；
+     `light_angle` 强制角度。**必须问清检测任务是“定位/测量/孔中心”还是“查划痕/凹凸/字符”**——
+     前者用高角度环光（60~90°），后者用低角度（10~30°），角度选错会直接改变成像效果
+   - `template` 可省略：自动扫描工作目录 *.pptx；工作目录无模板时只输出选型结果（放模板后重跑即生成PPT）
+3. 漏填/格式错不会静默出错方案：脚本报`【缺少XX】/【尺寸格式错误】`并给出可执行修正指引
+   （exit=2），照提示补齐重跑；填好回到最短路径第 1 步执行
+
+### ⛔ 防死循环铁律（选型无解时必读，任何模型适用）
+弱模型曾因把"精度0.03"误解为"像素精度0.03mm/pixel"导致选型无解，然后无限循环调参
+（反复打印"让我重新考虑/让我尝试更大的像素精度"）。以下铁律直接执行，不需要理解原理：
+
+1. **同一参数组合最多跑2次**。脚本输出`[无解诊断]`后，按诊断文案行动，不要改参数重跑试探
+2. **禁止改 `pixel_per_precision`、`precision_requirement` 等"凑出"选型解**——那是在发明口径。
+   用户明说"像素精度X mm/pixel"时只能填 config 的 `pixel_precision` 字段（像素级口径），
+   禁止塞进 `precision_requirement`
+3. 脚本输出`✅ 标准口径有解`时：说明口径混淆已被脚本自动矫正，**把脚本里的确认问题原样转问用户**
+   （"您说的精度0.03是设备检测精度(mm)还是像素精度(mm/pixel)？"），用户答复前不要继续生成PPT
+4. 脚本输出`[镜头无匹配·根因]`时按根因走：窗口上限低于库内最低倍率→换更大靶面相机（脚本会自动
+   遍历）；窗口下限高于库内最高倍率→走扩库流程；勿自行调镜头参数
+5. 真无解（缺口报告出现）：把缺口报告原文转给用户，停止动作。**连续2次无解必须停下来向用户报告，
+   禁止第3次重跑**
+
+### 生成过程说明（最短路径第1步在做什么）
+一条命令自动包含：需求校验 → 选型 → 全项核验（FAIL自动中止）→ 模板PPT替换 →
+规则自查（check_ppt_quality）→ 页面渲染导出（export_ppt_images）→ 清理旧版本PPT。
+**只有规则自查 FAIL=0，PPT 才留在 `output\` 根目录**；FAIL 时自动移入
+`output\_rejected\` 并让主流程非零退出（物理上防止误交付）。
+完整自查报告：`output/acceptance_report.txt`；`--no_verify` 仅限人工排障，禁止用于交付。
+
+### FAIL 详细处置对照表（退出码非 0 时查这里）
+| 报告症状 | 原因与处置 |
+|---------|-----------|
+| 旧型号残留 | 模板触发词未被替换规则命中 → 把新触发词加进 generate_ppt.py 对应规则 |
+| 光源类型矛盾 | 检查 light_selector 光源 type 与模板标注框；同义词逻辑在 generate_ppt 3.3b |
+| 断行/溢出风险 | 替换值变长：WD标注需 word_wrap=False（已内置）；窄标注框只写短类型词（同义词保留逻辑已内置）。仍报溢出→缩短文案或联系人工 |
+| 数值不合理 | 需求口径被改过 → 重跑选型 |
+| 阴影 | 用 tools/clean_ppt_shadows.py 清理 |
+
+处置不了的新问题 → 原样报告用户并停止。需终审时（可选）：把 ppt_review 页面图交视觉评审复核。
+
+### 交付物清单
+`output/` 下：方案PPT（验收通过自动只留最新版）、`selection_result.json`（选型明细+核验
+结果）、`acceptance_report.txt`（自查报告）、`ppt_review/`（页面图+总览图+预览页）。
+
+### 本次沉淀的教训（已固化进脚本，此处留档供理解）
+- 精度口径曾从合同级0.012调整为实用级0.03：口径必须由用户拍板，工具只按给定值算
+- 弱模型曾把"精度0.03"误解为像素精度导致死循环调参 → 脚本已内置无解诊断+口径自动复核+防死循环铁律
+- config链曾漏掉选型核验（只有files链有）→ 已补齐，selection_result.json 的 validation_passed 现在两条链都可信
+- **型号名≠参数**：DTCM110 系列曾被从型号推断 WD=110mm 入库，官网实测 64H-AL=158±3mm、
+  56-AL=138±3mm——已 refresh 官网闭环修正并加 wd_spec 公差字段；任何参数禁止从型号名推断
+- 远心系统工作距离由镜头物方WD决定：PPT"相机工作距离"直接取镜头WD（wd_spec优先显示公差）；
+  光源WD必须小于镜头WD（选型自动约束+核验FAIL拦截），光源装在镜头与工件之间
+- 光源类型前缀沿用模板原词会与实际光源矛盾（第4页"同轴光"vs第5页"环光"）→ 已按选中光源type纠正+同义词保留
+- **光源型号曾由代码拼造**（`OPT RL-150-120-W` 官网无此命名）且核验不查光源 → 现光源只读硬件库、
+  库空写"待选型（需扩库）"，核验新增"光源可查证性/内径覆盖"两项；环光角度按任务自动分档
+- 客户"偏差≤0.5mm"曾被填成 `precision_requirement`，算出"24mm 视野只需 144px" → 现脚本对
+  `precision_requirement≥0.2mm` 的定位/贴装项目**直接中止(exit 2)**并给出确认问法，
+  用户确认非公差后填 `precision_basis_confirmed` 放行
+- **口径提示曾"只提示不阻断"**（2026-11-20 复盘）：弱模型会忽略提示直接交付低配方案 →
+  现改为硬阻断，且禁止模型自行添加确认字段绕过
+- **验收 FAIL 的 PPT 曾留在 `output\` 根目录**：弱模型看到文件就交付 → 现 FAIL 自动移入
+  `output\_rejected\`，主流程返回 None/exit 1，物理上杜绝误交付
+- **追光者型号曾被质检误杀**：`FL-R-` 既是模板旧型号前缀、也是追光者真实型号前缀，
+  前缀匹配无法区分 → 现按"本次选中型号"白名单放行，旧型号/历史假型号仍拦截
+- WD数值替换变长会在窄框断行（"51.1m/m"）→ 已对标注框关自动换行
+- 长描述塞短标注框会溢出叠压 → 已规范为短类型词
+- **示意图标注线与实体脱节**（2026-11-23 客户退回）：`320mm` 端点写死 1.72/4.67，
+  而相机顶实际 1.40、工件面 4.55（上端悬空、下端扎进工件）；`220mm` 只有竖线没刻度
+  → 画法收敛到 skill 模块 `tools/ppt_diagram.py`（传 shape 自动读边界）+ `check_ppt_quality` C8 机检；
+  **只改项目里的 build_ppt.py 无效**——换工作区会重写脚本，必须模块化才不复现
+- **工作距离起点取错**（2026-11-23 第二次客户退回）：`320mm` 虽贴到了实体，但起点是相机顶面，
+  把机身高度算进了 WD；客户指出 WD = 镜头前端面 → 检测面
+  → 新增 `add_wd_dim()` 固定 `optic.bottom → target.top`（C8 只能查"贴没贴实体"，
+  查不出"贴错实体"，WD 语义必须靠专用 API 保证）
+- 以上全部可通过 check_ppt_quality 的注入测试复现检出
+
+## 使用方式
+
+### 方式1：从用户资料生成（AI调用必加 --auto）
+```bash
+python tools/vision_proposal_generator.py \
+  --files 用户资料.jpg \
+  --template 视觉检测方案.pptx \
+  --output ./output --auto
+```
+
+### 方式2：JSON配置 + 模板（多视角模板用 --hardware_page 指定页）
+```bash
+python tools/vision_proposal_generator.py --config project_config.json \
+  --template 视觉检测方案.pptx --output ./output --auto --hardware_page 2
+```
+- 模板可省略（--template/config的template字段都不给时）：自动扫描工作目录的 *.pptx
+  （取修改时间最新）；工作目录也没有模板时**只输出选型方案结果并正常结束**
+  （selection_result.json 照常落盘），放入模板后重跑同一命令即生成PPT
+
+### 方式2b：需求文本从0入口（弱模型推荐：读图抄字，解析交给脚本）
+```bash
+python tools/vision_proposal_generator.py --text "视觉精度≤0.03mm，生产节拍3秒，检测区域38.5x22mm，检测CD尺寸38.50±0.25..." --output ./output --auto
+```
+AI 把图片/文档/口述中的数字信息**原样抄录**给 --text（精度/公差/节拍/检测区域等），
+脚本负责正则解析、口径判断与校验；漏填时脚本报`【缺少XX】`+可执行修正指引（exit=2）。
+config_template.json 的示例值均为 null——禁止直接复制不改就跑。
+配置字段说明与口径决策表见 `config_template.json`（复制后填值即用）：
+```json
+{
+  "project_name": "弹簧垫片视觉检测方案-视角2",
+  "tolerance": 0.25,
+  "field_of_view": {"width": 24, "height": 20},
+  "cycle_time": 3,
+  "pixel_per_precision": 3.0
+}
+```
+
+### 方式3：仅核验已有选型结果
+```bash
+python tools/validate_selection.py --selection output/selection_result.json \
+  --json_out output/validation_report.json
+```
+
+### 方式4：仅对已生成的PPT做规则自查/导出预览
+```bash
+python tools/check_ppt_quality.py --pptx output/方案.pptx \
+  --selection output/selection_result.json --out output/acceptance_report.txt
+python tools/export_ppt_images.py output/方案.pptx          # 加 --open 自动打开预览页
+```
+预览产物（`ppt_review\`，主流程生成后自动产出）：`slide_N.png` 每页原图、
+`overview.png` 全页联系表总览（一眼看全）、`index.html` 浏览器预览页（双击翻看）。
+导出通道自动降级：本机 PowerPoint COM（首选，后台无窗口）→ 无 PowerPoint 时探测
+LibreOffice headless 转 PDF。两者都没有时如实提示，不产出假预览。
+
+---
+
+## 数据库扩库流程（已固化到 database_updater.py）
+
+选型无解时主流程自动输出**缺口报告**（需要什么倍率/像圆/分辨率/帧率的硬件），按以下流程扩库：
+
+```bash
+# 0. 查看各品牌核验通道（三级通道：静态快抓 → 无头渲染 → AI接管）
+python tools/database_updater.py brands
+
+# 1. 缺口报告（选型无解时也会自动打印）
+python tools/database_updater.py gap --fov 63x42 --precision 0.025
+
+# 2. fetch 一条命令走三级通道（推荐）：静态快抓 → 无头Edge渲染（后台零窗口）
+#    → 前两级失败才输出AI浏览器接管SOP；省略--url时自动用品牌SOP入口
+python tools/database_updater.py fetch --brand 视清科技 --model WWK03-110C-230 --type lens
+python tools/database_updater.py fetch --model 型号 --url 详情页网址 --type lens   # 已知详情页直达
+
+# 2b. 兜底：AI用浏览器打开官网详情页（多级交互/登录/验证码场景），
+#     渲染完成后保存页面HTML，然后脚本提取+入库（一条命令完成）
+python tools/database_updater.py add --html 页面.html --url 详情页网址 \
+  --type lens --model 型号 --brand 视清科技
+
+# 3. AI/人工对照官网复核参数 → 置为已验证
+python tools/database_updater.py verify --model 型号
+
+# 4. 重跑选型（新硬件即刻参与选型）
+```
+
+### 无头渲染（默认通道，对用户完全无感）
+- `fetch`/`refresh` 内置：型号不在静态页面时自动降级用**系统自带 Edge 无头模式**
+  （`--headless=new --dump-dom`）后台渲染，**不弹任何窗口、不闪任务栏**，效果与
+  有头浏览器同内核一致（SPA/XHR 数据可取）
+- 等待时间可调：`--render_ms 12000`（默认12秒虚拟时间预算）；`--static_only` 可强制只走静态
+- 已验证：coolens（动态详情页）✓、海康SPA ✓、华睿SPA ✓；孚根详情页正文需真实交互，
+  无头渲染会诚实报"页面未含型号"并降级 AI 接管（不编造数据）
+
+### 库的保鲜（官网参数会变化，防止数据腐烂）
+
+**数据策略：官网为准，库=缓存。** 主流程已内置自动保鲜：选中的相机/镜头条目
+超 180 天未核验时，选型会自动联网官网 refresh（三级通道后台执行）——无变化
+自动续期；有变化自动入库更新（verified 回退 false 待复核）并用新参数重跑
+选型；联网失败 WARN 降级用库内值继续。人工操作入口如下：
+```bash
+# 审计：check-db 会列出超过180天未复核的条目（阈值可改 --freshness_days）
+python tools/database_updater.py check-db
+
+# 刷新：直接refresh即可（自动走三级通道取官网最新页面，后台无窗口）
+python tools/database_updater.py refresh --model 型号            # 预览diff
+python tools/database_updater.py refresh --model 型号 --apply    # 应用
+python tools/database_updater.py verify --model 型号             # 复核后重新置真
+# 也可AI重新打开该型号官网页存HTML后：refresh --model 型号 --html 新页面.html
+```
+- refresh 有变化时自动把 verified 回退为 false（旧核验状态对新参数不再可信），每次变更写入条目 history（日期/来源URL/字段旧新值），全程可追溯
+- 每次选型的核验报告自带新鲜度检查：条目超180天未复核 → WARNING 提示 refresh
+
+**架构与守则**：
+- 获取层：三级通道——静态快抓（最快）→ 无头Edge渲染（默认主力，后台零窗口，与有头浏览器同内核）→ AI浏览器接管（仅登录/验证码/需多级交互时兜底）
+- 识别层：脚本从渲染后HTML提取参数——表格行级定位（按型号锁定`<tr>`，避免总表串行）、标签式详情页正则；提取不到的字段留空由AI补全
+- 校验入库层：强校验（型号唯一、来源URL必填、数值合法）——**没有官网来源的参数一律拒绝入库**
+- 新条目 `verified=false`（参与选型但核验报"可查证性"警告），AI对照官网复核后 `verify` 置真
+- 每次写库自动备份 `.bak`；`check-db` 可随时校验库一致性
+
+### PPT相关
+```bash
+# 阴影清理（修复被外部工具加阴影的PPT，默认备份.bak）
+python tools/clean_ppt_shadows.py 文件.pptx [-o 输出.pptx]
+
+# 仅做模板替换（已有选型JSON时）
+python tools/generate_ppt.py --template 模板.pptx --output 输出.pptx \
+  --selection_json output/selection_result.json --fov 24x20 --hardware_page 2
+```
+
+---
+
+## PPT生成规则（模板数据替换，绝不重建）
+
+1. **只替换"硬件选型"页**，其余页面一字不动；`--hardware_page N` 指定替换第N个硬件页（多视角模板每页一个视角）
+2. **替换内容**：表格（相机工作距离/视野/精度/光源工作距离）、相机描述行、镜头行（远心镜头：/镜头：）、光源行（同轴光：/环光：）、独立WD标注文本框（大值→相机WD，小值→光源WD）、右上角相机产品图
+3. **保留全部样式**：只改文字与图片，绝不写入阴影/发光等任何效果
+4. 视野数值使用相机+镜头闭环计算的实际视野，与像素精度自洽
+5. 已知限制：模板"方案设计"页（多视角混排描述）不做替换，避免跨视角误改
+
+### 示意图尺寸标注（2026-11-23 客户退回事故｜**必须用 skill 模块**）
+
+> 事故复盘：只在项目 `build_ppt.py` 里把坐标"变量化"**不够**——换工作区会
+> 重新生成脚本，手写坐标的毛病会原样复现。正确画法必须由 skill 提供，项目只 import。
+
+**硬规则：新建/重写 `build_ppt.py` 画示意图时，必须用 skill 模块
+`ppt_diagram.add_wd_dim` / `add_dim_v`，禁止在项目里自写标注函数，
+禁止手写标注线坐标。**
+
+### 物理语义（2026-11-23 第二次客户退回）
+
+**工作距离 WD = 光学件前端面 → 被检测表面**，相机机身高度不计入。
+
+| 标注 | 起点 | 终点 | 错误画法 |
+|---|---|---|---|
+| 镜头工作距离（320mm） | **镜头底面**（前端面） | 工件表面 | ❌ 相机顶面（多算机身） |
+| 光源工作距离（220mm） | **光源底面**（发光面） | 工件表面 | ❌ 光源顶面 |
+
+示意图里相机、镜头必须是两个独立实体；只画一个"相机块"就没法标 WD。
+
+```python
+import os, sys
+SKILL_TOOLS = r'C:\Users\Administrator\.config\opencode\skills\视觉硬件选型\tools'
+sys.path.insert(0, SKILL_TOOLS)
+from ppt_diagram import add_wd_dim, self_check
+
+cam   = add_box(s, ...)   # 项目的 add_box 必须 return shape
+lens  = add_box(s, ...)   # 镜头单独一块，不能和相机合并
+light = add_box(s, ...)
+work  = add_box(s, ...)
+
+# 320mm：镜头前端面 → 工件表面（add_wd_dim 强制取 lens.bottom → work.top）
+add_wd_dim(s, 0.80, f'{LENS_WD:.0f}mm', optic=lens, target=work, color=GRAY)
+# 220mm：光源发光面 → 工件表面
+add_wd_dim(s, 1.30, f'{LIGHT_WD:.0f}mm', optic=light, target=work,
+           text_side='right', color=GRAY)
+
+issues = self_check(s)          # 构建期自检，别等客户发现
+if issues:
+    raise SystemExit('尺寸标注不合格: ' + '; '.join(issues))
+```
+
+模块负责的四件事（对应 C8 判据）：
+
+1. **端点 = 实体边界**：传 shape 时读 `top/height` 自动算，物理上写不出错；
+   传数值时必须是实体派生变量（`LENS_BOT`/`WORK_TOP`），不许写字面量
+2. **WD 语义内置**：`add_wd_dim` 固定取 `optic.bottom → target.top`，
+   调用方无法把相机顶面当起点（要标非 WD 的高度才用 `add_dim_v`）
+3. **两端刻度横线**：默认全长 0.20in，杜绝"一条光秃竖线"（旧版 220mm 就漏了）
+4. **尺寸界线**：从刻度水平伸到实体边缘外侧 0.03in；`ext_dir` 支持 left/right/both
+
+防呆：`top` 落在 `bottom` 下方时抛 `ValueError`，画不出倒置/零高度标注；
+实体变量漏赋值（`None`）同样立即报错。
+
+兜底：`check_ppt_quality` **C8** 对成品再查一遍——纯数字 mm 文本附近有竖直标注线
+时，两端须有刻度且与实体上/下边界对齐（±0.08in）；无竖线视为普通数据标注跳过
+（不误伤硬件页的 `WD 320mm`）。WARN 文案会直接提示改用 `add_dim_v` 重绘。
+**注意 C8 只能查"贴没贴到实体"，查不出"贴错实体"**（如标到相机顶面）——
+WD 的物理语义靠 `add_wd_dim` 保证，不要绕过。
+
+## 相机产品图与效果预览（fetch_product_image.py）
+
+选型相机缺官网产品图时主流程会自动补图（失败仅WARN不阻断）；也可手动操作：
+
+```bash
+# 为指定相机取官网图（库/本地已有则复用，--force 强制重取；基础版不在售时报错并列出在售变体）
+python tools/fetch_product_image.py fetch --brand 海康威视 --model MV-CS050-10GM
+# 库内缺图相机逐个补图
+python tools/fetch_product_image.py batch
+# 效果预览（高频）：把方案PPT里的相机产品图换成指定型号官网图 → 产出 *_相机图预览_*.pptx，绝不动原文件
+python tools/fetch_product_image.py replace --pptx 方案.pptx --model MV-CS060-10GM \
+  --brand 海康威视 --auto_variant --export
+# 硬件页三件套（高频）：相机+镜头+光源产品图按选型结果全部替换，一条命令
+python tools/fetch_product_image.py replace --pptx 方案.pptx --all_parts --export
+# 部件类型图资产管理（用户新增图后实时建立关联，不改代码）
+python tools/fetch_product_image.py map --list
+python tools/fetch_product_image.py map --migrate
+python tools/fetch_product_image.py map --add 条光 --alias 条形光 --alias 条形光源
+```
+
+- 旧图定位自动读PPT同目录 `selection_result.json` 的选型相机；也可 `--old-model 型号` 或 `--old-image 旧图.png` 指定
+- `--auto_variant`：用户报的型号官网不在售（如基础版下架只剩 -PRO/V5）时自动改用主推变体（-PRO > V5）；不加则诚实报错列出变体清单转人工
+- `--image 横幅.png` 可跳过官网取图直接指定图文件；`--export` 替换后自动导出页面图到同目录 `preview_check\`
+- **三件套图源约定（三级匹配）**：相机走官网API自动取图；镜头/光源——
+  ① 库条目 `image_path` 显式映射 ② 型号图 `images/{型号}.png`
+  ③ **类型图** `assets/part_images/`（用户中文命名资产如 `远心镜头.png`/`条光.png`，
+  与选型 type 互包含或别名命中即自动关联，同类型共享代表图；内置常用光源/镜头
+  别名，`aliases.json` 可扩展，`map --migrate` 把旧类型图从 images/ 一键搬来）。
+  缺图部件 WARN 跳过并提示 `map --add` 登记，绝不就近猜图
+- **用户新增类型图**：图放进 `assets/part_images/`（中文命名）即自动参与匹配；
+  type 写法对不上时登记别名：`map --add 条光 --alias 条形光源`（立即生效）
+- `--part lens|light|camera` 只替换单件
+- 0处替换（旧图对不上/锚定不到）→ 诚实报错并列出各页图片清单，禁止瞎猜
+- 预览件仅换图：页面文字仍是原选型内容，不可当作正式方案交付（换型号须重新走选型链）
+
+## 硬件数据库
+`config/hardware_database.json`：
+- **相机**：海康威视 CS/CA 系列
+- **镜头**：视清科技远心（WWK/WWH/DTCM，0.3~1.5x）、海康 FA/微距
+- **光源**：追光者 FL-R 环形光（高角度 60/75/90°、低角度 15/30/45°，含内外径）、孚根 FG-DR（参数待补）
+
+所有型号带 verified 标记与官网链接，**扩展数据库时必须用官网可查证的型号**。
+光源条目必须含 `angle`/`outer_diameter`；内径与推荐 WD 范围缺失时显式写 `null`
+并在 note 注明待核验，**禁止编造区间或型号**。光源选型只读此库，
+库为空时输出"待选型（需扩库）"，绝不兜底拼型号。
+
+## 环境与输出
+- 依赖：python-pptx、Pillow、numpy（easyocr可选）；首次运行自动检查安装
+- 输出：`--output` 指定目录（PPT、selection_result.json、validation_report.json）
+
+## 注意事项
+1. AI调用脚本一律加 `--auto`（非交互自动选最优方案）
+2. 精度计算预留安全余量：像素精度≤精度/3；帧率≥1.5×节拍
+3. 数据库查不到可行镜头时工具会**诚实报错**（列出原因），不要编造型号，应提示用户扩库或调整视野/精度

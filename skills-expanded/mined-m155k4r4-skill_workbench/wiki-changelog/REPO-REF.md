@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/m155k4r4/skill_workbench (path: plugins/agentic-awesome-skills-claude/skills/wiki-changelog/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Generate structured changelogs from git history. Use when user asks \"what changed recently\", \"generate a changelog\", \"summarize commits\" or user wants to understand recent development activity."

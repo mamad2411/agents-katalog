@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/luckyonetwothree/vibe-skill (path: pm-skill/pm-06-growth/skills/growth-strategy-report/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 当需要将增长模式诊断和各环节优化方案汇总为完整可交付的增长策略报告时使用。增长策略报告自动生成，包含增长模式评估、AARRR漏斗诊断、杠杆策略、飞轮模型和执行路线图。关键词：增长策略报告、增长报告、AARRR报告、增长飞轮、增长路线图、增长瓶颈、怎么涨上去、增长计划。本报告是面向用户的可交付策略文档，整合各增长子Skill的输出，生成完整的增长策略。

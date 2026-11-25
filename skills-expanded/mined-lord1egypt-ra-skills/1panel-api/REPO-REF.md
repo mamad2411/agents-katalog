@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/1/1panel-api/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 1Panel 开源面板 API Skill。提供网站管理、容器管理、数据库管理、文件管理等 23+ 个模块的完整 API 接口文档。

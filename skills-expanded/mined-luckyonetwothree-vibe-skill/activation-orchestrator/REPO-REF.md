@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/luckyonetwothree/vibe-skill (path: pm-skill/pm-06-growth/orchestrators/activation-orchestrator/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 当需要识别Aha Moment或设计Onboarding流程时使用。用户激活指挥官，调度activation-aha/onboarding。关键词：用户激活、Aha Moment、Onboarding、新用户引导、新手引导、激活率。

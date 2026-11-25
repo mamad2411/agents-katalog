@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/skills_sh/s/skills-sh_datadog-labs_agent-skills_dd-apm/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: APM - install, onboard, instrument, enable, set up, configure, traces, services, dependencies, performance analysis. Use for any request involving Datadog APM setup, instrumentation (SSI, ddtrace, age

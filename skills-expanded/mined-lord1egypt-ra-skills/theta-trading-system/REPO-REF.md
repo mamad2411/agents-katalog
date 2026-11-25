@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/t/theta-trading-system/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 🎯 Theta量化交易系统v1.2.0 - 100%准确率Ridge模型，每小时自动进化，多数据源兜底，准星模型集成，实时数据验证。基于真实A股涨停股数据的智能选股系统。

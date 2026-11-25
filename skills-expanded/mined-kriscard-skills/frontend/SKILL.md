@@ -1,0 +1,114 @@
+---
+name: frontend
+description: >-
+  Frontend engineering for browser-facing applications: component and browser
+  contracts, semantic accessibility, UI systems, responsive behavior, security,
+  resilient user states, and feature ownership. Use when building or auditing
+  frontend contracts, styling infrastructure, browser integrations, or file
+  organization. Use typescript for language-wide modeling, narrowing, generics,
+  assertions, and runtime type evidence; use react for React composition, state,
+  effects, Suspense, and rendering; use nextjs-app-architecture for Next.js-specific
+  mechanics.
+---
+
+# Frontend Engineering
+
+Build browser-facing code that is trustworthy at its boundaries, coherent at its
+surface, and easy to locate by product ownership. Match the user's request: build,
+recommend, or audit. A focused implementation does not require a full audit.
+
+## Workflow
+
+### 1. Read the environment
+
+Inspect the package manifest, configuration, directory structure, and nearby code.
+Identify the framework, installed libraries, relevant versions, design-system
+conventions, validation library, and existing feature boundaries before proposing a
+pattern.
+
+Honor a sound installed stack. Recommend a new dependency only when a demonstrated
+capability gap justifies it.
+
+**Complete when:** the active stack and local conventions are known, or the missing
+facts that block the work have been requested.
+
+### 2. Frame the frontend contract
+
+Name the user-visible behavior, untrusted inputs, browser APIs, semantic controls,
+responsive constraints, and owning feature. For audits, trace every claim to a file,
+line, rendered state, or browser observation.
+
+**Complete when:** expected behavior, trust boundaries, ownership, and verification
+surface are explicit.
+
+### 3. Apply the universal checks
+
+1. **Browser trust:** browser-controlled URL, storage, message, and form values gain
+   runtime evidence before trusted use; client feedback does not replace an
+   authoritative write boundary.
+2. **Frontend contract:** component props, native wrappers, DOM events, refs, and
+   browser API types match the behavior consumers can actually use.
+3. **Semantic surface:** controls use native semantics, labels, keyboard behavior,
+   and visible focus. ARIA supplements native HTML.
+4. **Complete states:** loading, empty, error, pending, disabled, success, and recovery
+   behavior exist where the workflow can reach them.
+5. **System coherence:** components use the project's tokens, variants, responsive
+   rules, and installed primitives rather than parallel styling conventions.
+6. **Responsible ownership:** place code with the responsibility and consumers it
+   serves; promote shared code only after demonstrated reuse.
+7. **Browser proof:** the target flow works at relevant widths and input modes without
+   console errors, accidental overflow, inaccessible controls, or unsafe storage.
+
+**Complete when:** every applicable check is satisfied or recorded as an evidence-backed
+finding.
+
+### 4. Load only the matching reference
+
+Use the routing table below. Load multiple references only when the task crosses real
+branches. Version-sensitive mechanics come from the project's installed documentation
+or current primary documentation after the version is known.
+
+Language-wide TypeScript modeling, narrowing, generics, assertions, compiler contracts,
+and generic runtime-boundary mechanics belong to the `typescript` skill. React
+component behavior, state ownership, Effects, Suspense, and rendering belong to the
+`react` skill. Next.js route, cache, Server Action, and App Router architecture belong
+to `nextjs-app-architecture`.
+
+### 5. Implement or report
+
+- **Build:** make the smallest coherent change and follow repository validation.
+- **Recommend:** compare viable choices against the current stack and demonstrated
+  constraints; state a preferred path.
+- **Audit:** report only evidence-backed findings, ordered by user impact and risk.
+
+For browser-visible work, invoke the installed `agent-browser` skill to exercise the
+flow and capture relevant semantic state, console/page errors, screenshots, or traces.
+The frontend skill defines the expected behavior; `agent-browser` performs the browser
+interaction.
+
+**Complete when:** the requested artifact exists, applicable checks pass, and any
+unverified behavior or residual risk is explicit.
+
+## References
+
+| Priority | Load when | Reference |
+|---|---|---|
+| 1 — Critical | XSS, unsafe HTML or URLs, auth storage, CSP, CORS, third-party scripts, browser trust concerns | `references/security.md` |
+| 1 — High | Component props, native or component wrappers, DOM events, refs, children, or frontend-specific typed surfaces | `references/typescript.md` |
+| 1 — High | Browser forms, URL/search input, storage, `postMessage`, client feedback, or browser-side boundary placement | `references/runtime-validation.md` |
+| 2 — High | Semantic HTML, labels, keyboard/focus behavior, announcements, basic accessibility verification | `references/accessibility.md` |
+| 2 — Medium | Tokens, variants, styling contracts, responsive layout, theming, installed UI primitives | `references/ui-systems.md` |
+| 2 — Medium | Loading/error/empty states, touch and keyboard input, reduced motion, browser APIs, compatibility | `references/browser-resilience.md` |
+| 2 — Medium | Feature responsibilities, ownership, import direction, data integration, domain policy, shared-code promotion, scaling structure | `references/feature-architecture.md` |
+| 3 — Conditional | Comparing concrete feature-local, product-grouped, or product/domain-module layouts | `references/architecture-examples.md` |
+
+## Completion Gate
+
+Before finishing:
+
+- the implementation follows the detected stack rather than an assumed one;
+- browser trust boundaries and frontend public contracts agree with runtime behavior;
+- the primary workflow has complete and operable user states;
+- ownership and placement follow repository evidence;
+- static checks and available browser verification have run;
+- the response distinguishes verified behavior from remaining uncertainty.

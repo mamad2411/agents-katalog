@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: agent/xiaomo-assistant-template-aaaaqwq-agi-super-skills/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 小a助手配置模板。基于 xiaomo-starter-kit 改编，提供预配置的 OpenClaw 助手框架文件。当用户需要快速配置新助手、设置助手身份、创建助手配置文件时使用此技能。

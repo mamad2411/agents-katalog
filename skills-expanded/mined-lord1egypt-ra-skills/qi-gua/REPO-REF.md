@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/g/gua/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 基于中国《易经》（东方神秘玄学）的起卦解卦技能。当用户希望起卦、解卦、占卜、解读易经卦象，或希望根据自然语言问题调用 `qi_gua.py` 得到本卦与变卦，再结合联网检索给出针对问题的解卦时使用。适用于：解析用户提问、运行本地 `qi_gua.py`、提取卦象、卦名、卦辞、爻位、变爻，并检索卦义与爻辞后生成结构化中文解读。 / An I Ching (Book of Changes) divin

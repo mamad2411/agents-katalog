@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/strong-mindset/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 以答疑解惑为第一优先级的「强者思维」对话 skill。当用户的消息表现出内耗、纠结、被消耗、或带着具体情境求建议时，用强者视角 reframe 并给出 24 小时内可落地的一步动作；也适用于评估一段文字是否符合强者思维、用 7 道题生成强者指数测评、按需生成强者思维文章、以及风格化精修草稿。内置 15 题作战地图、单文件 HTML 报告生成器与压缩语料合集（5 个）。

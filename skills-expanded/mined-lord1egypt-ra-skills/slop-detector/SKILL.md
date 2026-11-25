@@ -1,0 +1,471 @@
+---
+name: slop-detector
+description: Detects AI-generated writing patterns in prose
+version: 1.10.3
+triggers:
+  - ai-detection
+  - slop
+  - writing
+  - cleanup
+  - documentation
+  - quality
+  - reviewing docs for slop
+  - vague language
+  - or identity leaks before publishing
+metadata: {"openclaw": {"homepage": "https://github.com/athola/claude-night-market/tree/master/plugins/scribe", "emoji": "\u270d\ufe0f"}}
+source: claude-night-market
+source_plugin: scribe
+---
+
+> **Night Market Skill**: ported from [claude-night-market/scribe](https://github.com/athola/claude-night-market/tree/master/plugins/scribe). For the full experience with agents, hooks, and commands, install the Claude Code plugin.
+
+
+# AI Slop Detection
+
+**Slop is a density problem, not a word problem.**
+
+A single "delve" is fine. Five "delves" near a "tapestry"
+and an "embark" is generated text. This skill scores
+density per 100 words, marker clustering, and whether
+the overall register fits the document type. It does not
+ban words. It flags concentrations.
+
+## When NOT To Use
+
+- Writing the replacement prose (use `scribe:doc-generator`)
+- Drift against a specific voice profile (use `scribe:voice-review`)
+
+## Execution Workflow
+
+**Start by locating the findings, then read them.**
+
+```bash
+uv run --with pyyaml python scripts/slop_score.py --audit <files>
+```
+
+One command over files or directories, one line per finding
+with a file and a line number, exit 0. It loads every category
+in `data/languages/en.yaml`, including the ones the merge gate
+declines to score: `negative_definition`,
+`temporal_residue`, `contrastive_scaffold`, `over_explanation`,
+the softer anthropomorphism verbs, and the per-document
+negation-density reading. Those print as `(low)` or `(medium)`.
+Step 9's anti-goals apply to them: surface, never auto-apply.
+
+A `.py` path is read as its comments and docstrings, with the
+code blanked and the line numbers kept. `--python` extends that
+to a directory sweep. The classification below already names
+code comments as a target; until the collector reached them,
+every category here was checked against markdown alone.
+
+The steps below say what each category means and how to rewrite
+it. Run the script first so the steps have locations to work
+from, rather than rereading the document once per pattern.
+
+Then identify target files and classify them as technical docs,
+narrative prose, or code comments. Classification feeds
+context-aware scoring: tier-1 markers in marketing copy
+score lower than the same markers in API reference.
+
+### Language Detection
+
+- Auto-detect language from text content using function word frequency
+- Override with `scripts/slop_score.py --lang` (en, de, fr, es, pt,
+  it, or auto); the score is scaled by the language's calibration
+- Load language-specific patterns from `data/languages/{lang}.yaml`
+- Fall back to English if detection confidence is low
+- See `modules/language-handling.md` for cultural calibration and concrete pattern sets
+
+### Spelling Normalization (British to American)
+
+Convert British spellings to American by default, in any scanned
+document, unless the document opts out via `.slop-config.yaml`
+(`spelling: british`) or a per-word allowlist. This is a consistency
+pass, separate from slop scoring. Use the tested `scribe.spelling`
+functions (`find_british_spellings`, `to_american`); both preserve
+case and skip code, inline code, and URLs.
+
+Load: `@modules/spelling-normalization.md`
+
+### Vocabulary and Phrase Detection
+
+Load: `@modules/vocabulary-patterns.md`
+
+Markers fall into three confidence tiers. Tier 1 words
+("delve", "multifaceted", "leverage") appear far more often
+in AI text than human text. Tier 2 covers context-dependent
+transitions ("moreover", "subsequently"). Tier 3 covers
+vapid phrases ("In today's fast-paced world", "cannot be
+overstated").
+
+| Word | Context | Human Alternative |
+|------|---------|-------------------|
+| delve | "delve into" | explore, examine, look at |
+| tapestry | "rich tapestry" | mix, combination, variety |
+| realm | "in the realm of" | in, within, regarding |
+| embark | "embark on a journey" | start, begin |
+| beacon | "a beacon of" | example, model |
+| spearheaded | formal attribution | led, started |
+| multifaceted | describing complexity | complex, varied |
+| comprehensive | describing scope | thorough, complete |
+| pivotal | importance marker | key, important |
+| nuanced | sophistication signal | subtle, detailed |
+| meticulous/meticulously | care marker | careful, detailed |
+| intricate | complexity marker | detailed, complex |
+| showcasing | display verb | showing, displaying |
+| leveraging | business jargon | using |
+| streamline | optimization verb | simplify, improve |
+
+### Tier 2: Medium-Confidence Markers (Score: 2 each)
+
+Common but context-dependent:
+
+| Category | Words |
+|----------|-------|
+| Transition overuse | moreover, furthermore, indeed, notably, subsequently |
+| Intensity clustering | significantly, substantially, fundamentally, profoundly |
+| Hedging stacks | potentially, typically, often, might, perhaps |
+| Action inflation | revolutionize, transform, unlock, unleash, elevate |
+| Empty emphasis | crucial, vital, essential, paramount |
+
+### Tier 3: Phrase Patterns (Score: 2-4 each)
+
+| Phrase | Score | Issue |
+|--------|-------|-------|
+| "In today's fast-paced world" | 4 | Vapid opener |
+| "It's worth noting that" | 3 | Filler |
+| "At its core" | 2 | Positional crutch |
+| "Cannot be overstated" | 3 | Empty emphasis |
+| "A testament to" | 3 | Attribution cliche |
+| "Navigate the complexities" | 4 | Business speak |
+| "Unlock the potential" | 4 | Marketing speak |
+| "Treasure trove of" | 3 | Overused metaphor |
+| "Game changer" | 3 | Buzzword |
+| "Look no further" | 4 | Sales pitch |
+| "Nestled in the heart of" | 4 | Travel writing cliche |
+| "Embark on a journey" | 4 | Melodrama |
+| "Ever-evolving landscape" | 4 | Tech cliche |
+| "Hustle and bustle" | 3 | Filler |
+
+## Step 3: Structural Pattern Detection
+
+Load: `@modules/structural-patterns.md`
+
+### Em Dash Overuse
+
+The single most-cited 2026 AI tell across Wikipedia, the Field
+Guide, and the Algorithmic Bridge. Detection runs in two modes:
+
+**Audit mode** (forensic, applied to unknown prose):
+- **0-1 per 1000 words**: Normal human range
+- **2-4**: Elevated, review usage
+- **5+**: Strong AI signal
+
+**Prevention mode** (applied to docs the agent just generated):
+- **Target zero**. Every em-dash is a finding.
+- Replace with commas (asides), parentheses (tangents), colons
+  (definitions), or periods (separate thoughts). See
+  `modules/structural-patterns.md` § Em Dash Analysis for the
+  full replacement table.
+
+```bash
+# Count em dashes in file
+grep -o '—' file.md | wc -l
+```
+
+### Tricolon Detection
+
+AI loves groups of three with alliteration:
+- "fast, efficient, and reliable"
+- "clear, concise, and compelling"
+- "robust, reliable, and resilient"
+
+Pattern: `adjective, adjective, and adjective` with similar sounds.
+
+### List-to-Prose Ratio
+
+Count bullet points vs paragraph sentences:
+- **>60% bullets**: AI tendency
+- **Emoji-led bullets**: Strong AI signal in technical docs
+
+### Sentence Length Uniformity
+
+Measure standard deviation of sentence lengths:
+- **Low variance** (SD < 5 words): AI monotony
+- **High variance** (SD > 10 words): Human variation
+
+### Paragraph Symmetry
+
+AI produces "blocky" text with uniform paragraph lengths.
+Check whether paragraphs cluster around the same word count.
+
+## Step 4: Identity & Voice Leak Sweep (P0)
+
+Load: `@modules/identity-and-voice-leaks.md`
+
+**Some patterns are not slop: they are direct evidence
+that AI generated text leaked into a published artifact.**
+A single match in this class fails review independently
+of any other score.
+
+Scan for:
+
+1. **Identity leaks** ("As a large language model",
+   "as of my training cutoff", "I cannot provide") —
+   severity: critical, no exceptions.
+2. **Conversational voice leaks** ("Hope this helps!",
+   "Great question!", "Sure!") outside transcript blocks.
+3. **Self-narration of structure** ("In this section, we
+   will cover...", "Let's dive into...", "By the end of
+   this guide...").
+4. **Hedging seesaw** ("While X has its merits, it's not
+   without its challenges").
+5. **Contrastive constructions**, opening a clause or trailing
+   it: both contrastive negation ("not just X, but Y", "It's not
+   X, it's Y", and the trailing "It's X, not Y" / "Y, not X")
+   and affirmative antithesis ("Less X, more Y", "Where others
+   X, we Y"). Avoid in all but the most necessary cases; keep
+   only when the contrast carries information that survives
+   removal. The trailing copula form ("It's a tool, not a toy")
+   is the easiest to miss because the opener reads as a plain
+   definition.
+
+See the module for the full pattern catalogue and false-
+positive guidance.
+
+## Step 4.5: Sycophantic Pattern Detection
+
+Especially relevant for conversational or instructional content
+(complements Class 2 of the identity-and-voice-leaks module):
+
+| Phrase | Issue |
+|--------|-------|
+| "I'd be happy to" | Servile opener |
+| "Great question!" | Empty validation |
+| "Absolutely!" | Over-agreement |
+| "That's a wonderful point" | Flattery |
+| "I'm glad you asked" | Filler |
+| "You're absolutely right" | Sycophancy |
+
+These phrases add no information and signal generated content.
+
+## Step 4.6: Tier 5 / 2026 Patterns (Prevention-Strict)
+
+The 2026 cross-source consensus (Wikipedia *Signs of AI
+writing*, Algorithmic Bridge *10 Signs*, Ignorance.ai *Field
+Guide*, Stop-Slop Claude skill, George Kao, ContentBeta,
+OliviaCal) identifies a handful of shapes that dominate
+post-GPT-5 / post-Claude-4.5 prose. Each is detailed in
+`@modules/vocabulary-patterns.md` (lexical form) and
+`@modules/structural-patterns.md` (structural form).
+
+| Pattern | Form | Why it matters |
+|---------|------|----------------|
+| Em-dash overuse | — used as rhetorical pause | Most-cited single tell of 2026 |
+| Plus-sign for "and" | "hooks and skills" in prose | Strong: humans have "and" |
+| Spatial copula | "lives in", "sits at", "stands as", "boasts" | Inanimate subject with animate verb |
+| Negative parallelism (contrastive negation) | "Not X but Y", "No X. No Y. Just Z.", "No X, no Y, no Z", "It's not X, it's Y", "It's X, not Y", "Y, not X" | Rhetorical scaffold with no argument |
+| Contrastive parallelism (affirmative antithesis) | "Less X, more Y", "Where others X, we Y", "Humans propose; machines dispose" | Manufactured punch; same scaffold without the "not" |
+| Throat-clearing openers | "Here's the thing,", "Look,", "Let that sink in." | Discourse markers signaling nothing |
+| Three-fragment burst | "Focused. Aligned. Measurable." | Rhythm without information |
+| Significance cluster | "stands as a testament to", "marks a turning point" | Asserts importance without showing it |
+| Smart quotes in technical prose | `"text"` / `"text"` instead of `"text"` | Word-processor paste signature |
+| Semicolon splice | "The system is fast; it scales" | Prose semicolon joining two independent clauses. Rephrase into two sentences unless absolutely necessary. A list whose items carry commas is not matched |
+| Negated alternative | "never guesses instead of measuring", "does not retry rather than report" | Defines the thing by what it refuses to do; state what it does |
+| Loop/cascade vocab | "unpack", "surface" (verb), "a quiet shift" | 2026 systems-theory affectation |
+| Performative honesty | "to be honest", "Honestly,", "An Honest Review" | Manufactured authenticity |
+| Sophistication marker | "survey the prior art", "state of the art", "body of work" | Rigor signaling in non-academic prose |
+| Participial tail | ", highlighting", ", underscoring", ", paving the way for" | Fake-analysis tack-on |
+| Emphasis crutch | "Full stop.", "Make no mistake", "Read that again." | Manufactured-importance terminator |
+
+**Prevention rule**: when the slop-detector runs on docs the
+agent itself just generated (auto-invoked by `/doc-generate`,
+`/doc-polish`, `/update-readme`, `/update-docs`, etc.), every
+match in this table is a hard failure. Fix before write. See
+`modules/remediation-strategies.md` § Tier 5 / 2026 for the
+substitution tables.
+
+## Step 5: Calculate Slop Density Score
+
+```
+slop_score = (tier1_count * 3 + tier2_count * 2 + phrase_count * avg_phrase_score) / word_count * 100
+```
+
+| Score | Rating | Action |
+|-------|--------|--------|
+| 0-1.0 | Clean | No action needed |
+| 1.0-2.5 | Light | Spot remediation |
+| 2.5-5.0 | Moderate | Section rewrite recommended |
+| 5.0+ | Heavy | Full document review |
+
+## Step 6: Document Economy Check
+
+Load: `@modules/document-economy.md` and
+`@modules/audience-targeting.md`
+
+**Sentence cleanliness is necessary, not sufficient.** A document
+can score 0 on slop density and still waste reader time by being
+too long, lacking a thesis, or repeating everything except the
+one message that matters.
+
+Score the document on four checks (0-2 each):
+
+1. **Thesis-first**: does the lead state the single takeaway?
+2. **Sentence weight**: does every sentence carry, instance,
+   bound, or repeat the thesis?
+3. **Repetition rule**: is the thesis echoed (good) while
+   ambient repetition is cut (good)?
+4. **Audience fit**: is a tier declared, and does every section
+   serve it? Content that only serves a higher tier is extracted
+   to a deep dive, never deleted.
+
+Check 4 needs a declared reader. If the document does not name
+one, ask for it rather than guessing: `modules/audience-targeting.md`
+carries the tier table and the Socratic set. Skip check 4 for
+creative output, which that module scopes out by name.
+
+Combine sentence-level slop score with document-economy score.
+Both must pass. See `modules/document-economy.md` for the full
+rubric, the reader-time budget table, and a worked example.
+
+## Step 7: Hallucination & Stub Sweep
+
+Load: `@modules/hallucination-detection.md` and
+`@modules/stub-and-deferral.md`.
+
+**Hallucination is not slop: it is wrongness with
+confident phrasing. Always P0.**
+
+Scan for:
+
+1. **Phantom code references**: every backticked
+   identifier, function name, or file path in prose must
+   exist in the codebase.
+2. **Phantom dependencies**: every recommended `pip
+   install` / `cargo install` / `npm install` must
+   resolve on the relevant registry (slopsquatting
+   defense).
+3. **Dead URLs**: every cited URL should return 200.
+4. **Made-up config keys**: every config key in docs must
+   be read by the code.
+5. **Bare TODO/FIXME**: requires either a tracked-issue
+   link or deletion.
+6. **Hedging language** ("for now", "should work",
+   "placeholder", "dummy"): each one is deferred work.
+7. **Stub constructs** (`todo!()`, `unimplemented!()`,
+   `NotImplementedError`): defects in any path reachable
+   from a public API.
+
+See modules for detection commands and severity matrix.
+
+## Step 8: Evidence-Backed Claims (READMEs and public docs)
+
+Load: `@modules/evidence-backed-claims.md`
+
+**Every quality claim must point to evidence in the same
+repository. No evidence, delete the claim.**
+
+For each claim of "production-ready", "fast", "memory-
+safe", "scalable", etc., verify the corresponding
+evidence (CI workflow, benchmark directory, audit
+markers, etc.) actually exists. The module contains the
+full claim → required-evidence table and language-
+specific detection commands.
+
+This step is highest-leverage for crate/library/project
+READMEs, where feature-list buzzword soup is the most
+common AI-generated failure mode.
+
+## Step 9: Apply Anti-Goals (safety check)
+
+Load: `@modules/anti-goals.md`
+
+**Aggressive de-slopping has its own failure modes.**
+
+Before applying any fix surfaced by the prior steps,
+verify it does not violate the anti-goals:
+
+1. Do not strip safety comments (`// SAFETY:`,
+   `// INVARIANT:`, etc.) on `unsafe`, locked, or
+   contract-bearing code.
+2. Do not collapse public error variants without an
+   explicit major-version-bump decision.
+3. Do not "simplify" typed errors to boxed/dynamic
+   errors.
+4. Do not inline a function that has a domain-specific
+   name even if it is short.
+5. Do not touch generated code, vendored code, or
+   historical changelog entries.
+6. Do not auto-apply `confidence: low` findings —
+   surface them for human decision.
+
+When in doubt: leave the match flagged, do not delete.
+
+## The full multi-pass cleanup workflow
+
+For systematic project-wide cleanup, run the multi-pass
+workflow in order. See `@modules/cleanup-workflow.md` for
+the full ten-pass methodology and the rationale for the
+ordering. Summary:
+
+| Pass | Focus |
+|---|---|
+| 0 | Pre-slop sweep: secrets, agent configs |
+| 1 | Surface lint floor (formatter and linter) |
+| 2 | Hallucination & stubs (modules: hallucination, stub-and-deferral) |
+| 3 | Identity & voice leaks |
+| 4 | Comment slop (translation, marketing, banner, deferral) |
+| 5 | Prose slop (vocabulary, structural, document-economy, and evidence-backed-claims) |
+| 6 | Code idiom (delegate to language-specific plugins) |
+| 7 | Architecture (judgment-heavy; see anti-goals) |
+| 8 | Tests (tautology, mocks, snapshots) |
+| 9 | README & public docs |
+| 10 | Establish guardrails (CI, lints, constitution) |
+
+**Cardinal rules**: one pass per commit; deletion beats
+rewriting; do not silently apply low-confidence fixes;
+stop when a pass finds nothing.
+
+## Empirical baseline (cite when justifying severity)
+
+Load: `@modules/empirical-baseline.md` for the 2025-Q1
+2026 research baseline that justifies the severity
+weighting.
+
+When a finding's severity is challenged in review, cite
+from this module rather than asserting from authority.
+
+## Step 10: Generate Report
+
+For per-finding output that reviewers can accept or reject
+independently, use the canonical structured format defined
+in `@modules/structured-finding-output.md`. Each finding
+carries `file`, `line`, `category`, `severity`,
+`confidence`, `evidence`, `rationale`, `fix`, and (for
+high-confidence) `diff`. Auto-apply policy is set by
+confidence; never auto-apply `confidence: low`.
+
+The human-readable summary report, with its P0, vocabulary,
+structural, tier 5, stub, economy and recommendation sections, is in
+`@modules/report-format.md`.
+
+Per `anti-goals.md`: surface `confidence: low` findings
+in a separate section. Do not silently apply them.
+
+## Module Reference
+
+- See `modules/fiction-patterns.md` for narrative-specific slop markers
+- See `modules/remediation-strategies.md` for fix recommendations
+
+## Integration with Remediation
+
+After detection, invoke `Skill(scribe:doc-generator)` with
+the `--remediate` flag to apply fixes, or manually edit using
+the report as a guide.
+
+## Exit Criteria
+
+- [ ] All target files scanned
+- [ ] Density scores calculated
+- [ ] Report generated with specific, line-anchored fixes
+- [ ] High-severity items flagged for immediate attention

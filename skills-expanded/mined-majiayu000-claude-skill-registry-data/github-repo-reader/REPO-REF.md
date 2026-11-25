@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: data/github-repo-reader/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: GitHub リポジトリの情報を取得・要約するスキル。URL が github.com/{owner}/{repo} 形式の場合に使用。gh コマンドと DeepWiki MCP を活用してリポジトリの詳細情報を取得する。

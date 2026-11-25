@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/g/gmail-lead-desk-aisa-one/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Gmail Lead Desk — standalone sales/CS Gmail skill via the AISA gateway:

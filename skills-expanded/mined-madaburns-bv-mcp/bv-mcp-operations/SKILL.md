@@ -1,0 +1,499 @@
+---
+name: bv-mcp-operations
+description: Use when operating bv-mcp's infrastructure surfaces — the `cf` CLI vs wrangler (which is the deploy door, which is the query tool, JSON-by-default, `cf cli search`), wrangler bindings (what a BV_* service binding does, which are operator-deploy-only, fail-soft semantics), deploy paths and workflow history (deploy-prod.yml, publish.yml, removed workflows), CI/CD workflow inventory, the build-and-test aggregator, branch protection, the pre-commit gates and their secret-scanner false positives, the src/ layout and request flow, the scan_domain subrequest ceiling / scanner-queue batch sizing, analytics events and blob layouts, mcp_access_log, alerting lanes, or client detection. Symptoms - an absent-binding degradation, "which workflow deploys X", a Too many subrequests error, an AE query returning nothing, adding an analytics dimension, or unsure whether a check is required or advisory.
+---
+
+# bv-mcp Operations
+
+Operational depth extracted from CLAUDE.md (2026-08-24 trim). CLAUDE.md keeps the
+headline facts; this skill carries the narratives, histories, and per-binding detail.
+
+## Subrequest ceiling (operating constraint, not a bug)
+
+A cold-cache `scan_domain` fans out ~20 subrequests/domain (19 categories, mostly DoH + 2 HTTPS); `/internal/tools/batch` can fan out to ~50×19. Cloudflare Workers caps subrequests per invocation at 50 (Free) / 10,000 default on Paid — raisable to 10M via the `limits.subrequests` Wrangler setting (changed 2026-02-11; was 1000). ⚠️ **This IS a prod concern despite the paid plan — measured 2026-08-16:** the Sunday 02:00 UTC weekly tenant rescan burst 20× `Too many subrequests` on the `bv-scanner-queue` consumer, which processes its batch SERIALLY in ONE invocation (one message = one full scan, ~100–150 subrequests worst case), so `max_batch_size: 100` overran the paid 10,000/invocation ceiling mid-batch; the unacked tail redelivers and a message that rides three doomed batches was DROPPED (there was no `dead_letter_queue` then; since SQ-185 the overlay routes exhausted messages to `bv-scanner-dlq`). Overlay now sets `max_batch_size: 25` (2.6× margin) — do not raise it back without chunking the consumer or a measured budget. BSL self-hosters on the Free plan should keep batch size / scan concurrency modest (cache hits don't count) or upgrade.
+
+A cold non-apex scan can add up to ~20 DNS subrequests for the bounded NS walk, CAA climb, and apex DNSSEC evaluation; deeply nested labels can therefore approach the Free-plan 50-subrequest ceiling.
+
+## Structured-output comment stripping
+
+Human-readable text + (non-interactive clients only, `format=full`) `<!-- STRUCTURED_RESULT ... -->` JSON. Omitted for LLM IDE clients. The same payload is also returned in the MCP-standard `structuredContent` field (always, regardless of format). To avoid sending it twice, `stripRedundantStructuredComment()` (`src/mcp/dispatch.ts`, applied at the `tools/call` dispatch boundary) **drops the comment** when the client can read `structuredContent` — gated conservatively ("Both"): only when `structuredContent` is present AND it's not a known comment-parser (`STRUCTURED_COMMENT_LEGACY_CLIENTS`, EMPTY since blackveil-dns-action v1.4.0 began reading `structuredContent`; older action versions negotiate `2025-03-26` and are still served the comment by the protocol gate) AND either the client negotiated protocol `>= 2025-06-18` (per the `MCP-Protocol-Version` request header) OR it's a verified positive-drop client (`STRUCTURED_COMMENT_DROP_CLIENTS` = `{bv_claude_dns_proxy}` — a stdio bridge that forwards prose to Claude Desktop and never parses the comment, so it drops header-independently). Absent/older/unknown header on a non-positive-drop client → comment kept. Most clients omit the header, so the realized drop is narrow; the `clientType` allowlist is the load-bearing safeguard. Emission stays format-driven in `buildToolContent`; the need-it decision lives at dispatch where the client/protocol signals are.
+
+## M365 identity_secops tools (operator-deploy only)
+
+4 tools remain registered (`query_signins`, `query_ual`, `get_ca_policies`, `assess_coverage`; `group: 'identity_secops'`, `tier: 'protective'`, `scanIncluded: false`, custom non-`CheckResult` shapes so they're in `NON_CHECK_RESULT_TOOLS`). Three active tools proxy Microsoft 365 / Entra reads through bv-web: the `m365Proxy` field is the `BV_WEB` binding, and the `m365ProxyAuthToken` field is populated from the dedicated `BV_MCP_M365_KEY` secret — wired by `m365ProxyBindings()` (`src/lib/config.ts`) and gated on `isM365TenantReadEnabled(env)`, a present `BV_WEB`, and `isStrongDistinctSecurityCapability(env, 'BV_MCP_M365_KEY')`, so a disabled flag or a weak or reused secret yields `{}` and the proxy stays unwired. ⚠️ **This sentence named `BV_WEB_INTERNAL_KEY` until 2026-09-07 and was wrong** — that is the general-purpose fleet web key, and CLAUDE.md explicitly says never to use it for M365 tenant reads. The least-privilege split is the whole point of the dedicated capability; verify against `resolveM365ProxyConfig` rather than trusting prose on either side. (Field names are written as prose here, not as `field: env.SECRET` pairs — that shape trips gitleaks' `generic-api-key` rule, which is why the source line at `config.ts:767` carries an inline `gitleaks:allow`. Do not "tidy" this back into the colon form.) `query_ual` is deprecated and retained only as a deterministic compatibility tombstone: after legacy argument validation and the retained identity auth backstop, an authorized call returns `{ ok: false, error: 'query_ual_deprecated' }`, is marked `isError: true`, and never calls the proxy.
+
+**Withdrawn from the public catalog (3.63.0)** — all four are in `INTERNAL_ONLY_TOOLS`, so they are hidden from `tools/list` and a public `tools/call` returns the unknown-tool result for EVERY caller. ⚠️ That gate short-circuits **before** tier branching, so it now shadows the `AUTH_REQUIRED_TOOLS` **401** path: the auth gate is intact and still pinned, but it can no longer be exercised through the public path — re-listing a tool is what restores it, which is why `test/identity-secops-auth-gate.spec.ts` pins `AUTH_REQUIRED_TOOLS ⊆ INTERNAL_ONLY_TOOLS`. Tenant reads for the three active tools are separately **fail-closed** behind `isM365TenantReadEnabled()` (3.62.0), so with the switch off they answer `{ unprovisioned: true }`; the `query_ual` tombstone is independent of that switch. Deleting the `TOOL_DEFS` entries would delete the auth gate, the Layer-2 no-principal reject and the seam contracts with them — they are all DERIVED from the registry. All four retain their explicit tier-specific quota entries and are not intentionally unlimited.
+
+## CI/CD workflow inventory
+
+`ci.yml` (adds **two** non-required parallel jobs plus a cached wasm-pack binary; docs-only `paths-ignore`) — (a) `fast-checks` runs `check:bindings` + `lint`, and `check:bindings` **is** `npm run typecheck` (`wrangler types && tsc --noEmit`), so it does typecheck, but **`src/` only**: `tsconfig.json` excludes `test` and `packages/dns-checks/tsconfig.json` excludes `src/**/__tests__/**`, while Vitest's esbuild transform strips types without checking them — so no spec was typechecked anywhere (#645); (b) `typecheck-tests` closes that gap as a **ratchet**, not a burndown — `npm run typecheck:tests` (`scripts/ci/typecheck-tests.mjs`) runs `tsc --noEmit` over `test/tsconfig.json` **and** `packages/dns-checks/tsconfig.test.json` (a noEmit-only sibling of the package's build config, added because the build config must keep excluding tests) and fails only when a file's error count exceeds the committed **per-file** baseline in `test/typecheck-baseline.json`. Per-file, not a single number, so a new error can't be absorbed by fixing an unrelated one; a decrease passes and is reported — bank it with `npm run typecheck:tests -- --update`. The job needs `npm run build --workspace=packages/dns-checks` first (test specs resolve `@blackveil/dns-checks/*` through `dist/`; the script hard-fails rather than scoring the phantom resolution errors). `npm run typecheck` is additionally gated by `ci-contract.yml`/`publish.yml`.
+
+Other workflows: `ci-contract.yml` (Zod contracts — ⚠️ **NOT a required check**, despite long being described as one; its `contract` job is absent from branch protection's context list, verified live 2026-08-23), `security.yml` (its `Secret & PII scan` + `Dependency audit` jobs ARE both required contexts), `repo-hygiene.yml` (reusable — ⚠️ consumed by the PUBLIC repos `blackveil-dns-action` and `bv-claude-dns` via `uses: MadaBurns/bv-mcp/.github/workflows/repo-hygiene.yml@main`; a public caller cannot consume a private reusable workflow, so making this repo private breaks both), `deploy-prod.yml` (the ONLY CI deploy workflow — dispatch-only, disarmed by default; see below), `publish.yml` (tagged-release pipeline — validates + cuts the GH Release ONLY; its npm/registry publish jobs were **removed 2026-08-23** after never once publishing successfully — 3.60–3.62 failed, 3.63/3.64 parked forever in `waiting` on the `production` environment reviewer, who is the same person doing the tagging. The manual worktree path in the `bv-mcp-release` skill is the authoritative publisher; `registry-drift-check.yml` is the safety net), `triage-issues.yml`, `registry-drift-check.yml` (12-hourly; compares live `serverInfo.version` against the MCP Registry and opens/escalates/closes a `registry-drift` issue — detection only, it never publishes; advisory, not required), `.gitleaks.toml`. `dns-security.yml` runs a **$0 dogfood scan** of blackveilsecurity.com with bv-mcp's own built scanner (`scripts/ci/dogfood-scan.mjs`, min grade B, advisory/not-required) — it replaced the paid `MadaBurns/blackveil-dns-action` path. A `test/audits/workflow-cost.audit.test.ts` guard (via `scripts/ci/check-workflow-cost.mjs`) fails CI on any self-hosted runner or paid marketplace action; rationale in `docs/ci-cost-posture.md`.
+
+## `build-and-test` is reported by TWO workflows — and the gap that hid in that
+
+`ci.yml` carries `paths-ignore: ['**.md', 'docs/**', 'LICENSE']`, so a docs-only
+PR skips it entirely and the required `build-and-test` check would never report,
+leaving the PR permanently BLOCKED under `strict=true`. `ci-docs.yml` exists to
+close that: it runs on **exactly** the complementary `paths` and declares a job
+with the **same name**.
+
+Two facts that make this safe, both verified rather than assumed (2026-09-11):
+
+- **GitHub matches required checks by NAME, with no "or" semantics.** On a mixed
+  PR — `paths-ignore` runs `ci.yml` because not all files match, `paths` runs
+  `ci-docs` because some do — **both** report `build-and-test` and **both must
+  pass**. A failing `ci.yml` still blocks. So the fast job cannot green-light a
+  suite that did not run.
+- **The two path lists must stay exact complements.** If they ever diverge, a PR
+  falls into the gap where *neither* workflow fires and nothing reports
+  `build-and-test` — permanent BLOCKED, with no failing check to point at.
+
+⚠️ **The gap that DID exist (fixed #976): `ci-docs`'s job was a bare `echo`.** A
+PR touching only markdown therefore merged without running the audits that
+assert documentation matches the code — the gate guarding the docs was the one a
+docs change skipped. Four audits read markdown reachable only by these paths and
+are **not** in `audit:oss-safety`:
+
+| Audit | Reads |
+|---|---|
+| `tool-surface-prose` | `CLAUDE.md`, `README.md`, `docs/github-settings.md`, vscode `README.md` |
+| `public-quota-surface` | `README.md`, `docs/client-setup.md`, `docs/troubleshooting.md` |
+| `tenant-ops-runbook` | `docs/tenant-ops-runbook.md` |
+| `security-capability-inventory` | `docs/operator-runbook.md` |
+
+`npm run audit:docs-surface` is that set, and `ci-docs` now runs it (~23s with
+install, vs the old 3s echo).
+
+**Where a new markdown-reading audit goes**: `audit:oss-safety` if it belongs
+with the public-source-safety family — `repo-hygiene.yml` has **no** paths
+filter, so its required `File hygiene check` already runs on every PR including
+docs-only ones. Otherwise `audit:docs-surface`. **Never both.**
+
+The generalisable shape, worth recognising elsewhere: *a gate that is skipped by
+the same condition that makes it relevant is not a gate.* A path filter that
+excuses a check is only safe when something else still covers the excused paths.
+
+## `build-and-test` in `ci.yml` is an aggregator, not the test runner
+
+(Moved verbatim from CLAUDE.md 2026-10-26.) `build-and-test` in `ci.yml` is a
+same-name aggregator, not the test runner itself — `preflight` (lint,
+`check:bindings`, the scoring-contract gate, the Rust/WASM build, and
+`test/wasm-integration.test.ts`, the only spec that needs the built WASM) and
+`test-shard` (a 3-way `matrix.shard` fanning out the rest of the suite via
+`vitest --shard`) run in parallel; `build-and-test` `needs: [preflight,
+test-shard]` with `if: always()` and fails unless both report `success` (a
+skipped/cancelled dependency must not read as passing). The job id and `name:`
+must stay `build-and-test` — that's the literal string branch protection
+requires. `test-shard` deletes `test/wasm-integration.test.ts` from its checkout
+before running: vitest's `--exclude` CLI flag has no effect on the `workers`
+project in `vitest.config.mts`, since that project sets its own literal
+`test.exclude` array which fully overrides any CLI-supplied exclude for file
+discovery.
+
+## Pre-commit gates (`.githooks/pre-commit`)
+
+(Moved verbatim from CLAUDE.md 2026-10-26.) Five gates: (1) blocked paths
+(`docs/plans|code-review|superpowers/`, `.dev/`, `.dev.vars*`, `.worktrees/`,
+generated deploy configs, reports, PDFs, `*.env*`); (2) generated files (even
+with `git add -f`); (3) staged symlinks (default-deny); (4) Gitleaks; (5) the
+repo-safety scanner (same as the required `File hygiene check` CI gate).
+`--no-verify` only for reviewed false positives.
+
+- ⚠️ **A four-part dotted standards citation trips BOTH secret scanners**
+  (`N.N.N.N` scans as an IPv4). Reword to a spaced form (`§4.2.2 subsection 1`);
+  do NOT widen the configs or `--no-verify`. Leave an in-file comment so nobody
+  "tidies" it back.
+- ⚠️ **40-hex action pins scan as phone numbers** — resolved by the
+  `^\.github/workflows/` path allowlist in `.gitleaks.toml`'s `phone-number`
+  rule. `--no-verify` buys nothing: `Secret & PII scan` is required CI, so the
+  PR blocks at merge instead. Do not quote offending digit-runs in prose — that
+  re-trips the rule in whatever file you write.
+
+## Source layout and request flow
+
+(Moved verbatim from CLAUDE.md 2026-10-26.)
+
+```
+src/mcp/         — Protocol: execute, dispatch, request parsing, route gates
+src/schemas/     — Zod: primitives, tool-args + TOOL_SCHEMA_MAP, tool-definitions, json-rpc, internal, dns, session, auth
+src/handlers/    — tools/list+call, resources, prompts, tool-args/-formatters
+src/tools/       — check-*, scan-domain, scan/ helpers, discover-subdomains, map-*, analyze-drift, etc.
+src/oauth/       — OAuth 2.1 issuer (discovery, register, authorize, token, JWT, KV storage)
+src/tenants/     — Multi-tenant subsystem (production-live)
+src/lib/         — scoring (model/engine/config), context-profiles, adaptive-weights, dns, sanitize, safe-fetch,
+                   cache, session, rate-limiter, json-rpc, auth, analytics, client-detection, fuzzing-*, log,
+                   db/schema (Drizzle)
+test/            — Flat by source file. Pyramid layer = filename suffix (.spec.ts, .integration.test.ts,
+                   .audit.test.ts, .contract.test.ts, .chaos.test.ts). Subdirs include helpers/, schemas/,
+                   oauth/, audits/, contracts/, chaos/, tenants/, tools/, lib/
+packages/dns-checks/  — Runtime-agnostic core: scoring/ + checks/ + schemas/
+```
+
+**Request flow**:
+
+- **Streamable HTTP**: `POST /mcp → Origin → Auth → Body → JSON-RPC validate → mcp/execute → handlers/tools → src/tools/check-* → lib/dns → DoH (empty → bv-dns ∥ Google, raced)`
+- **SSE**: `GET /mcp` opens the notification stream (gate details in **`bv-mcp-security-surface`**)
+- **Stdio**: `stdin → src/stdio → mcp/execute → handlers/tools → stdout`
+- **Internal binding**: `POST /internal/tools/{call,batch} → guard (reject public) → handlers/tools → JSON (no MCP framing)`
+
+## Required checks & branch protection
+
+**Required checks are exactly four** (verified live 2026-08-23): `build-and-test`, `Secret & PII scan`, `Dependency audit`, `File hygiene check`. Everything else — `contract`, `fast-checks`, `typecheck-tests`, `dns-scan`/`dogfood-scan`, `registry-drift-check` — is advisory. A green-but-`BLOCKED` PR is waiting on one of those four, not on the advisory ones.
+
+**Branch protection — SETTLED POLICY (canonical PUT applied 2026-08-23):** required status checks `build-and-test`, `Secret & PII scan`, `Dependency audit`, `File hygiene check` with `strict=true` (branch must be up to date); **NO required reviews** (`required_pull_request_reviews: null` — deliberate: solo maintainer + `enforce_admins` made 1-required-review unsatisfiable, which is what caused the historical relaxed↔strict flapping via manual workarounds); `enforce_admins=true` (`--admin` will NOT bypass); `required_conversation_resolution=true`; `allow_force_pushes=false` — use the PR path, never push `main` directly. ⚠️ `PUT .../protection` is **FULL-REPLACE** — omitted fields are cleared, which is how past partial writes produced hybrid states; re-apply the whole canonical object, never a fragment. **`dns-scan` is NOT required** and stays pending for hours; `mergeStateStatus: UNSTABLE` (vs `BLOCKED`) is mergeable once the required checks pass.
+
+## Deploy mode
+
+**`npm run deploy:prod`, run by an operator, is the authoritative path.** `deploy-prod.yml` is the single CI implementation of that same command — **`workflow_dispatch`-only (the `v*` tag trigger was REMOVED, #717) and disarmed by default**. It gates on the repo variable `DEPLOY_PROD_ENABLED=true` via a `preflight` job that runs OUTSIDE `environment: production`, because a job declaring the environment is what parks an approval prompt — so while unprovisioned the deploy job is never created and **no workflow can queue a production deployment it cannot complete**. Armed, it flows: `production` GitHub Environment reviewer → private overlay reconstructed from `WRANGLER_DEPLOY_OVERLAY_B64` → real `npm run deploy:prod` → infra-probe deploy + OAuth probe → live `serverInfo.version` + `scan_domain` + the `compare_baseline` control-predicate smoke (#725) via `scripts/ci/verify-deploy.mjs`. Requires `CLOUDFLARE_API_TOKEN`, `WRANGLER_DEPLOY_OVERLAY_B64`, `BV_INTERNAL_DEV_KEY` in the `production` Environment (fails fast until set — as of 2026-08-20 **none of the three is set, and this workflow has never deployed anything**).
+
+⚠️ **Two removed workflows, both dead `exit 1` stubs under `environment: production`:** `auto-deploy-main.yml` (deployed the public `wrangler.jsonc`, so it shipped without the private overlay/bindings) and `deploy-hook.yml` (#718 — dispatch-only, last succeeded 2026-05-20; CLAUDE.md wrongly called it "the active deploy path" for months). `publish.yml`'s `deploy-cloudflare` job was removed for the same reason: it declared `environment: production` and exited 1, so every tagged release left a standing approval that could only ever fail. Three contradictory deploy paths is how nobody could say which was authoritative. MCP-Registry publish stays a manual post-deploy step (`bv-mcp-release` skill).
+
+## `cf` CLI — the main Worker deploy door since Phase 5, plus query and API tooling
+
+Cloudflare's new CLI (`npm i -g cf`, open beta since 2026-09-28) generates a
+command for every API operation (~3,000) and prints **JSON by default** — do
+not append `--json`; there is no such flag. Install once per machine, then
+`cf auth login` (device flow; it does NOT reuse the wrangler OAuth token).
+
+**Rule: the MCP Worker ships through `cf` since Phase 5 of
+`docs/superpowers/plans/2026-09-29-cf-cli-migration.md` (US-8, merge and first
+production deploy are operator actions, not before 2026-10-07).** The doors:
+
+| Door | Ends in (run from `packages/bv-dns-security-mcp/`, pinned `cf@1.0.0-beta.14`) |
+|---|---|
+| `npm run deploy:prod` | `cf deploy --mode production` |
+| `npm run deploy:prod:staged` | `cf workers versions create --mode production` (version upload, no traffic) |
+| `npm run deploy:prod:promote -- <version-id>` | `cf workers deployments create --worker bv-dns-security-mcp --strategy percentage --versions '[{"version_id":"<id>","percentage":100}]'` via `scripts/deploy-prod-promote.mjs`; the id is REQUIRED (arg or `BV_PROMOTE_VERSION_ID`), a UUID, never "latest" |
+| `npm run deploy:prod:triggers` | dns-checks build, then `cf workers triggers deploy --mode production` |
+| `node scripts/deploy-private.mjs` | same gates, then `cf deploy --mode production` |
+
+Every gate in front of the cf step is unchanged and in the same order
+(`check:deploy-freshness` → `check:sidecar-freshness` → `check:release-integrity`
+→ dns-checks build → `check:bindings` → `inject-private-config.cjs` → both D1
+preflights → `check:tenant-schema` → `check:bindings:prod`). **The injector STAYS and still writes
+`wrangler.production.jsonc`**: the D1 preflights, `check:bindings:prod`, the drift
+check and every `--config wrangler.production.jsonc` script (Phase 6 ports
+those) read it, and it is the rollback config. cf evaluates
+`packages/bv-dns-security-mcp/cloudflare.config.ts`, which merges the SAME
+overlay through `scripts/lib/overlay-merge.mjs`.
+
+⚠️ **`cf deploy` WITHOUT `--mode production` ships the public-only shape** (named
+`bv-dns-security-mcp-dev` so it cannot strip production's private bindings). Every
+script hard-codes the flag and `deploy-pipeline.audit.test.ts` asserts it; if you
+run cf by hand, pass it. Never set `BV_DEPLOY_OVERLAY_PATH` on a deploy (a probe
+hook; audited). Run cf from the config package (every package now pins the same
+`cf@1.0.0-beta.14`; the old root-hoisted beta.5 caveat no longer applies).
+
+**Production cutover runbook (operator, in this order):**
+
+1. **Parity check: `npm run check:cf-binding-parity`.** It diffs what `cf build`
+   will deploy against the injector's `wrangler.production.jsonc`: every binding
+   as `{binding, type, resourceId}` (plus R2 jurisdiction, service
+   entrypoint/props, DO worker, producer delay), every cron, every queue consumer
+   with all its settings (DLQ, `max_retries`, batch size/timeout, concurrency,
+   retry delay), name / compat date+flags / cpu limit / observability / tail
+   consumers, and DO migrations vs cf exports. Exit 0 = identical, 1 = a
+   difference (printed; text var values show as a short sha256, never in clear),
+   2 = an input is missing. Produce its two inputs first: `node
+   scripts/inject-private-config.cjs`, then `npm -w packages/bv-dns-security-mcp
+   exec -- cf build --mode production`. The only difference it accepts is
+   migrations to exports, and it still checks the two class sets match. Do NOT
+   hand-roll a jq diff: cf's `env` is keyed by binding NAME, so `.name` yields
+   resource names and a jq diff is non-empty on identical configs (SQ-257 seam 9).
+2. `npm run deploy:prod:staged` (uploads a version, no traffic); smoke-test it.
+3. `npm run deploy:prod:promote -- <version-id>`.
+4. Wire checks per `bv-mcp-release`.
+
+⚠️ **There is no `cf rollback`. PRIMARY rollback: `npx wrangler rollback
+<version-id> --name bv-dns-security-mcp -y`.** It needs no injector, no
+`wrangler.production.jsonc` and no API secret-list call, so an API incident that
+makes the injector fail closed cannot block it; `-y` keeps it non-interactive.
+Take `<version-id>` from `cf workers deployments list --worker
+bv-dns-security-mcp`. SECONDARY (wrangler reads the config): regenerate it with
+`node scripts/inject-private-config.cjs`, then `npx wrangler rollback
+<version-id> --config wrangler.production.jsonc -y`.
+
+⚠️ **Rehearse the first rollback before relying on it.** The first cf deploy
+crosses the wrangler-`migrations` to cf-`exports` boundary for both SQLite
+Durable Objects, and the SQ-253 spike measured rollback only on cf-deployed
+throwaway workers. Rehearse it once, early, never during an incident: after
+step 2, roll back to the version that was serving (`npx wrangler rollback
+<old-id> --name bv-dns-security-mcp -y`), confirm the DOs and secrets still
+answer, then promote the staged version.
+
+`cf` bundling does not minify by default
+(measured 2026-10-01: 4.90 MB vs 2.61 MB with `wrangler deploy --minify`); the
+fix is `minify: true` in `packages/bv-dns-security-mcp/wrangler.config.ts`.
+
+Discovery is a search, not `--help` chaining — `cf` prints a banner saying so
+on every nested `--help`, and `cf cli search` returns five JSON matches:
+
+```bash
+cf cli search "list deployments of a worker"        # → cf workers deployments list
+cf schema workers deployments list                  # exact API request shape
+```
+
+Keep search queries anonymous (no domains, IDs, tokens) — the banner asks for
+it and the query leaves the machine.
+
+Three worked replacements for patterns this repo uses today (flags verified
+against `cf@1.0.0-beta.5`):
+
+```bash
+# 1. Is the latest deployment the one I expect?  (was: wrangler deployments list --json)
+cf workers deployments list --worker bv-dns-security-mcp --per-page 3
+#    "The first deployment in the list is the latest deployment actively serving traffic."
+
+# 2. Which secrets exist on the Worker?  (was: wrangler secret list --format json)
+cf workers secrets list --worker bv-dns-security-mcp
+
+# 3. Run an Analytics Engine SQL query without hand-rolling curl + token
+cf analytics_engine sql query --file query.sql     # NDJSON; add FORMAT JSON in the SQL for one object
+```
+
+Traps measured on 2026-09-29:
+
+- ⚠️ **zsh**: `cf $cmd --help` with a multi-word `$cmd` does not word-split, so
+  `cf` sees one unknown word and prints the ROOT help — it looks like the
+  command is missing. Use `eval` or `${=cmd}` (see `shell-portability`).
+- `cf d1 …` commands take the database **UUID** positionally (`cf d1 query
+  <database-id> --sql …`). A binding name or database name is passed through
+  verbatim and the API rejects it (`cf d1 migrations apply` says so outright);
+  `cf` never resolves names. Read the ID from the private overlay, never guess it.
+- `cf workers secrets update NAME --worker W` creates a new Worker VERSION
+  ("by creating a new version with that secret", per its help). Its help does
+  not say whether that version is auto-deployed — check `cf workers deployments
+  list --worker W` afterwards. It is a write; keep it operator-run.
+- `cf build`/`cf deploy`/`cf dev` refuse wrangler < 4.136.0 (the repo root
+  pins 4.148.0). No `--config` flag exists on them.
+
+## Private config injection (what `deploy:prod` actually ships)
+
+`npm run deploy:prod` runs `scripts/inject-private-config.cjs`, which merges the
+public `wrangler.jsonc` with gitignored private overrides into a generated
+`wrangler.production.jsonc` immediately before the deploy.
+
+⚠️ **Mandate: never hardcode prod endpoints, secrets, or internal bindings in
+`wrangler.jsonc`** — use the private overrides. And ⚠️ **the inject script must
+enumerate every binding kind**: a kind it does not know about is silently
+dropped, and silent drops have shipped misconfigured deploys before.
+
+Two exceptions worth remembering because they bite during unrelated work:
+`BV_WEB` **is** declared in the public `wrangler.jsonc` (audit-enforced — do not
+"clean it up" into the private overrides), and `npm run deploy:prod` does **not**
+deploy `bv-infra-probe` (`npm run deploy:infra-probe` when its source changes —
+it now runs `cf deploy` from `packages/bv-infra-probe/`, a config-only package
+whose `cloudflare.config.ts` points at the unmoved `src/workers/infra-probe.ts`;
+the root `wrangler.infra-probe.jsonc` is RETIRED (SQ-240): roll back with
+`npx wrangler rollback --name bv-infra-probe`, and the sidecar drift gate reads
+this Worker by an explicit pinned `--name bv-infra-probe` because Wrangler cannot
+load a cf `cloudflare.config.ts`. ⚠️ cf finds wrangler only
+at `packages/bv-infra-probe/node_modules/wrangler`, so that package pins a wrangler
+the root does not hold — bumping the pin to match the root re-hoists it and breaks
+`cf build`; the infra-probe audit asserts the nested lockfile entry).
+
+⚠️ Both sidecar chains run `check:release-integrity:sidecar` (`--mode sidecar`, SQ-242),
+NOT the tag-pinned `check:release-integrity` that `deploy:prod` uses: sidecars carry no
+release version, so sidecar mode keeps the dirty-tree check and drops the exact-tag and
+version-surface requirements (HEAD ⊇ origin/main is `check:deploy-freshness`, also in
+the chain). No `BV_ALLOW_UNPINNED_DEPLOY=1` is needed for a post-release sidecar deploy.
+
+`npm run deploy:whois` likewise runs `cf deploy` from `packages/bv-whois/` using its
+`cloudflare.config.ts`; `packages/bv-whois/wrangler.jsonc` is RETAINED as the vitest
+config only (an audit asserts parity with the cf config). Roll back with
+`npx wrangler rollback --name bv-whois`; the drift gate reads it via an explicit
+`--name bv-whois`; cf finds wrangler only at `packages/bv-whois/node_modules/wrangler`,
+so that package too pins a wrangler the root does not hold.
+
+⚠️ **`ALERT_WEBHOOK_URL` is a Worker secret, not a `vars` entry (#1073).**
+`wrangler types --config wrangler.production.jsonc` (`check:bindings:prod`,
+run immediately after the injector) renders every plaintext var inline, so a
+`vars` entry re-disclosed the webhook URL — a capability secret; the path
+token alone is enough to post to the ops alert endpoint — on every deploy.
+`validateProductionSecurityConfig`'s `assessAlertWebhookSecretGate` now
+requires the name be listed by `wrangler secret list` (injected as
+`listSecretNames` so tests never shell out) and fails closed if it is instead
+(or also) present in `vars` — a binding name cannot be both; `wrangler secret
+put` rejects the collision with `[code: 10053]`. One-shot transition override:
+`BV_ALLOW_MISSING_ALERT_SECRET=1` (checked before the lister runs, so it also
+covers an unreachable `wrangler secret list` — same shape as
+`BV_ALLOW_STALE_SIDECARS`). ⚠️ The override is required for BOTH documented
+migration paths, including the `--secrets-file` one-deploy path — the gate
+runs (`node scripts/inject-private-config.cjs`, package.json:52) BEFORE the
+final `cf deploy --mode production` step that `--secrets-file` attaches to, so the
+secret is never listed yet at gate-check time. Set it inline on that one
+command only, never exported from a shell profile — a persisted override
+silently disables the alerting guarantee on every subsequent deploy. Full
+migration steps: `docs/operator-runbook.md` §8.
+
+## Service-binding door — what the two paths do and do not share
+
+`/internal/tools/call` accepts `{ name, arguments }` → `{ content, isError? }`.
+`/internal/tools/batch` runs one **read-only, domain-required** tool across many
+domains (max 500, concurrency 1–50, 256 KB body); mutating/destructive tools fail
+closed there and must use the idempotent single-call contract.
+
+`?format=structured` returns the tool's **payload** under `result` per domain —
+the raw `CheckResult` for `check_*` tools, `structuredContent` for
+`NON_CHECK_RESULT_TOOLS`. Cross-door parity is asserted in `test/internal.spec.ts`.
+
+| Layer | public `/mcp` | internal `/internal/*` |
+|---|:-:|:-:|
+| CORS, Origin, Auth, Rate limiting, Sessions, JSON-RPC, Body limit | ✓ | — |
+| Tool execution, Caching, Analytics, SSRF | ✓ | ✓ |
+
+⚠️ Free-tier paid-gating (403) and the distinct-domain cap are **public-`/mcp`
+only** — the internal path bypasses them, and bv-web enforces paid entitlement
+before forwarding. Detail in **bv-mcp-security-surface**.
+
+## Binding reference table
+
+The full binding inventory. Moved here from the repo CLAUDE.md on 2026-09-07: it is a
+lookup table, and fleet doctrine keeps inventories in a description-matched skill
+rather than in the file that loads unconditionally in every session. CLAUDE.md keeps the
+pointer. The per-binding narratives (activation, failure semantics, incident history) are
+in "Binding notes" below.
+
+| Binding                                                                            | Type             | Purpose                                                                                                                                     |
+| ---------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BV_API_KEY`                                                                       | Secret           | Static bearer auth → `owner` tier                                                                                                           |
+| `ENABLE_OAUTH` / `ENABLE_OWNER_OAUTH`                                              | var              | OAuth routes / owner consent page (operator only)                                                                                           |
+| `OWNER_ALLOW_IPS`                                                                  | var              | IPs allowed for `owner`; mismatch → `partner`                                                                                               |
+| `OAUTH_SIGNING_SECRET`                                                             | Secret           | HS256 ≥32 bytes; required when `ENABLE_OAUTH=true` (503 until set)                                                                          |
+| `OAUTH_ISSUER`                                                                     | var              | Optional override; falls back to Host (set in prod vs Host spoofing)                                                                        |
+| `ALLOWED_ORIGINS`                                                                  | var              | Allowed Origins (CSV)                                                                                                                       |
+| `RATE_LIMIT` / `SCAN_CACHE` / `SESSION_STORE`                                      | KV               | Required in prod                                                                                                                            |
+| `QUOTA_COORDINATOR` / `PROFILE_ACCUMULATOR`                                        | DO               | Distributed rate limiting / adaptive weights (optional)                                                                                     |
+| `MCP_ANALYTICS`                                                                    | Analytics Engine | Telemetry (fail-open)                                                                                                                       |
+| `MCP_ANALYTICS_QUEUE`                                                              | Queue            | **Operator only.** Batched `mcp_access_log` writes (PTR + encrypt). Absent → inline fallback                                                |
+| `ANALYTICS_PII_LEVEL` / `ANALYTICS_RETENTION_DAYS`                                 | var              | Access-log PII depth (`coarse` default) / retention days (90, clamp 1–365)                                                                  |
+| `PROVIDER_SIGNATURES_URL`                                                          | var              | Provider signatures source                                                                                                                  |
+| `BV_DOH_ENDPOINT` / `BV_DOH_TOKEN`                                                 | Secret           | Optional secondary DoH. ⚠️ Both Secrets, never `vars`                                                                                       |
+| `CERTSPOTTER_TOKEN`                                                                | Secret           | Cert Spotter CT auth. Fail-soft; raises rate limits ONLY (15s timeout stays — #735)                                                         |
+| `BV_CERTSTREAM`                                                                    | Service          | CT logs: `/enumerate` + `/sans`; crt.sh fallback w/ jittered backoff                                                                        |
+| `BV_WHOIS`                                                                         | Service          | WHOIS/43 shim; optional, RDAP-only fallback. ⚠️ Sidecar Worker — `deploy:prod` does NOT deploy it (`npm run deploy:whois`, via cf)           |
+| `BV_INFRA_GRAPH` / `BV_INTEL_GATEWAY` / `BV_ENTERPRISE`                            | Service          | **Operator only.** Tier-1/2/0 `discovery_mode='tiered'` lookups; absent → classic sweep                                                     |
+| `BV_RECON` / `BV_RECON_KEY`                                                        | Service / Secret | **Operator only.** bv-recon behind the recon tools; fail-soft → `unprovisioned`                                                             |
+| `BV_TLS_PROBE` / `BV_TLS_PROBE_KEY`                                                | Service / Secret | **Operator only.** TLS-intercepted vantage — legacy-TLS enrichment (#910) and DANE pin verification (#906) are both disabled. |
+| `BV_WEB`                                                                           | Service          | **Operator only.** OAuth consent proxy + M365 `m365Proxy`. ⚠️ IS declared in public `wrangler.jsonc` (audit-enforced)                       |
+| `BV_WEB_INTERNAL_KEY`                                                              | Secret           | Bearer for general `BV_WEB` internal calls and `resolveAlertWebhookUrl`; never use for M365 tenant reads                                    |
+| `BV_MCP_M365_KEY`                                                                  | Secret           | Dedicated least-privilege bearer for bv-mcp → bv-web M365 tenant reads only                                                                 |
+| `BV_MCP_OAUTH_MINT_KEY`                                                            | Secret           | bv-web-held capability for `/internal/oauth/grants`, `/internal/trial-keys*` and `/internal/oauth/ema-self-serve/*`; one shared value on both Workers; never reuse another capability |
+| `BV_MCP_EMA_ADMIN_KEY`                                                             | Secret           | Operator-only capability for `/internal/oauth/ema-tenants*` plus approve/reject; never provision to bv-web                                  |
+| `BV_MCP_OAUTH_REVOKE_KEY`                                                          | Secret           | Revocation-only capability for `/internal/oauth/revoke-subject`; cannot mint grants or trial keys                                           |
+| `BV_MCP_TOOL_DELEGATION_KEY`                                                       | Secret           | Tenant-scoped Brand Watch register/list/delete capability; no batch/report/status/other-tool access                                         |
+| `BV_MCP_WATCH_CLEANUP_KEY`                                                         | Secret           | Ops-only Brand Watch list/delete capability; cannot register or invoke any other tool                                                       |
+| `BV_MCP_BRAND_WEBHOOK_KEY`                                                         | Secret           | Dedicated bv-mcp→bv-web capability for the exact first-party Brand Drift receiver; sent only over `BV_WEB`, never to customer webhook hosts |
+| `BV_MCP_TENANT_KEY`                                                                | Secret           | Dedicated bearer for `/internal/tenants/*`; scope it with `TENANT_KEY_SCOPE` or `X-Tenant-Scope`                                            |
+| `BV_INFRA_PROBE`                                                                   | Service          | authoritative_dns_infra probe. ⚠️ NOT overlay-only; sidecar Worker — `deploy:prod` does NOT deploy it (`npm run deploy:infra-probe`)        |
+| `INTELLIGENCE_DB`                                                                  | D1               | `mcp_access_log` + `mcp_access_log_audit` store, database `mcp-access-log-v1` (was `bv-intelligence`; see note). Absent → access-log no-op |
+| `BRAND_AUDIT_DB` / `BRAND_AUDIT_QUEUE` / `BRAND_AUDIT_PDF_QUEUE` / `BRAND_REPORTS` | D1/Queue/R2      | Async brand-audit state, job queues, PDF storage. Queues absent → `*_start` → `unprovisioned`                                               |
+| `BV_BROWSER_RENDERER` / `BV_BROWSER_RENDERER_KEY`                                  | Service / Secret | Not used by the brand-audit PDF queue (in-process pdf-lib); legacy plumbing only                                                                                               |
+| `KV_ENVELOPE_KEY`                                                                  | Secret           | AES-256 KV envelope encryption (FIND-17 — OAuth codes, trial keys)                                                                          |
+| `BRAND_AUDIT_DISCOVERY_MODE_DEFAULT`                                               | var              | **Operator only.** `"tiered"` flips the runtime default; unset → schema default `'classic'`                                                 |
+| `SCORING_CONFIG`                                                                   | var              | JSON scoring overrides                                                                                                                      |
+| `CF_ACCOUNT_ID` / `CF_ANALYTICS_TOKEN`                                             | var / Secret     | Alerting query auth                                                                                                                         |
+| `TENANT_REGISTRY_DB` / `TENANT_DB_<ID>` | D1 | Tenant registry + per-tenant databases, resolved by the `TENANT_DB_` prefix convention (`src/tenants/tenant-resolver.ts`). Overlay-only |
+| `BV_SCANNER_QUEUE` / `ASYNC_BATCH_QUEUE` | Queue | Scheduled/tenant rescans (consumer `max_batch_size: 25`, DLQ `bv-scanner-dlq`) / async batch scans (DLQ `async-batch-scan-dlq`). Overlay-only |
+| `BV_SCANNER_SLOW_QUEUE` / `SCAN_SCHEDULE_DB` / `MCP_ACCESS_LOG_ARCHIVE` / `TENANT_DISPATCH_NAMESPACE` | Queue / D1 / R2 / Dispatch ns | **Dark, unbound in prod.** Each read is guarded; absent → feature skipped. ⚠️ Binding a dispatch namespace needs a new `OVERLAY_MERGED_KEYS` entry — the injector fails closed on the unknown key |
+| `MCP_ACCESS_LOG_IP_ENCRYPTION_KEY` / `MCP_ACCESS_LOG_IP_KEY_VERSION` | Secret / var | Access-log IP encryption key (deploy-required) and its key version |
+| `REQUIRE_INTERNAL_AUTH` | var | Bearer gate on `/internal/tools/*` + `/analytics/*`; active unless `'false'` |
+| `REJECT_QUERY_API_KEY` | var | FIND-01: `'true'` ignores `?api_key=` (request proceeds as free). Deploy-required `'true'` |
+| `REQUIRE_PRODUCTION_BINDINGS` | var | `'true'` makes `/health` report 503 `degraded` when any production binding is absent. Deploy-required `'true'` |
+| `BV_ROAMING_OWNER_KEY` / `BV_ROAMING_OWNER_EXPIRES_AT` | Secret | Optional roaming owner credential; needs an unexpired expiry. Remove to revoke (never deploy-required) |
+| `BV_INTERNAL_DEV_KEY` / `BV_INTERNAL_DEV_KEY_2` | Secret | Dev/agent client keys (fail-soft, never deploy-required) |
+| `ALERT_WEBHOOK_URL` | Secret | Static alert fallback. ⚠️ A Worker **secret**, never a `vars` entry (#1073 — see Private config injection) |
+| `ALERT_*` | var | Cron alert thresholds/windows. ⚠️ Latency has its OWN lane/window |
+
+## Live binding drift — config vs what is serving
+
+`npm run check:live-binding-drift` (read-only; `scripts/ci/live-binding-drift.mjs`) merges `wrangler.jsonc` + the
+overlay exactly as the deploy doors do, then compares every version in the ACTIVE deployment (`wrangler deployments
+status` → `versions view`). ERROR (exit 1): a binding missing live, an unreviewed live binding, a type or target
+mismatch, a var whose value differs, a `secrets.required` name absent from the version. WARN: a queue consumer with
+no `dead_letter_queue`. INFO: a count of env names `src/` reads that nothing binds (`--verbose` lists them). Exit 2 =
+unreadable input or a live set with no bindings, never clean. Pass `--overlay <path>` from a worktree (the overlay
+lives in the main checkout's `.dev/`). Prints neither var values nor resource ids. Limits: consumer settings are not
+in version metadata, so the DLQ warning reads CONFIG (`wrangler queues info` for live); extra live secrets are not
+errors (fail-soft keys). `check:cf-binding-parity` is the config-vs-`cf build` sibling; this is config-vs-live.
+
+## Binding notes
+
+Detail for the bindings whose Purpose cell in CLAUDE.md's table is a summary.
+
+**`BV_DOH_ENDPOINT` / `BV_DOH_TOKEN`** (Secret / Secret) — Optional private secondary DoH, consulted ONLY when the primary returns no typed answers (`confirmWithSecondaryResolvers`). Auth via `X-BV-Token`. **Both are Secrets, never `vars`** — the endpoint hostname is barred from this source-available repo by the `.gitleaks.toml` `internal-hostname` rule, and Workers expose secrets and vars on the same `env`, so no `vars` entry is needed. Endpoint unset → seam inert. Activation + failure semantics: `docs/operator-runbook.md` §9
+
+**`CERTSPOTTER_TOKEN`** (Secret) — SSLMate Cert Spotter API key, sent as `Authorization: Bearer` on the Certspotter CT source. **Optional and fail-soft** — absent → unauthenticated and still functional, but on a per-IP, per-hour free quota a batch sweep exhausts (measured HTTP 429 `rate_limited`). ⚠️ Raises RATE LIMITS ONLY: the free "Small" tier keeps a **15s per-query timeout**, so a large estate (`meta.com`) still returns HTTP 504 authenticated — that is #735's deterministic timeout and only a paid tier addresses it. Same name and same secret as `cloudflare/certstream` in bv-web-prod; one secret must not acquire two spellings
+
+**`BV_RECON`** (Service, wrapper `src/lib/recon-binding.ts`) — **Operator-deploy only.** bv-recon OSINT/recon worker — powers the 11 recon tools (`check_realtime_threat_feed`, `scan_buckets_*`, `osint_investigate_*`/`osint_investigation_*`) + optional enrichment of `cymru_asn`/`check_lookalikes`/`check_fast_flux`. Async recon tools use start → poll (`*_status`) → retrieve (`*_findings`/`*_report`). Fail-soft when absent (tools return `unprovisioned` on BSL self-hosts). Not in public `wrangler.jsonc`.
+
+**`BV_TLS_PROBE`** (Service) — **Operator-deploy only.** bv-tls-probe worker (bv-web-prod `satellites/tls-probe`, a headless browser inside Cloudflare Browser Rendering) — reports the browser-to-proxy TLS version, which cannot establish origin protocol support; since bv-web-prod#2843 it also returns a `certificate` block (leaf/SPKI/chain digests). Fail-soft when absent (no TLS-version finding, no score change). Not in public wrangler.jsonc. See src/lib/tls-probe-binding.ts.
+
+⚠️ **Its vantage is TLS-intercepted — nothing it returns about a certificate is origin-authentic (incident 2026-09-04, #906).** Browser Rendering egresses the browser through a TLS-terminating proxy that re-signs origins with a per-session `O=Mockttp Cert - DO NOT TRUST` CA (measured on fedoraproject.org, kernel.org, www.debian.org; Cloudflare-fronted origins unmeasured). 3.75.0 (#901) compared that leaf against real TLSA records and scored fedoraproject.org's CORRECT DANE pin as a `high` mismatch (75) for ~70 min; a `wrangler rollback` was classifier-blocked, so 3.75.1 (#907) fixed forward: `DANE_PIN_VERIFICATION_ENABLED = false` in `tls-probe-binding.ts` (kill-switch, not a deletion — the package ladder stays for a future non-intercepted capture), permanent `notAssessedReason: 'probe_vantage_intercepted'` at the unchanged 95, no probe call spent, scoring model 1.23.0. **Do not flip the switch without a capture source proven against a NON-Cloudflare origin from an independent vantage** (openssl from the public internet + CT-log presence of the captured leaf) — the 2026-08-30 "proven vs openssl" note was hash-consistency on a Cloudflare-hosted host, not an origin-authenticity proof. `TLS_VERSION_ENRICHMENT_ENABLED = false` (#910) also disables legacy-TLS enrichment and its probe calls. A bound SSL check records `tlsVersionAssessment.status=not_assessed` with reason `probe_vantage_intercepted`. Re-enabling requires an origin-facing probe that distinguishes a TLS-1.2-only endpoint and legacy-only endpoints; a TLS1.3 negotiation or certificate hash consistency is insufficient. How to reproduce the evidence in ~5 min: run the probe with `wrangler dev` + a temporary config declaring `"browser": { "binding": "MYBROWSER", "remote": true }` and a local KV id (never the prod namespace), probe a non-Cloudflare host, base64-decode `certificate.chain[0].der`, `openssl x509 -inform DER -noout -subject -issuer`.
+
+**`BV_WEB`** (Service) — **Operator-deploy only.** bv-web-prod service binding — OAuth consent proxy + the `m365Proxy` for the three active `identity_secops` M365 tools. Deprecated `query_ual` never uses this binding. Wired via `...m365ProxyBindings(c.env)` at 3 sites in `index.ts`. The `bv-web-prod` target is proprietary/operator-only → degrades to `unprovisioned` on BSL self-hosts. Unlike the truly-private bindings (`BV_RECON`/`BV_INFRA_GRAPH`/…), the `BV_WEB` binding **is** declared in public `wrangler.jsonc` (`service: bv-web-prod`) — `oauth-production-config.audit.test.ts` enforces it there as the OAuth-consent guardrail, since the private overlay is gitignored and can't be checked in CI.
+
+**`BV_INFRA_PROBE`** (Service) — Raw authoritative-DNS/BGP/RPKI vantage-probe binding for the `authoritative_dns_infra` check (distinct from `BV_INFRA_GRAPH`). ⚠️ **NOT operator-overlay-only, unlike the other `BV_*` service bindings** — it is declared in the PUBLIC `wrangler.jsonc` (`service: bv-infra-probe`), its target deploys from `packages/bv-infra-probe/cloudflare.config.ts` (the old `wrangler.infra-probe.jsonc` is retired), and `deploy-prod.yml` deploys that worker before the main one; `test/audits/infra-probe-wrangler.audit.test.ts` pins that ordering. ⚠️ The claim that `publish.yml` deployed it was **false for as long as it was written down** (#718) — that step sat behind the `exit 1` stub and had therefore never run. ⚠️ **The authoritative manual path (`npm run deploy:prod`) still does NOT deploy bv-infra-probe**, and `deploy-prod.yml` is disarmed by default, so this worker went silently stale relative to the main one — measured 2026-09-09 at a live deployment of 2026-05-20T21:27:44Z against 7 newer source commits, alongside bv-whois's 4. **#945 closed the invisibility, not the gap**: `npm run check:sidecar-freshness` (`scripts/sidecar-deploy-drift.ts` decision core + `scripts/ci/sidecar-deploy-drift-check.ts` CLI) now runs early in `deploy:prod`, `deploy:prod:staged` and `deploy-private.mjs` and BLOCKS the deploy when a sidecar's newest deployment predates a commit under its watched paths (`src/workers/infra-probe.ts` + `src/lib/authoritative-dns-infra` here — the shared module tree is watched precisely because a change there ships to the MCP Worker and to the probe never). Fail-closed: an unreadable `wrangler deployments list` is `unverified` → BLOCK, and an empty list is never read as fresh. Deploy it with `npm run deploy:infra-probe`; override `BV_ALLOW_STALE_SIDECARS=1`. So any deployment using this repo's own config HAS it, and the absent-binding path is reachable mainly by an npm/stdio consumer of the exported `scanDomain`. An earlier "Operator-deploy only" label here led a review to overstate the blast radius of #696 — the live gap is a probe that ANSWERS while establishing nothing, not an absent binding. Fail-soft when absent.
+
+**`INTELLIGENCE_DB`** (D1) — The access-log store: `mcp_access_log` and `mcp_access_log_audit`, nothing else. The binding name is historical. Since SQ-187 its database is **`mcp-access-log-v1`**, which bv-mcp owns. It moved off `bv-intelligence`, bv-web-prod's decommissioned database (bv-web-prod #663/#3749), where bv-mcp was the only live writer. The move is a `database_name`/`database_id` change in the private overlay, with no code change. Until the operator runs the cut-over (`docs/operator-runbook.md` §3a: copy-then-switch with ids preserved, `scripts/access-log/copy-from-intelligence.mjs`), prod still points at `bv-intelligence`. Schema for a new database: `scripts/access-log/sql/0001_baseline.sql`, copied from the live DDL. ⚠️ Never replay `scripts/intelligence/sql/0001`–`0003` on a new database, because live drifted from them (`ip_masked NOT NULL`, a different index set). ⚠️ Every access-log write is fire-and-forget, so an unmigrated database behind the binding means silent, total row loss. `scripts/access-log-schema-preflight.mjs` therefore runs on all three deploy doors and refuses the deploy. It skips only when no `INTELLIGENCE_DB` is bound. Its column contract is `scripts/access-log/columns.mjs`, pinned to `ACCESS_LOG_COLUMNS` by `test/audits/access-log-schema.audit.test.ts`. Change both together.
+
+**Tiered brand discovery runs Tier 1 only (operator decision 2026-11-13)** — prod sets `BRAND_AUDIT_DISCOVERY_MODE_DEFAULT=tiered`, but only `BV_INFRA_GRAPH` (Tier 1, `bv-infrastructure-graph`) is bound. Tier 0 (`BV_ENTERPRISE`, code expects a `bv-enterprise` Worker) and Tier 2 (`BV_INTEL_GATEWAY`, a `WorkerEntrypoint` exposing `getDomainEvidence`) have no target: neither Worker exists among the account's 90 (complete list, measured 2026-11-13). `buildBrandTierLookups` skips an unbound tier, so tiered = Tier 1 + the classic sweep. Kept deliberately — do not re-raise as a defect; bind a tier only once its Worker exists. bv-web-prod's architecture appendix still says `bv-intel-gateway` runs in production; that line is stale.
+
+**Queue dead-letter coverage** — every consumer has a DLQ: `bv-scanner-queue` → `bv-scanner-dlq`, `async-batch-scan-queue` → `async-batch-scan-dlq`, and (queues created + overlay-configured 2026-11-13, live from the first `deploy:prod` after that date) `brand-audit-queue` → `brand-audit-dlq`, `brand-audit-pdf-queue` → `brand-audit-pdf-dlq`. No DLQ has a consumer and nothing alerts on DLQ depth, so dead messages are kept but unseen — inspect with `wrangler queues info <dlq>`. Adding a consumer's DLQ: create the queue FIRST (`wrangler queues create`), then add `dead_letter_queue` to the overlay consumer, then deploy — a reference to a non-existent queue fails the deploy.
+
+**`ALERT_WEBHOOK_URL` / `ALERT_*_THRESHOLD` / `ALERT_LOOKBACK_MINUTES` / `ALERT_LATENCY_LOOKBACK_MINUTES` / `ALERT_MIN_LATENCY_SAMPLES`** (var) — Cron alerts. ⚠️ **Latency has its OWN lane, window and per-class ceilings** — see the `latency` lane in `scheduled.ts` (#729) before changing any `ALERT_*P95*` value; the 15m `ALERT_LOOKBACK_MINUTES` is the error-rate lane's, NOT latency's. `ALERT_WEBHOOK_URL` is the STATIC fallback only — `resolveAlertWebhookUrl(env)` (`src/lib/operator-webhook-binding.ts`, wired into every alert-dispatch site in `scheduled.ts`) resolves an admin-configured URL from bv-web-prod first (via `BV_WEB`/`BV_WEB_INTERNAL_KEY`, GET `/api/internal/ops/operator-alert-webhook`, admin-set at bv-web-prod's `/admin/ops/config`), with `SCAN_CACHE` KV holding the last-known-good value through an outage; falls back to `ALERT_WEBHOOK_URL` only when the binding/lookup is absent or fails. As of bv-web-prod PR #1121, that admin-configured URL can point at a bv-web-prod-hosted ingest endpoint (`/api/internal/ops/bv-mcp-alerts/:token`, URL-path-token auth) that writes into bv-web-prod's own `platformAlerts`/`/admin/ops` — a non-Slack destination operators can use instead of an external webhook.
+
+## Enterprise Managed Auth
+
+Seeding a customer IdP tenant and the post-deploy "Verify live" checklist (`npm run check:ema`, `scripts/verify-ema.sh`, then the Anthropic directory listing steps): `docs/operator-runbook.md` §8a. Validation order and storage keys: `bv-mcp-security-surface`.
+
+## Analytics
+
+Ten event indexes are emitted (`analytics.ts`): four core — `mcp_request`, `tool_call`, `rate_limit`, `session` — plus `doh_primary` (one row per completed non-cached scan), `scan_ungraded`, `degradation` (e.g. `kv_fallback` from `session.ts` on a KV write throw, `quota_shard_salt_missing` from the sharded quota path), `queue_batch`, `tail`, and `quota_shard` (emitted from `execute.ts` when quota sharding is enabled). Queries in `analytics-queries.ts` cover the four core types plus `quota_shard` (`queryQuotaShardSkew`), `degradation` (binding-degradation alert), `queue_batch` (queue-failure alert), and `tail` (fatal-exception alert) — all wired into the 15-min cron in `scheduled.ts`. Scheduled handler (`scheduled.ts`) every 15 min: anomaly alerts + `handleFuzzingScan` + `handleClientIpHeaderAudit` (D1 `mcp_access_log`, #896 — see "Public client-IP header audit"). Optional — the AE lanes require `CF_ACCOUNT_ID` + `CF_ANALYTICS_TOKEN` + `ALERT_WEBHOOK_URL`; the client-IP lane needs only `INTELLIGENCE_DB` + a webhook.
+
+**Blob layout** (keep in sync when adding dimensions):
+
+- `mcp_request`: method, transport, status, auth-flag, jsonrpc-flag, country, clientType, authTier, sessionHash, keyHash, **ipHash** (blob11; FNV-1a `i_` prefix — lossy, equal IPs hash equally). Doubles: double1=durationMs, **double2=abs(jsonRpcErrorCode)** (0 when no error — codes are negative per spec, stored as magnitude since `sanitizeNumber` clamps <0)
+- `tool_call`: toolName, status, isError, domainFingerprint, country, clientType, authTier, cacheStatus, keyHash, **ipHash** (blob10), **region** (blob13), **city** (blob14), **asn** (blob15) — geo blobs append-only, positions 1–12 unchanged
+- `rate_limit`: limitType, toolName, country, authTier
+- `session`: action, country, clientType, authTier, method, keyHash, **declaredClient** (blob7, append-only; `initialize` `params.clientInfo.name` normalized, `'unspecified'` when absent — attribution for the unknown-`clientType` connector surge, analytics-only, never auth/tier)
+
+**`mcp_access_log`** (D1 `INTELLIGENCE_DB`, database `mcp-access-log-v1`; see Binding notes) is the faithful per-event store (vs AE's sampled rollups), enriched with geo/ASN/PTR/`key_hash`/`client_type`/colo/session/method/transport/status, gated by `ANALYTICS_PII_LEVEL` (`coarse` default → no city/lat-long/PTR/ciphertext/user_agent). Writes route through the `MCP_ANALYTICS_QUEUE` consumer (PTR reverse-lookup + encrypt-at-rest + batched D1 insert); inline-insert fallback (no PTR) when the queue is unbound. **In the current public/prod config the queue is NOT bound, so the inline path is the ACTIVE one (no PTR captured regardless of `ANALYTICS_PII_LEVEL`); provision `MCP_ANALYTICS_QUEUE` to enable the queue + PTR path.** Both honor `ANALYTICS_PII_LEVEL`; fail-open throughout.
+
+Per-IP investigations belong in operator-only notes. Hash IPs locally and avoid committing raw IPs or token-bearing analytics commands.
+
+**Client detection** (`client-detection.ts`): `claude_mobile`, `claude_code`, `cursor`, `vscode`, `claude_desktop`, `claude_connector`, `windsurf`, `mcp_remote`, `blackveil_dns_action`, `bv_claude_dns_proxy`, `bv_load_test`, `unknown`. For analytics + format auto-detection, never security. `bv_load_test` matches `bv-{load,chaos,tranco}-{test,scan}` UAs — non-interactive. `claude_connector` = the Anthropic-hosted remote MCP connector (`Claude-User` control-plane UA; the claude.ai/claude.com/Desktop custom connector — the bulk of prod traffic); it's in `INTERACTIVE_CLIENTS` (compact output). Residual: the connector's data-plane fetches use a bare `node` UA and still fall to `unknown` (durable fix = detect via `initialize` `clientInfo.name`, needs session storage).
+
+## Version-sync surfaces (release)
+
+`npm version <X.Y.Z>` runs the `version` lifecycle hook (`scripts/bump-version.mjs`), which rewrites `server.json` and inserts the `CHANGELOG.md` heading and `git add`s both into the release commit. Do not hand-edit them. npm auto-stages only `package.json`/`package-lock.json`, which is why the hook stages the rest itself; and `server.json` is edited by targeted regex, never a JSON round-trip — a re-serialization broke the release gate for 3.40.0–3.42.0. Surfaces kept in agreement: `version` in `package.json` + `package-lock.json` (the source of truth — `SERVER_VERSION` in `src/lib/server-version.ts` auto-derives via `pkg.version`, do **not** hand-edit it), top-level `version` in `server.json` (currently **remotes-only — single `version` field**; the `packages[0].version` foot-gun only applies if an npm `packages` stanza is re-added), and the `[X.Y.Z]` heading in `CHANGELOG.md`. Full release flow: `bv-mcp-release` skill.
+
+## The node_modules symlink incident (#576/#579)
+
+A symlinked `node_modules` resolves the `@blackveil/dns-checks` workspace package (and everything else) to whatever happens to be installed in the OTHER checkout — so tests validate code you did not write, and pass or fail based on a different session's dependency tree, silently. This is exactly how `7864d851` (#576) reached `main`: a tracked `node_modules` symlink with an absolute target resolved cleanly on the authoring machine but pointed at a different checkout's `node_modules`, corrupting that session's verification. `#579` untracked it and closed the `.gitignore` trailing-slash bypass it exploited (a directory-only pattern like `node_modules/` doesn't match a symlink); the durable follow-up added a repo-wide `.gitignore` sweep, a pre-commit gate that default-denies staged symlinks (reads the staged index, so `git add -f` can't route around it), and a CI `symlink-escape` job ("No symlinks escape the repo root") (`.github/workflows/symlink-escape-gate.yml`) that fails any tracked symlink with an absolute or `~`-relative target.
+
+## Public client-IP header audit
+
+Run `npm run audit:client-ip-headers -- --config <private-config> --database INTELLIGENCE_DB --hours 24`
+read-only to detect loss of `cf-connecting-ip` (#896). It queries public access-log aggregate
+counts using the database's epoch-second timestamps and prints no addresses or principals.
+At least 20 observations are required; more than 5% marked `no-cf-header` exits 1. Sparse,
+malformed, or unavailable evidence exits 2, never healthy. The default window is 24 hours
+(`CLIENT_IP_AUDIT_WINDOW_HOURS`), bounded to at most 168. Since the #896 repo-side fix the same
+SQL and thresholds (SSOT: `src/lib/client-ip-audit.ts`; the script carries a parity-pinned copy)
+also run on the 15-min cron as `handleClientIpHeaderAudit` (`src/scheduled.ts`, its own
+`waitUntil` beside `handleFuzzingScan`, D1-backed so it does NOT need the AE token): over the
+last 24h of public-door rows, `total >= 20` and `missing/total > 0.05` pages
+`client_ip_header_missing` (warning, or critical above 50%) with aggregates only, then arms a 6h
+KV cooldown (`client-ip-audit:alerted` in `RATE_LIMIT`) only once the webhook ACCEPTED the page.
+`total < 20` is logged as `unknown`, never healthy. ⚠️ The window is 24h, not 1h, on purpose:
+public-door volume is ~2.3 rows/hour (54/24h, 404/168h measured 2026-09-09), so a 1h window never
+reaches the 20-sample floor and the lane would read `unknown` on every tick — the fail-open trap.
+After a zone fix expect `healthy` within 24h, with up to ~4 tail pages at the 6h cooldown while
+the stale rows age out. Positive control: `handleDailyDigest` appends
+`client_ip_audit: <status> (<missing>/<total>, last 24h)` to the daily digest, so a lane stuck at
+`unknown`/`error` (e.g. schema drift) is seen daily rather than only logged. Measured live
+2026-09-09 before the zone fix: 24h missing ratio 0.944 (51/54), 168h 0.795 (321/404).
+A failure calls for a zone managed-transform/request-header/route review; do not substitute
+`x-forwarded-for` or analytics locality hashes into enforcement identities.

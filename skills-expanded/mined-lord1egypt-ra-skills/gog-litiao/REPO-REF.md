@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/g/gog-litiao/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs.

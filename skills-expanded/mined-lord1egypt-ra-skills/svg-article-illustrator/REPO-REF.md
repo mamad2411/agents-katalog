@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/s/svg-article-illustrator/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: AI驱动的SVG文章配图生成工具，支持动态SVG、静态SVG和PNG导出三种输出模式。当用户需要为文章生成配图、创建SVG插图、将SVG转换为PNG，或提到"为文章配图"、"生成插图"时使用此技能。

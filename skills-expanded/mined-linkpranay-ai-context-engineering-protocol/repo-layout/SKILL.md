@@ -1,0 +1,758 @@
+---
+name: repo-layout
+description: Register, resolve, and validate where a project's path-slots actually live via .layout-slots.yaml markers, so relocating a slot needs zero SKILL.md edits. Do NOT use for single-file lookups.
+namespace: ult
+version: 0.2.1
+origin: ground-up
+author: Pranay Mishra
+maintainer: Pranay Mishra
+adapted_from: ~
+upstream_version: ~
+released: 2026-06-14
+tags: [utility, project-layout, configuration, markers]
+bundle: utilities
+tier: draft
+---
+
+# ult-repo-layout
+
+(Frontmatter `name:` is the bare `repo-layout` — `ult` is this skill's
+`namespace:`, composed into the folder name and every invocation below. Same
+pattern elsewhere in this repo, e.g. `sec-threat-model`'s `name:` is
+`threat-model`.)
+
+This skill implements the project layout and path-dependency configuration
+model (§15) and workspace-root consolidation (§16 —
+`layout.workspace_root`, scaffold-not-copy, and the
+`layout-slots-registry.yaml` superset registry), covering **eleven**
+path-slots:
+
+- `context_packages` — read/written by `ult-context-generate` and every
+  `CONSUMING-CONTEXT-PACKAGE.md` consumer. The only slot a real, shipped skill
+  in this repo both produces and consumes.
+- `compiled_guidelines` — written by `compiling-project-guidelines`, read by
+  its own `CONSUMING-COMPILED-GUIDELINES.md` consumers. The registry's only
+  `kind: file` slot until D21 §16.8/D24 Phase B added three more (below), and
+  the first slot whose D21 default re-roots to a different bucket
+  (`inputs` → `cache`).
+- `decision_ledger` — written by `ult-institutional-memory-distill`'s
+  `decision_ledger.py`, read by `ult-context-generate`. A `kind: file` slot,
+  same bucket re-root as `compiled_guidelines`.
+- `autoscaffold_content_state`, `autoscaffold_content_index` — written by
+  `ult-autoscaffold-content`'s `scaffold_state.py`. Two more `kind: file`
+  slots, same bucket re-root.
+- `plans_output`, `brainstorm_output`, `user_stories_output`, `security_docs`,
+  `security_report`, `project_plan_docs` — six further slots, all
+  **illustrative — not shipped in this repo** (see the slot registry table
+  below; rationale in `references/phase-history.md`).
+
+...plus the **`project_guidelines` starter-kit drop-zone** — not a
+`project_layout` path-slot (no marker, no resolution algorithm), just a
+regenerated `.pointer.md` scaffold file. Read
+`references/starter-kit-dropzones.md` now and follow it if you're touching
+that mechanism.
+
+Read `references/phase-history.md` for the full D20/D21 phase-by-phase build
+history and exit criteria — not needed to operate this skill day to day.
+
+This file and others in this repo cite `D<N>`/`§<N>` labels (e.g. `D21 §16.2`) — see
+`../../../references/design-scratchpad-glossary.md` for what each one means.
+
+**Alternative front-end:** you can also view and (partly) drive this skill's state
+through a local browser wizard instead of re-reading `context-config.yaml` and the
+markers by hand — see [`ult-cep-wizard`](../ult-cep-wizard/SKILL.md) (D24). It's
+mostly a read-only status view, but it can trigger `discover` in place (its own
+freshness-hash-guarded `POST /api/discover`) and the mechanical half of `init` —
+slot scaffolding and the `layout.workspace_root` opt-in this section describes,
+via `POST /api/init` — before D20 has been initialized at all. It never asks for
+`project_name`/`description`, offers a rename-before-scaffold prompt, or runs
+`confirm-layers`/`reconcile` — those, and the fully conversational `init`, still
+happen here.
+
+## Dependencies
+
+None — this skill is foundational. `ult-context-generate` (`utilities`
+bundle, `context_packages`), `compiling-project-guidelines` (`utilities`
+bundle, `compiled_guidelines`), `ult-institutional-memory-distill`
+(`decision_ledger`), and `ult-autoscaffold-content`
+(`autoscaffold_content_state`/`autoscaffold_content_index`) are real,
+shipped-in-this-repo **consumers** of the markers/index this skill maintains
+(via the §15.5 resolution algorithm, documented in each owning skill's own
+path-resolution note) — not dependencies of this skill. The other six
+registered slots (see the slot registry table above) are owned by
+illustrative skills only — same "not a dependency" status either way.
+
+## Overview
+
+Every project has a handful of **path-slots** — directories or files that one
+skill owns and others read (e.g. "where do approved context packages live?").
+Hardcoding those paths in every `SKILL.md` means relocating a folder requires
+editing every skill that mentions it. This skill fixes that with two pieces:
+
+1. **Markers** (`.layout-slots.yaml`, §15.3) — a small YAML file dropped in
+   the directory that *is* (or *contains*) a slot, declaring `slot: <key>`.
+   The marker travels with the folder if it's renamed or moved — identity
+   lives with the folder, not in a separate table.
+2. **`project_layout`** in `context-config.yaml` — a **generated index**
+   (`reconcile` rebuilds it from markers), cached for fast lookups. It is
+   never hand-authored and never the source of truth — markers are.
+
+This skill is the only thing that writes markers and rebuilds the index.
+Other skills only *read* `project_layout` (fast path) and fall back to a
+repo-wide marker search (§15.5) if the index is stale or absent — they never
+hardcode a slot's path.
+
+## Slot registry
+
+`project_layout.slots` registers only slots whose path isn't already a key
+under `layers.*` / `how_dimension.*` / `graphify.*` / `cache.*` in
+`context-config.yaml` (§15.2) — relocating those is "edit the existing key,"
+already supported. Eleven slots are registered:
+
+| Slot key | Kind | Pre-D21 default | D21 default (`layout.workspace_root` set) | Falls back to (if unset) | Owning skill |
+|---|---|---|---|---|---|
+| `context_packages` | `directory` | `contexts/` | `{workspace_root}/contexts/` | `cache.product_context_path` | `ult-context-generate` |
+| `plans_output` | `directory` | `output_docs/plans/` | `{workspace_root}/outputs/plans/` | — | `example-plan-writer` *(illustrative)* |
+| `brainstorm_output` | `directory` | `output_docs/brainstorm/` | `{workspace_root}/outputs/brainstorm/` | — | `example-brainstorm-writer` *(illustrative)* |
+| `compiled_guidelines` | `file` | `starter_kit/project_guidelines/COMPILED-GUIDELINES.md` | `{workspace_root}/cache/project-guidelines/COMPILED-GUIDELINES.md` | — | `compiling-project-guidelines` |
+| `decision_ledger` | `file` | `starter_kit/decision_ledger/DECISION-LEDGER.json` | `{workspace_root}/cache/decision-ledger/DECISION-LEDGER.json` | — | `ult-institutional-memory-distill` |
+| `autoscaffold_content_state` | `file` | `starter_kit/autoscaffold-content/TRIAGE-STATE.json` | `{workspace_root}/cache/autoscaffold-content/TRIAGE-STATE.json` | — | `ult-autoscaffold-content` |
+| `autoscaffold_content_index` | `file` | `starter_kit/autoscaffold-content/CEP-INDEX.md` | `{workspace_root}/cache/autoscaffold-content/CEP-INDEX.md` | — | `ult-autoscaffold-content` |
+| `user_stories_output` | `directory` | `output_docs/user-stories/` | `{workspace_root}/outputs/user-stories/` | — | `example-consumer` *(illustrative)* |
+| `security_docs` | `directory` | `output_docs/security_docs/` | `{workspace_root}/outputs/security_docs/` | — | `example-threat-modeler` *(illustrative)* |
+| `security_report` | `directory` | `output_docs/security_report/` | `{workspace_root}/outputs/security_report/` | — | `example-report-writer` *(illustrative)* |
+| `project_plan_docs` | `directory` | `output_docs/project_plan_docs/` | `{workspace_root}/outputs/project_plan_docs/` | — | `example-project-planner` *(illustrative)* |
+
+The "D21 default" column only applies to an **unmarked** slot when
+`layout.workspace_root` is set (§16.2 step 3) — it never overrides a marker or
+an explicit `project_layout.slots.<slot>.path` (§16.2 steps 1-2). A project
+that never sets `layout.workspace_root` resolves via the "Pre-D21
+default"/"Falls back to" columns exactly as before, forever (§16.10).
+
+`plans_output` and `brainstorm_output` are the two **Gap-B** slots that close
+a gap left open by the first registered slot: a plan-writing or brainstorming
+skill that hardcodes its own output directory, with no slot at all to
+relocate it via (see `references/phase-history.md`'s Phase 3b for the real
+external skillset this gap was diagnosed and proof-tested against — that
+detail is provenance, not this table's operational default). Like the eight
+slots below, neither has a pre-existing config-key fallback — "Falls back to"
+is "—", so an unmarked slot's step-1 fallback is simply its literal pre-D21
+default.
+
+The eight remaining slots:
+
+- `compiled_guidelines` is the registry's first `kind: file` slot — its
+  resolved path is a single file, not a directory (see "Marker file format"
+  below for the `file:` marker field this requires). It's also the first slot
+  whose D21 default **changes bucket** (§16.3/§16.4): the pre-D21 default
+  `starter_kit/project_guidelines/COMPILED-GUIDELINES.md` sits in the
+  `inputs`-bucket starter-kit drop-zone (alongside the raw sources
+  `compiling-project-guidelines` reads), but `COMPILED-GUIDELINES.md` itself
+  is a *derived, regenerable* artifact — so its D21 default re-roots to the
+  `cache` bucket, `{workspace_root}/cache/project-guidelines/COMPILED-GUIDELINES.md`,
+  not `{workspace_root}/inputs/...`.
+- `decision_ledger`, `autoscaffold_content_state`, and
+  `autoscaffold_content_index` are three more `kind: file` slots, each a
+  derived/regenerable artifact for the same reason `compiled_guidelines` is,
+  so each re-roots the same `inputs` → `cache` way (these four are the only
+  `kind: file` slots in the registry). `decision_ledger` (owned by
+  `ult-institutional-memory-distill`, D21 §16.8's trip-wire addition) is
+  the decision ledger, entries only ever added via `decision_ledger.py`,
+  never hand-edited. `autoscaffold_content_state`/`autoscaffold_content_index`
+  (both owned by `ult-autoscaffold-content`, D24 Phase B) are the per-module
+  triage checkpoint and its rendered index, written only via
+  `scaffold_state.py`.
+- `user_stories_output`, `security_docs`, `security_report`, and
+  `project_plan_docs` are four sibling `directory` slots, each one project's
+  `output_docs/<family>/` subtree. All four belong to the `outputs` bucket,
+  alongside `plans_output`/`brainstorm_output` — their D21 defaults sit under
+  `{workspace_root}/outputs/`. None of the four nests inside another (they
+  diverge at `output_docs/<family>/`'s second path segment), so
+  `scripts/validate_layout.py`'s nesting check (§15.9 #3) needs no
+  `nests_under:` whitelist entries for this set.
+
+`context_addenda` (the `*.addenda.yaml` siblings D19 v2 writes) is **not** a
+separate slot — its path is always
+`{resolved context_packages path}/{package-id}_{date}.addenda.yaml` (§15.4).
+
+`scripts/validate_layout.py`'s `SLOT_REGISTRY` is written generically over
+"any number of registered slots" and additionally exercises a `kind: file`
+slot and the partial-install gate (§15.8 — full behavior under "Checks"
+below, in `scripts/validate_layout.py`).
+
+## Marker file format — `.layout-slots.yaml`
+
+One file per directory that hosts one or more slots:
+
+```yaml
+# contexts/.layout-slots.yaml -- this directory IS the context_packages slot
+slots:
+  - slot: context_packages
+    kind: directory
+    schema_version: 1
+```
+
+`plans_output`/`brainstorm_output`/`user_stories_output`/`security_docs`/
+`security_report`/`project_plan_docs` markers have the same shape, just a
+different `slot:` key:
+
+```yaml
+# my-plans/.layout-slots.yaml -- this directory IS the plans_output slot
+slots:
+  - slot: plans_output
+    kind: directory
+    schema_version: 1
+```
+
+`compiled_guidelines` is the registry's first `kind: file` slot (see
+"Slot registry" above for the other three: `decision_ledger`,
+`autoscaffold_content_state`, `autoscaffold_content_index`) — its marker
+adds a `file:` field naming the file *within* the marker's directory:
+
+```yaml
+# starter_kit/project_guidelines/.layout-slots.yaml -- this directory CONTAINS
+# the compiled_guidelines slot (the file COMPILED-GUIDELINES.md within it)
+slots:
+  - slot: compiled_guidelines
+    kind: file
+    file: COMPILED-GUIDELINES.md
+    schema_version: 2
+```
+
+- `kind: directory` → the slot's resolved path is the marker's own directory.
+- `kind: file` → the slot's resolved path is `<marker's directory>/<file>`
+  (`resolved_path_for_marker` in `scripts/validate_layout.py` handles this
+  generically — `compiled_guidelines` is simply the first slot to use it).
+  `decision_ledger`/`autoscaffold_content_state`/`autoscaffold_content_index`
+  use the same `kind: file` marker shape as `compiled_guidelines` above, just
+  naming their own file (`DECISION-LEDGER.json`, `TRIAGE-STATE.json`,
+  `CEP-INDEX.md` respectively).
+- `schema_version` — the `project_layout` schema version that introduced this
+  slot (§15.8); `1` for `context_packages`/`plans_output`/`brainstorm_output`,
+  `2` for `compiled_guidelines`/`user_stories_output`/`security_docs`/
+  `security_report`/`project_plan_docs`, `3` for `decision_ledger` (D21
+  §16.8), `4` for `autoscaffold_content_state`/`autoscaffold_content_index`
+  (D24 Phase B).
+- If two slots happen to share a directory, list both entries under that one
+  `slots:` array — one marker file can declare multiple slots.
+
+## Starter-kit drop-zones and `.pointer.md` (D21 §16.6)
+
+One `inputs/`-bucket drop-zone (`project_guidelines`) holds project-owned,
+human-curated material that a consuming skill reads but never regenerates
+(`compiling-project-guidelines`). Read `references/starter-kit-dropzones.md`
+now and follow it — it has the drop-zone's `.pointer.md` template and the
+workspace-root-aware location rules.
+
+## Generated `context-config.yaml`
+
+`install.ps1`/`install.sh -InitProject` generates a baseline
+`context-config.yaml` at the project root (only if one doesn't already exist)
+by copying `starter_kits/context_engineering/context-config.yaml.template` and
+applying this **mechanical substitution table** — the same defaults a human
+would get by hand-copying `.template` and accepting every `e.g.` value,
+byte for byte (§16.2's non-impact guarantee extends to this generated file):
+
+| Template placeholder (`<...>` token) | Generated value | Field |
+|---|---|---|
+| `<your-project-name>` | *(left as-is — human input)* | `project_name` |
+| `<one-line description of what this product/service does>` | *(left as-is — human input)* | `description` |
+| `<source code root, e.g. app/ or src/>` | `.` | `what_l3.path` |
+| `<requirements docs root, e.g. docs/requirements/>` | `docs/requirements/` | `what_l2.path` |
+| `<external reference root, e.g. specs/external/>` | `specs/external/` | `what_l1.path` |
+| `<org conventions/templates root, e.g. org/>` | `org/` | `how_l2.path` |
+| `<process standards root, e.g. org/process-standards/>` | `org/process-standards/` | `how_l1.path` |
+
+`project_name`/`description` are the only two fields left as literal
+`<placeholder>` — exactly §16.6 item 2's "the only fields requiring human
+input." `what_l3.path` resolves to `.` (repo root) rather than the
+`app/`-or-`src/` example: neither candidate is guaranteed to exist, and `.`
+is the universally-safe "index the whole repo" default for a brand-new
+project (a deliberate deviation from the literal `e.g.` value for this one
+field — every other row uses its `e.g.` value as-is). The generated file has
+**no `project_layout` section** — `init` step 1's "refuse if already
+initialized" guard only fires on `project_layout.initialized: true`, so this
+generated baseline composes cleanly with `init` below.
+
+`init` (this skill) then **completes** this file: it asks the human for
+`project_name`/`description`, optionally offers the `layout.workspace_root`
+opt-in (re-rooting the drop-zone's `.pointer.md` location and pre-populating
+`layers.what_l2.exclude`/`include_roots` per §16.5/§16.7), and performs its
+existing slot-marker/`project_layout` work (below). If `context-config.yaml`
+doesn't exist yet when `init` runs (the human skipped `-InitProject`), `init`
+generates it inline using the table above before continuing.
+
+## Modes
+
+### `init` — greenfield projects
+
+Steps 1-3 and 5 below are mechanical and backed by
+`validate_layout.py --init [--workspace-root <path>] [--ci-hook]` — run it
+verbatim once the pre-step-1 conversational items (config completion,
+`workspace_root` opt-in, pointer regeneration) and step 4's rename-before-
+scaffold offer are settled; it performs the refuse-if-initialized check, the
+per-slot scaffold+marker writes, the `project_layout` write, and the
+pre-commit hook scaffold in one pass. It refuses cleanly (rather than
+generating one) if `context-config.yaml` doesn't exist yet — run the
+pre-step-1 config-completion item first.
+
+**Before step 1 — config completion and pointer regeneration:**
+
+- If `context-config.yaml` doesn't exist at the project root, generate it
+  using the substitution table in "Generated `context-config.yaml`" above
+  (same output `install.ps1`/`install.sh -InitProject` would have produced).
+- Ask the human for `project_name` and `description` and fill those two
+  placeholders — the only ones the table leaves unset.
+- Ask whether to opt into `layout.workspace_root` (brief explanation: re-roots
+  this project's slots and starter-kit drop-zone under one directory, e.g.
+  `docs/`). This question is **skipped entirely** if `layout.workspace_root`
+  is already set (re-running `init` must never re-prompt or change an
+  existing value — the same "never silently reset" rule from `reconcile`
+  applies here too). If the human opts in:
+  - Set `layout.workspace_root: <value>` (same well-formedness rule as check
+    7 — reject `.`/`''`).
+  - Pre-populate `layers.what_l2.exclude: [contexts/, inputs/, cache/]` (the
+    §16.5 recommended triad — only add entries for subtrees that don't already
+    appear in `what_l2.exclude`).
+  - If `output_docs_structure/` (or another existing SDLC-output tree) is
+    present, suggest — don't silently add — `what_l2.include_roots` entries
+    per §16.7; otherwise leave `include_roots: []`.
+- Regenerate the `project_guidelines` starter-kit drop-zone's `.pointer.md`
+  at its current location: `starter_kit/project_guidelines/.pointer.md` if
+  `layout.workspace_root` is unset (the common case — this is where
+  `-InitProject` already created it), or
+  `{workspace_root}/inputs/starter-kit/project_guidelines/.pointer.md` if the
+  human just opted into `workspace_root` for a **brand-new** project with no
+  existing drop-zone content (re-rooting an **existing** project's drop-zone
+  is `reconcile --adopt-workspace-root`'s job, below — `init` never moves
+  files). Create the directory first if it doesn't exist; never touch any
+  other file already in that directory.
+
+**Then run steps 1-5 below** (except that step 2's
+`{workspace_root}/<leaf>` resolution now has a real `workspace_root` value to
+use if the human opted in above):
+
+1. **Refuse if already initialized** — if `context-config.yaml` has
+   `project_layout.initialized: true`, stop and say so; point at `reconcile`
+   or offer a diff view instead. Re-running `init` must never silently
+   reset a customized layout back to defaults. One exception: `init
+   --ci-hook` on an already-initialized repo scaffolds the opt-in
+   pre-commit hook (see "CI / pre-commit hook" below) and stops there,
+   leaving `project_layout` untouched — otherwise the hook would be
+   unreachable to anyone who ran `init` once without it.
+2. Otherwise, for each registered slot (see the slot registry table above —
+   all eleven) whose owning skill is installed (partial-install gate, §15.8):
+   - Resolve its **resolved default** (§16.2): `{workspace_root}/<leaf>`
+     if `layout.workspace_root` is set in `context-config.yaml` (and
+     well-formed), else the slot's "Falls back to" config key if set
+     (only `context_packages` has one — `cache.product_context_path`), else
+     its pre-D21 default (§15.2/§16.4 — see the slot registry table above).
+   - Scaffold that directory if it doesn't exist yet — for `kind: file`
+     slots (`compiled_guidelines`, `decision_ledger`,
+     `autoscaffold_content_state`, `autoscaffold_content_index`), scaffold
+     the *containing* directory only; the file itself is each owning
+     skill's own output, never created by `init`.
+   - Write `<path>/.layout-slots.yaml` with the marker shown above (one
+     `slot:` entry per slot; slots that resolve to the same directory share
+     one marker file's `slots:` list). For a `kind: file` slot, the marker
+     is written in the containing directory with `kind: file, file:
+     <filename>` (see "Marker file format" above).
+3. Write/update `context-config.yaml`'s `project_layout` — one `slots:` entry
+   per slot actually scaffolded in step 2, i.e. only the slots whose owning
+   skill is installed (same partial-install gate as step 2 — a project that
+   installed only the `developer` bundle writes only that bundle's slots
+   here, never all eleven). The example below shows every registered slot at
+   once purely for illustration of the shape each entry takes; a real
+   partial install's `project_layout.slots` simply omits the rows whose
+   owning skill isn't present:
+   ```yaml
+   project_layout:
+     version: 1
+     initialized: true
+     slots:
+       context_packages:
+         path: contexts/        # or wherever step 2 resolved it
+         kind: directory
+         owning_skill: ult-context-generate
+       plans_output:
+         path: output_docs/plans/             # or wherever step 2 resolved it
+         kind: directory
+         owning_skill: example-plan-writer    # illustrative
+       brainstorm_output:
+         path: output_docs/brainstorm/        # or wherever step 2 resolved it
+         kind: directory
+         owning_skill: example-brainstorm-writer   # illustrative
+       compiled_guidelines:
+         path: starter_kit/project_guidelines/COMPILED-GUIDELINES.md  # or wherever step 2 resolved it
+         kind: file
+         owning_skill: compiling-project-guidelines
+       decision_ledger:
+         path: starter_kit/decision_ledger/DECISION-LEDGER.json  # or wherever step 2 resolved it
+         kind: file
+         owning_skill: ult-institutional-memory-distill
+       autoscaffold_content_state:
+         path: starter_kit/autoscaffold-content/TRIAGE-STATE.json  # or wherever step 2 resolved it
+         kind: file
+         owning_skill: ult-autoscaffold-content
+       autoscaffold_content_index:
+         path: starter_kit/autoscaffold-content/CEP-INDEX.md  # or wherever step 2 resolved it
+         kind: file
+         owning_skill: ult-autoscaffold-content
+       user_stories_output:
+         path: output_docs/user-stories/        # or wherever step 2 resolved it
+         kind: directory
+         owning_skill: example-consumer         # illustrative
+       # ...and so on for security_docs, security_report, project_plan_docs --
+       # same shape, one entry per remaining row of the slot registry table
+       # above.
+   ```
+4. **Optionally interactive up front** — before scaffolding, ask: "Here's the
+   default layout for all eleven registered slots — `<slot>` → `<resolved
+   default>` for each row of the slot registry table above (or its
+   `{workspace_root}/...` equivalent if `layout.workspace_root` is set) —
+   rename or relocate any of these before we start?" A team that wants a
+   custom layout from day one does it in one pass; each marker is written at
+   its chosen location either way.
+5. **Scaffold a CI/pre-commit hook only if requested** — see "CI /
+   pre-commit hook" below. Opt in with `init --ci-hook`; omitted by
+   default. (`--no-ci-hook` is accepted as a deprecated no-op for one
+   release, since the hook is already off unless asked for.)
+
+### `reconcile` — rebuild the index from markers; the repair tool for drift
+
+Runs the steps below **independently for each registered slot** — a marker
+for one slot doesn't affect another's resolution, even if two slots' markers
+happen to live in the same `.layout-slots.yaml` file's `slots:` list.
+
+1. Repo-wide search for `slot: <key>` across every `.layout-slots.yaml` (the
+   same deterministic scan `validate_layout.py` performs — path depth
+   ascending, then lexical ascending).
+2. **Exactly one marker found** → write/update
+   `project_layout.slots.<key>.path` to match it. This is what fixes a stale
+   index automatically — no prompt needed.
+3. **Zero markers found** → ask the human where `<key>` lives now, or whether
+   it was intentionally removed — mention the **resolved default** (§16.2)
+   as the likely candidate, e.g. "...its resolved default would be `<path>` —
+   is that where it lives?". **Never guess by name similarity.** On
+   confirmation, write a new marker there.
+4. **More than one marker found (for one slot)** → bijectivity violation
+   (§15.9) — surface it as a conflict for the human to resolve (pick one
+   location, or merge the two folders' contents). Do not auto-resolve.
+5. `reconcile --validate` — no prompts, just runs
+   `scripts/validate_layout.py --validate` and reports pass/fail with a
+   non-zero exit code on failure, for CI / pre-commit (§15.9).
+6. `reconcile --adopt-workspace-root <path>` (D21 §16.6) — advisory/dry-run
+   helper for migrating an existing project onto `layout.workspace_root`: for
+   every registered slot and starter-kit drop-zone, reports whether it's
+   already marker-pinned (unaffected), has a duplication conflict that needs
+   resolving by hand, or offers a pin-here-vs-relocate choice. Read
+   `references/workspace-root-adoption.md` now and follow it — it has the
+   full per-slot decision tree.
+
+### `discover` — brownfield adoption (no prior markers or `project_layout`)
+
+Each registered slot has its own content-based signature for guessing a
+candidate location — except `compiled_guidelines`, `user_stories_output`,
+`security_docs`, `security_report`, and `project_plan_docs`, which have none
+and skip straight to asking (§15.7):
+
+1. **`context_packages`** — scan for `*.yaml` files containing a top-level
+   `context_package:` key with an `approved_by` field, **sorted
+   deterministically** (path depth ascending, then lexical ascending — the
+   same order `reconcile`'s tie-breaks use).
+2. **`plans_output`/`brainstorm_output`** — simpler signature: does the slot's
+   pre-D21 default path (`output_docs/plans/` / `output_docs/brainstorm/`)
+   exist and contain `.md` files? If so, that's the candidate.
+3. **`compiled_guidelines`/`user_stories_output`/`security_docs`/
+   `security_report`/`project_plan_docs`** — no content-based signature
+   (§15.7): go straight to step 5 below for each of these five, every time.
+   If the slot's pre-D21 default path already exists (e.g.
+   `output_docs/security_docs/`, or another existing `output_docs_structure/
+   <family>/` convention), mention it as a likely answer rather than asking
+   cold.
+4. For slots with a candidate (items 1-2), present it to the human for
+   confirmation: "Found `<path>` — is this where `<slot>` lives?"
+5. If nothing is found for a slot (items 1-2), the human says no, or the slot
+   has no signature at all (item 3), ask directly: "Where does this project
+   keep `<slot description>`? (path, or 'not in use')"
+6. On confirmation, write a marker at that location (creating the directory
+   first if it doesn't exist) — per slot. For the `kind: file` slot
+   (`compiled_guidelines`), write the marker in the *containing* directory
+   with `kind: file, file: COMPILED-GUIDELINES.md` (see "Marker file format"
+   above).
+7. Write `project_layout` with `initialized: true`, `version: 1`, same shape
+   as `init` step 3, covering every slot that was confirmed.
+
+### Layer-path discovery and confirmation — `discover_layers.py` / `confirm_layers.py`
+
+A separate D23 mechanism from the 11-slot `discover` mode above: proposes and
+commits the four layer paths (`layers.what_l2`, `layers.what_l1`,
+`how_dimension.how_l2`, `how_dimension.how_l1`) that `project_layout.slots`
+deliberately excludes (§17.1). Read `references/layer-path-discovery.md` now
+and follow it if you're running `discover`'s layer-path phase or
+`confirm-layers` — it has the full `discover_layers.py`/`confirm_layers.py`
+usage, the escalation-matrix shapes, comment-as-grammar rules, and §17.6
+drift tracking.
+
+## Path resolution algorithm (§15.5 + §16.2) — for consuming skills
+
+Each owning/consuming skill resolves its slot this way instead of a hardcoded
+path. `ult-context-generate`/`CONSUMING-CONTEXT-PACKAGE.md` (`context_packages`)
+and `compiling-project-guidelines`/`CONSUMING-COMPILED-GUIDELINES.md`
+(`compiled_guidelines`) are two real, shipped-in-this-repo consumers;
+`ult-institutional-memory-distill`/`decision_ledger.py` (`decision_ledger`)
+and `ult-autoscaffold-content`/`scaffold_state.py`
+(`autoscaffold_content_state`/`autoscaffold_content_index`) are two more. The
+same algorithm applies identically to the six illustrative slots (see the
+slot registry table above for which owning skill maps to which):
+
+1. No `context-config.yaml`, or no `project_layout` section → use the slot's
+   **resolved default** (defined below) — unconfigured project, today's
+   behavior, unchanged unless `layout.workspace_root` is set.
+2. `project_layout.slots.<slot>` present (cache hit) → read `.path`, then
+   check whether that location's `.layout-slots.yaml` still lists
+   `slot: <slot>`:
+   - Confirms → resolved (fast path, one YAML read).
+   - Missing/stale → cache miss, fall through to step 3.
+3. Cache miss, or `slots.<slot>` absent → repo-wide marker search (the same
+   scan `reconcile` performs):
+   - Zero matches → the slot's **resolved default** (defined below), plus
+     non-blocking note: `"Note: slot '<slot>' has no marker in this repo —
+     using default '<path>'. Run /ult-repo-layout reconcile to register it if
+     this isn't where you keep it."` (`<path>` is the resolved default).
+   - Exactly one match → resolved to that path; if the index pointed
+     elsewhere, this run also flags it as stale (next `reconcile` refreshes
+     it).
+   - Multiple matches → bijectivity violation: read context uses the
+     first by stable sort order with a warning; write context **hard-stops**
+     — `/ult-repo-layout reconcile` must resolve it first.
+4. Once resolved: existence check (`directory` → can be listed), type check
+   (is it actually a directory?). Not found in read context →
+   warn-and-continue. Not found in write context → governed by
+   `layout.on_missing_write_path` below.
+
+### Resolved defaults per slot (D21 §16.2/§16.4)
+
+A **marker** (steps 2-3 above) always wins regardless of this section — it
+only governs steps 1 and 3's "zero matches" case, i.e. an **unmarked** slot.
+For an unmarked slot, see the slot registry table above for every slot's
+"Pre-D21 default" and "D21 default" columns:
+
+- **`layout.workspace_root` set** (and well-formed — not `.`/`''`) → the
+  slot's "D21 default" column, `{workspace_root}/<leaf>` (§16.4).
+- **`layout.workspace_root` absent (or malformed)** → the slot's "Falls back
+  to" config key if set (only `context_packages` has one —
+  `cache.product_context_path`, §15.2), else its "Pre-D21 default"
+  column, literally.
+
+A few slots have a wrinkle worth calling out by name:
+
+- **`context_packages`** is the only slot with a config-key fallback
+  (`cache.product_context_path`) — a project that set this key before this
+  skill ever existed continues to work unchanged, even with
+  `layout.workspace_root` unset.
+- **`compiled_guidelines`, `decision_ledger`, `autoscaffold_content_state`,
+  and `autoscaffold_content_index`** are the four slots whose D21 default
+  changes *bucket*, not just root: each pre-D21 default sits in the
+  `inputs`/`starter_kit` bucket (raw, project-authored territory), but each
+  resolved file is a *derived, regenerable* artifact — so each D21 default
+  re-roots to the `cache` bucket instead (e.g.
+  `{workspace_root}/cache/project-guidelines/COMPILED-GUIDELINES.md` for
+  `compiled_guidelines`) — `{workspace_root}/inputs/...` is never a candidate
+  for any of the four (see "Slot registry" above for why).
+
+`workspace_root` therefore changes **defaults only** — it can never override a
+marker (steps 2-3) or an explicit `project_layout.slots.<slot>.path` (step 2).
+A project that never sets `layout.workspace_root` resolves exactly as it
+did before this mechanism existed, forever (§16.10's zero-impact guarantee).
+`validate_layout.py --validate` rejects `layout.workspace_root: .` and
+`layout.workspace_root: ''` (see below) — a single config-level check
+that applies to every registered slot at once, not a per-slot check.
+
+## Config reference — `context-config.yaml`
+
+This skill reads and writes:
+
+- **`project_layout`** — the generated index (see `init`/`reconcile` above).
+  Never hand-author this section; running `init` (new project) or `discover`
+  (existing project) writes it for you. Hand-editing
+  `project_layout.slots.<slot>.path` without also moving the marker produces
+  the stale-index case `reconcile` exists to fix — move the folder (and
+  its marker), or run `reconcile`, don't edit this path directly.
+- **`cache.product_context_path`** — read-only for this skill, as
+  `context_packages`'s pre-D21 documented default/fallback (§15.2).
+  Setting this alone (no `project_layout`, no `layout.workspace_root`) still
+  works exactly as it did originally — step 1 of the resolution algorithm
+  above. `plans_output`/`brainstorm_output` have no equivalent config-key
+  fallback (they're newer slots, §16.4) — their step-1 fallback is always
+  their literal pre-D21 default.
+- **`layout.workspace_root`** (D21 §16.2) — optional, repo-relative directory
+  path (e.g. `docs/`). When set, each **unmarked** registered slot's resolved
+  default becomes `{workspace_root}/<leaf>` (§16.4) — `contexts/` for
+  `context_packages`, `outputs/plans/` for `plans_output`, `outputs/brainstorm/`
+  for `brainstorm_output` — instead of its pre-D21 default; see "Resolved
+  defaults per slot" above. Never overrides a marker or an explicit
+  `project_layout.slots.<slot>.path`. `.` and `''` are rejected by
+  `validate_layout.py --validate`. Absent by default — a project that
+  never sets it resolves exactly as before.
+- **`layout.on_missing_write_path`** — governs what happens when
+  a skill tries to *write* to a registered slot but its resolved path doesn't
+  exist:
+  - `prompt` (default in interactive sessions) — "Configured output path for
+    slot '<slot>' ('<path>') doesn't exist — create it now, or has it moved?
+    (create / tell me the new path / skip this write)"
+  - `skip` (default in non-interactive sessions) — warn, don't write, report
+    the write as skipped. Whether that's an error is the calling skill's call.
+  - `create` — silently create the directory. Opt-in only — declares "the
+    configured path is always correct, create it if absent."
+
+  If unset: `prompt` interactively, `skip` otherwise — never `create` by
+  default ("ask the human" degrades to "do nothing and say so," never to
+  "guess"). Applies the same way to every registered slot (see the slot
+  registry table above — all eleven). For a `kind: file` slot
+  (`compiled_guidelines`, `decision_ledger`, `autoscaffold_content_state`,
+  `autoscaffold_content_index`), "doesn't exist" means the file itself;
+  `create` creates its containing directory only — the file is each owning
+  skill's own output, never fabricated empty by this mechanism.
+
+A ready-to-copy template with these keys (annotated) is at
+`starter_kits/context_engineering/context-config.yaml.template`.
+
+## CI / pre-commit hook
+
+`init --ci-hook` (opt-in — omitted unless explicitly requested) scaffolds a
+hook that runs, from the repo root:
+
+```sh
+PY=$(command -v python3 || command -v python) || exit 0
+"$PY" .github/skills/ult-repo-layout/scripts/validate_layout.py --validate || exit 0
+```
+
+**Fails open, not closed**: a missing `python3`/`python` on `PATH`, or a
+non-zero exit from `--validate` itself, exits 0 rather than blocking the
+commit — a convenience nudge that prints the report either way, never a
+hard gate an adopter didn't explicitly ask for. No LLM involved (§15.9),
+same deterministic-check precedent as `content_hash.py`/`md_index.py`. Wire
+it into whatever this repo already uses (`.github/workflows/`,
+`.pre-commit-config.yaml`, etc.) — `validate_layout.py` itself has no
+opinion on the wrapper.
+
+## `scripts/validate_layout.py`
+
+Deterministic, stdlib-only (no pip install), vendorable alongside
+`md_index.py`/`content_hash.py`. Run from the repo root:
+
+```
+python .github/skills/ult-repo-layout/scripts/validate_layout.py --validate [<repo-root>]
+```
+
+Checks (§15.9; all eleven slots from the slot registry table above are
+registered, but every check is written generically over `SLOT_REGISTRY` — the
+mechanism was proven going from 1 to 3 to 8 to 11 registered slots with zero
+logic changes, including a `kind: file` slot and the partial-install gate
+below). Numbered in the order `validate()` actually runs them:
+
+1. **Bijectivity** — no slot has more than one marker; no two slots
+   resolve to the same path.
+2. **Type consistency** — a slot's resolved path, if it exists, matches its
+   declared `kind`.
+3. **Nesting** — same-kind slots sharing a path prefix (excluding `.`).
+4. **Path well-formedness** — repo-relative only (no `..`), no
+   Windows-reserved device names (`CON`, `COM1`-`COM9`, etc., exact match
+   only — `COM1-migration` is fine), no trailing space/dot segments.
+5. **Cross-platform normalization** — `project_layout.slots.*.path`
+   values must use forward slashes.
+6. **Config-vanished check** — `context-config.yaml`'s git history once
+   had `initialized: true` but the current file has no `project_layout`
+   section (likely accidental deletion) → run `reconcile`.
+7. **`workspace_root` well-formedness (D21 §16.2)** — `layout.workspace_root`,
+   if set, must be a non-empty repo-relative path other than `.`/`''` (reuses
+   check 4's path-wellformedness rules). `.`/`''` → `FAIL` (hard-stop, not a
+   silent fallback to either default).
+8. **What-L2 index-path exclusion (§16.5)** — if `layers.what_l2.index_path`
+   resolves to a path under `layers.what_l2.path`, it must be covered by a
+   `what_l2.exclude` entry, or What-L2 could end up indexing its own index
+   file → `FAIL`. A no-op when `index_path` resolves outside `what_l2.path`
+   entirely (the default whenever `layout.workspace_root` is unset).
+9. **What-L2 exclude-entry typo check (§16.11)** — each `what_l2.exclude`
+   entry should prefix-match an existing subtree under `what_l2.path`,
+   checked case-sensitively; one that matches nothing existing is a likely
+   typo or case mismatch → non-blocking `WARN`. A no-op if `exclude` is
+   empty, or if `what_l2.path` itself doesn't exist yet.
+10. **Layer path population (D23 §17.8)** — a
+    non-blocking `WARN` if an *enabled* layer's resolved path
+    (`layers.what_l2.path`, `layers.what_l1.path`, `how_dimension.how_l2.path`,
+    `how_dimension.how_l1.path`) doesn't exist or contains no files.
+    What-L2/How-L2 are always checked (no opt-out in the shipped config
+    surface); What-L1/How-L1 are checked only when their own `enabled: true`
+    is set — a disabled opt-in layer left at its placeholder/absent `path`
+    never warns. Closes the silent-fallback risk documented in
+    `ult-context-generate/SKILL.md`'s D8 table (a misconfigured path and a
+    genuinely empty layer previously produced identical, silent behavior).
+    Discovery/auto-proposal of these four paths (D23 §17.2–§17.7) is a
+    separate, deferred mechanism — this check only validates a path that's
+    already configured (or defaulted), it never suggests one.
+11. **Layer candidate path population (D23 §17.8 per-candidate extension)** —
+    a non-blocking `WARN` if a confirmed `layers.what_l2.include_roots` entry
+    doesn't exist or contains no files, checked individually per entry (check
+    10 above only ever inspects `what_l2.path` itself, never the additional
+    content roots alongside it). `exclude` entries are not duplicated here —
+    check 9 above already `WARN`s when one matches nothing existing; an
+    empty-but-existing excluded directory is a harmless no-op with no
+    actionable claim behind a `WARN`.
+12. **`layout-slots-registry.yaml` consistency check (D21 §16.8)** — if that
+    file exists at the repo root, its `slots:` entries with
+    `project_layout_slot: true` must exactly match `SLOT_REGISTRY`'s keys in
+    this script; `FAIL` on drift in either direction. A no-op (the file is
+    library-level-only) for every consuming project and every test fixture,
+    including this repo's own test suite. Read
+    `references/library-level-registry.md` now and follow it — it has the
+    full registry schema and the companion `validate_path_conformance.py`
+    check. Runs last, after the layer checks above.
+
+Two more behaviors sit outside this numbered list because they don't run as
+their own pass over all slots:
+
+- A non-blocking `WARN`, emitted per-slot while resolving markers rather than
+  as one of the checks above: an **unmarked** slot with content at both its
+  pre-D21 default and its `workspace_root`-relative default — a likely
+  partial migration; `reconcile` lets the human pick one location.
+- A partial-install gate: if this repo has a `.github/skills/` directory, a
+  slot whose `owning_skill` isn't present under it is skipped entirely for
+  every check above (no INFO/WARN/FAIL, not part of bijectivity/nesting) — an
+  adopter who installed only a subset of skills never sees messages about
+  slots owned by skills they didn't install. Repos with no `.github/skills/`
+  directory at all (including every test fixture in this suite) are
+  unaffected — the gate is a no-op there.
+
+Exits 0 (`PASS`) or 1 (`FAIL`); prints `INFO`/`NOTE`/`WARN`/`FAIL` lines per
+check. Unit tests in `scripts/tests/test_validate_layout.py`.
+
+## Error conditions
+
+| Condition | Action |
+|---|---|
+| `init` run when `project_layout.initialized: true` | Refuse — "Already initialized. Run `/ult-repo-layout reconcile` to update the index, or `discover` to re-confirm slot locations." Add that re-running with `--ci-hook` scaffolds the opt-in pre-commit hook alone, without re-initializing |
+| `init --ci-hook` run when `project_layout.initialized: true` | Not an error — scaffold the pre-commit hook only (never overwriting an existing one) and leave `project_layout` as it stands |
+| A registered slot has zero markers (`reconcile`) | Ask the human where it moved or whether it was removed — never guess by name similarity |
+| A registered slot has multiple markers (any mode) | Bijectivity violation — surface as a conflict; do not auto-resolve |
+| Resolved slot path doesn't exist, read context | Warn-and-continue: "proceeding as if `<slot>` has no content for this run" |
+| Resolved slot path doesn't exist, write context | Apply `layout.on_missing_write_path` (prompt / skip / create) |
+| Resolved path exists but wrong `kind` (file vs. directory) | Report as type-consistency violation — distinct from "not found" |
+| Resolved path exists but not writable (write context) | Distinct error — "permission denied, not a `project_layout` configuration issue" |
+| `validate_layout.py --validate` on a repo with zero markers and no `project_layout` | `PASS` with one `INFO: project_layout is not initialized...` line per registered slot — not an error |
+| `layout.workspace_root` is `.` or `''` | `FAIL` — hard-stop; treated as present-but-invalid, not as absent; applies to every registered slot at once |
+| Content at both a slot's pre-D21 default and its `workspace_root`-relative default, no marker | Non-blocking `WARN` — partial migration; `reconcile` lets the human choose one |
+| `reconcile --adopt-workspace-root`, slot content at both pre-D21 and `workspace_root`-relative defaults, no marker | Flag as the same partial-migration conflict (§16.11) — offer **neither** pin-marker nor `mv` option; human must resolve the duplication first |
+| `reconcile --adopt-workspace-root`, slot already has a marker (anywhere) | Report "unaffected — already has a marker" (§16.11); no options offered, nothing changes |
+| `layout-slots-registry.yaml`'s `slots:` (where `project_layout_slot: true`) doesn't exactly match `SLOT_REGISTRY` | `FAIL` (D21 §16.8, check 12) — registry/code drift; a no-op if the file is absent (every consuming project) |
+| `confirm-layers` run with any field still `PENDING`, using a verb its comment doesn't offer, or an unfilled `<...>` placeholder | Refuse — print every such error, write nothing to `context-config.yaml` (no partial apply, D23 §17.5) |
+| A confirmed `include_roots`/`exclude` entry has disappeared or gone empty since the last `discover` | Narrowly-scoped, dated `## Re-discovery - <layer> - candidates - <date>` section for just that candidate — the rest of the confirmed layer section is untouched (D23 §17.6) |
+
+---
+
+This skill is colocated with its own `scripts/` (per the
+`ult-context-generate/scripts/md_index.py` precedent — scripts live under the
+owning skill, not a shared top-level `scripts/`). It does not read or write
+`roles/` — "slot" (path-slot, §15.2) and the `roles/*.json` agent personas are
+unrelated concepts that happen to sound similar; see §15.2's terminology note.

@@ -1,0 +1,664 @@
+---
+name: src-vehicles-skill
+description: Work on first-party procedural tank specs, builders, materials, profiles, ordering, and asset provenance.
+---
+
+# claude-of-tanks / src/vehicles
+
+## Purpose
+<!-- agent-docs:fill:purpose -->
+Own the playable fleet's canonical specs, first-party visuals, armor metadata,
+materials, and garage ordering.
+
+## Mental model & key files
+<!-- agent-docs:fill:model -->
+`specs.ts` is the registry, `fleetManifest.ts` and `fleetFactory.ts` own the
+typed browser demand graph, `tankFactory.ts` builds/synchronizes eager audit visuals,
+`profiles/` owns authored families, `taxonomy.ts` owns the strict era/role
+vocabulary and complete saved-fleet assignment, `vehicleFacets.ts` owns the
+player-facing class, battle role and design status facets (every playable id
+exactly once per facet, tied to its doctrine and mechanical role:
+`vehicleFacets.selftest.mjs`) and `vehicleFacetSearch.ts` the shared
+`class:`/`role:`/`status:`/`era:`/`nation:`/`tier:` search grammar, `tier.ts` and `fleetOrder.ts`
+own remaining metadata, `tankAssets.ts` owns UI asset mappings, and
+`turretBarrelCircularity.ts` measures actual rig-local gun sections for the
+fleet release gate.
+`internalAnatomyVisuals.ts` is the strict shared geometry owner for Gallery and
+killcam module, crew, and drivetrain presentation; keep both consumers on its
+volume and resource-lifetime contracts.
+A built visual's runtime (its per-actor state and methods, `createTankRuntimeSteps`) and each running-gear unit's
+(`createRunningGearRuntime`) read only the explicit record their build hands them (`TankRuntimeEnv`,
+`RunningGearRuntimeEnv`): a new runtime value goes into that record, never a capture of a build local. That is what
+lets `cloneTankVisual` (232, the MP roster's repeated vehicles: a few ms instead of a 1-1.5 s build) copy a pristine
+visual (`vehicleGraphClone.ts`) and run the same runtimes over the copy: shared stock and camouflage textures, its own
+materials (`copyVehicleMaterial`), written buffers, gear state, burn, dents and lamps (`copyVehicleNightLighting`). A
+profile that patches the finished gear does it through a recorded helper the clone replays
+(`scaleRunningGearMotion`); a clone refuses (throws, the caller builds) any hook, callback, object kind or gear patch
+it does not know. Since perf-252 a battle-batched build copies too (the MP roster's seats are the battle roster's
+builds): its end-wheel `BatchedMesh`es, detached LOD sentinels, battle detail groups, the dual merge's far copies and
+depth orders (the runtime's adoption installs them), program-variant twins over the copy's own originals
+(`programVariantCopy`), the shared depth materials, its own articulated shadow batch over the copied proxies and its
+own lease on the pooled rigid stock (`leaseSharedBattleGeometry`). A copy asked for another build (geometry tier,
+batching, battle detail, merge) refuses. `tankVisualClone.selftest.mjs` holds a copy to a fresh build's draws.
+The factory core's read-only analyses live beside it (round 46,
+`docs/CLEANUP-2026-09-23-structure.md`): `eraSurfaceFrame.ts` (ERA plate frames
+and PCA fit), `muzzleCapProfiles.ts` (barrel cap/mouth-edge walkers),
+`restPoseContact.ts` (dense-shell floor, rest contact, presentation floor),
+`vehicleMarkingSeating.ts` (marking-seat solver and verified-seat replay) and
+`vehicleMesh.ts` (mesh guards); shared pack helpers are `profiles/fittingMount.ts`
+and `profiles/armorFaceSampling.ts`. Fold a duplicated helper into one of these
+owners instead of copying it into a family pack.
+The Japanese, Swedish, Italian, Chinese, T-80-family, Sheridan, Soviet
+heavy-family, shared AFV, and Polish visual deltas live in strict
+`profiles/japan.ts`, `profiles/sweden.ts`, `profiles/italy.ts`, and
+`profiles/china.ts` packs plus `profiles/t80.ts` and `profiles/sheridan.ts`,
+plus `profiles/soviet-heavy.ts`, `profiles/afvFamily.ts`, `profiles/poland.ts`,
+and `profiles/t72.ts`, while the AMX-40 visual build lives in strict
+`france.ts`; all eleven use narrow
+procedural-builder ports. Preserve their
+demand-loaded family boundaries and complete donor geometry.
+`profiles/kit.ts` is the strict shared owner for generic hull/turret profiles,
+donor dispatch, muzzle closures, and deterministic exterior fittings. Extend
+its validated builder, profile, and fitting-option contracts instead of
+reintroducing unchecked family-local copies.
+`modern3.ts` owns the strict, demand-loaded Chieftain, K2/K1A1, Type 10,
+Bradley/BMP, Puma, Type 89, and Ariete geometry pack. Family adapters that
+reuse those donors must declare the complete runtime builder surface they
+forward; do not weaken the shared port or bridge through untyped casts.
+`modern2.ts` owns the strict Leopard 2A4, T-80U, Leclerc, Type 99A,
+Leopard 1A5, MBT-70, and T-14 spec/geometry pack. Keep its mutable armor-lift
+operation explicit, its variable loft/scale adapters narrow, and its runtime
+registration idempotent.
+`decorations.ts` owns deterministic cosmetic-kit construction and exact
+surface seating. Keep decoration geometry merged by material and owner frame,
+keep the 6,000-triangle near budget (2026-10-05, tank-accessories lane; the
+coarse level runs at about two fifths of it), and preserve the typed
+projected-ray index plus gun, turret-sweep, width, and overlap guards (one exception: the release-269 lived-in
+loads, below). Piece
+shapes come from `accessoryKits.ts` on the shared `accessoryPrimitives.ts`
+vocabulary (molded boxes, sewn fabric lofts whose straps cinch the fabric,
+round members, swept tubes): author every new piece there, drawing all random
+values before any `detail` branch, with a coarse level (`detail: 0`) in the
+same envelope. Each material family draws its near forms to 28 m, its coarse
+forms to 150 m, nothing beyond; the mobile tier builds only the coarse forms.
+Cosmetic decor is `combatHitboxRole: 'nonArmor'` so battle distance detail may
+drop it; the smoke banks are working equipment in their own resident group,
+which also carries the camo-painted hard kit (one `kit` draw per frame). Keep
+decor draws per tank at or below the pre-rebuild count
+(`decorDrawBudget.selftest.mjs`): webbing (`strap`) and small wooden parts
+(`trim`) ride the painted-hardware draw, glass and tyre rubber fold into steel
+and hardware, and a new family on a frame needs a reason.
+The one exception to the 6,000-triangle budget (release 269, accepted by the coordinator on 2026-11-05): the lived-in
+loads `LIVED_IN_ROWS` appends to m1a1, m1a1ha, m1a1_abrams_hc, m1a1_abrams_sa, m1a1_abrams_aim, m1a1_abrams_fep,
+m2a2_bradley, m3a2_bradley, m3a3_bradley, ua_m2a3_bradley and m6_linebacker (ua_m1a1 carries none) seat under their
+own near budget, `LIVED_IN_TRIS` (16,000 triangles: 11,000 for phase 1, raised for phase 2's fuller racks and
+turrets), because the owner asked for "a bunch of extra decorations annd tank props and boxes and bags and other soldier
+reuqipment onn all of these bradleys and m1a1s" (2026-11-05). Every row before them still seats under 6,000, so nothing
+those vehicles carried before moves; any other vehicle that wants more load asks the owner first (docs/DECORATIONS.md,
+"Release 269").
+Leaves on vehicles (suit garnish, the per-spec opt-in branch bundles) are spray
+cards on the trees lane's atlases through `vehicleFoliage.ts`, never a second
+foliage system. The Browning-family roof gun is one construction,
+`machineGunGeometry.ts`, shared by `KIT.fittings.pintleMG`, the legacy
+`KIT.pintleMG` and the decor roof gun: keep envelopes and muzzle points when
+changing it (remote parity). A working or remote `pintleMG` station passes
+`ridingCradle: true` (its cradle, pin and shield pitch with the gun, fitted to
+the class by `addPintleRidingCradle`); `workingPintleCradle.selftest` scans the
+calls and `fleetPassDefault` measures every station against its own mount. The 20 L jerrycan is one construction too
+(`accessoryKits.ts` `jerrycanParts`: decor cans, `KIT.jerryCan`,
+`FITTINGS.jerryCans`), and the profile kit's soft stowage, tarp rolls, ammo
+cans, shovels and stowage-rack loads use the same primitives inside their old
+envelopes and random draws, as do the decor roof furniture (cupolas, hatches,
+sights, searchlights, exhausts, the travel lock; `accessoryKits.ts`). Decor probes skip running gear by name
+(`isDecorRunningGearName`); track guards and skirts are supports and obstacles. Round 2 of the blind critics
+(2026-10-06) set four more rules: loose hard loads carry webbing tie-downs to D-rings and every loose piece a dark
+contact pad (`secureLoadParts`, decor casts no shadow); branch bundles lie lashed along a wall or deck, never
+upright; nets are knotted on an uneven lattice and billow, sag and pleat between tie points; and the machine gun's can
+is issue olive with a belt of dull-brass rounds into a feed tray. Primitives close their shells (lathe and tube caps,
+straps sunk into the fabric), because the sealed-hull census counts any inside seen from outside as a hole.
+Round 3 (2026-10-07) seats loads on the support they actually have. A load (`isLoadPiece`: cargo, cans, bags, rolls,
+drums, wheels) on a roof, bustle, deck or fender takes `supportedSeat`: a 3 x 3 probe grid over its whole footprint
+and a fitted support plane. Rigid loads need 3 cm or less of residual and lean at most 12 degrees. Soft loads
+(`sagsOnSupport`) take up to 5 cm and sag onto the high points. Loads ride 2-7 degrees off square and a few
+centimetres off their station (`transitYaw`). The rear-plate rack slot builds a real cantilever rack under its load
+(`rearRackParts`), and the turret-side slot builds welded L-arms with a strap (`sideLedgeParts`). Both drop the
+contact pad, which now sits inset inside the footprint so it never shows as a rectangle. Rear-hung pieces hang from
+a hook bracket. Commander rings in `KEEP_CLEAR_HULL` stay free for the gun's traverse. `.qa-dev`-style support audits
+(rays from inside each placed piece onto the tank's own geometry) measured 46 % of deck-seated loads floating
+before and 2 % after, with 441 loads in mid-air before and 18 after.
+For player-reported Garage defects, also verify the actual carousel/pedestal
+path with its live engine context, AI geometry quality, static batching and
+cache return. Bare procedural or Gallery captures are insufficient. Record
+the served `application-version`; `origin/main` is not automatically deployed.
+The Griffin Viper regression and manual publication check are documented in
+`tools/SKILL.md` and `docs/DEPLOYS.md`.
+Covered battle loading consumes `createTankSteps` through `fleetFactory.ts`;
+the original `createTank` remains synchronous for authoring and Gallery callers.
+Construction checkpoints expose no partial visual. Decoration work keeps its
+exact RNG/order and stages unpublished groups privately; closing the iterator
+must dispose its private geometry and release owning-context shadow-material
+registrations. Never yield inside a family builder's temporary spec mutation or
+change authored detail to satisfy the loading budget.
+`profiles/ukraine.ts` owns the strict Ukrainian T-64BV, T-80BV, T-80U Kursk,
+Oplot-M, and field-caged M1A1 builds. Keep its surface-seated ERA, cast-dome
+profiles, welded-face probes, cage stations, and mutable donor-id handoff behind
+the narrow Ukrainian builder port; do not move these vehicles back through an
+eager or untyped fleet path.
+`materials.ts` is the strict shared owner for camouflage painting, shared
+texture residency and promotion, semantic vehicle materials, decals, ambient
+shadow-floor hooks, and destroyed-vehicle burn resources. Preserve its painter
+constants, deterministic RNG order, shader strings, and demand-owned wreck
+atlases; extend its local cache and repaint-role contracts instead of casting
+through an untyped material bag.
+Camouflage is production's system (fix/camo-defaults, 2026-10-09; the owner on launch day: "why did you break camos?
+they only show generic camos now instead of the cool camos we had before", then "yeah our entire camo system before was
+better"; R113: "the default camos of our tanks to be what they were before, but just organized a lot better"). Factory
+is each tank's stock scheme (`camoPolicy.ts` stockCamoPatternIdFor: its Signature, a named stock or the nation's service
+pattern); AUTO draws per (vehicle, biome) from `materials.ts` BIOME_PATTERN; a bot keeps its own paint on 40 % of rolls
+(`rosterState.ts` autoCamoIdsForBattle). `camoCatalogProductionIndices.selftest.mjs` holds every tank's selection, stock,
+Factory visual and AUTO, and every catalog index, to production (`camoProductionBaseline.json`, afc5018e9). A paint
+generated later appends after GT (`AUTHORED_PAINT_IDS_AFTER_GT`), never among the earlier ids. PR #9's national/theatre
+AUTO, theatre-matched bots, round-4 Factory coats and painter v2/v3 left with this restore; any change to them needs the
+owner's ruling first.
+`profiles/russia.ts` owns both the strict T-44/T-54/T-62/T-64 Russian profile
+pack and the shared Soviet geometry vocabulary consumed by China, Poland,
+T-72, T-80, and Ukraine. Keep its hull, dome, gun, ERA, Shtora, mudguard, and
+ride-height helpers behind capability-specific ports; do not replace them with
+one oversized builder contract or an eager fleet dependency.
+
+## Patterns to follow / invariants
+<!-- agent-docs:fill:patterns -->
+Tank ids are versioned (SSOT 2.19). `tankIdAliases.ts` holds `TANK_ID_SCHEMA` and the append-only
+`TANK_ID_RENAMES`: an id stored or sent without `tankIdSchema` (or a link without `&ids=`) is schema 1 and resolves
+through every later map, so a rename may reuse an id another vehicle gave up (a swap) without misreading old data.
+Readers resolve at the boundary (`game/tankIdStorageMigration.ts` at boot, `game/tankIdBoundaries.ts` for Studio
+scenes, kill-cam payloads, gallery links and telemetry, `resolveIncoming` for room seats); writers spread
+`TANK_IDS.stamp()`. Anything that hashes an id into a vehicle's look or name hashes `tankSeedId(id)` (its schema-1
+spelling), so a rename never moves a load, a texture, an AUTO camo pick or a hull number. A rename appends a map,
+bumps the schema and `PROTOCOL_VERSION` together (`tankIdAliases.selftest.mjs` pins both); `npm run tank:ids:table`
+prints the rename table.
+A new whole-fleet check is a fleet audit (`{ check(id, tank), finish() }`) added to the fleet pass whose build it
+reads (`fleetPassDefault`, `fleetPassHigh`, `fleetPassLow`; rules in `fleetPass.test-support.mjs`), not another
+receipt that rebuilds all 217 tanks: the build is nearly all of a sweep's cost.
+All playables use first-party runtime geometry; comparison bases belong to the tank-generation
+tooling alone, and no test, receipt or gate reads one.
+Every first-party procedural vehicle is created by Kevin B. Liu and must keep
+the canonical named authorship record from `src/authorship.ts`; AI systems are
+development tools, not model authors. Preserve third-party reference credits
+in `docs/ATTRIBUTION.md`.
+Keep turret/gun parenting correct, derive track hit geometry from the running
+gear profile, and land per-tank changes atomically with audits. Every playable
+tank carries the core combat modules; `combatAnatomy.ts` adds only
+gameplay-backed vehicle-specific systems (autoloader, IFV feed, missile rack)
+and calibrates armor/module/crew coordinates to checked geometry receipts.
+Every authored layer (spaced, external, ERA plate) lies on the drawn build (hitbox-fit-274; the owner, 2026-11-18:
+"some tanks like abrams x just have a floating hit box"): the anatomy generator measures each finished layer and writes
+`plateFits` into the row, and `applyPlateFits` crops a layer to the part it overhangs, fits one standing up to 35 cm off
+its part onto it (never onto the main shell or the running gear), drops one whose part is not drawn (only the structural
+wall, the frame's main plates, near it), and holds where it stands one whose part is drawn but not as one sheet (a skirt
+fused into the hull's solid block: a visible skirt keeps its value; the model owes a separate sheet). A donor's plates
+are not the derived vehicle's: nothing authored needs re-seating by hand. `tools/hitbox-fit-census.mjs` gates it per id
+in `tank:release:check` and fleet-wide in `tank:anatomy:check` (the held layers and the convex cells' bridges held to
+`docs/geometry-gate/hitbox-fit-ledger.json`, never grown, until the models and the generator's slicing fit them).
+Sides (266): +X is the vehicle's LEFT (forward +Z; `vehicleSide.ts` owns the
+convention, a `...Left` station sits at +x). Most anatomy sketches were drawn
+mirrored; `finalizeCombatAnatomy` lets the sourced stations decide each sketch
+frame's handedness and mirrors a wrong frame whole (crew and its modules), so
+author new sketches with the left at +x. One placement pass then resolves the
+internals in a fixed order (shell, ring/basket, crew, then modules from hard to
+soft) and each row publishes `moduleSeats` beside `crewSeats`;
+`gen-combat-anatomy` prints sketches lying largely outside their armour as data
+fixes, and `internalPlacement.selftest.mjs` holds sides, ring, volumes and
+overlaps. `armorInterior.ts` is the one definition of the interior a volume
+fills: hull volumes in the hull's armour envelope, turret-local ones in the
+turret's or, under the deck, the basket (the ring's cylinder about the yaw
+axis). The receipt and `module-visual-align-probe`'s volume-out both read it.
+Crew stations are seated, not boxed (235): every calibration row carries
+`crewSeats` from `tools/crew-seat-fit.mjs` (run by `gen-combat-anatomy`; refit
+against committed rows with `--crew-only [--ids=…]`): a P50 1.75 m body (the
+Gallery mannequin's segment table) in its role's posture — modern MBT drivers
+recline, turret crew sit in the basket below the ring, a turret loader stands
+where the headroom allows — placed nearest its authored station inside the
+exact shell and off the powerplant, autoloader, gun and stowage (where no
+posture fits, a turret seat reaches across the ring's full width and a hull
+crew capsule's gunner, commander or operator reclines like a driver). Its hit
+shapes stay inside armour proper: where the combat shells leave a gap between
+the hull roof and the turret floor (the Challenger 2 family, Leclerc, KF51 …),
+the piece of a body crossing it is cut out of the hit shapes, and HE splash
+strikes the body at three `blastPoints` (head, torso, lap). Its literal box,
+head, posture, hit shapes and blast points are what every client and authority
+read. `node tools/crew-fit-census.mjs` judges the fleet (box, hit shapes and
+body inside the shell; failures are the pinned trimmed stations).
+Procedural low-polygon shadow hulls are presentation-invisible proxies: route
+them with `markShadowOnly()` rather than relying on `colorWrite: false`, which
+still incurs a forward submission in Three.js.
+Battle and Garage builds (`batchStatic`) fold every contiguous run of the final
+coplanar depth-layer order that shares an owner, material, vertex layout, raster
+flags, LOD switch, near-hull shadow and distance-detail membership into one draw
+(`staticDrawMerge.ts`, P21; at most 16,384 vertices per merged draw); unmerged
+meshes keep their layer, so no coplanar winner changes. A folded source keeps its name, userData, layer, geometry and
+frame chain in the merged draw's side table (`staticMergeParts.ts`): resolve a
+name with `findStaticMergePart`, a raycast face with `staticMergePartForFace`,
+and replay per-mesh measurements through `staticMergePartMatrixWorld` (rest
+contact, the presentation floor and showroom framing do). A runtime system that
+edits a vehicle buffer in place must be pinned in the factory's merge options
+(`ownsGeometry`), or the merge folds it; running gear never folds.
+Only parts already at their owner's frame fold by default, so every vertex byte
+is unchanged; `staticDrawMerge: 'translations'` also bakes pure translations but
+moved up to 1,615 px in the P21 float-target captures (float rounding of baked
+positions), so it stays an opt-in. Battle builds (the roster's and the MP seats':
+`fleetFactory.battleStaticDrawMerge`) take `'dual'` (perf-250/254): the identity
+build exactly, plus hidden far copies of each same-key group of parts (contiguous
+or not, translations baked), which `syncFromState` draws past `FAR_MERGE_ENTER_M`
+(30 m screen-equivalent; back under 27 m) with their own depth offsets. With no
+distance (killcam, Garage, Studio) and on a wreck the parts draw. A part in a
+detail wrapper, a battle detail group, a turret squash frame or the near-hull
+shadow never joins a copy. `?staticmerge=off|identity|translations|dual` switches
+the mode on one build for probes.
+Past `FAR_LOD_ENTER_M` (180 m screen-equivalent; back under 165 m) a dual battle
+build draws its far LOD (`farLod.ts`, perf-255), built from its own finished tree
+the first time it goes that far (one vehicle at a time, `claimFarLodBuild`): the
+far hull (its visible static draws merged per direct parent, material and far
+coplanar depth, then vertex-clustered at 5 cm, split by normal direction and never
+across a UV seam, each cell's normals and colours averaged; a long, thin part
+clusters alone at an eighth of its section) and the
+far running gear (one low cylinder per wheel station: the tyre layer's centre and
+radius, a rubber ring as wide as the tyre shows past its set's painted layers, the
+dish in the wheel paint; end wheels and tyreless sets all paint). Only what the
+stand-ins replace is parked on `FAR_LOD_PARKED_LAYER` (27): the hull sources, the
+wheel layers, roller spindles and end wheels; the bands, shoes and links stay. It
+is never toggled through `visible`, and the gear's runtime rests while far.
+Damage-edited buffers, ERA, markings, proxies and transparent draws never join the
+far hull. The switch evidence (perf-256) is CPU render pairs on either side of it
+at 165/180/200 m, side and 3/4 views, with silhouette XOR; a narrower probe lens
+must pin the vehicle's LODs to the true range (they pick by screen size).
+Destroyed-only char and ember atlases must remain demand-owned. The battle warm
+pipeline prepares fielded variants before rollout, while `setDestroyed()` is
+the correctness fallback for Studio and diagnostic callers that skip warming;
+never restore eager wreck-map creation to ordinary vehicle construction.
+The ring a kill leaves (`turretRingWell.ts`, tank-opt RING 2026-10-16) follows
+the same rule: `setDestroyed()` swaps every hull mesh crossing the race's
+polygon for a cut copy (the gun-bend pattern) and puts one plate on `rig_hull`
+on the same polygon (its own ring material, one draw, one fleet program) that
+fakes the well by tracing the view ray against a virtual cylinder; a band round
+its rim closes the cut faces. The plate takes the hull's dents at its vertices
+and ramps with the burn clock (`ramp`), so it moves with the cut deck;
+`resetDestroyed()`/`dispose()` put every mesh back on the geometry it held, so
+an intact build holds nothing of it and its fingerprint and sealed ledgers never
+see it. Its seat is `measureTurretRing` on the visual's own build, once (the
+built seat, the deck round the race, the race inside the turret base and the
+deck's outline; a geometry-only hulk build adds the exterior pass, the floor and
+the well's wall clear of the hull's skin). A calibration `turretRing` receipt
+can stand in for it, but the generator does not publish one: the ring is
+presentation only, and the anatomy's turretRing volume (a sim module) keeps its
+own law: centred on the receipt's seat and deck where one is published, else on
+the turret pivot, the rig_turret seat (`alignTurretRing`, 240). A cook-off hulk's
+bake cuts its hull-side parts exactly after the crumple and merges the well's
+real geometry with its placement budget unchanged. `node tools/turret-ring-census.mjs
+--all --gate` is the fleet receipt; `node tools/turret-ring-probe.mjs --ids=… --gate`
+the z-buffer one (coverage under dents, exterior holes, live and hulk).
+Camouflaged roof fittings, sights, smoke dispensers, stowage, and machine guns
+must use `P.addEquipment()` so they never expand the main armor shell. Offensive
+rocket/missile launchers are damageable: scope their housings, canisters and
+supports with `weaponAssembly()` from `profiles/weaponStock.ts`. Regenerate
+anatomy to publish their exact external hit surfaces and module links. Keep
+inter-pod gaps open, retain native yaw/pitch ownership, and test direct/blast
+damage with one module roll per shot. Do not put a broad armor box over a rack. Structural cupolas use
+`P.addCupola()` (or an explicitly structural hull/turret add) and remain hittable.
+
+Canonical running gear resolves deterministic mechanical families through
+`wheelPatterns.ts`, `trackPatterns.ts`, and `suspensionPatterns.ts`. Road-wheel
+faces are standardized by nation (owner 2026-09-22): `nationWheelSets.ts` is the
+one table of donor tanks, per-nation rules and per-hull exceptions, and
+`nationWheelConstructions.ts` draws a donor's face at any hull's radius, never
+narrower than the hull's authored tire width (`wheelW`) nor wider than its
+standard cap envelope (1.48 × that width) or 0.90 × the track width, whichever
+is larger, and never outside 0.85–1.15 of the donor's proportion (round 40;
+the fleet audit flags a hull whose bounds ask for more). A donor hull keeps its own wheel
+code; every other hull's authored wheel solids, `wheelFaceLayers` and post-build
+`addRoadWheelLayer` dressing are not drawn, and its authored `suspensionDimensions`
+(measured against the wheel it no longer carries) give way to the fleet arm,
+which seats itself against the wheel it actually carries. Period (ww2)
+hulls keep their constructions. A profile may restate, never contradict, its
+nation wheel pattern. Keep road wheels, return rollers, idlers, and sprockets on
+that one suspension-driven assembly. Running-gear finish (owner 2026-09-22, `runningGearFinish.ts`): one table says
+what every gear role may be — tires and insets the fleet rubber, every painted
+face (dishes, hub caps, rims, roller discs, end-wheel bodies) the hull's one
+scheme `wheelPaint` material, hardware dark steel. `normalizeTankAppearance`
+re-seats any clone or fitting paint onto the hull paint and undoes in-place
+retints; `wheelQuality.ts` audits the table on every hull. Never author a
+per-hull wheel hex, clone the wheel paint, or retint it in a profile. Run the three focused
+pattern checks, `nationWheelSets.selftest.mjs`, `fleetPassHigh.selftest.mjs` (the wheel-quality audit) and
+`node tools/wheel-review.mjs --all --gate` after any wheel or running-gear
+change; `node tools/wheel-inventory.mjs --all` lists every hull's wheel.
+Material roles (owner 2026-09-25, FSP-06): camouflage belongs to painted bodywork — hull, turret, guards,
+bins, cases, mounts and their hardware plates — through the camo buckets (`hull*`/`turret*`/`*Detail`/`*Equipment`);
+everything a crew does not spray takes its own bucket: `hullCloth`/`turretCloth` (OD canvas: tarps, packs,
+bedrolls, mantlet boots via `gunMountCanvasSkin`), `hullCanvasPale`/`turretCanvasPale` (sand-khaki desert / IDF
+kit), `hullFittingPaint`/`turretFittingPaint` (solid scheme paint for small painted steel such as jerry cans, which
+a hull-scale camouflage tile would splash), `hullRubber` (flaps, tires), `hullWood`, `hullBark`/`turretBark` (round 4:
+unditching logs, `barkLog({ relief: 2, tinted: true })` in the vertex-coloured log wood), `hullGlass`/`turretGlass`
+(lenses, vision blocks), `hullDark`/`turretDark` (gunmetal: tow cables, coils, whip rods and antenna bases, MG
+bodies, exhaust pipes, tool heads). Parts authored inside an ERA cluster always take the camouflaged external-armor
+bucket (they collapse with the brick) — emit hardware that must stay dark after the cluster closes. Census with
+`node tools/material-roles-audit.mjs [--ids=… | --all] --md=<path>` (part census hook `partCensus`, lexical evidence
+per part, per-tank role and material counts); the audit and its verdicts are
+[`docs/tank-generation/material-roles-audit-20260925.md`](../../docs/tank-generation/material-roles-audit-20260925.md).
+Weapon finish (owner 2026-10-09: "some are drab and plain colored or dont have camo applied on right"; `weaponFinish.ts`):
+a gun's bare steel (the `gunDark`/`gunMountDark`/`gunBarrel*Dark` buckets, remote-station steel, and every weapon
+fitting's `dark` slot) is `mats.weaponSteel`, parkerized grain with oil-streak roughness and crease-edge wear baked per
+triangle (`bakeWeaponEdgeWear`); ammunition cans and belts are `mats.ammoDrab` (the nation's issue drab and dull brass in
+the vertex colours); a weapon fitting's painted slot (`detail`) draws in the hull's camouflage on the vehicle-scale box UV;
+exact source-measured guns take the same finish through `FITTINGS.markExact`. Rendered builds only: geometry-receipt and
+non-rendering builds keep `dark`/`detail` and byte-identical geometry. Fitting material slots are material keys, never
+bucket names (`fitMat` throws on an unknown slot). Seat a fleet gun that replaces a source-measured one with
+`FITTINGS.seatMuzzle` (its muzzle on the authored barrel line). `weaponFinish.selftest.mjs` holds the rule: no weapon
+mesh is a flat single colour.
+Read actual assembled wheel centers: the ground-seating law can override an
+authored `wheelY`. Source-backed track courses must fit finite wheel stock,
+including the central drum, tread rings and tooth crowns at their actual axial
+positions. A smaller `trackR` can clear the hull while burying the band inside
+a solid rim. Use source-sized shoe components, preserve circular hinge pins,
+and verify loaded contact and end-wheel engagement in both HIGH and LOW through
+motion before accepting a course change.
+
+Physical camouflage suits use `addVehicleGhillieSuit(P)` from
+`ghillieSuit.ts`. Add a vehicle-specific registry entry with fitted top, side,
+and end panels; preserve explicit gun, sight, hatch, exhaust, and service
+openings; keep the hem above the smart-track corridor; and attach hull/turret
+meshes to their canonical owner rigs. A suit must be a detailed suspended
+equipment mesh with a visible air layer, deterministic connected netting, and
+an identity-appropriate treatment (`leafy`, `nakidka`, or `ulcans`)—never a
+paint alias, generic outer box, or inherited family blanket. The garnish is
+spray cards seated stem-first on the carrier (`foliageKind`: a species atlas of
+the trees lane, or the painted multispectral garnish for `ulcans`/`nakidka`),
+kept whole on the net, off every opening and inside the certified width; suit
+cloth and garnish clone the canvas through `cloneVehicleMaterial(source,
+configure)` (a plain `Material.clone()` lights with every cascade's sun at once).
+Both meshes are `continuityRole: 'open-lattice'`. Verify additions with
+`ghillieSuit.selftest.mjs`, `accessoryMaterials.selftest.mjs`, standard
+front/quarter/side/top views, and the normal anatomy/release sequence below.
+Round 3 of the critics (2026-10-07) set the garnish and drape rules: garnish goes in clumps on a seeded point process
+(`placeGarnishClumps`: one to nine sprays a clump, irregular gaps, never one spray per lattice cell), sprays fan out of
+one tuck point and stand out of the net, folded along their stems at HIGH (`FoliageCard.fold`; LOW flattens the same
+cards), keep a margin round every opening (`garnishOpeningMarginM`), and stay inside a suit's `maxHalfWidth`; a hull
+deck under the turret and gun sweep carries garnish only in a low band along its edges (`garnishEdgeBandM`,
+`garnishRiseM`), never on the glacis or in the driver's view (`foliageExclude`). The cloth lies on seeded noise
+(swell, wrinkles, gathered folds, tie-downs) that only lifts it off its carrier; a flank hem is tied at irregular points
+drawn per side; a flank drape that would end in a free top edge rolls over into its roof net (`SidePanel.shoulder`).
+Vehicle foliage atlases are 512 px with their own coverage-preserving mip chain (lighting.ts builds that chain only for
+canvas images). Decor branch bundles and the decor whip stay inside their old near-level triangle counts (the decor's
+first rows; the 6,000-triangle budget is full on several hulls); whips, fitting and decor, are one bowed construction
+(`whipAntennaParts`) whose foot and tip height are the straight rod's.
+The owner's fleet field nets (2026-10-09) are registry rows in `ghillieFleetSuits.ts`, one fitted entry per vehicle,
+called from each family builder (`addVehicleGhillieSuit` is idempotent per build). They use the builder's opt-in
+keep-outs: `yFromArmour`/`clipToArmour` lay a roof or deck net on the armour and end it at the armour's edges (it passes
+under a raised frame, is cut round anything standing taller than `riseLimitM`, and never falls onto the running gear),
+`autoOpeningsM` opens every lens, hatch lid and cupola and slots the net ahead of each lens, `SidePanel.cuts` keep
+drapes off dischargers, lights and exhausts (from the cut's top down to the hem), and `fieldClearanceM` keeps the whole
+suit clear of the turret's traverse both ways (the turret's swept body by radius, lowest to highest, its hollow
+included), of the main gun's swept volume (a lopsided box by station at every yaw that brings it across a point, with the
+per-yaw depression curves; flat cloth only where the bare gun already comes to within 4 cm of its own deck), of lens
+views (garnish always, cloth where it stands off the armour) and of smoke lines (each bank as `alignSmokeBanks` will
+turn it). A hull drape whose roll over the deck's edge would lie in a clearance is tied lower on its wall; a drape
+station with no roof net above it and no armour beside it hangs nothing. The decor holds such a suit to its clearances
+too: loads stay out of its drapes and from under a turret load's swing (`suit-drape`, `hull-suit`), what it draws up
+over its loads is re-tested (`GHILLIE_FIELD_OK`, ghillieDrape.ts; the cards ride the net's lift vertex by vertex), and
+its own smoke banks cut their lines of fire through the suit (`clearGhillieForSmoke`). New entries still need explicit
+openings for sight heads without glass and exhaust keep-outs.
+
+## Common tasks → first action
+<!-- agent-docs:fill:tasks -->
+For source-backed creation, explicit family derivation or Gallery-markup repair,
+start with [the tank-generation handbook](../../docs/tank-generation/README.md)
+and its repo-local procedure. It consolidates intake decisions, source-only
+registration, negative-space construction, current tool coverage, strict gates,
+reusable prompts and handoffs. Its chronology notes distinguish current
+source-X requirements from historical reference-repair recipes and scoped as-is
+publication exceptions; a published model is not necessarily qualified.
+
+Read current program state and the relevant family profile, inspect standard
+side/top views, run the tank-generation comparison tools by hand (`npm run gen:checks`),
+then fleet/family/assets checks.
+For a new tank or a ground-up rebuild backed by an owner-supplied reference,
+use the exemplar quality bar: at least 92/100 overall and 92/100 in every
+registered silhouette view, plus source/spec dimensions within three percent.
+Inspect front, quarter, side, rear, and top relationships for the primary hull,
+turret, gun, fenders, skirts, and running gear; an attachment census or a score
+in the 80s is not evidence of high fidelity. Treat AbramsX, Challenger 2, and
+Leclerc as the minimum visual-complexity and geometric-coherence exemplars.
+Fused reference topology may disable dishonest component masks, but it never
+waives whole-silhouette, track-profile, attachment, or multi-view inspection.
+Before fleet-wide generation, check each added ID's explicit surface anchor in
+`vehicleMarkings.ts`, actual solved insignia/designation visibility in HIGH and
+LOW, core module ownership (including optics), and internal-layout confidence
+category. A generated marking record with `seats: []` is still missing visible
+markings; a generator's record count alone does not qualify that vehicle.
+
+For every added or changed playable tank, run this required sequence:
+
+1. `npm run tank:anatomy:update` — remeasure the complete playable fleet and
+   regenerate every tank's armor, module, and crew cards.
+2. `npm run tank:anatomy:check` — fail on stale receipts or visual drift.
+   Both steps also hold each tank's belly pan, track bottom, combat hull box and turret floor to
+   `docs/geometry-gate/sim-floors.json`: a move over 5 cm fails and names the part and
+   its builder line. Keep accessories above the belly and out of the structural
+   buckets; accept an intended move only with a reason
+   (`node tools/anatomy-floor-drift.mjs --accept=<ids>:<reason>`).
+3. `npm run tank:release:check -- --ids=<changed ids> --gate` — assets,
+   tracks, muzzle, geometry, full tests and private build. A lane adds
+   `--lane`: the same steps without the full tests and the private build,
+   which the integrator mode and the release gate (every receipt and
+   `npm run build`) run (`docs/DEVELOPMENT.md` "Fast checks").
+
+Never hand-edit `combatAnatomyCalibrations.ts` or the generated technical PNGs.
+The authored receipt boundaries are `combatAnatomyCalibrationRegistry.ts`,
+`combatAnatomyCalibrationLoader.ts`, `vehicleMarkingSeatRegistry.ts`, and
+`vehicleMarkingSeatLoader.ts`. Keep grouped `*.generated.ts` payloads owned by
+their generators; browser consumers must acquire receipts through the typed
+loaders, while fleet-wide release tools use the eager typed `tankFactory.ts`
+facade. Player boot must continue through the demand-loaded `fleetFactory.ts`.
+Keep semantic finish policy in `appearanceAudit.ts`: builders tag materials,
+while that module alone normalizes working-gear colors and audits armor/gear
+role separation. Do not repair a palette issue by stripping geometry or by
+repainting untagged armor.
+Keep running-gear release receipt validation in `wheelQuality.ts`; the browser
+factory may emit metadata, but must not duplicate the audit's pattern,
+suspension-count, clearance, or material-role rules.
+Keep shared armor, shell, module, and crew constructors in the pure
+`specHelpers.ts` boundary. It must not import fleet registries, builders,
+Three.js, or browser APIs.
+Keep British family geometry and the cross-family Centurion base in
+`profiles/uk.ts`; Swedish callers satisfy its narrow Centurion port rather than
+depending on the full British builder, and kit helpers remain direct static
+bindings instead of a dynamic proxy.
+Keep the complete Challenger family in `profiles/challenger.ts`; extend the
+British builder contract only for Challenger running-gear metadata, ERA,
+equipment, and post-assembly behavior, and keep loft/receipt structures typed
+at their authored owner.
+Keep Ariete, Leclerc, Leclerc XLR, AMX 56, T-80U, Type 90, Type 74, and AMX-30
+family geometry in `profiles/misc.ts`. Its typed builder port owns shared
+running-gear layers, ERA placement, gun-frame geometry, and post-assembly
+articulation; Japanese Type 90 derivatives must explicitly satisfy that donor
+contract.
+Keep the M60, M60A2 and M60A3 builds in `profiles/patton.ts`. Preserve their
+asymmetric cast-loft sections, roof fitting inventories, M60 surface-aligned
+ERA, and explicit invalid-geometry guards behind the narrow Patton builder port.
+The M46, M47 and M48A5 are measured castings in `profiles/pattonCast.ts`
+(release 262, the owner's "no longer look so chungus" redesign): each turret and
+hull is a closed `sectionSolid` loft of a station table taken from
+`docs/references/tanks/<id>.md` (published dimensions, photographs, the
+registered prints and the owner-supplied M48A5 model). Change a station table,
+not the loft, and keep `pattonCastProportions.selftest.mjs` and
+`pattonGunClearance.selftest.mjs` green.
+The Strv 103 family (103A, 103B and its netted twin, the concepts 103E and
+Strv 152, the UDES 03 trials prototype) is one casemate on the Leclerc rebuild
+pattern (274): `profiles/strv103Frame.ts` (datums, stations), `strv103Hull.ts`
+(closed section-solid casemate, gun port), `strv103Gear.ts`, `strv103Roof.ts`,
+`strv103Equipment.ts`, `strv103Marks.ts`, assembled by `strv103Family.ts`.
+Fixed-hull ownership throughout (rig_turret empty). The Jagdtiger, JPz E 100, Sturmtiger, T95, ISU-152 and
+ISU-122S builds and the `profiles/ww2.ts` pack left with their archived hulls
+on 2026-09-25 (owner: no archived WWII / casemate tanks outside production).
+Use `specContracts.ts` for boot-light fleet combat rows. Family packs may add
+identity-specific metadata, but must satisfy the shared mobility, gun, armor,
+dimensions, and visual contract before mutating the legacy registry. Variant
+registration may clone and mutate a donor only through a bounded delta type;
+do not replace that with an unchecked options bag.
+Bind legacy spec/source/ID dictionaries and perform donor cloning, inherited
+silhouette cleanup, armor scaling, and idempotent registration through
+`fleetSpecRegistry.ts`; nation modules own only their explicit deltas.
+Keep `modern1Specs.generated.ts` and `modern2Specs.generated.ts` generator-owned;
+they expose boot-safe metadata while their authored visual builders remain
+demand-loaded. The registry holds that generated metadata on every path
+(`modern1.ts`/`modern2.ts` import it); their live `MODERN1_SPECS` /
+`MODERN2_SPECS` tables are only the generator's source, never registered.
+The Type 10 marks (TK-X, Type 10B, Kaitaku) draw the one modern Type 10 base
+(`profiles/type10X.ts`, its `mark` and kit options) and take its combat frame in
+`type10FamilyFrames.ts`; add a mark's difference as its own package, never a
+second base.
+Do not add regional fleet bundle modules. Browser acquisition maps exact IDs to
+typed family loaders through `fleetManifest.ts` and `fleetFactory.ts`; full
+fleet tools use `tankFactory.ts`. Both paths must convert family profiles with
+`profileBuilderAdapter.ts`; do not duplicate custom/donor/generic dispatch.
+Every facade registers specs through the one ordered `fleetRegistration.ts`
+(spec packs in donor order, then the registration passes): `fleetFactory.ts`,
+the spec-only `authorityFleet.ts` (the host Worker and the Node match service;
+`ensureAuthorityFleet(roster)` loads only the roster's calibration groups) and
+`tankFactory.ts` (whose builder packs keep the tools' historical catalog
+order). Add a spec pack to `fleetRegistration.ts`, never to one facade;
+`fleetParity.selftest.mjs` digests every spec as each facade finalizes it.
+After this sequence passes, commit each tank edit atomically, integrate it from
+an isolated clean worktree onto the current `origin/main`, push the lane's own
+`item/<name>` branch (owner's OK) and send READY with its SHA to the coordinator; only
+the release integrator moves main. Never push a failing or partially verified
+tank edit.
+
+## Gotchas
+<!-- agent-docs:fill:gotchas -->
+Vehicle material clones (2026-10-04, the vehicle-look lane): `Material.clone()` keeps none of a vehicle material's
+cascade registration — three resets a standard material's `defines` and never copies `onBeforeCompile` or
+`customProgramCacheKey` — so a plain clone lights with every cascade's sun at once (about four times the sun) and writes
+no sun state or vehicle tag for the aerial pass. Clone through `cloneVehicleMaterial(source)` (materials.ts), which
+re-registers the clone exactly as its source and keeps its shader switches (`COT_WHEEL_PAINT_READABILITY`);
+`vehicleMaterialClone.selftest.mjs` pins the running-gear clones (shoes, isolated gear roles, band finishes). About
+forty profile-pack clones re-hooked by hand (`rehook`, `'veh-ambient-floor-v2'`) until round 2 of the wheel-band lane
+(below).
+2026-10-17 (the wheel-band lane; the owner: "in garage, on all tanks, i can see this weird shadow on wheels"): the
+Garage's dormant energy skin (`juggernautVisual.ts`, on every pedestal tank since 16f624704; the battle's Juggernaut,
+flag-carrier and Infected skins too) made raw clones, so every skinned pixel lost the vehicle tag, and since 045cdbed4
+the ground occlusion took the untagged road wheels for ground under the hull: a dark band under the belly line on every
+wheel. A material registered outside `createTankMaterials` goes through `registerVehicleMaterial(engineCtx, m, key)`
+(the decorations' kit), so its clones keep the registration; a clone of an unregistered cascade material says so in a
+dev build. A clone that draws in its source's place (the skin) compiles the source's whole hook chain over its own
+registration with `runVehicleHookChain(source, clone, …)` — the burn mask, the weapon wear and a profile's lift stay —
+and is released with `releaseVehicleMaterial(clone)` before it is disposed. `vehicleMaterialRawClone.selftest.mjs`
+keeps raw clones to a reviewed list (the profiles' set-member clones may only fall);
+`tools/garage-wheel-band.browser.mjs` measures the band and the tag share in the Garage.
+Round 2 (2026-10-17): the tanks' own materials left the registration the same three ways, and banded in the Garage and
+in battle alike (the M46/M47 camouflaged road wheels, the KF51's tyres, the T-90's dark wheels; the Abrams', KF51's and
+Merkava's tracks drew near-black). Every opaque lit material a tank draws holds its own registration:
+- a profile's re-hooked clone is `cloneRehookedVehicleMaterial(P.mats.x)` — the bare hook and `'veh-ambient-floor-v2'`
+  the hand re-hook gave (no switches, the scene's whole sky light, so a renderer stub compiles exactly what it did),
+  through the source's cascade registration;
+- a deliberately floorless one (a void, a bore, a hookless wheel) is `cloneFloorlessVehicleMaterial` /
+  `setVehicleMaterialFloorless` (`COT_VEHICLE_FLOORLESS` holds the readability floors and the ground occlusion out, the
+  tag stays);
+- a profile's shader patch over a material is `chainVehicleMaterialHook(m, key, patch)`, never an assigned hook, and a
+  retone that re-hooks what it finds is `rehookVehicleMaterial` (a registered material keeps its registration);
+- push every clone into `P.disposables`: each holds a cascade entry until the tank releases it.
+`vehicleMaterialRegistration.selftest.mjs` builds the band's tanks through a recording cascade context and audits every
+drawn material (registered, its cascade entry bound under its own key, the vehicle tag written, released on dispose);
+`tools/vehicle-material-registration.mjs --ids=…|all` sweeps the fleet the same way and runs in `tank:release:check`;
+`vehicleMaterialRawClone.selftest.mjs` bans a set member's raw clone, a hand re-hook and an emptied hook.
+Program-variant twins (2026-10-19, the 229 perf pass): a battle or Garage-hero build (`batchStatic`) gives each further
+program variant of a material (instanced, batched) a prototype twin (`engine/programVariants.ts`), so a mesh may draw
+an object that is not `P.mats.x` itself. Code that patches, clones or looks up a mesh's material by its registration
+resolves `programVariantOrigin(material)` first (the burn hook, `cloneVehicleMaterial`, the registration check do);
+an identity test against `P.mats.x` belongs in the build, before the split.
+Round 3 (2026-10-18): every opaque material a tank draws carries the tag, lit or not. The light-immune flat class (an
+opaque `MeshBasicMaterial`: the KF51's mud flaps and fender boards, the bore discs) never takes the cascade setup and wrote
+a card's alpha, so the KF51's flaps kept the straight edge at the belly + 2 cm; the factory now runs
+`tagUnlitVehicleMaterials(engineCtx, root)` after the appearance pass (the unlit tag, `engine/vehicleOcclusion.ts`
+`tagUnlitVehiclePixels`: 2 + sun 1 + tag 2, opaque draws only, wherever the cascades run), and the thermal view's heat
+stand-ins write it too. The audit holds unlit parts to it. `chainVehicleMaterialHook` binds the bare hook's whole sky
+light (`uVehEnvScale` 1) after the registration: the hook it replaced never bound the material's own trim, so the fix
+brings the cascade back without newly honouring a dead `envMapIntensity` dial (the Abrams' track bands, the KF51's). The
+readability hook's GLSL notes are TypeScript comments between the template pieces: keep comments out of that shader text
+(it ships in the game page's bundle and in every vehicle program).
+The field camouflages (`catalogCamoPainter.ts` paintField) and the digital patterns paint production's 2 m tile
+(fix/camo-defaults, 2026-10-09: the v2/v3 patch fields, 4 m wide tiles, digital clusters, per-triangle box projection,
+bore-wrapped gun UVs and camouflage panels are retired with the rest of PR #9's camouflage system).
+Weathering marks in the plate painter (`materialPainter.ts`) are stains, so they multiply into the paint. Since
+2026-10-06 the rust weeps multiply a warm brown. The old 1.4-3 px orange stroke laid over the paint lit up on black
+camo bands as "an unresolved texture seam", repeating with the 2 m tile (wave 165, Challenger 1). Never paint a bright,
+narrow, saturated mark over the paint. A new weathering mark multiplies (or darkens), keeps a core of at least 2.5 mm,
+and falls off softly at its sides.
+Field wear (2026-10-07/08): the round 2-4 wear (a height-graded dust, mud and soot shader term behind `COT_FIELD_WEAR`,
+baked edge chips in the plate painter, a decor dust ramp) was stripped before batch 5: blind waves 240 and 264 scored
+it flat up close ("a gravity-blind overlay"), although wave 265 found it helped at battle distance. The redesign
+(per-material surfaces, dust and wet earth graded up from the running gear in the map's soil colour, wear where use puts
+it, contact occlusion, readable at 15-60 m, priced under cost rule v3) lands on its own wave; the stripped code is at
+95afc36d6 for reference.
+Spare-track links (VEH-13, 2026-10-15): every run goes through one seat solver (`spareTrackSeat.ts`, rules R1-R8:
+host role, footprint support, seat from outside, static and motion clearance, exposure, one source per frame). Mount
+links only as `FITTINGS.spareTrackLinks`, `KIT.spareTrackStrip` or a registered course (`withSpareTrackRun`,
+`spareTrackPart`); never as loose parts in `hullTrack`/`turretTrack`. The factory's seat pass keeps a passing run
+exactly as built; authored mounts come first (a run sunk into its own mount is lifted straight off it, a hand-drawn
+course keeps the links whose own seat holds); only a mount that is itself wrong is searched, never under the gun or
+crowded against a rail, and a moved hand-drawn course gets straps. Fix the mount, don't remove (the owner's rule): a
+run with no flush seat nearby goes on a rack (four posts welded to its frame's armour) where it was authored, else
+to another station of its own frame, flush or racked; only a run nothing can carry is dropped
+(`root.userData.spareTrack`, `spareTrackRejected`). The decor keeps its rigid pieces out of every built run
+(`root.userData.spareTrackBoxes`). Tag grilles, louvres and exhausts drawn into ordinary buckets with `withSeatRole(P, 'grille', ...)`
+where they are drawn; a main gun fixed in the hull draws into `hullGun`/`hullGunDark` (never hull armour: the combat
+shell and its calibration read `hull` alone, and the barrel is traced as the gun). The receipt is
+`tools/spare-track-placement-check.mjs` against `docs/geometry-gate/spare-track.json` (part of `tank:anatomy:update`
+and `tank:anatomy:check`); never fix a run with a per-tank `p: 0` or a coordinate nudge. The search is the pass's only
+real cost, so `--update` also records its answers in the generated `spareTrackSeatPlan.ts` (a failing run goes straight
+to its station, or is not built); `--check` fails a stale record. Every built run is still measured, so a stale record
+costs time, never a bad seat. A ledger row keys each run by source, part and authoring function and file, never a line
+number (`ledgerSiteKeys` in `tools/spare-track-digest.mjs`), so an unrelated edit never fails `--gate`; `--rekey`
+rewrites an older ledger's keys and nothing else.
+The shared checkout often contains active tank-generation WIP. Never stage
+builders, profiles, icons, GLBs, or generated geometry ledgers by directory.
+Chassis closure (FSP-05, 2026-09-25): a mirrored `for s of [-1, 1]` slab, a
+ring listed rear row first, a wedge whose top sits below its floor and a
+self-intersecting hexahedron all ship inside-out and open the hull to the chase
+camera; bind slabs through `orientedSlab`, hand twisted rings to `convexSlab`,
+and prove the result with `node tools/tank-sealed-check.mjs --ids=<id>
+--ledger=docs/geometry-gate/sealed.json` (0 open views) — the audit and the
+per-family causes are in `docs/tank-generation/chassis-closure-audit-20260925.md`.
+See-through gates too (227 guards, 2026-10-16): the sealed check holds each
+row's `seeThroughPx` (world seen through glass, markings or any undeclared
+alpha-cut part) to max(12 px, 10 %), and counts sky between declared netting
+apart as `netSeeThroughPx`, held to max(12 px, 2 %) either way (an unchanged
+suit reproduces it exactly; a suit that floats, doubles, sinks or goes missing
+moves it). Netting must declare itself:
+alpha-cut, `combatHitboxRole: 'nonArmor'`, and `continuityRole: 'open-lattice'`
+(the ghillie suit) or a `decor_<frame>_net|foliage` bucket
+(`alphaCutNetting` in `tools/tank-surface-collect.mjs`). A new alpha-cut part
+without that declaration fails its row; a hole behind netting is still a hole.
+Every playable id has a row, measured in the census frame recorded on it (an
+extremity edit never re-aliases its counts); a new vehicle must be sealed with
+no see-through cluster. The frame is fixed: a build whose own frame stays
+within min(0.5 m, 15 % of the radius) of it (an antenna, a slightly longer
+gun) is judged in it with no re-frame; past that it fails OUT OF FRAME (a part
+thrown metres out: fix the build) or FRAME STALE. `--update-ledger` never changes an existing
+row; `--tighten-ledger=<ids>` lowers one to its measurement. Raise a row's
+see-through or netting, or record a new vehicle whose see-through cluster is
+accepted, only with `--update-ledger --accept-see-through=<id>:<reason>`;
+no flag accepts an opening. `--reframe=<id>:<reason>` serves only OUT OF FRAME
+(at most half again the row's first frame) and FRAME STALE, and the build may not exceed
+its row in the row's frame in any column (with `--accept-see-through` for the
+id, see-through and netting may move there; openings never). Open rows list
+their hole views: a hole in another view fails. Each appends the reason, who,
+when and the old values to the row's `accepts`.
+Turret squash (235): a builder may scale rig_turret non-uniformly while it builds (the T-90AM 0.95 x 0.65 x 0.913, the
+Strv 81, the Merkavas, the FV510s, the Challengers). The factory tail (`turretRigScale.ts`, after the decorations, the
+fills and the smoke-bank alignment) moves that squash onto rig_turret's children and rig_gun, so the finished rig_turret
+is a metre frame and the gun pitches rigidly about its drawn trunnion. Parts that sat at rig_turret's identity carry the
+squash as their own scale. `rig_turret.userData.turretSectionScale` names it, and the static batch, the P21 merge and
+the crumple's plate frame read it. A child whose rest rotation would shear under the squash sits in a `turretSection_*`
+group. Read a finished turret's squash from that key, never from `rig_turret.scale`. A remote roof station takes the
+squash rigidly (259): its seat is squashed and its scale is the squashed width on every axis, so the authority's roof
+frame lays the profile's elevation (`counterDroneEngagement`'s ratchet).

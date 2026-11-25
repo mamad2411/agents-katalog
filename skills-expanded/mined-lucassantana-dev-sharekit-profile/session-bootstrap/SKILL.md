@@ -1,0 +1,108 @@
+---
+name: session-bootstrap
+description: 'Start-of-day routine: resume --brief, next-priority, PR queue, context-pack. Use for "what was I doing", "what''s next", "load context".'
+user-invocable: true
+auto-invoke: first-prompt-of-session + post-resume + post-handoff-load
+metadata:
+  owner: global-agents
+  tier: contextual
+  canonical_source: ~/.claude/skills/session-bootstrap
+triggers:
+  - session start
+  - what's next
+  - load context
+  - start of day
+---
+
+# Session Bootstrap
+
+The single command for "I just sat down, get me oriented and ready to work."
+Replaces the manual `/resume --brief` → `/next-priority` → `/pr-merge-readiness --batch --quick` sequence.
+
+## Pair with standards
+
+- `standards/workflow.md` (Startup sequence): session-resume protocol that session-bootstrap orchestrates
+
+## Auto-invocation triggers
+
+- First non-trivial prompt of a fresh session (no prior conversation context)
+- User says "where are we", "what's next", "catch me up", "good morning"
+- After a user `/resume`, not one session-bootstrap issued itself, or a session restart
+- After loading a `/handoff` from another machine/session
+
+## Workflow
+
+### Phase 1 — Brief (always)
+Invoke `resume --brief` for the compact 600-900 token bootstrap:
+- Open handoff via `handoffs list` (not only legacy latest.md): picks and states why in one line when several are open
+- Top 3 RAG hits scoped to current repo
+- Git status one-liner
+- Most recent memory note
+
+### Phase 2 — Decide priority (always)
+Invoke `next-priority` to rank the highest-value safe action:
+- Open PRs awaiting your action
+- Failing CI on your branches
+- Recently committed work that needs verification
+- Drafted plans that haven't started
+
+### Phase 3 — PR queue (always — quick, batched)
+Invoke `pr-merge-readiness --batch --quick` for a table across all my open PRs:
+- Provisional MERGE / WAIT / FIX verdict per PR (base signals only)
+- State, CI and age (days since update) per PR
+
+### Phase 4 — Context pack (conditional)
+If `next-priority` returned a work item AND prompt mentions implement/refactor/fix:
+- Invoke `context-pack` (or note that `auto-context-pack` already fired this prompt)
+to load relevant code, standards, prior decisions
+
+### Phase 5 — Recommend the first action
+Synthesize Phase 1-4 into one recommendation:
+```
+Today's first move: <specific action>
+  Why: <reason from priority + PR state>
+  Skill to invoke: </specific-skill>
+  Expected effort: <small/medium/large>
+```
+
+## Reconciliation
+
+Single one-page brief:
+```
+SESSION BOOTSTRAP — <date>
+
+Where you left off (resume --brief):
+  Last handoff: <path, age> ✅ DONE
+  Recent commits: <3 bullets> ✅ DONE
+  Recent decisions: <1-2 from memory> ✅ DONE
+
+Top priority (next-priority):
+  <ranked action with reason> ✅ DONE
+
+PR queue (pr-merge-readiness --batch --quick):
+  ✓ #234 MERGE-ready    PR title ✅ DONE
+  ⏳ #235 awaiting review ✅ DONE
+  ⚠️ #236 CI failing ✅ DONE
+
+Recommended first action:
+  <specific concrete action> ✅ DONE
+  Suggested skill: </skill-name>
+  Snapshot:              (none — bootstrap is orientation only)
+  Open watch:            (none)
+```
+
+## Outputs / Evidence
+
+- One-page bootstrap brief (target ≤1500 tokens including embedded RAG hits)
+- Specific recommended next action with skill suggestion
+- No commits, no edits, no merges — purely orientation
+
+## Failure / Stop Conditions
+
+- No active repo / project detected → minimal brief with "no context to bootstrap"
+- All sub-skills error → fall back to bare git status + git log -5
+- Never invoke any work-doing skill from inside session-bootstrap — it's
+  recommendation-only; user (or auto-chain follow-up) drives execution
+
+Snapshot:
+Open watch:            (none)

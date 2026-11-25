@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lihongwei-cn/lihongwei-cn (path: mundo-cloud/skills/uncategorized/skill-optimizer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Diagnose and optimize Agent Skills (SKILL.md) with real session data and research-backed static analysis. Works with Claude Code, Codex, and any Agent Skills-compatible agent."

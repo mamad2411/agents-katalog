@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lord1egypt/ra-skills (path: skills/community/clawhub/d/douyin-social/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: 抖音社媒运营：串起抖音热搜榜、关键词视频搜索、达人主页数据，完成「热点选题 → 脚本卖点挖掘 → 粉丝人群画像匹配」的内容引流与种草闭环。当用户要做抖音内容运营、找选题、看热搜和话题、拆解爆款视频卖点、看达人粉丝画像、做人群匹配、规划内容日历时必须触发。关键词：抖音、社媒运营、热搜、话题、选题、爆款视频、粉丝画像、人群匹配、种草、内容日历。 支持五大能力： (1) 关键词搜索视频/图文，可按点赞数

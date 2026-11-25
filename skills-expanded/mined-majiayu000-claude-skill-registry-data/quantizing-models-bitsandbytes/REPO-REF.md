@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/majiayu000/claude-skill-registry-data (path: ai-ml/bitsandbytes-zechenzhangagi-ai-research-skills/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Quantizes LLMs to 8-bit or 4-bit for 50-75% memory reduction with minimal accuracy loss. Use when GPU memory is limited, need to fit larger models, or want faster inference. Supports INT8, NF4, FP4 fo
