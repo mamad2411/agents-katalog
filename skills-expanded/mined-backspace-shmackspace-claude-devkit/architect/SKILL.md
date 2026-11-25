@@ -1,0 +1,683 @@
+---
+name: architect
+description: Research and create a technical blueprint for a new feature.
+model: claude-opus-4-6
+version: 3.5.0
+---
+# /architect Workflow
+
+## Inputs
+- Feature request: $ARGUMENTS
+- Flags: `--fast` skips the red team review (use for low-risk changes)
+
+## Output Rules
+- **Always print full absolute paths** for all artifact references (plan files, review files, audit logs). This makes paths clickable in terminals like Warp. Use the resolved `$PLANS_DIR` value, never relative paths like `./plans/`.
+
+## Step 0 — Pre-flight (optional)
+
+**Resolve devkit paths (MUST be first action in Step 0):**
+
+Tool: `Bash`
+
+```bash
+# --- Devkit Path Resolution ---
+DEVKIT_SCRIPTS="${CLAUDE_DEVKIT:-$HOME/.claude-devkit}/scripts"
+
+# Source path resolution helper
+if [ -f "$DEVKIT_SCRIPTS/resolve-project-dir.sh" ]; then
+  . "$DEVKIT_SCRIPTS/resolve-project-dir.sh"
+  DEVKIT_PROJECT_DIR_RESOLVED=$(resolve_devkit_project_dir) || {
+    echo "Failed to resolve project directory" >&2; exit 1
+  }
+elif [ -n "${DEVKIT_PROJECT_DIR:-}" ]; then
+  DEVKIT_PROJECT_DIR_RESOLVED="$DEVKIT_PROJECT_DIR"
+else
+  echo "WARNING: devkit is not installed. Using deprecated .devkit/ fallback." >&2
+  DEVKIT_PROJECT_DIR_RESOLVED=".devkit"
+fi
+
+PLANS_DIR="$DEVKIT_PROJECT_DIR_RESOLVED/plans"
+mkdir -p "$PLANS_DIR"
+echo "Plans directory: $PLANS_DIR"
+```
+
+**Check for project-specific agents (parallel):**
+
+Tool: `Glob` (direct — coordinator does this)
+
+Run all three globs in parallel:
+- Pattern 1: `.claude/agents/senior-architect.md`
+- Pattern 2: `.claude/agents/code-reviewer.md`
+- Pattern 3: `.claude/agents/security-analyst.md`
+
+**If senior-architect found:**
+- Output: "✅ Using project-specific senior-architect from .claude/agents/"
+
+**If senior-architect not found:**
+- Output note: "💡 No project-specific senior-architect found. Will use generic Task subagent for planning.\n   For project-tailored planning, generate one:\n   `gen-agent . --type senior-architect`"
+- Continue to Step 1 (do not block).
+
+**If code-reviewer found:**
+- Output: "✅ Using project-specific code-reviewer from .claude/agents/"
+
+**If code-reviewer not found:**
+- Output note: "💡 No project-specific code-reviewer found. Will use generic Task subagent for feasibility checks.\n   For project-tailored reviews, generate one:\n   `gen-agent . --type code-reviewer`"
+
+**If security-analyst found:**
+- Output: "✅ Found project-specific security-analyst (available for security-focused plans)"
+
+**If security-analyst not found:**
+- Output note: "💡 No project-specific security-analyst found. Will use generic Task subagent for red team review.\n   For project-tailored analysis, generate one:\n   `gen-agent . --type security-analyst`"
+
+- Pattern 4: `~/.claude/skills/threat-model-gate/SKILL.md`
+
+**If threat-model-gate found:**
+- Output: "Threat model gate active. Security-related plans will include threat modeling requirements."
+
+**If threat-model-gate not found:**
+- No output (threat-model-gate is optional at all maturity levels).
+
+Continue to Step 1.
+
+**Initialize audit logging:**
+
+Tool: `Bash`
+
+```bash
+# --- Audit Logging Setup ---
+RUN_ID=$(date +%Y%m%d-%H%M%S)-$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 6)
+AUDIT_LOG_DIR="$PLANS_DIR/audit-logs"
+mkdir -p "$AUDIT_LOG_DIR"
+AUDIT_LOG="$AUDIT_LOG_DIR/architect-${RUN_ID}.jsonl"
+STATE_FILE=".architect-audit-state-${RUN_ID}.json"
+
+python3 -c "
+import json
+state = {
+    'run_id': '${RUN_ID}',
+    'audit_log': '${AUDIT_LOG}',
+    'skill': 'architect',
+    'skill_version': '3.5.0',
+    'security_maturity': 'advisory',
+    'hmac_key': ''
+}
+with open('${STATE_FILE}', 'w') as f:
+    json.dump(state, f)
+print('Architect audit state file created: ${STATE_FILE}')
+"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" "$STATE_FILE" \
+  "{\"event_type\":\"run_start\",\"plan_feature\":\"${ARGUMENTS:-unknown}\"}"
+
+echo "Architect audit log: $AUDIT_LOG"
+```
+
+## Step 1 — Context Discovery
+
+**Emit step_start for Step 1:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_1_context_discovery","step_name":"Context discovery","agent_type":"coordinator"}'
+```
+
+Gather project context to inform the architect. All reads run in parallel (single message with multiple tool calls). This step runs regardless of the `--fast` flag.
+
+Tool: `Glob`, `Read` (direct — coordinator does this)
+
+**Parallel reads (single message):**
+
+1. **Project patterns:** Read `./CLAUDE.md` (if exists). Extract key sections: architecture, conventions, tech stack, development rules.
+
+2. **Recent plans:** Glob `$PLANS_DIR/*.md` (exclude `*.redteam.md`, `*.review.md`, `*.feasibility.md`, `*.code-review.md`, `*.qa-report.md`, `*.test-failure.log`, `*.summary.md`, `*.hardener.md`, `*.performance.md`, `*.qa.md`). Sort by modification time (newest first). Read up to 3 most recent plan files.
+
+3. **Archived plans:** Glob `$PLANS_DIR/archive/*/*.md` (exclude `*.code-review.md`, `*.qa-report.md`). Sort by modification time (newest first). Read up to 2 most recent archived plan files.
+
+**4. Codebase structure:** Run codebase scanner to extract structural facts.
+
+Tool: `Bash`
+
+```bash
+# Run codebase scanner (degrades gracefully if tree-sitter not installed)
+SCANNER_PYTHON="${HOME}/.claude-devkit/scanner-venv/bin/python3"
+SCANNER_SCRIPT="$DEVKIT_SCRIPTS/codebase-scanner.py"
+if [ -x "$SCANNER_PYTHON" ]; then
+  SCANNER_OUTPUT=$("$SCANNER_PYTHON" "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "")
+else
+  SCANNER_OUTPUT=$(python3 "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "")
+fi
+echo "$SCANNER_OUTPUT"
+
+# Emit scanner_invocation audit event
+if [ -n "$SCANNER_OUTPUT" ]; then
+  SCANNER_HASH=$(printf '%s' "$SCANNER_OUTPUT" | python3 -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())" 2>/dev/null || echo "unknown")
+  SCANNER_VERSION=$(python3 "$SCANNER_SCRIPT" --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
+  SCANNER_FILE_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Files:\s*\K[0-9]+' 2>/dev/null || echo "0")
+  SCANNER_SYMBOL_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Symbols:\s*\K[0-9]+' 2>/dev/null || echo "0")
+  SCANNER_PARSER_MODE=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Parser:\s*\K\S+' 2>/dev/null || echo "unknown")
+  SCANNER_TOKEN_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | wc -c | awk '{printf "%.0f", $1 / 4}')
+  bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+    "{\"event_type\":\"scanner_invocation\",\"scanner_version\":\"${SCANNER_VERSION}\",\"parser_mode\":\"${SCANNER_PARSER_MODE}\",\"file_count\":${SCANNER_FILE_COUNT},\"symbol_count\":${SCANNER_SYMBOL_COUNT},\"output_sha256\":\"${SCANNER_HASH}\",\"output_token_count\":${SCANNER_TOKEN_COUNT}}"
+fi
+```
+
+**5. Cross-repo context (when DEVKIT_TARGET_COUNT > 1):**
+
+If the environment variable `DEVKIT_TARGET_COUNT` is set and its value is greater than 1, this is a multi-target session (initiated via `devkit architect --with`). Gather context from all secondary targets (target 0 is the primary, already covered by reads 1-4 above):
+
+For each target N from 1 to DEVKIT_TARGET_COUNT-1:
+
+a. Read CLAUDE.md from `$DEVKIT_TARGET_N_PATH/CLAUDE.md` via Read tool (if exists). Extract key sections as done for the primary target in read 1.
+
+b. Run codebase-scanner on each secondary target:
+
+Tool: `Bash`
+
+```bash
+if [ "${DEVKIT_TARGET_COUNT:-1}" -gt 1 ]; then
+  for i in $(seq 1 $((DEVKIT_TARGET_COUNT - 1))); do
+    eval "TARGET_PATH=\$DEVKIT_TARGET_${i}_PATH"
+    eval "TARGET_NAME=\$DEVKIT_TARGET_${i}_NAME"
+    eval "TARGET_ID=\$DEVKIT_TARGET_${i}_ID"
+
+    echo "=== Secondary Target $i: $TARGET_NAME ($TARGET_PATH) ==="
+    echo "Project ID: $TARGET_ID"
+
+    # Run codebase scanner from target directory
+    if [ -x "$SCANNER_PYTHON" ]; then
+      (cd "$TARGET_PATH" && "$SCANNER_PYTHON" "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "Scanner unavailable for $TARGET_NAME")
+    else
+      (cd "$TARGET_PATH" && python3 "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "Scanner unavailable for $TARGET_NAME")
+    fi
+  done
+fi
+```
+
+c. Note each target's project name (`$DEVKIT_TARGET_N_NAME`) and ID (`$DEVKIT_TARGET_N_ID`).
+
+If `DEVKIT_TARGET_COUNT` is absent or equals 1, skip this section entirely (single-project mode, existing behavior unchanged).
+
+**Construct `$CONTEXT_BLOCK`:**
+
+Assemble the discovered context into a structured block:
+
+---begin context block format---
+## Discovered Project Context
+
+### Project Patterns (from CLAUDE.md)
+[Key architecture, conventions, tech stack, and development rules extracted from CLAUDE.md]
+[If CLAUDE.md not found: "No CLAUDE.md found. Architect should establish project patterns."]
+
+### Recent Plans
+[For each of up to 3 recent plans: filename, title/goal line, status (APPROVED or not)]
+[If no plans found: "No prior plans found. This appears to be the first planned feature."]
+
+### Historical Plans (Archived)
+[For each of up to 2 archived plans: filename, title/goal line]
+[If no archived plans found: "No archived plans found."]
+
+### Codebase Structure (auto-generated)
+[Scanner output from step 4, or "Scanner not available. Agent will discover structure during planning."]
+
+### Cross-Repo Targets (multi-target session only)
+[For each secondary target: project name, project ID, key patterns from CLAUDE.md, scanner output]
+[If single-target session: omit this entire section]
+---end context block format---
+
+**If CLAUDE.md does not exist:** Set patterns section to "No CLAUDE.md found." Continue to Step 2 (do not block).
+
+**If no plans exist:** Set plans sections to "No prior plans found." Continue to Step 2 (do not block).
+
+**Emit step_end for Step 1:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_1_context_discovery","step_name":"Context discovery","agent_type":"coordinator"}'
+```
+
+Continue to Step 2.
+
+## Step 2 — Architect drafts plan
+
+**Emit step_start for Step 2:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_2_architect_draft","step_name":"Architect drafts plan","agent_type":"architect"}'
+```
+
+Invoke the project-level architect. If none found, use a Task subagent with general-purpose prompt.
+
+**IMPORTANT:** When calling the Task tool, you MUST pass the exact model string `claude-opus-4-6` — do NOT use shorthand like `opus` which resolves to a different model.
+
+**If DEVKIT_TARGET_COUNT > 1 (multi-target session):** Prepend the following preamble to the architect Task prompt (before the standard planning instruction). Construct it from the env vars discovered in Step 1:
+
+```
+This plan spans multiple repositories:
+[For each target N, 0 to DEVKIT_TARGET_COUNT-1:]
+- [PRIMARY or SECONDARY]: $DEVKIT_TARGET_N_NAME ($DEVKIT_TARGET_N_PATH)
+  Project ID: $DEVKIT_TARGET_N_ID
+
+Each Work Group in the Task Breakdown must specify which repository it targets using
+a `**Target:** <project-name>` annotation in the Work Group header (see format below).
+Use `devkit://` URIs when referencing artifacts in other targets' central storage.
+
+The plan's YAML frontmatter must include a `targets:` field listing all targets:
+---
+targets:
+  - path: $DEVKIT_TARGET_0_PATH
+    role: primary
+  - path: $DEVKIT_TARGET_1_PATH
+    role: secondary
+---
+```
+
+**If DEVKIT_TARGET_COUNT is absent or equals 1:** No preamble. Use the standard prompt below.
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Prompt:
+"Analyze the codebase and draft a Technical Implementation Plan for: $ARGUMENTS.
+
+**Project Context (from Step 1 discovery):**
+
+$CONTEXT_BLOCK
+
+Use this context to:
+- Align with existing project patterns and conventions from CLAUDE.md
+- Avoid duplicating or conflicting with prior plans
+- Reference relevant historical decisions where applicable
+- Follow established naming conventions, directory structures, and architectural patterns"
+
+Hard requirements for the plan:
+- Must be self-contained and runnable by an Engineer without follow-ups.
+- Must include: Goals, Non-Goals, Assumptions, Proposed Design, Interfaces/Schema changes, Data migration (if any), Rollout plan, Risks, Test plan (including the exact test command to run), Acceptance criteria, Task breakdown (listing every file to create or modify, organized into Work Groups for parallel execution).
+- The `## Task Breakdown` section MUST include a `## Work Groups` subsection that organizes files into independent parallel units. Use this exact format:
+
+```markdown
+## Work Groups
+
+### Shared Dependencies
+- src/types.ts (modify — shared types needed by both groups)
+
+### Work Group 1: [descriptive name]
+**Target:** project-name
+- src/feature/component-a.ts (create)
+- src/feature/component-a.test.ts (create)
+
+### Work Group 2: [descriptive name]
+**Target:** other-project-name
+- src/api/endpoint-b.ts (modify)
+- src/api/endpoint-b.test.ts (modify)
+```
+
+The `**Target:**` annotation is required for cross-repo plans (DEVKIT_TARGET_COUNT > 1) and indicates which repository a work group operates on. For single-project plans, the annotation may be omitted.
+
+Work group rules:
+- Each work group runs in an isolated git worktree with its own coder agent — files in different work groups MUST be independent (no cross-group file modifications).
+- `### Shared Dependencies` lists files that must be implemented BEFORE work groups start (e.g., shared types, interfaces, config). This section is optional — omit it if there are no shared prerequisites.
+- If the entire task is inherently sequential (all files depend on each other), use a single work group. Do NOT force artificial parallelism.
+- Every file in the plan must appear in exactly one work group or in Shared Dependencies.
+- Annotate each file as `(create)` or `(modify)` to clarify intent.
+- Must include a `## Context Alignment` section documenting:
+  - Which CLAUDE.md patterns this plan follows
+  - Which prior plans (if any) this relates to or builds upon
+  - Any deviations from established patterns, with justification
+
+Context metadata block (append to end of plan):
+
+---begin metadata format---
+<!-- Context Metadata
+discovered_at: [ISO timestamp]
+claude_md_exists: [true or false]
+recent_plans_consulted: [comma-separated list of plan filenames, or "none"]
+archived_plans_consulted: [comma-separated list of plan filenames, or "none"]
+-->
+---end metadata format---
+
+File output requirement:
+- Save the plan to: `$PLANS_DIR/[feature-name].md`
+
+Feature-name rules:
+- Derive `[feature-name]` from $ARGUMENTS as a short slug:
+  - lowercase
+  - alphanumeric + hyphen only
+  - max 40 chars
+  - no trailing hyphen
+
+**If threat-model-gate was found in Step 0 AND $ARGUMENTS appears to involve security-sensitive functionality:**
+
+Security-sensitive heuristic: $ARGUMENTS (case-insensitive) contains any of:
+- Identity/Auth: auth, authentication, authorization, login, password, token, session, oauth, oidc, saml, api key, secret, credential, identity, mfa, 2fa, rbac, acl, permission, role, privilege, security
+- Cryptography/Network: encrypt, decrypt, certificate, tls, ssl, firewall, cors, proxy, redirect, webhook, dns, url
+- Data/Compliance: pii, gdpr, hipaa, compliance, fips, fedramp, export, import, backup, database, query, sql
+- File/Process: upload, download, file, path, exec, shell, command, subprocess, eval
+- Payment: payment, stripe, billing, credit card, bank
+
+**If security-sensitive:** Append to the architect Task prompt:
+
+"SECURITY CONTEXT: This plan involves security-sensitive functionality. You MUST include a `## Security Requirements` section addressing:
+- Assets at risk (data classification: public/internal/confidential/restricted)
+- Trust boundaries (where does trust change?)
+- STRIDE analysis (Spoofing, Tampering, Repudiation, Information Disclosure, DoS, Elevation of Privilege)
+- Proposed mitigations for each identified threat
+
+Refer to the threat-model-gate skill at `~/.claude/skills/threat-model-gate/SKILL.md` for the full checklist and security requirements template."
+
+**If not security-sensitive:** Do not append. Standard planning prompt only.
+
+**Stage 2 -- Plan content security scan (runs only when Stage 1 did NOT fire):**
+
+If the keyword heuristic did NOT trigger (i.e., `$ARGUMENTS` did not contain security keywords) AND threat-model-gate was found in Step 0:
+
+After the architect subagent writes the plan, read `$PLANS_DIR/[feature-name].md` and scan its content for security signals:
+- References to authentication, authorization, session management, or access control
+- References to PII, personal data, GDPR, HIPAA, or data classification
+- References to encryption, TLS, certificates, or key management
+- References to API keys, secrets, credentials, or tokens in the design
+- References to trust boundaries, privilege escalation, or injection
+- The plan modifies files in paths commonly associated with security: `auth/`, `security/`, `middleware/`, `permissions/`, `rbac/`, `acl/`, `crypto/`, `secrets/`
+
+**If any security signals found in plan content:**
+
+Re-invoke the architect subagent (max 1 additional call):
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Prompt:
+"The plan you just drafted at `$PLANS_DIR/[feature-name].md` touches security-sensitive areas
+(detected: [list of security signals found]). Use the Edit tool to insert a `## Security Requirements`
+section into the existing plan, placing it after the last existing section and before
+any `## Status` or metadata sections. Follow the template in
+`~/.claude/skills/threat-model-gate/SKILL.md` for the section structure. Do not modify
+any other section of the plan."
+
+Output: "Plan content scan detected security signals. Security Requirements section injected."
+
+**If no security signals found:** No action. Continue to Step 3.
+
+**Emit step_end for Step 2:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_2_architect_draft","step_name":"Architect drafts plan","agent_type":"architect"}'
+```
+
+## Step 3 — Red Team + Librarian + Feasibility review (parallel)
+
+**Emit step_start for Step 3:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3_review","step_name":"Red Team + Librarian + Feasibility review","agent_type":"coordinator"}'
+```
+
+Run all three reviews **in parallel** — three `Task` tool calls in a single message.
+
+**If `--fast` flag is set:** skip the red team call; run librarian and feasibility only.
+
+### 3a — Red Team
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Task:
+"You are a critical reviewer. Your job is to find weaknesses in the plan.
+
+Critically analyze the plan at `$PLANS_DIR/[feature-name].md`.
+Challenge assumptions, identify risks, find gaps in the rollout plan,
+and stress-test the proposed design for failure modes.
+Rate each finding: Critical / Major / Minor / Info.
+
+Structure your output as:
+## Verdict: PASS or FAIL
+(FAIL if any Critical finding exists)
+
+## Findings
+(Each finding with severity rating: Critical / Major / Minor / Info)
+
+Write your analysis to `$PLANS_DIR/[feature-name].redteam.md`
+with the Verdict as the first heading after the metadata."
+
+**Required (when threat-model-gate is deployed and plan is security-sensitive):** If `~/.claude/skills/threat-model-gate/SKILL.md` was found in Step 0 AND the plan is security-sensitive (Stage 1 keyword match OR Stage 2 plan content scan fired in Step 2) AND the `--fast` flag is NOT set, MUST invoke a security-analyst review:
+
+- If `.claude/agents/security-analyst.md` was found in Step 0: invoke the project-specific security-analyst agent via `Task`.
+- If `.claude/agents/security-analyst.md` was NOT found: invoke a generic `Task` subagent with this prompt:
+  "You are a security analyst. Read the threat-model-gate skill at `~/.claude/skills/threat-model-gate/SKILL.md` for your threat modeling framework and checklist. Then read the plan at `$PLANS_DIR/[feature-name].md`. Validate the `## Security Requirements` section:
+  - Are all six STRIDE categories addressed?
+  - Are mitigations specific (not vague like 'use standard security practices')?
+  - Are trust boundaries explicitly identified?
+  - Are failure modes defined for each security control?
+  Rate any gaps as Major findings."
+
+Append the STRIDE validation to the redteam artifact as a `## Security-Analyst Supplement` section. If the security-analyst identifies gaps in the `## Security Requirements` section (missing STRIDE categories, vague mitigations, unstated trust boundaries), these count as Major findings in the redteam review. The red team verdict considers the full redteam artifact including this supplement -- Major findings from the security-analyst are part of the red team's input, not a separate verdict. When Major gaps are present, the red team should issue FAIL, which triggers the existing Step 4 revision loop.
+
+### 3b — Librarian (rules gate)
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Task:
+"Review `$PLANS_DIR/[feature-name].md` against `./CLAUDE.md` project rules.
+Identify conflicts, required adjustments, or missing constraints.
+
+Additionally, check historical alignment:
+- Verify the plan's `## Context Alignment` section exists and is substantive
+- Confirm the plan does not contradict decisions documented in prior plans (check recent plans in `$PLANS_DIR/` if any exist)
+- Confirm the plan follows patterns established in CLAUDE.md
+- Flag if the context metadata block is missing or has `false` for claude_md_exists when a CLAUDE.md exists
+
+Write `$PLANS_DIR/[feature-name].review.md` with:
+- Verdict: PASS or FAIL
+- Conflicts (bullet list, cite relevant rule headings)
+- Historical alignment issues (bullet list, if any)
+- Required edits (minimal, actionable)
+- Optional suggestions"
+
+### 3c — Feasibility review
+
+Tool: `.claude/agents/code-reviewer.md` (if found), fallback to `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Task:
+"Review `$PLANS_DIR/[feature-name].md` for technical feasibility.
+Assess:
+- Implementation complexity (realistic estimates vs. over-simplification)
+- Missing edge cases or error handling
+- Test coverage adequacy
+- Breaking changes or backward compatibility risks
+- Dependency/library assumptions
+
+Write `$PLANS_DIR/[feature-name].feasibility.md` with:
+- Verdict: PASS or FAIL
+- Concerns (categorized: Critical / Major / Minor)
+- Recommended adjustments"
+
+**Emit verdict events and step_end for Step 3:**
+
+Tool: `Bash`
+
+```bash
+# Emit verdict events for each reviewer (replace VERDICT_X with actual verdicts)
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_3_review\",\"verdict\":\"${REDTEAM_VERDICT:-PASS}\",\"verdict_source\":\"red_team\",\"agent_type\":\"red-team\"}"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_3_review\",\"verdict\":\"${LIBRARIAN_VERDICT:-PASS}\",\"verdict_source\":\"librarian\",\"agent_type\":\"librarian\"}"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_3_review\",\"verdict\":\"${FEASIBILITY_VERDICT:-PASS}\",\"verdict_source\":\"feasibility\",\"agent_type\":\"code-reviewer\"}"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3_review","step_name":"Red Team + Librarian + Feasibility review","agent_type":"coordinator"}'
+```
+
+## Step 4 — Revision loop (conditional)
+
+**Trigger:** Step 3 produced any Critical or Major findings, OR a FAIL verdict from any reviewer.
+
+**If no Critical/Major findings and no FAIL verdict:** skip to Step 5.
+
+**Emit step_start for Step 4:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_4_revision","step_name":"Revision loop","agent_type":"architect"}'
+```
+
+Re-invoke the architect to revise the plan using the same pattern as Step 2 (local `.claude/agents/senior-architect.md` preferred, Task subagent fallback — no MCP). MUST use exact model string `claude-opus-4-6`:
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Prompt:
+"Revise the plan at `$PLANS_DIR/[feature-name].md` to address the findings in:
+- `$PLANS_DIR/[feature-name].redteam.md` (if exists)
+- `$PLANS_DIR/[feature-name].review.md`
+- `$PLANS_DIR/[feature-name].feasibility.md`
+
+Only change what is necessary to resolve Critical, Major, and FAIL-causing issues.
+Do not expand scope. Overwrite `$PLANS_DIR/[feature-name].md` with the revised plan.
+
+Preserve the `## Context Alignment` section and context metadata block.
+If the review flagged historical alignment issues, address them in the revision."
+
+Then re-run Step 3 (all three reviews in parallel) on the revised plan.
+
+**Max 2 revision rounds total.** If after 2 rounds the plan still has Critical findings or a FAIL verdict, proceed to Step 5 (which will halt the workflow).
+
+**Emit step_end for Step 4:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_4_revision","step_name":"Revision loop","agent_type":"architect"}'
+```
+
+## Step 5 — Final verdict gate
+
+**Emit step_start for Step 5:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_5_verdict","step_name":"Final verdict gate","agent_type":"coordinator"}'
+```
+
+Read the latest review artifacts:
+- `$PLANS_DIR/[feature-name].review.md` (librarian)
+- `$PLANS_DIR/[feature-name].redteam.md` (if exists — skipped in `--fast` mode)
+- `$PLANS_DIR/[feature-name].feasibility.md` (code reviewer)
+
+**If PASS (no unresolved Critical/Major, no FAIL verdict from any reviewer):**
+- Append the following to `$PLANS_DIR/[feature-name].md`:
+
+```
+## Status: APPROVED
+```
+
+**If PASS and DEVKIT_TARGET_COUNT > 1 (cross-repo plan-ref creation):**
+
+Tool: `Bash`
+
+```bash
+devkit plan sync "$DEVKIT_TARGET_0_PATH"
+```
+
+This reads the plan's `targets:` frontmatter and writes ref files to all involved
+project directories. If any secondary target is unreachable, the sync logs a warning
+but does not alter the verdict. Ref creation failure is non-blocking — the plan is
+already approved. Refs can be rebuilt later via `devkit plan sync`.
+
+If `DEVKIT_TARGET_COUNT` is absent or equals 1, skip this step.
+
+**Auto-commit plan and review artifacts (runs for both PASS and FAIL):**
+
+Tool: `Bash`
+
+Pre-flight checks — skip commit with warning if any fail:
+
+1. Detached HEAD check: `git symbolic-ref HEAD >/dev/null 2>&1` — if this fails, HEAD is detached and commits would be orphaned.
+2. In-progress operation check: test for `.git/rebase-merge`, `.git/rebase-apply`, `.git/MERGE_HEAD`, or `.git/CHERRY_PICK_HEAD` — if any exist, committing could finalize or corrupt the operation.
+3. Pre-existing staged changes: if `git diff --cached --name-only` is non-empty, log a note but continue (pathspec commit protects against sweep).
+
+Copy plan files from centralized location to `.devkit-plans/` staging directory in the project for git staging. Stage files individually with existence checks and build dynamic pathspec list (do NOT use a single `git add` with all paths — nonexistent paths cause fatal exit 128 and stage nothing; use `|| true` so the loop always exits 0 regardless of which files exist):
+
+````bash
+PLAN_FILES=""
+mkdir -p ".devkit-plans"
+for f in "$PLANS_DIR/[feature-name].md" "$PLANS_DIR/[feature-name].redteam.md" "$PLANS_DIR/[feature-name].review.md" "$PLANS_DIR/[feature-name].feasibility.md"; do
+  if [ -f "$f" ]; then
+    cp -p "$f" ".devkit-plans/"
+    LOCAL_FILE=".devkit-plans/$(basename "$f")"
+    git add "$LOCAL_FILE" && PLAN_FILES="$PLAN_FILES $LOCAL_FILE" || true
+  fi
+done
+````
+
+Commit only if files were staged, using the dynamic pathspec list (do NOT hardcode all four paths — nonexistent paths in the pathspec cause `git commit` to fail with exit 1). Use `--` pathspec to limit commit to plan files only (do not sweep user's staged changes):
+
+If APPROVED:
+````bash
+[ -n "$PLAN_FILES" ] && git commit -m "$(cat <<'EOF'
+feat(plans): approve [feature-name] blueprint
+
+Plan approved by /architect v3.5.0 with all review gates passed.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+EOF
+)" -- $PLAN_FILES
+````
+
+If FAIL:
+````bash
+[ -n "$PLAN_FILES" ] && git commit -m "$(cat <<'EOF'
+chore(plans): save failed [feature-name] blueprint
+
+Plan did not pass /architect v3.5.0 review gates. Committing artifacts for reference.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+EOF
+)" -- $PLAN_FILES
+````
+
+If git commit succeeds: append to output: "Plan and review artifacts committed to git."
+
+If pre-flight checks fail or git commit fails: append to output: "Auto-commit skipped/failed ([reason]). Plan files remain at $PLANS_DIR/. To commit manually, copy and stage: `mkdir -p .devkit-plans && cp -p $PLANS_DIR/[feature-name]*.md .devkit-plans/ && git add .devkit-plans/ && git commit -m 'chore(plans): save [feature-name] blueprint'`"
+
+Do NOT change the verdict based on commit success or failure.
+
+- Output (PASS): "Plan approved. Run `/ship $PLANS_DIR/[feature-name].md` to implement."
+
+**If FAIL or unresolved Critical findings after max revisions:**
+- Do NOT append approval status.
+- Run the **Auto-commit** step above (same pre-flight checks, staging loop, and commit — but use the FAIL commit message with `chore(plans):` prefix).
+- Output: "Plan not approved. Blocking issues:" followed by the unresolved Critical/Major findings from all reviewers.
+- Stop the workflow.
+
+**Emit verdict, run_end, and step_end for Step 5:**
+
+Tool: `Bash`
+
+```bash
+# APPROVAL_VERDICT: "PASS" if approved, "FAIL" if not approved
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_5_verdict\",\"verdict\":\"${APPROVAL_VERDICT:-PASS}\",\"verdict_source\":\"final_gate\",\"agent_type\":\"coordinator\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"run_end\",\"outcome\":\"${APPROVAL_VERDICT:-PASS}\",\"plan_file\":\"$PLANS_DIR/${FEATURE_NAME:-unknown}.md\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".architect-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_5_verdict","step_name":"Final verdict gate","agent_type":"coordinator"}'
+
+# Clean up state file
+rm -f ".architect-audit-state-${RUN_ID}.json"
+echo "Architect audit log complete: $PLANS_DIR/audit-logs/architect-${RUN_ID}.jsonl"
+```

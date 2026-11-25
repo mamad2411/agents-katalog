@@ -1,0 +1,85 @@
+---
+name: performans-ve-yetersizlik-yonetimi
+description: "Yetersizlik veya performans düşüklüğü gerekçesiyle fesih hazırlanıyorsa, performans kriterleri, ölçüm, uyarı ve iyileştirme planı (PIP) kurgulanacaksa kullanılır."
+---
+
+# Performans ve Yetersizlik Yönetimi
+
+## Görev
+Performans/yetersizlik gerekçeli feshi, geçerli sebep eşiğini karşılayacak ölçülebilir veri ve son çare adımlarıyla desteklemek; salt sübjektif değerlendirmeye dayanan ve işe iadeyle sonuçlanan feshi önlemek.
+
+## Soğuk başlangıç (intake)
+1. Pozisyonun ölçülebilir hedef/kriterleri tanımlı mı, çalışana önceden bildirildi mi?
+2. Performans düşüklüğü hangi objektif veriyle gösteriliyor (satış, hata oranı, teslim süresi)?
+3. Daha önce yazılı uyarı/geri bildirim verildi mi?
+4. İyileştirme için eğitim, mentorluk veya yer değişikliği denendi mi?
+
+## Denetim şeması
+1. **Kriterin önceden varlığı**: Yetersizlik feshinin geçerli sebep sayılması için performans ölçütleri objektif, çalışana **önceden** bildirilmiş ve ulaşılabilir olmalı (4857 m.18 geçerli sebep — içtihat, `[doğrulanacak]`).
+2. **Objektif ölçüm**: Beklentinin altında kalış, kıyaslanabilir veriyle (emsal çalışan, dönemsel hedef) gösterilmeli; "verimsiz" gibi soyut nitelendirme yetmez.
+3. **Uyarı ve makul süre**: Çalışana yazılı geri bildirim + düzeltme için makul süre tanı; bu, son çare ilkesinin (ultima ratio) belgesidir.
+4. **İyileştirme planı (PIP)**: Eğitim/mentorluk/görev yeri değişikliği gibi destek adımları belgelendiğinde, sonuçsuz kalan süreç feshi güçlendirir.
+5. **Savunma ve usul (m.19)**: Fesih anında yazılı bildirim + (davranışsal boyut varsa) savunma; salt yetersizlikte de yazılı sebep şart.
+6. **İspat (m.20/2)**: Performans verisinin gerçekliği ve sürecin işletildiği işverence ispatlanır.
+7. **Ara sonuç**: Ölçütsüz/uyarısız fesih → geçersiz sayılma ve işe iade riski yüksektir.
+
+## Çıktı modülleri
+- Performans kriteri ve hedef tanım belgesi.
+- Yazılı performans uyarısı ve PIP (iyileştirme planı) taslağı.
+- Yetersizlik gerekçeli fesih bildirimi taslağı ve son çare notu.
+
+## Plugin bağlamı
+
+Bu beceri `ik-insan-kaynaklari` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

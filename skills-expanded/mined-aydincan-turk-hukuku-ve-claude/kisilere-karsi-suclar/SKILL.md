@@ -1,0 +1,84 @@
+---
+name: kisilere-karsi-suclar
+description: "Kasten/taksirle yaralama, öldürme, tehdit, şantaj, cebir ve kişiyi hürriyetinden yoksun kılma gibi kişi varlığına yönelik suçların unsurlarını ve nitelikli hallerini denetlemek gerektiğinde kullanılır."
+---
+
+# Kişilere Karşı Suçlar (Yaralama, Tehdit, Hürriyet)
+
+## Görev
+Hayata, vücut dokunulmazlığına ve hürriyete karşı suçlarda tipiklik unsurlarını, nitelikli halleri ve cezayı etkileyen halleri madde metniyle altlamak.
+
+## Soğuk başlangıç (intake)
+- Yaralanma var mı; basit tıbbi müdahaleyle giderilebilir mi, kemik kırığı/çıkığı veya yaşamsal tehlike var mı?
+- Fiil kasten mi taksirle mi (trafik, iş kazası vb.) gerçekleşti?
+- Tehdit/cebir varsa neyle, hangi içerikle yapıldı; silah kullanıldı mı?
+- Mağdur belli bir süre serbestçe hareket edemedi mi?
+
+## Denetim şeması
+1. Kasten yaralama (TCK m.86): Hareket + vücutta acı/sağlık bozulması neticesi + kast. Basit tıbbi müdahaleyle giderilebilirse m.86/2 (şikâyete bağlı). Nitelikli haller m.86/3 (silahla, kamu görevlisine karşı, canavarca hisle). Neticesi sebebiyle ağırlaşmış yaralama m.87 (duyu/organ kaybı, kemik kırığı m.87/3, çocuk düşürme, ölüm m.87/4).
+2. Taksirle yaralama (TCK m.89): Dikkat-özen yükümlülüğü ihlali, öngörülebilir netice; bilinçli taksir (m.22/3) cezayı artırır. Kural olarak şikâyete bağlı; bilinçli taksir hali şikâyet aranmaz.
+3. Kasten öldürme (TCK m.81) ve nitelikli halleri (m.82: tasarlama, canavarca, kan gütme, töre saiki, kamu görevlisine karşı). Ölümle yaralanma sınırı: failin kastının yöne(l)imi ve eylemin elverişliliği (kast-taksir ayrımı m.21-22) belirleyicidir.
+4. Tehdit (TCK m.106): Bir kötülüğün gerçekleştirileceğinin bildirilmesi; malvarlığına yönelikse alt sınır farklı. Silahla/birden fazla kişiyle m.106/2 nitelikli. Şantaj m.107, cebir m.108 ile sınırı çiz.
+5. Hürriyetten yoksun kılma (TCK m.109): Kişinin hareket serbestisinin hukuka aykırı kısıtlanması; cebir/tehditle, kamu görevlisi tarafından veya cinsel amaçla nitelikli hal. Etkin pişmanlık m.110.
+6. Ispat yükü ve ara sonuç: ATK/adli rapor yaralanmanın derecesini belirler; tehditte içerik ve mağdur üzerindeki etki delillendirilmeli. Hangi maddenin hangi fıkrasının uygulanacağını ve şikâyet/uzlaştırma durumunu sonuçlandır.
+
+## Çıktı modülleri
+- Unsur altlama tablosu (fiil, netice, manevi unsur, nitelikli hal) madde atıflı.
+- Adli rapor değerlendirme notu (yaralanmanın hukuki nitelendirmesi).
+- Şikâyet/uzlaştırma ve olası ceza aralığı özeti.
+
+## Plugin bağlamı
+
+Bu beceri `ceza-hukuku-ozel` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

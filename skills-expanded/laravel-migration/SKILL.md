@@ -1,0 +1,219 @@
+---
+model_tier: medium
+name: laravel-migration
+description: "Use when creating a Laravel migration — table prefixes, column naming, multi-tenant awareness, php artisan make:migration. Other stacks: use stack-native migration tooling."
+domain: engineering
+framework: laravel
+workspaces:
+  - engineering
+packs:
+  - laravel
+trust:
+  level: professional
+install:
+  default: false
+  removable: true
+triggers:
+  - phrase: "make:migration"
+  - phrase: "laravel migration"
+---
+
+# laravel-migration
+
+## When to use
+
+Use this skill when the user asks to create a database migration, add a column, create a table, or modify the schema.
+
+## Procedure: Create a migration
+
+1. **Read conventions** — Check `./agents/` and `AGENTS.md` for table prefixes, column naming, multi-tenant setup.
+2. **Generate migration** — `php artisan make:migration create_xyz_table` (or add_column, etc.).
+3. **Write schema** — Follow naming conventions, add indexes for WHERE/JOIN columns, use `decimal` for money.
+4. **Verify** — Run migration (`php artisan migrate`), then rollback (`php artisan migrate:rollback`) to confirm reversibility.
+
+## All projects
+
+- Use `decimal` for money — never `float`.
+- Add indexes for columns used in WHERE clauses and JOINs.
+- Match existing column naming patterns in the same table or domain.
+- Declare recovery: a reversible `down()`, or a roll-forward plan in the file
+  (see § The recovery contract below). Silence is the violation.
+
+## Laravel projects
+
+### Multi-database architecture
+
+Some projects use multiple database connections. Check `config/database.php` for connections.
+
+| Check | How |
+|---|---|
+| Available connections | `config/database.php` → `'connections'` array |
+| Migration directories | `database/migrations/` (default), check for additional directories |
+| Custom migrate commands | `php artisan list migrate` — look for project-specific commands |
+
+**Always determine which database the table belongs to before creating a migration.**
+
+### API database migration
+
+```bash
+php artisan make:migration create_example_table
+```
+
+```php
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::connection('api_database')->create('example_table', function (Blueprint $table): void {
+            $table->id();
+            // Choose the referential action; never inherit it from a
+            // template. See "Referential action is a decision" below.
+            $table->foreignId('customer_id')->constrained()
+                ->cascadeOnDelete(); // rows here are expendable WITHOUT their customer
+            $table->string('name');
+            $table->boolean('is_active')->default(true); // no index: a boolean alone rarely earns one
+            $table->timestamps();
+            $table->softDeletes();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::connection('api_database')->dropIfExists('example_table');
+    }
+};
+```
+
+### Other connections
+
+Table prefixes and custom `make:migration:*` generators are project conventions — read them from the project's `agents/` docs.
+
+### Adding a column (with explicit connection)
+
+```php
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::connection('my_connection')->table('example', function (Blueprint $table): void {
+            $table->unsignedInteger('new_column')->after('existing_column');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::connection('my_connection')->table('example', function (Blueprint $table): void {
+            $table->dropColumn('new_column');
+        });
+    }
+};
+```
+
+### Running migrations
+
+```bash
+# Default connection
+php artisan migrate                           # development
+php artisan migrate --env=testing             # testing
+
+# Multi-tenant / custom — check AGENTS.md or module docs for project-specific commands
+# Example: php artisan migrate:tenants, php artisan migrate --database=tenant
+```
+
+## Composer / legacy projects
+
+- Check where existing migrations live (e.g. `core/migrations/`).
+- Use the existing migration format and naming conventions in the project.
+
+## Column conventions
+
+- Foreign keys: `{entity}_id` (e.g. `customer_id`, `user_id`)
+- Booleans: `is_` prefix (e.g. `is_active`, `is_default`)
+- Dates: descriptive suffix (e.g. `upload_date`, `deleted_at`)
+- Always use `unsignedBigInteger` for foreign keys referencing `id()` columns
+- Use `->after('column')` to place new columns logically
+
+## Output format
+
+1. Migration file with up() and down() methods
+2. Model updates if columns or relationships changed
+
+### The recovery contract — one obligation, two branches
+
+Every migration declares **one** of these, and silence is the violation:
+
+1. a `down()` that restores the prior state; **or**
+2. a **roll-forward recovery plan, written in the migration file itself**, for
+   the cases where restoration is genuinely impossible — a completed
+   destructive backfill, a dropped column whose data is gone.
+
+The second branch is not a lighter obligation. A migration taking it records, in
+its own file comments, all three of:
+
+1. **why restoration is impossible**, with the evidence — the data was checked
+   and is unrecoverable, not assumed to be;
+2. **the ordered recovery procedure** — the steps, the inputs each needs, and
+   the criteria that say recovery succeeded;
+3. **the responsible recovery owner**.
+
+Vague intent or missing detail is the violation. The plan lives in the migration
+file and lands in the same diff, because a plan documented "later" somewhere else
+is a plan nobody can review at the moment it matters.
+
+## Referential action is a decision
+
+The template above labels its `onDelete('cascade')` as **one branch**, not a
+default. Copying it unchanged is how a delete of one customer silently removes
+records that had independent value.
+
+| The child row, without its parent, is | Action | What happens |
+|---|---|---|
+| **expendable** — it only means something as part of the parent | `cascade` | deleted with the parent |
+| **self-valued** — it is a record in its own right (an invoice, an audit row, a payment) | `restrict` (or `no action`) | the parent delete FAILS until the child is dealt with |
+| **survivable** — it outlives the parent with the link removed | `set null` | the column is nulled; requires a nullable column |
+
+Two consequences worth stating because they are the ones missed:
+
+- `restrict` is the safe default for anything a finance, audit, or legal reader
+  would expect to still exist. A failed delete is a conversation; a cascaded
+  delete is a recovery.
+- `set null` needs the foreign-key column to be nullable, and it needs the
+  application to handle the orphan state. Choosing it without both is choosing a
+  constraint error later.
+
+Soft deletes do **not** interact with this: `onDelete` fires on a real `DELETE`,
+so a soft-deleting parent never triggers it. If the model soft-deletes, the
+referential action describes what happens on a force-delete or a purge, and that
+is the case to decide against. A unique column on a soft-deleting table needs the
+engine-specific form in
+[`eloquent.md` § Unique constraints under soft delete](../../guidelines/php/eloquent.md#unique-constraints-under-soft-delete).
+
+## Gotcha
+
+- Always check if the table/column already exists before creating the migration — the model doesn't always check.
+- Multi-tenant migrations need special handling — customer tables use different prefixes.
+- Don't modify existing migrations that have been deployed — create a new migration instead.
+- The model forgets `->after('column')` for column ordering — MariaDB respects it, and it matters for readability.
+
+## Do NOT
+
+- Do NOT create migrations without specifying the correct connection when multiple databases exist.
+- Do NOT create tables without checking the project's naming conventions (prefixes, casing).
+- Do NOT use raw SQL in migrations when Schema builder works.
+- Do NOT leave recovery undeclared — ship a `down()` that restores the prior
+  state, or the three-part roll-forward plan in the migration file. Neither is
+  optional; choosing between them is.
+- Do NOT use `float` for money — use `decimal`.
+- Do NOT forget indexes on foreign keys and frequently filtered columns.
+
+## Adversarial review
+
+Before finalizing a migration, run the **`adversarial-review`** skill.
+Focus on the "Database migrations" attack questions: Can this destroy data? Is rollback possible?
+
+## Auto-trigger keywords
+
+- database migration
+- create migration
+- table prefix
+- column naming
+- add column
+- create table

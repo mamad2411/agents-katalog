@@ -1,0 +1,79 @@
+---
+name: ad-skill
+description: 'Draft a new Claude Code or Codex skill in the Agent Skills format. Use to create, write or scaffold a custom skill.'
+summary: Draft a new Claude Code or Codex skill at the appropriate path.
+allowed-tools: Read, Write, Glob, Bash
+---
+
+# /ad-skill
+
+Drafts `.claude/skills/<name>/SKILL.md` (Claude Code) or `.agents/skills/<name>/SKILL.md` plus `agents/openai.yaml` (Codex). Spec: [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills). Open standard: [agentskills.io](https://agentskills.io). Examples: [github.com/anthropics/skills](https://github.com/anthropics/skills).
+
+## Step 1 — Confirm target
+
+Ask the user:
+
+* **Name** — kebab-case, lowercase, ≤64 chars. Becomes the directory name and the slash command (`/<name>`).
+* **Target agent(s)** — Claude Code, Codex, or both. Determines path and frontmatter shape.
+* **Personal or project** — `~/.claude/skills/<name>/` (personal) vs `.claude/skills/<name>/` (project, committed). Default: project.
+
+## Step 2 — Interview to fill
+
+Ask one question per missing field, in this order:
+
+* **What it does** — one sentence, primary triggering signal.
+* **When to invoke** — common task framings the user would say. Put what the
+  skill does and when to use it in `description`; its specification maximum is
+  1,024 characters. Claude Code alone also supports `when_to_use`, and cuts the
+  combined discovery text at 1,536 characters in its Claude Code listing; this
+  is not the cross-host specification limit. The description cannot contain
+  XML tags, so write a path placeholder as `NNNN-slug` or `NAME`, never in
+  angle brackets.
+* **Effect gates** — every outward effect (push, pull request, publish, post,
+  message) and every irreversible one (files outside the repository, machine
+  stores, deletions git cannot restore) runs only after an approval step stated
+  in the body. With those gates written the skill stays model-invocable; the host
+  block below is only for a skill that cannot gate its effect.
+* **Tools needed** — `Read, Write, Glob, Grep, Bash, Task, ...` Restrict to what the skill actually uses; an audit skill with `Write` access stops being read-only.
+* **Body shape** — instructions, optional template, output contract. Keep ≤500 lines; move long material to sibling files (`reference.md`, `examples.md`, `scripts/`).
+
+**Do not invent values.** When the user does not know something, ask. Do not invent fields not in the spec — only declare frontmatter fields that actually apply.
+
+## Step 3 — Write the file(s)
+
+If the target file already exists, show it and overwrite it only after the user approves; a personal-scope file lives outside the repository, so git cannot restore it.
+
+Path:
+
+* Claude Code project: `.claude/skills/<name>/SKILL.md`
+* Claude Code personal: `~/.claude/skills/<name>/SKILL.md`
+* Codex project: `.agents/skills/<name>/SKILL.md` plus `.agents/skills/<name>/agents/openai.yaml` (cc-sdd convention).
+
+Frontmatter shape per agent:
+
+* **Claude Code:** `name`, `description`, `allowed-tools` (and any other field
+  from the spec the user asked for). Omit `disable-model-invocation`; add
+  `disable-model-invocation: true` only for a skill whose effect has no approval
+  step in its body.
+* **Codex:** minimal frontmatter — `name`, `description`. Body uses XML tags
+  (`<background_information>`, `<instructions>`, `<template>`,
+  `<output_contract>`). The `agents/openai.yaml` carries
+  `interface.display_name`, `interface.short_description`, and
+  `policy.allow_implicit_invocation: true`, or `false` only for a skill whose
+  effect has no approval step in its body.
+
+Body: imperative instructions ("do X", not "this skill does X"). Every line is recurring token cost once the skill loads — be terse. Don't restate AGENTS.md.
+
+## Step 4 — Stop after writing
+
+Do not invoke the new skill, do not pre-fill it with example content, do not test it. The user will exercise it themselves.
+
+## Output contract
+
+A single new `SKILL.md` at the chosen path (plus `agents/openai.yaml` for Codex). Frontmatter declares only the fields actually used. Body is imperative and terse. No external file dependencies the user did not ask for.
+
+## Next
+
+- Test the new skill's description triggers by invoking it from a real conversation — verify auto-triggering on the keywords you chose.
+- Kit skills ship to every install. Add the source for both hosts and its parity tests; propose an ADR + Task when the capability changes the kit's public surface or behavior.
+- If the skill carries a sibling subagent, declare it in `manifest.json` and add the source under `agents/`.

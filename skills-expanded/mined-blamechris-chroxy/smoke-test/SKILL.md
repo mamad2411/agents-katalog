@@ -1,0 +1,310 @@
+---
+description: "Run an automated visual smoke test of the application using Playwright."
+---
+
+# /smoke-test
+
+Run an automated visual smoke test of the application using Playwright. Launches a headless browser, navigates through key UI flows, takes screenshots, and reports pass/fail results.
+
+## Arguments
+
+- `$ARGUMENTS` - Optional flags:
+  - `--headed` — Show the browser window (useful for debugging)
+  - `--keep-screenshots` — Don't clean up screenshots after the run
+  - `--preview <preview.json>` — Smoke an already-running preview daemon described by that record (`{port, configDir, …}`) instead of starting one in step 1
+  - If empty, runs headless and cleans up screenshots
+
+The skill never attaches to a daemon it did not start or was not handed. `tests/smoke-test.mjs` has no default target (#8225): it exits 2 with usage when none is given and refuses port 8765 and a `~/.chroxy` config dir (exit 3). Never pass `--i-mean-production` from this skill.
+
+## Instructions
+
+### 0. Prerequisites
+
+Verify Playwright is installed and the test script exists.
+
+**A missing script is not a dead end — it is the cue to write one.** If the script
+does not exist yet, the failure message MUST point at the "Writing the Smoke Test
+Script" section below, which is the recipe for creating it. A bare "not found" +
+`exit 1` makes this skill unusable in every repo that has not written the script
+yet, which is exactly the repo that needs the recipe most.
+
+```bash
+# Check Playwright is available
+node -e "require('playwright')" 2>/dev/null || {
+  echo "Installing Playwright..."
+  npm install --save-dev playwright
+  npx playwright install chromium
+}
+
+# Check the smoke test script exists. Customize only the path — keep the message
+# actionable, pointing at "Writing the Smoke Test Script" below.
+SMOKE_SCRIPT="packages/server/tests/smoke-test.mjs"
+test -f "$SMOKE_SCRIPT" || {
+  echo "Smoke test script not found at $SMOKE_SCRIPT."
+  echo "This is expected on first run. Write it now: follow the 'Writing the Smoke"
+  echo "Test Script' section of this skill (script structure, check patterns,"
+  echo "selector strategy, connection handling), save it to the path above, then"
+  echo "re-run /smoke-test."
+  exit 1
+}
+```
+
+### 1. Ensure Application is Running
+
+The smoke test connects to a running application instance. Check if one is already running, or start one:
+
+The application must be one this skill owns, so for this repo "start one" is the only path: Do NOT probe ports and do NOT run `npx chroxy start` with the operator's config: that attaches to the daily daemon with the real token (#8225). If `--preview <preview.json>` was passed, use that record and skip to step 2. Otherwise start a throwaway daemon with its own config dir, its own token and a free port:
+
+```bash
+# Scratch dir: absolute, directly under $HOME (a relative CHROXY_CONFIG_DIR is refused
+# and the daemon falls back to ~/.chroxy). It holds the token: removed in step 5.
+SMOKE=$(mktemp -d "$HOME/chroxy-smoke.XXXXXX")
+mkdir -p "$SMOKE/fixture" "$SMOKE/config"
+git -C "$SMOKE/fixture" init -q
+echo "# fixture" > "$SMOKE/fixture/README.md"
+git -C "$SMOKE/fixture" add README.md
+git -C "$SMOKE/fixture" -c user.name=smoke -c user.email=smoke@localhost commit -q -m init
+
+PORT=$(PATH="/opt/homebrew/opt/node@22/bin:$PATH" node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
+TOKEN=$(openssl rand -hex 24)
+( umask 077; printf '{"apiToken":"%s","port":%s,"host":"127.0.0.1","tunnel":"none","cwd":"%s","workspaceRoots":["%s"],"sessionCi":{"watch":false},"controlRoomRunnerIncludeGithub":false}\n' \
+    "$TOKEN" "$PORT" "$SMOKE/fixture" "$SMOKE/fixture" > "$SMOKE/config/config.json" )
+
+# Rebuild the dashboard first: dist is gitignored and a stale bundle gives a false pass.
+npm run build -w @chroxy/dashboard
+
+# Allowlisted environment: environment beats config.json, and the OS keychain is
+# machine-global, so a denylist cannot protect the production token or identity key.
+env -i HOME="$HOME" USER="$USER" TERM=xterm-256color LANG=en_US.UTF-8 TMPDIR="$TMPDIR" \
+  PATH="/opt/homebrew/opt/node@22/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin" \
+  CHROXY_CONFIG_DIR="$SMOKE/config" CHROXY_DISABLE_KEYCHAIN=1 CHROXY_CRED_DISABLE_KEYCHAIN=1 \
+  node packages/server/src/cli.js start -c "$SMOKE/config/config.json" --skip-checks --no-supervisor \
+  > "$SMOKE/daemon.log" 2>&1 &
+PID=$!
+
+# Any failure from here stops OUR daemon (SIGTERM only, bounded wait, never SIGKILL) and
+# removes the scratch dir, which holds the token. A daemon that will not exit is left
+# running, with its scratch dir, and reported.
+abort() {
+  kill -TERM "$PID" 2>/dev/null
+  for i in $(seq 1 30); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$PID" 2>/dev/null; then echo "daemon $PID still running after 30s; scratch kept at $SMOKE" >&2
+  else rm -rf -- "${SMOKE:?}"; fi
+  echo "$1" >&2; exit 1
+}
+
+# Wait for /health, then prove it is OUR daemon on OUR port with OUR config.
+for i in $(seq 1 40); do curl -s "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break; sleep 1; done
+curl -s "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 || abort "daemon did not answer /health"
+test "$(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t)" = "$PID" || abort "port $PORT is not held by our daemon"
+case "$(grep -m1 'Config/state root:' "$SMOKE/daemon.log")" in
+  *"Config/state root: $SMOKE/config (from CHROXY_CONFIG_DIR)"*) ;;
+  *) abort "daemon is not using the scratch config" ;;
+esac
+printf '{"smoke":"%s","pid":%s,"port":%s,"configDir":"%s/config","fixture":"%s/fixture"}\n' "$SMOKE" "$PID" "$PORT" "$SMOKE" "$SMOKE" > "$SMOKE/preview.json"
+echo "$SMOKE/preview.json"
+```
+
+Shell variables do not survive between Bash calls: the last line printed is the `preview.json` path; read `smoke`, `pid` and `port` back from it in every later call. Stop the daemon by that PID only (step 5), never with `pkill`, `killall` or a pattern kill. `scripts/preview-daemon.sh` (#8305) will replace this recipe with one tested script.
+
+### 2. Run the Smoke Test
+
+**Do NOT forward `$ARGUMENTS` verbatim to `playwright test`.** Only `--headed` is a real
+Playwright flag; `--keep-screenshots` is a skill-level flag handled by this skill's
+cleanup step (5), not Playwright. Parse the two out separately:
+
+```bash
+PW_FLAGS=""
+KEEP_SCREENSHOTS=false
+for arg in $ARGUMENTS; do
+  case "$arg" in
+    --headed) PW_FLAGS="$PW_FLAGS --headed" ;;
+    --keep-screenshots) KEEP_SCREENSHOTS=true ;;  # skill-level, NOT passed to Playwright
+    --preview) ;;  # skill-level: set PREVIEW=<its value> yourself (step 2 below)
+    *) ;;  # ignore unknown flags rather than forwarding them
+  esac
+done
+
+# Rebuild dashboard before testing (source changes not visible without rebuild)
+# The dashboard is its own workspace package (@chroxy/dashboard); the server
+# serves its compiled dist/. There is no `dashboard:build` script.
+npm run build -w @chroxy/dashboard
+
+# Run the smoke test against the daemon from step 1 (or the --preview record passed in)
+# PREVIEW is the --preview file when one was passed, otherwise "$SMOKE/preview.json" from step 1.
+cd packages/server && node tests/smoke-test.mjs --preview "$PREVIEW" $PW_FLAGS
+```
+
+The test script should:
+- Connect to the running application
+- Navigate through key UI flows
+- Take screenshots at each step (saved to a gitignored directory)
+- Output PASS/FAIL for each check
+- Exit 0 (all pass) or 1 (failures)
+
+### 3. Read Screenshots
+
+After the test runs, read each screenshot to visually verify the UI:
+
+```bash
+# Screenshots are saved to a temporary directory
+# Here: packages/server/tests/screenshots/
+ls -la packages/server/tests/screenshots/
+```
+
+Use the Read tool to view each screenshot image. For each screenshot:
+- Verify the UI looks correct (layout, colors, text, element positions)
+- Check for visual regressions (missing elements, broken layouts, overlapping content)
+- Note any issues that the automated checks might have missed
+
+### 4. Report Results
+
+Output a summary table:
+
+```markdown
+## Smoke Test Results
+
+| # | Check | Status | Notes |
+|---|-------|--------|-------|
+| 1 | Dashboard loads | PASS | HTTP 200, WS connects |
+| 2 | Session creation | PASS | Ctrl+N modal opens |
+| 3 | Keyboard shortcuts | PASS | `?` help overlay |
+
+**Screenshots reviewed:** N
+**Visual issues found:** M (describe any issues)
+
+If the test failed, check:
+- Is the throwaway daemon up? (`curl http://127.0.0.1:$PORT/health`, with `$PORT` read from the preview record)
+- A run against a daemon without the IDE feature (`features.ide` off, no `SMOKE_REQUIRE_IDE`) records 16 cases and exits 1 with `HARNESS BROKEN: ran 16 cases, expected at least 18` although every case passed. That is the floor, not a regression (#8435); judge the PASS/FAIL lines, not the exit code, until it is fixed.
+- Did the dashboard rebuild? (`npm run build -w @chroxy/dashboard`)
+- Are there console errors in the browser? (check screenshots or run with `--headed`)
+```
+
+### 5. Cleanup
+
+```bash
+# Remove screenshots unless --keep-screenshots was passed (parsed in step 2, NOT
+# forwarded to Playwright). $KEEP_SCREENSHOTS is the skill's own flag.
+if [ "$KEEP_SCREENSHOTS" != "true" ]; then
+  rm -rf packages/server/tests/screenshots
+fi
+```
+
+If the application was started by this skill (not already running), stop it.
+
+Stop the daemon this skill started (step 1) and remove its scratch directory, which holds the token. Skip this when `--preview` was passed: that daemon belongs to whoever started it.
+
+```bash
+# PREVIEW is the preview.json path step 1 printed.
+SMOKE=$(node -p "require('$PREVIEW').smoke"); PID=$(node -p "require('$PREVIEW').pid")
+case "$SMOKE" in "$HOME"/chroxy-smoke.?*) ;; *) echo "not a smoke scratch dir: $SMOKE" >&2; exit 1 ;; esac
+if kill -0 "$PID" 2>/dev/null; then
+  case "$(ps -o command= -p "$PID")" in *"$SMOKE"*) ;; *) echo "PID $PID is not ours; leaving it" >&2; exit 1 ;; esac
+  kill -TERM "$PID"                      # SIGTERM only: never SIGKILL, it skips the state flush
+  for i in $(seq 1 30); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$PID" 2>/dev/null; then echo "daemon $PID still running after 30s; report it, scratch kept at $SMOKE" >&2; exit 1; fi
+fi
+rm -rf -- "$SMOKE"
+```
+
+## Writing the Smoke Test Script
+
+This is where step 0 sends you when the script is missing. If the test script
+doesn't exist yet, create it following these patterns, save it at the path step 0
+checks, then re-run the skill from step 0:
+
+### Script Structure
+
+```javascript
+/**
+ * Smoke Test — Playwright-based visual verification
+ *
+ * Prerequisites: application must be running.
+ * Screenshots saved to packages/server/tests/screenshots/ (gitignored).
+ */
+
+import { chromium } from 'playwright'
+// ... setup
+
+async function run() {
+  // 1. Find running application
+  // 2. Launch browser
+  // 3. Navigate to app URL (with auth if needed)
+  // 4. Wait for app to be ready (WebSocket, data loading, etc.)
+  // 5. Run checks — each one:
+  //    a. Interact with UI (click, type, navigate)
+  //    b. Take screenshot
+  //    c. Assert element exists / is visible / has correct content
+  //    d. Log PASS or FAIL
+  // 6. Output summary
+  // 7. Exit with appropriate code
+}
+```
+
+### Check Patterns
+
+Each check should:
+1. **Act** — Navigate, click, type
+2. **Screenshot** — Capture current state
+3. **Assert** — Verify expected elements/content
+4. **Report** — Log PASS/FAIL with details
+
+```javascript
+// Example: Check a modal opens
+await page.keyboard.press('Control+n')
+await page.waitForTimeout(500)
+await screenshot(page, '02-modal-open')
+
+const modal = await page.$('.modal-overlay')
+if (modal && await modal.isVisible()) {
+  pass('Modal opens')
+} else {
+  fail('Modal opens', 'Not visible after Ctrl+N')
+}
+```
+
+### Selector Strategy
+
+Prefer stable selectors in this order:
+1. `aria-label`, `role`, `data-testid` attributes
+2. Class names matching component names
+3. Semantic HTML elements (`header`, `main`, `nav`)
+4. Text content (last resort — fragile)
+
+### Connection Handling
+
+Many apps need a backend connection before the full UI renders. Always wait for the "ready" state:
+
+```javascript
+// Wait for app to be fully loaded and connected
+await page.waitForFunction(() => {
+  // App-specific readiness check
+  // Check that page does NOT contain "Disconnected" or "Connecting..."
+  const body = document.body.innerText
+  return !body.includes('Disconnected') && !body.includes('Connecting...')
+}, { timeout: 10000 })
+```
+
+## Test Categories
+
+Organize checks into logical groups:
+
+| Category | What to Verify |
+|----------|---------------|
+| Dashboard Core | Page loads (HTTP 200), WS connects, version badge, sidebar, session tabs, full-width layout, input bar |
+| Session Creation | Ctrl+N opens modal, session name input, CWD combobox, provider picker visible (logs option labels) |
+| Keyboard Shortcuts | `?` opens help overlay, `Ctrl+N` new session |
+| Control Room | Sidebar launcher opens the Control Room, `control-room-section` + top-level tab render, repo table or empty state shows, sort/filter controls present (with data), refresh stays stable (best-effort) |
+| Health | No critical console errors |
+
+## Critical Rules
+
+1. **Never send real messages** — Smoke tests verify UI, not backend processing. Don't submit forms that trigger expensive operations.
+2. **Screenshots are temporary** — Always clean up unless `--keep-screenshots`. Add the directory to `.gitignore`.
+3. **Fail fast on no connection** — If the app isn't running or can't connect, report immediately instead of running checks that will all fail.
+4. **Stable selectors** — Use aria labels and roles, not brittle CSS class names that change with refactors.
+5. **Visual verification is the point** — The automated checks catch DOM presence. Reading screenshots catches visual regressions (z-index, color, spacing).
+6. **Idempotent** — Safe to run repeatedly. Don't create persistent state (sessions, data, etc.) that would affect the next run.
+7. **Rebuild dashboard before testing** — Dashboard serves compiled Vite bundles. Source changes are NOT visible without `npm run build -w @chroxy/dashboard`.
+8. **`?` shortcut quirk** — Test fails if textarea has focus (keystroke goes to input, not shortcut handler). Click body first to ensure focus is not in the input bar.
+9. **Never the production daemon** — Only attach to a daemon this skill started or was handed via `--preview`. Never port 8765, never a token read from `~/.chroxy`, never `--i-mean-production` (#8225).

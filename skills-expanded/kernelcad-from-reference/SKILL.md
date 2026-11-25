@@ -1,0 +1,198 @@
+---
+name: kernelcad-from-reference
+description: Reproduce a real-world artifact from one or more reference photographs using kernelCAD primitives. Orchestrator skill — names sub-skills and their order. Load this first; it points at the right sub-skill for each stage.
+---
+
+# kernelCAD — from reference (orchestrator)
+
+Reproduce a real-world artifact from one or more reference photographs using
+kernelCAD primitives. This is an orchestrator skill that names sub-skills and
+their order. Read this first; then load each sub-skill in sequence as you
+work through the stages.
+
+## Decision tree (1 screen — start here)
+
+```
+Have an engineering drawing as a vector PDF (orthographic views + lettered
+dimensions)? → call `drawing_to_cad` first (see "Engineering drawing PDF"
+below). A scanned / photographed drawing is a photo: use the photo path.
+Have a written spec with numeric dimensions? → just read kernelcad-authoring
+                                                + use-the-available-kernel,
+                                                build single-pass, score.
+Simple front-on consumer electronics or passive enclosures with a photo and a
+known dimension? → read `photo-to-device/SKILL.md` before blockout. Its
+                   hosted-vs-local reference-asset rule controls generic
+                   `referenceImage()` advice for this path; it is not a mesh
+                   concept or mechanism workflow.
+Have a reference photo only? ──┬─ Extract numeric dimensions FIRST
+                               │  (measure visually OR if STL available
+                               │   use trimesh to extract bbox+landmarks),
+                               │  then proceed as if you had a spec.
+                               │
+                               └─ Don't iterate against the 2D-photo scorer —
+                                  R5/R16/R18 empirical: it's gameable. Use
+                                  the geometric scorer (scripts/scoreMeshVsMesh.ts)
+                                  if an STL reference is shipped.
+
+Building an organic-curve outline (upper contour, grip, sneaker)?
+   → use path().smoothSpline() — chained sagittaArc hits solver cliffs.
+
+Building an bevel-style chamfer on post-cut topology?
+   → just call .chamfer(d). The kernel auto-skips edges shorter than 2×d
+     and emits a clean warning. Do NOT "skip and document."
+
+Iteration mode: visual > scored > spec+photo (R1-R6 empirical).
+   Single-pass with a detailed spec OUTPERFORMS visual or scored iteration.
+   Adding the photo to a good spec REGRESSES (R3). Closed-loop scorer-only
+   iteration plateaus FAR below single-pass (R2 / R16). Only iterate when
+   you have a CLEAR signal pointing at a SPECIFIC defect.
+```
+
+## Engineering drawing PDF
+
+## Raster drawing with a separate dimension specification
+
+For PNG/JPEG drawings or raster-only PDF pages, use `trace_from_image` for
+component curves and `kernelcad-authoring` for dimensioned geometry.
+`drawing_to_cad` reads vector PDF paths and text; wrapping a PNG in a PDF
+does not make it a vector drawing.
+
+When a spreadsheet or brief supplies revised dimensions, those dimensions
+control the model. If the reference has inconsistent component proportions,
+do not apply one scale anchor to the entire sheet. Build boxes, cabin shells,
+wheels and repeated details from named dimension parameters. Extract organic
+outlines separately with explicit component regions, fit each to its own
+specified dimensions, and record any remaining inferred shape or placement.
+
+Before accepting a trace, plot its waypoints over the source and check that
+they describe the requested component. A successful response, confidence 1,
+or a confirmed ledger fact does not prove the contour is the correct object.
+Reject outlines spanning other components or drawing annotations. If a vision
+call aborts, preserve the input and diagnostic, investigate the backend, and
+rerun it after repair. Do not substitute a whole-sheet contour and label the
+component reconstructed.
+
+For a front-view-only request, produce that view first, check its dimension
+datums and component counts against the specification, inspect the exported
+drawing visually, and list inferred dimensions for review before other views.
+
+## Vector PDF import
+
+`drawing_to_cad({ path, out })` (or `{ pdfBase64 }` against a hosted server)
+turns a vector drawing page into a `.kcad.ts` plus `<stem>.ledger.json`. It is
+deterministic: no vision model, the linework and dimension text are read out of
+the PDF.
+
+What it does, in order:
+
+1. Reads paths with their stroke width and dash, and positioned text.
+2. Classifies visible / hidden / center / dimension / extension / leader lines;
+   reads SCALE, UNITS and the projection symbol from the title block.
+3. Identifies front / top / side views by projection alignment (third- or
+   first-angle; pass `projection` to override). Isometric views are ignored.
+4. Ties dimension text to its lines: `⌀`, `R`, `4×`, `±`, `THRU`, `▾ depth`.
+   A stated dimension always wins over the drawn length.
+5. Rebuilds: the silhouette of the one non-rectangular view extruded by the
+   depth an orthogonal view shows, or a turned part (a view of concentric
+   circles) revolved from its half-silhouette; holes from `⌀` circles along
+   the axis of the view they are drawn in, with THRU or hidden-line depth.
+6. Emits role-named params (`width`, `thickness`, `leftThickness`, `holeDia`,
+   `hole1X`, `dia1`, `step1Length`, …).
+7. Evaluates the script, re-projects it through the `svg-drawing` view stage
+   and compares extents, hole diameters and per-view silhouettes.
+
+How to use the result:
+
+- Branch on `fidelity.verdict`: `match` → continue; `partial` / `mismatch` →
+  read `fidelity.reasons` before editing; `failed` → the script did not build.
+- Ledger kinds: stated dimensions are `visible`; positions placed by symmetry
+  (`symmetry:` ids) and values measured from linework are `inferred`; defaults
+  (units, projection, a hole with no depth) are `assumed`; an extrusion depth
+  no view or note gives is `missing`, with a placeholder param and
+  `reference.drawing.depth-missing`.
+- A dimension that disagrees with the linework keeps its stated value; the
+  fact carries `disagreement { stated, measured }` and stays open. Ask the user
+  which is right when the difference matters.
+- Facts whose id is a param name take a value override through
+  `resolve_assumptions` → `set_param`. `symmetry:`, `holeDepth:`,
+  `unapplied:` and sheet facts (`scale`, `units`, `projection`, `views`) are
+  confirmed, or fixed by editing the script.
+- `reference.drawing.dimension-unassociated` means a dimension drove nothing;
+  its `unapplied:` fact holds the value to place by hand.
+- `reference.drawing.raster-only` means the page is a scan: render it to PNG
+  and use `trace_from_image` with a scale anchor taken from a dimension.
+
+Limits: one part per page; prisms with holes and turned parts. Sections,
+threads, counterbore/countersink callouts (kept in the fact text, not
+modelled), slanted (aligned) dimensions, text drawn as outlines, and dashes
+drawn as separate short strokes are not read. A part whose views are not a
+single extrusion or revolve rebuilds as the best prism and says so in an
+`assumed` `prism:` fact.
+
+## Required reading order (only if the decision tree didn't tell you what to do)
+
+1. `use-the-available-kernel/SKILL.md` — **the most important sub-skill.** Hard rules for which primitive to reach for.
+2. `prepare-prompt/SKILL.md` — turn the user's ask into a Real Object Brief.
+3. `photo-to-device/SKILL.md` — only for a scaled, simple front-on consumer device or passive enclosure. Load it before blockout: its hosted-vs-local asset rule controls `referenceImage()` use, the current Studio/server handoff, photo-only limits, and real-part rules.
+4. `blockout-model/SKILL.md` — coarse parametric blockout in canonical views.
+5. `kernelcad-trace-from-image/SKILL.md` — convert pixel-space curves on a reference photo into normalized waypoints. Load only when an organic-curve outline (upper contour, ergonomic handle, sneaker midsole) would take more than ~60 seconds to eyeball off the photo.
+6. `image-replicator/SKILL.md` — the render→score→iterate loop (caveat: see Rule 9).
+7. `render-inspect/SKILL.md` — interpret diagnostic hints from `kernelcad evaluate`.
+
+## Hard rules across all sub-skills
+
+- **Infer the real object before matching the camera.** Build a physically
+  coherent 3D hypothesis first. Do not start by chasing pixel similarity.
+- **If improving one view makes another view worse, the object hypothesis is
+  wrong.** Fix the model, not the camera illusion.
+- **Use the available kernel.** Variable fillet, mirror, nurbsSurface,
+  surfaceFromCurves, PBR material, and referenceImage are all available today.
+  Authoring with path+extrude+booleans alone is leaving 80% of the kernel on
+  the table. For a scaled consumer-device upload, `photo-to-device/SKILL.md`
+  overrides generic reference-image overlay instructions. See
+  `use-the-available-kernel/SKILL.md` for the remaining prescribed rules.
+- **Score against the reference photo, not against a self-graded markdown.**
+  The eval task's `harness.ts` runs `scoreAgainstReference` and produces honest
+  numbers. Trust those numbers, not your prose summary of "does it look right."
+- **Do not tamper with verification gates.** If a render gate, a black-frame
+  check, an interference check, or any other automated verification reports a
+  failure, fix the underlying model or capture pipeline. Do not edit the gate's
+  source to loosen the threshold. If the gate is genuinely wrong, surface the
+  evidence to the user and halt — the gate exists because a real failure was
+  shipped before.
+
+## Verification gates (summary — see sub-skills for gate detail)
+
+| Gate | Pass criterion |
+|------|----------------|
+| G-real-object-brief | Source opens with `// Real Object Brief` containing artifact name, scale, visible facts, hidden-side inference, validation focus |
+| G-evaluate | `kernelcad evaluate <script>` exits 0; zero error diagnostics |
+| G-no-overlap | `kernelcad interference <script>` reports zero pairs |
+| G-reference-parity | Every visually distinct feature in the reference has a corresponding part at the right relative position and scale |
+| G-no-floaters | No part hovers in empty space in any render |
+| G-no-protrusions | Sub-components meant to be contained are fully contained on every visible axis |
+| G-front-read | The front view reads as the target object on first glance |
+| G-score-gate | `scoreAgainstReference` silhouette ≥ 0.45, SSIM ≥ 0.25 (task-specific thresholds may be higher) |
+| G-assumption-ledger | Every `trace_from_image` or `drawing_to_cad` call's `ledger.unresolvedCount === 0` before the source is finalized — present the `assumed`/`missing` facts and any `disagreement` to the user, or resolve them from another reference view via `resolve_assumptions` first |
+| G-drawing-fidelity | A part rebuilt with `drawing_to_cad` has `fidelity.verdict === 'match'`, or the reasons for `partial` are stated in the source header |
+
+## Forbidden rationalizations
+
+If a defect is visible in a render, fix it or mark the gate `no`. These are
+NOT valid reasons to leave a gate failing:
+
+- "It looks flat because the camera angle is straight-on" — pick a different
+  camera, or fix the geometry.
+- "The float is only 1 mm" — fix the offset.
+- "The renderer's framing crops the part" — recenter the model, or pass
+  `--width 1920 --height 1080` if you have not.
+- "But the render is mostly identifiable" — split that judgement into separate
+  gates with binary answers; never write a passage of qualifications.
+
+## Companion skills
+
+- `kernelcad` — base API surface and decision tree.
+- `kernelcad-authoring` — parametric authoring fundamentals.
+- `kernelcad-features` — feature catalog (fillet, chamfer, shell, holes). For engraved brand text or wrapped logos on curved surfaces (bottle logo, product side panel): see `kernelcad-features` § Face authoring — emboss & project. Highest-impact 'real product' signal.
+- `kernelcad-mcp` — MCP tool reference.
+- `kernelcad-nurbs` — freeform NURBS surfaces for organic sections.

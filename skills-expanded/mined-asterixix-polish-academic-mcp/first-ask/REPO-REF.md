@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/asterixix/polish-academic-mcp (path: .github/skills/first-ask/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Interactive, input-tool powered, task refinement workflow: interrogates scope, deliverables, constraints before carrying out the task; Requires the Joyride extension.'

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/almeidamarcell/claude-code-skills (path: claude-seo/seo-content/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Content Quality & E-E-A-T Analysis

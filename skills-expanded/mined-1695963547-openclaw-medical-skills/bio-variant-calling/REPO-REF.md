@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/1695963547/openclaw-medical-skills (path: skills/bio-variant-calling/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Call SNPs and indels from aligned reads using bcftools mpileup and call. Use when detecting variants from BAM files or generating VCF from alignments.

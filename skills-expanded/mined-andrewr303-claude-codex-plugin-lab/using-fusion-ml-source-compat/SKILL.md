@@ -1,0 +1,212 @@
+---
+name: using-fusion-ml-source-compat
+description: Source compatibility notes from the original Superpowers-ML bootstrap. Prefer using-fusion-ml for the Fusion-ML plugin entrypoint.
+---
+
+<SUBAGENT-STOP>
+If you were dispatched as a subagent to execute a specific task, skip this skill.
+</SUBAGENT-STOP>
+
+<EXTREMELY-IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY-IMPORTANT>
+
+## Instruction Priority
+
+Fusion-ML skills override default system prompt behavior, but **user instructions always take precedence**:
+
+1. **User's explicit instructions** (CLAUDE.md, GEMINI.md, AGENTS.md, direct requests) — highest priority
+2. **Fusion-ML skills** — override default system behavior where they conflict
+3. **Default system prompt** — lowest priority
+
+If CLAUDE.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "always use TDD," follow the user's instructions. The user is in control.
+
+## How to Access Skills
+
+Use the mechanism that matches your host:
+
+- **In Claude Code:** Use the `Skill` tool to load skills, `TodoWrite` to track
+  checklist items, and `Task` for subagents when a skill asks for them.
+- **In Codex:** Rely on native skill discovery from the configured skills
+  directory, use `update_plan` to track checklist items, and use native
+  subagents.
+- **In Copilot CLI:** Use the `skill` tool. Skills are auto-discovered from
+  installed plugins. The `skill` tool works the same as Claude Code's `Skill` tool.
+- **In Gemini CLI:** Skills activate via the `activate_skill` tool. Gemini loads
+  skill metadata at session start and activates the full content on demand.
+- **In any host:** Once a skill is loaded, follow it directly and do not treat
+  `SKILL.md` like an ordinary project file.
+
+## Platform Adaptation
+
+Fusion-ML skills may contain copied source material that names Claude Code
+tools. In Codex, use `using-fusion-ml` as the compatibility map and follow the
+Fusion-ML-specific names in this plugin over upstream `superpowers:*` names.
+
+# Using Skills
+
+## ML Experiment Gate (CHECK FIRST)
+
+**Before considering any `fusion-ml:*` skill, determine whether the current task is conducting an ML experiment.** Fusion-ML skills are designed for running experiments, not for building software — even software that happens to involve ML code.
+
+**IS an ML experiment** (→ proceed with Fusion-ML skills):
+- Actually training or fine-tuning a model to observe results
+- Running hyperparameter sweeps or ablation studies
+- Evaluating a trained model's performance on a dataset
+- Debugging a live training run (convergence failures, NaN losses, gradient issues)
+- Preparing a dataset **for an imminent experiment** (not building a reusable data pipeline)
+- Setting up automated research iteration (autoresearch) — designing the protocol, creating baseline code, or running the autoresearch loop
+
+**Is NOT an ML experiment** (→ skip ML-specific `fusion-ml:*` experiment skills and use the normal Codex/Fusion development workflow):
+- Building or refactoring ML frameworks, toolkits, or scaffolding
+- Implementing model architectures, loss functions, or data loaders as software components
+- Writing tests, CI/CD, or infrastructure for ML code
+- Developing training pipelines, evaluation harnesses, or experiment tracking systems
+- Any task where the goal is shipping code, not observing experimental outcomes
+
+**The key question: Is the goal to observe an experimental outcome, or to ship working software?**
+- Observe outcome → Fusion-ML
+- Ship software → Superpowers (even if the software is ML-related)
+
+**Experiment directory override:** If an upstream brainstorm has already established an experiment directory, ALL downstream artifacts (plans, docs, design docs) MUST be saved under that experiment directory. Never fall back to the default `docs/plans/` path when an experiment directory has been set.
+
+## Experiment Directory Detection
+
+Before routing to any skill, check if the user's request references an existing experiment directory.
+
+**Detection:**
+1. **Explicit path** — user mentions a directory like "experiments/xxx" or "modify the gumbel experiment"
+2. **Implicit** — user references an experiment and there's only one experiment directory
+
+**If an experiment directory is identified, scan it:**
+
+<HARD-GATE>
+When an experiment directory with existing artifacts is detected, you MUST read all existing design docs and plans BEFORE invoking any skill. Pass their content as context to the invoked skill.
+
+Do NOT create new design/plan files when existing ones can be revised.
+Do NOT let any skill skip reading existing artifacts.
+</HARD-GATE>
+
+**State detection:**
+
+```
+Scan <experiment-dir>/plans/:
+  - *-design.md exists? → has_design = true
+  - non-design *.md exists? → has_plan = true
+
+Scan <experiment-dir>/:
+  - *.py exists? → has_code = true
+```
+
+**Routing based on state:**
+
+| has_design | has_plan | has_code | Action |
+|------------|----------|----------|--------|
+| false | false | false | New experiment: invoke `fusion-ml:ml-brainstorming` (new mode) |
+| true | false | false | Read design → invoke `fusion-ml:experiment-planning` |
+| true | true | false | Read plan → invoke `fusion-ml:fusion-ml-subagent-dev` |
+| true | true | true | Read design → invoke `fusion-ml:ml-brainstorming` (revision mode) |
+
+**Last row is critical:** When a full experiment exists and the user wants changes, ALWAYS start from the design. Changes propagate top-down: design → plan → code. Direct code changes without design/plan updates are forbidden.
+
+## The Rule
+
+**Load relevant or requested skills BEFORE any response or action.** Even a 1%
+chance a skill might apply means that you should load it to check using the
+host-appropriate mechanism. If a loaded skill turns out to be wrong for the
+situation, you don't need to use it.
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to EnterPlanMode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke fusion-ml:ml-brainstorming" [shape=box];
+    "Is this an ML experiment?" [shape=diamond, style=bold, color=red];
+    "Skip ML experiment skills\nUse normal Codex/Fusion workflow" [shape=box, style=dashed];
+    "Might any Fusion-ML skill apply?" [shape=diamond];
+    "Load relevant skill\n(Skill tool / native discovery)" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create checklist tracking item\n(TodoWrite / update_plan)" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to EnterPlanMode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke fusion-ml:ml-brainstorming" [label="no"];
+    "Already brainstormed?" -> "Is this an ML experiment?" [label="yes"];
+    "Invoke fusion-ml:ml-brainstorming" -> "Is this an ML experiment?";
+
+    "User message received" -> "Is this an ML experiment?";
+    "Is this an ML experiment?" -> "Skip ML experiment skills\nUse normal Codex/Fusion workflow" [label="no"];
+    "Skip ML experiment skills\nUse normal Codex/Fusion workflow" -> "Respond (including clarifications)";
+    "Is this an ML experiment?" -> "Might any Fusion-ML skill apply?" [label="yes"];
+    "Might any Fusion-ML skill apply?" -> "Load relevant skill\n(Skill tool / native discovery)" [label="yes, even 1%"];
+    "Might any Fusion-ML skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Load relevant skill\n(Skill tool / native discovery)" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create checklist tracking item\n(TodoWrite / update_plan)" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create checklist tracking item\n(TodoWrite / update_plan)" -> "Follow skill exactly";
+}
+```
+
+## Red Flags
+
+These thoughts mean STOP—you're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |
+| "ML is different, I can skip the process" | ML needs MORE process, not less. Follow it. |
+
+## Skill Priority
+
+When multiple skills could apply, use this order:
+
+1. **Process skills first** (`fusion-ml:ml-brainstorming`, `fusion-ml:diagnostics`) - these determine HOW to approach the task
+2. **Validation skills second** (`fusion-ml:validation-pyramid`, `fusion-ml:ml-static-checks`, `fusion-ml:ml-runtime-validator`) - these verify correctness
+3. **Implementation skills third** (`fusion-ml:experiment-planning`, `fusion-ml:fusion-ml-subagent-dev`) - these guide execution
+
+"Let's train X" -> `fusion-ml:ml-brainstorming` first, then `fusion-ml:experiment-planning`.
+"Training isn't converging" -> `fusion-ml:diagnostics` first, then validation skills.
+"MFU is too low" -> `fusion-ml:diagnostics` first, then `fusion-ml:ml-runtime-validator`.
+"Find the best X" / "auto research" / "optimize X automatically" -> `fusion-ml:autoresearch-create` (create protocol + baseline) or `fusion-ml:ml-brainstorming` (keyword detection), then after VP: `fusion-ml:autoresearch-handoff` → `fusion-ml:autoresearch-run` (execute the loop).
+
+## Skill Types
+
+**Rigid** (validation-pyramid, diagnostics): Follow exactly. Don't adapt away discipline.
+
+**Flexible** (framework knowledge): Adapt principles to context.
+
+The skill itself tells you which.
+
+## Core Principle for ML
+
+**In ML, code running without errors does NOT mean it's correct.** "Not working" is reasonable, but the process must be correct. Always validate through the Validation Pyramid before concluding an experiment.
+
+When validation or evaluation is part of the task, plan it explicitly upstream. Treat evaluation as a first-class subtask with:
+- step-based cadence by default
+- `full validation` scope by default unless explicitly overridden
+- both checkpoint-based and in-memory entry modes
+- one shared evaluator core
+- visible progress and mode-aware error reporting during long-running evaluation
+
+## User Instructions
+
+Instructions say WHAT, not HOW. "Train X" or "Fix convergence" doesn't mean skip workflows.

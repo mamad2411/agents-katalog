@@ -1,0 +1,40 @@
+---
+name: to-android-integrate
+description: Integrate MobileEasyUse into one existing Android App debug variant with automatic startup.
+---
+
+# Integrate MobileEasyUse into Android
+
+Complete the integration, report the changes, and ask whether to verify. Verification covers building, installation, launch, connection, and probing.
+
+## Acquire the artifact
+
+Before editing the target project, run `node scripts/ensure-artifacts.mjs`, resolving the script path relative to this `SKILL.md`. The script requires Node.js 20 or newer and works on Windows, macOS, and Linux. It:
+
+- fetches the live compatibility catalog for the current run;
+- reuses a complete matching artifact in `~/.meu`;
+- otherwise downloads the Android Maven archive, verifies it against `SHA256SUMS`, and extracts it;
+- prints one JSON object containing the selected Release, paths, compatible MCP range, and exact version-pinned MCP command.
+
+If the JSON result contains `actionRequired: "confirm-update"`, report the cached and latest Release versions and ask whether to update. Run again with `--update` when accepted or `--use-cached` when declined. Preserve a Release already pinned in the project unless the user accepts an upgrade; select it with `--version <version>`.
+
+Use `MEU_HOME` when the user or environment needs a cache root other than `~/.meu`. Artifacts and checksums are downloaded directly from the public GitHub Release; no GitHub token or login is required. The selected Release is the integration source, and its catalog range defines MCP compatibility. Stop and report acquisition, catalog, or checksum errors.
+
+## Workflow
+
+1. Inspect the project for an existing `com.agenteasyuse:mobile-easy-use` dependency version. Acquire that exact Release with `--version` when present; otherwise use the default selection flow above. Retain the JSON result.
+2. Inspect the Android modules, Gradle files, repositories, build types, and product flavors. Identify the App module and its debuggable variants.
+3. Resolve the target variant:
+   - Use a variant already named by the user.
+   - If exactly one debug variant is available, use it.
+   - If multiple debug variants are available, ask the user exactly once to choose from the discovered names, then continue with that selection.
+4. Add the returned `repositoryPath` as a project-level Maven repository. Derive the portable path from `MEU_HOME`, or from the current user's home plus `.meu`, in the target Gradle settings. Read [references/gradle.md](references/gradle.md) and use the examples matching the project's Gradle DSL and repository layout.
+5. Use Automatic startup. Scope `com.agenteasyuse:mobile-easy-use:<returned version>` to the selected debuggable variant with `debugImplementation(...)`, or the matching variant-aware configuration such as `internalDebugImplementation(...)`. Pin the returned Release version in the project's existing version-management location.
+6. The AAR manifest provider `com.agenteasyuse.mobileeasyuse.internal.MobileEasyUseInitProvider` calls `MobileEasyUse.initialize()` before `Application.onCreate()`. The variant dependency completes the startup integration.
+7. Report the Release version, compatible MCP range, exact version-pinned `mcpCommand`, cache path, target module, variant, changed files, dependency configuration, and Automatic startup. Show `mcpCommand` to the user and ask whether to configure this MCP Server in their Agent. Configure it only with user authorization. Ask whether the user wants to verify the integration.
+
+## Manual startup
+
+Use this path when the user explicitly requests Manual startup. In the selected variant's manifest overlay, remove `com.agenteasyuse.mobileeasyuse.internal.MobileEasyUseInitProvider` with `tools:node="remove"`. Then call `MobileEasyUse.initialize()` from that variant's startup path. `MobileEasyUse.isLoaded()` reports whether the initializer loaded the runtime.
+
+When verification is requested initially or confirmed after integration, read [references/validation.md](references/validation.md) completely and follow it.

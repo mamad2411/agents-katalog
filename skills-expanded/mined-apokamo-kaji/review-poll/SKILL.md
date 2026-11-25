@@ -1,0 +1,193 @@
+---
+description: codex auto-review (chatgpt-codex-connector[bot]) の reactions / reviews / review summary comment を polling して PASS / RETRY / BACK_FALLBACK を判定し、PASS 時は PR head SHA に紐づく承認証跡を保存する。GitHub 限定。
+name: review-poll
+exec_script: kaji_harness.scripts.review_poll_entry
+---
+
+# Review Poll
+
+GitHub `chatgpt-codex-connector[bot]` (id `199175422`) の auto-review シグナルを polling し、
+verdict を出力する skill。`review` skill との二重起動を避け、auto-review クレジット不足時のみ
+`BACK_FALLBACK` 経由で既存 `review` skill (codex agent) に fallback させる。
+
+本 skill は LLM agent を起動しない deterministic skill であり、`kaji_harness.scripts.review_poll_entry`
+module を直接 subprocess 実行する。entry module が env から PR 情報を解決し、polling 本体
+`kaji_harness.scripts.codex_review_poll` に委譲する。
+
+起動経路は 2 系統あり、いずれも同じ entry module に合流する:
+
+- **builtin workflow（`dev` / `dev-thorough` / `docs`）**:
+  各 YAML が `exec: [kaji, pr, review-poll]` で installed `kaji` CLI 経由で起動し、
+  CLI 側 (`kaji pr review-poll`) が同 entry module（`review_poll_entry.main`）へ委譲する。
+  dispatch の正本は YAML 側の `exec` step であり、agent / model / effort はスキーマレベルで
+  指定不可（指定すると `kaji validate` が reject）。対象 repo の Python 環境ではなく installed
+  `kaji` CLI 経由で起動するため可搬性が高い。
+- **skill 単体起動・再利用**: frontmatter の `exec_script: kaji_harness.scripts.review_poll_entry`
+  が契約となり、harness が同 entry module を ``python -m`` で subprocess 実行する。
+
+どちらの経路でも、入力（env）/ verdict 仕様の正本は entry module（`review_poll_entry`）であり、
+本ファイルの記述はその契約のミラーである。
+
+## いつ使うか
+
+| タイミング | このスキル |
+|-----------|-----------|
+| PR 作成後、codex auto-review が走っている GitHub 環境 | ✅ 必須 |
+| `review-poll` で `BACK_FALLBACK` を受けた場合 | 既存 `review` skill (codex agent) に進む |
+
+**ワークフロー内の位置**: i-pr → [PR 作成] → **review-poll**（builtin workflow では `exec` step として起動）→ (PASS=close / RETRY=pr-fix / BACK_FALLBACK=review fallback)
+
+## 入力（harness が env として注入）
+
+| env 変数 | 必須 | 説明 |
+|---------|------|------|
+| `KAJI_ISSUE_ID` | ✅ | PR 解決の検索キー |
+| `KAJI_PROVIDER_TYPE` | ✅ | `github` 以外は ABORT |
+| `KAJI_GIT_REMOTE` | ✅ | owner/repo 解決 (`git remote get-url`) |
+| `KAJI_WORKTREE_DIR` | ✅ | `git remote get-url` 実行 cwd |
+| `KAJI_PR_ID` | 任意 | harness 側で解決済みの場合のみ。未設定なら `kaji pr list` で取得 |
+| `KAJI_VERDICT_PATH` | PASS には必須 | runner が注入する `verdict.yaml` の絶対パス。承認証跡の保存先 `<dirname>/review-poll-evidence.json` の導出に使う。未設定のまま PASS 条件が成立すると `ABORT`（`evidence unavailable`） |
+
+これらの env は entry module（`review_poll_entry`）が正本として解釈する。builtin workflow の
+`exec` step は `agent` / `model` / `effort` をスキーマで拒否するため、これらを指定する余地はない。
+
+## 検出ロジック（仕様）
+
+`+1` reaction は commit SHA を持たないため、**`+1` 単独では承認にしない**（Issue #429）。
+SHA を持つ bot シグナルと `+1` の 2 シグナルが揃ったときだけ PASS にする。
+
+SHA を持つ bot シグナルの主は、trusted bot の review summary comment（本文先頭
+`<!-- codex-pull-request-review-summary -->`、`updated_at` が最新の 1 件）にある機械可読 state
+`<!-- codex-review-state:v1 {JSON} -->`（`code_review` / `security_review` ごとに full `commit_sha`・`status`・
+`has_any_findings`）である（Issue #473）。review 本文の見出しや summary の表（第三者 bot の表示用 markup）は
+判定に使わない（Issue #478）。
+
+### state 経路（summary に `codex-review-state:v1` がある）
+
+| 観測 | verdict |
+|------|---------|
+| state marker はあるが、版が `v1` でない / 2 個以上ある / JSON が壊れている / 検証に失敗（`completed` なのに `commit_sha` が null、`code_review` が `completed` なのに `has_any_findings` が null 等）/ 最新の summary が複数で選べない | **即時** `BACK_FALLBACK`（timeout を待たない） |
+| `code_review.commit_sha == head_sha`（full SHA 一致）・`status == "completed"`・`has_any_findings == true`（`security_review` が null でも） | `RETRY` |
+| head 向けの `security_review`（`status` が null でなく、`commit_sha` が head か null）が `completed`・`has_any_findings == true` | `RETRY` |
+| `security_review` が `completed`・`has_any_findings == null` で、`commit_sha` が head 以外 | **即時** `BACK_FALLBACK` |
+| `security_review` が head の `completed`・`has_any_findings == null`（null 経路）で、trusted bot による summary 以外の Issue comment が 1 件以上ある | **即時** `BACK_FALLBACK`（`+1` を待たない） |
+| `code_review` が head で `completed`・指摘なし、head 向けの `security_review` があればそれも `completed`・指摘なし（`has_any_findings == false`、または null 経路で上の行に当たらない）、head 上に bot review がない、かつ bot の `+1` が `created_at >= head_committed_at` **かつ** `created_at >= floor(summary comment の updated_at) + 1 秒` | `PASS` 候補（下記「確定確認」を通れば `PASS`。null 経路は確定時に追加確認あり） |
+| `commit_sha` が head と異なる、`status` が `completed` でない（未観測の値を含む）、head 向け `security_review` が未完了、`+1` がない / stale、head 上に bot review がある（null 経路も同じ） | terminal にしない（`eyes` → in_progress、なければ前の状態のまま） |
+
+- 指摘の有無は `has_any_findings` で判定し、`has_unresolved_findings` は使わない（`pr-fix` は thread を resolve しないため）
+- `security_review` の `status` が null（未実行）、または `commit_sha` が head 以外の commit の場合は判定に影響しない
+  （ただし head 以外の commit の `completed`・`has_any_findings == null` は即時 `BACK_FALLBACK`）
+- **security_review の null 経路（Issue #557）**: 2026-11 以降、bot は `security_review` を `completed`・`has_any_findings: null`
+  で返す。null の意味は公式に定義されていないため、保守者決定（2026-11-09 / 11-12）に従い、上記の PASS 条件に加えて
+  (a) 未解決の head bot thread がない、(b) trusted bot による summary 以外の Issue comment がない、をすべて満たすときだけ
+  「security の指摘なし」として扱う。それ以外の null は PASS にしない（fail-closed）
+  - (b) は PR の Issue comment（全ページ）で、trusted bot の comment のうち本文が summary marker で始まらないもの（本文が
+    文字列でないものを含む）を数える。エラー文面に機械可読な仕様がないので文面では判定しない。正常な受領 comment が
+    将来追加された場合も fallback する（上流の仕様が分かった時点で絞り込む）
+  - (a) は確定時に GraphQL `reviewThreads` を全ページ取得し、`isResolved == false` で、trusted bot（`Bot.databaseId == 199175422`）の
+    comment の `commit.oid` / `originalCommit.oid` の少なくとも一方が head か null の thread、および thread 内の comment を
+    全件見られない（`comments.pageInfo.hasNextPage`）thread を数える。`isOutdated` だけでは除外しない
+  - この受け入れは文書化されていない bot 挙動（👍 の意味、指摘時に `true` と inline review が出ること）に依存する。上流が
+    null の意味を定義・修正したら見直す
+- review 本文・summary の表は見ない（review 投稿から state 更新までの数秒は次の poll で拾う）
+- 同じ head の再 review で指摘なしになっても、head 上に bot review が残るので PASS しない。`eyes` を観測した後なら
+  `IN_PROGRESS_TIMEOUT_SEC` で `ABORT`、観測しないままなら `NO_REACTION_TIMEOUT_SEC` で `BACK_FALLBACK` になる
+
+### state がない summary
+
+summary comment がない、最新の summary に state marker がない、または最新の summary が複数でどれも state marker を
+持たない場合は、**PASS / RETRY を判定しない**（terminal シグナルなし。review 本文・summary の表は読まない）。
+`eyes` があれば in_progress、なければ前の状態のまま待ち、既存の timeout で終わる:
+
+| 状況 | verdict |
+|------|---------|
+| `eyes` を一度も観測しない（init のまま） | `NO_REACTION_TIMEOUT_SEC`（60s）経過で `BACK_FALLBACK` |
+| `eyes` を観測した後、state を持たない summary のまま | `IN_PROGRESS_TIMEOUT_SEC`（1800s）経過で `ABORT` |
+| 待機中に summary へ state が付いた | 以後は state 経路で判定（即時 `BACK_FALLBACK` / `RETRY` / `PASS` / 待機） |
+
+### 共通
+
+| 観測 | verdict |
+|------|---------|
+| `NO_REACTION_TIMEOUT_SEC` (60s) 経過しても上記いずれも観測されず（stale `+1` のみ・summary なしの `+1` のみ・state なし summary の `+1` のみ・完了と同じ秒の `+1` のみ も含む） | `BACK_FALLBACK` |
+| `IN_PROGRESS_TIMEOUT_SEC` (1800s) 経過しても結論が出ない、または GitHub API 連続失敗 | `ABORT` |
+| polling 中・確定の前後で PR head が固定 head と変わった / PR が open でない（`head changed`） | `ABORT` |
+| `--head-sha` が 40 桁小文字 hex でない、証跡の検証・書き込み失敗、`KAJI_VERDICT_PATH` 未設定（`evidence unavailable`） | `ABORT` |
+
+- **完了と同じ秒の `+1`**: reaction は秒精度、完了時刻・更新時刻はそれより細かいため、同じ秒だと前後が決まらない。
+  その場合は承認にせず、既存 timeout で `BACK_FALLBACK`（`review` skill）へ縮退する（安全側）。
+- **summary comment の形式は第三者（bot）の仕様**: 形式が変わると PASS が出なくなり `BACK_FALLBACK` へ縮退する。
+  誤って PASS する方向には壊れない（fail-closed）。
+- **head が変わったら再評価せず停止する**: 評価対象を黙って入れ替えない。`kaji run <workflow> <issue> --from review-poll` で再実行する。
+- reviews API は履歴を返すため、workflow 起動前に投稿された現在 head への bot review も
+  `commit_id == head_sha` で検出でき、PASS を止める根拠になる（PR #176 シナリオ。RETRY の判定は state で行う）。
+- リスト系 API は全ページ（paginate + slurp）を取得して平坦化する（2 ページ目以降のシグナルも拾う）。
+
+bot 識別は **id 一致**（`199175422`）を主、login を副チェックにする。trusted bot 以外の comment にある state は読まない。
+
+### 確定確認と承認証跡
+
+`PASS` 候補を得たら、次の順で確定する。どこかで失敗したら `PASS` ではなく `ABORT`。
+
+1. `pulls/{n}` を再取得して head が固定 head のままであることを確認する（判定直前）
+2. security_review の null 経路のときだけ、PR の Issue comment（全ページ）を再取得する。再取得した最新 summary の
+   `codex-review-state` が PASS 候補（comment ID・URL・`updated_at`・code / security の値）と一致しなければ古い候補では
+   確定しない: 再取得した comment で判定し直して `RETRY`（指摘あり）/ `BACK_FALLBACK` ならそれを返し、それ以外（更新・
+   欠落）は次の poll で再評価する。一致すれば (b) を、GraphQL `reviewThreads`（全ページ）を取得して (a) を数える。
+   どちらかが 1 以上なら `BACK_FALLBACK`（証跡は書かない）。取得失敗・応答の形が想定外（`errors`・`hasNextPage` なのに
+   cursor が進まない・`Bot.databaseId` が整数でない・`oid` が 40 桁 hex でない等。thread は Pydantic の strict model で
+   検証する）は API 失敗として連続失敗カウンタに数える
+3. `pulls/{n}` をもう一度取得して head を確認する（判定直後）。full SHA の完全一致で承認しているので
+   PR commits は引かない
+4. 証跡を検証して `dirname(KAJI_VERDICT_PATH)/review-poll-evidence.json` へ atomic write する
+5. その後で `PASS` verdict を stdout へ出力する（`verdict.yaml` が PASS なら同じ attempt に証跡が必ずある）
+
+`PASS` 以外では証跡を書かない。証跡は `kaji_harness/review_poll_evidence.py` の model で検証した JSON で、
+`schema_version` / `kind` / `result` / `provider` / `repository` / `pull_request`（番号・URL）/
+`reviewed_head`（40 桁 SHA・commit 時刻）/ `approval` / `checks` / `fetched_at` / `decided_at` を持つ。
+
+`schema_version` は `3`（`ReviewPollEvidenceV3`。producer は v3 だけを書く）。`approval` は bot identity・`+1` reaction の ID と時刻・
+`review_state`（summary comment の ID / URL / `updated_at`・`state_version: "v1"`・観測した `code_review` /
+`security_review` の `commit_sha` / `status` / `has_any_findings`）。`checks` は head SHA の 3 回の確認結果、
+現在 head への bot review 件数、`security_null_checks`。`security_null_checks` は null 経路のときだけ
+`{"unresolved_head_bot_threads": 0, "bot_non_summary_issue_comments": 0}`（確定時に数えた (a)(b) の件数）で、それ以外は null。
+
+整合不変条件 I1〜I9 は producer（Pydantic）と consumer（`issue-close` の jq。`schema_version` が `2` / `3` 以外なら拒否。
+`2` は upgrade 前に作られた attempt の証跡で、null 経路を受け入れない）の共通契約で、正本は `docs/ARCHITECTURE.md` の
+「review-poll の承認証跡」節。
+
+PASS 確定後に head が動く隙間は、`issue-close` が証跡を現在の PR と照合し、
+`--match-head-commit` 付きで merge することで閉じる。
+
+## 運用パラメータ
+
+`kaji_harness/scripts/codex_review_poll.py` の定数:
+
+| 名前 | 値 | 用途 |
+|------|-----|------|
+| `POLL_INTERVAL_SEC` | 10 | GitHub API 呼び出し間隔 |
+| `NO_REACTION_TIMEOUT_SEC` | 60 | bot reaction 無しのまま経過 → `BACK_FALLBACK` |
+| `IN_PROGRESS_TIMEOUT_SEC` | 1800 | `eyes` 観測後の全体 cap → `ABORT` |
+| `EYES_GRACE_SEC` | 10 | `eyes` 消失後の伝搬待ち |
+
+## Verdict 出力
+
+entry module / polling 本体が `---VERDICT---` ブロックを stdout に出力する:
+
+| status | 条件 |
+|--------|------|
+| PASS | summary comment の `codex-review-state:v1` が示す現在 head の完了（`completed`・指摘なし）の後に付いた bot `+1` を観測し、確定確認と証跡保存を完了 |
+| RETRY | `codex-review-state:v1` で現在 head の `code_review` / `security_review` が `completed`・指摘あり |
+| BACK_FALLBACK | timeout までいずれも観測されず、または `codex-review-state` があるのに解析できない（即時）→ `review` step に fallback |
+| ABORT | provider mismatch / PR 未解決 / head 情報欠落 / remote url parse 失敗 / GitHub API 連続失敗 / IN_PROGRESS_TIMEOUT 超過 / `head changed` / `evidence unavailable` |
+
+PASS の `evidence` には人間向けの補助として `pr=<owner>/<repo>#<n>` / `head_sha=<40桁>` / `reaction_id=<id>` /
+`summary_comment=<url>` / `evidence_path=<絶対パス>` を含める。機械照合の正本は JSON 証跡である。
+
+deterministic script のため verdict 出力後は **必ず `return 0`** で終了する。catastrophic 失敗
+（`gh` CLI 不在 / 通信不能等）は raise させ、harness が `ScriptExecutionError` で fail-loud
+扱いとする（Issue #204 設計書 § exit code と verdict の優先順位）。
+
+> **規約**: 本 skill 出力に auto-close hazard pattern（`Clos(e[sd]?|ing)` /
+> `Fix(e[sd]|ing)?` / `Resolv(e[sd]?|ing)` / `Implement(s|ing|ed)?` の直後 `#[0-9]`）を
+> 書かない。

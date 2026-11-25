@@ -1,0 +1,83 @@
+---
+name: el-atma-ecrimisil-ortakligin-giderilmesi
+description: "Taşınmaza haksız tecavüz/işgal olduğunda, geçmiş işgal bedeli (ecrimisil) istendiğinde ya da paydaşlar arası ortaklık sona erdirilmek istendiğinde; el atmanın önlenmesi, ecrimisil ve izale-i şuyu davalarını kurmak için kullanılır."
+---
+
+# El Atmanın Önlenmesi, Ecrimisil ve Ortaklığın Giderilmesi
+
+## Görev
+Taşınmaz üzerindeki fiilî uyuşmazlıkları çözmek: haksız müdahaleyi durdurmak (el atmanın önlenmesi), haksız işgal dönemi için kullanım bedeli almak (ecrimisil) ve birlikte mülkiyeti sona erdirmek (ortaklığın giderilmesi/izale-i şuyu).
+
+## Soğuk başlangıç (intake)
+- Müdahale ne biçimde: fiilî işgal, sınır/taşkın yapı, izinsiz kullanım mı?
+- Taşınmaz tek malikte mi, paylı/elbirliği mülkiyette mi?
+- Ecrimisil isteniyorsa işgal süresi ve emsal kira/getiri verisi var mı?
+- Talep müdahalenin durdurulması mı, ortaklığın tamamen giderilmesi mi?
+
+## Denetim şeması
+1. **El atmanın önlenmesi (TMK m.683/2)**: Malik, taşınmazına haklı sebep olmaksızın yapılan her müdahalenin önlenmesini ister. Unsurlar: davacının malik (veya ayni hak sahibi) olması, müdahalenin varlığı/sürmesi ve haksızlığı. Yapı varsa kal (yıkım) talebi eklenir; iyiniyetli taşkın yapıda m.725 dengesi gözetilir.
+2. **Paylı mülkiyette husumet**: Her paydaş tek başına el atmanın önlenmesi isteyebilir (koruma işlemi, m.693); elbirliği mülkiyetinde koruyucu davaların tek mirasçıca açılabileceği kabul edilir [doğrulanacak — karararama.yargitay.gov.tr].
+3. **Ecrimisil (haksız işgal tazminatı)**: Kötüniyetli/haksız zilyetten, işgal süresince kullanım bedeli istenir; talep geriye dönük olup zamanaşımına (TBK m.146, 10 yıl; haksız fiil yönüyle m.72 değerlendirmesi) ve emsal getiri-keşfe dayanır. Paydaşlar arası ecrimisilde önceden intifadan men koşulu (kural olarak) aranır [ilkeler için karararama.yargitay.gov.tr].
+4. **Ortaklığın giderilmesi (m.698-699)**: Her paydaş, aksine engel yoksa her zaman paylaşma isteyebilir. Mahkeme önce **aynen taksimi** (m.699/2) araştırır; mümkün değilse **satış suretiyle paylaştırma** (açık artırma, m.699/3) yapar. Elbirliği mülkiyetinde tüm ortaklar davaya dahil edilir (zorunlu dava arkadaşlığı); muhdesat ve takyidat bedel paylaşımında dikkate alınır.
+5. **Ara sonuç**: Müdahale varsa men (+ gerekirse kal) ve ecrimisil; birlikte mülkiyette aynen taksim ya da satış.
+
+## Çıktı modülleri
+- El atmanın önlenmesi + ecrimisil dava dilekçesi iskeleti.
+- Ortaklığın giderilmesi dilekçesi (paydaş listesi, pay oranları, aynen taksim/satış talebi).
+- Görev/yetki notu: el atma asliye hukuk, ortaklığın giderilmesi sulh hukuk (HMK m.4), yetki taşınmazın yeri (HMK m.12).
+
+## Plugin bağlamı
+
+Bu beceri `gayrimenkul-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

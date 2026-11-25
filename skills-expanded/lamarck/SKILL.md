@@ -1,0 +1,291 @@
+---
+name: lamarck
+description: Lamarckian skill evolution - monitors every real skill invocation, drives governed evolution of observed skills, and evolves itself by the same rules while running. Harness-agnostic (adapters for Claude Code, Codex, Cursor, pi share one ledger); in the reference adapter a PostToolUse hook logs each invocation (stamped with the skill's genome hash for per-version regression windows) and a Stop hook queues a light evaluation loop that runs backstage in a headless CLI (or inline), never reloading this file. Per-skill dynamic rubrics (git-versioned) define what "good" means per skill; a trust ladder in config.json controls which skills may be edited (auto/evolve/suggest/observe, default observe). Read this file only when escalating (enough same-type evidence for an edit) or on manual invocation. Use when the stop hook says to escalate, or when asked to review skill performance, optimize or improve a skill, audit the skill ledger, distill skill learnings, manage the evolution whitelist, or switch trigger mode.
+license: MIT
+metadata:
+  author: kian
+  version: "5.21"
+compatibility: Node.js 18+ and git, cross-platform. Reference adapter wires PostToolUse/Stop hooks in ~/.claude/settings.json (Claude Code); adapters for Codex, Cursor and pi ship in adapters/ and share the same telemetry store.
+---
+
+# lamarck:用进废退的 skill 进化
+
+拉马克式进化:skill 在**真实使用**中获得的经验,写回它的"基因"(SKILL.md);
+衡量它的**尺子(rubric)也随之进化**;长期无用的部分**废退**(修剪)。
+赛道:SkillOpt 是训练场(基准分数驱动),darwin-skill 是考场(合成测试+评委),
+lamarck 是生活——生产遥测驱动,用进 + 废退双向。三层机制,重活分级触发:
+
+- **记账**(自动,每次 Skill 调用,所有模式下都开):PostToolUse hook 写 `data/pending.jsonl`。
+- **轻循环**(回合末,**不加载本文件**):协议文本单源于 `protocol/light-loop.md`
+  (harness 无关,任何适配器逐字注入,见 `protocol/adapter-contract.md`),
+  Claude Code 适配器由 Stop hook 运行时读入拼进 reason——
+  对照该 skill rubric 中场景匹配的条目做四维评估落 `data/ledger.jsonl`、用户纠正
+  n=1 结晶进 `data/rubrics/<skill>.md`、经验沉淀进 `data/learnings/<skill>.md`、
+  蒸馏回归用例进 `data/replays/<skill>.jsonl`、清本会话 pending;他会话积压达阈值
+  时提示用户手动清算(指针会衰减,静默积压等于丢证据)。**在哪跑**由
+  `config.json` 的 `isolation` 决定:`background`(默认)——Stop hook **不阻塞
+  回合、不注入任何文字**,只往 `data/jobs.jsonl` 写一条 `evaluate` job 并拉起
+  后台 worker,由本 harness 的无头 CLI 在会话外执行同一协议(证据来自磁盘上
+  的 transcript,客观信号由 hook 算好随 job 带走),结果写 `data/inbox.md`,
+  只有"需要用户"(出了提案 / 结晶了纠正 / 失败)才发系统通知;无头跑不能提
+  问,过门提案一律落 `suggestions/`,auto 级由它自己入队 evolve job。找不到
+  无头 CLI 时 worker 留 `data/.no-runner` 标记,hook 自动退回 `inline`,一天后
+  重试。**无头写入**:Claude Code 把 `~/.claude` 整个视为受保护路径,无头模式
+  下 Write/Edit 工具一律拒绝(allow 规则与 acceptEdits 都不解除),所以后台
+  agent 的全部写入走 `node scripts/store.js`(append / write / edit /
+  pending-drop)——它把围栏(只许 lamarck 目录与 skills 目录,禁 scripts/
+  adapters/ bin/ config.json .git)和有界编辑(≤3 处、每处 ≤10 行、原文唯一)
+  变成代码执法,比交给模型自觉更紧。`subagent`——评估派一个子代理在本会话内执行,主上下文只收一行;
+  `inline`——协议注入本回合上下文,零额外模型调用但协议进主上下文。所有注入
+  文本带 ephemeral 标记,供 harness compaction 优先丢弃。
+  **触发时机由 `config.json` 决定**:`{"mode":"every|manual|threshold","threshold":N}`——
+  `every` 每个用过 skill 的回合末触发;`manual` 从不自动触发;`threshold`(默认,N=5)
+  攒到 N 条才批量评估。
+- **升级**(条件触发,才加载本文件):某 skill 已有 **≥2 次独立调用、同类 gap**
+  → 走优化门;或手动 `/lamarck`。**节奏**:`config.json` 的 `cadence`
+  (`weekly` 默认 / `daily` / `continuous`)决定升级、提案、后台施工、积压提醒
+  多久合并一个批次——记账与静默评估照常连续(证据会衰减),只有"更新"被批
+  处理。窗口状态在 `data/cadence.json`(`{"last": ts}`),距上次 ≥ 周期即开,
+  由升级动作盖章;手动 `/lamarck` 永远视为显式开窗并盖章。
+
+## 尺子:逐 skill 动态 rubric
+
+`data/rubrics/<skill>.md`,格式与规则见 `data/rubrics/README.md`。要点:
+
+- **行为标准从证据结晶**:用户纠正一次即可入册(n=1;rubric 只是评估视角);
+  每条必须带 ledger 出处与场景标签,无出处禁止写入;淘汰进 attic 不删除。
+- **三处使用**:①四维评估判 gaps 时对照该 skill 的 rubric;②成对盲评的比较标准;
+  ③验证 rollout 的"变差与否"判据。评估时只启用场景匹配的条目。
+- **git 版本化**:本目录即 git 仓库,rubric 与 skill 协议同库提交,可 diff 可回滚;
+  遥测(pending/ledger/learnings)被 .gitignore 排除,仅本地留存。
+
+## 进化分级(白名单)与防负优化
+
+`config.json`(本地文件,不入库;首次使用从 `config.example.json` 复制)的
+`evolution` 块决定每个 skill 的进化等级(显式列表 > `default`;新装 skill 自动
+落入 `default`,默认 `observe`)。**config.json 缺失时:一律 `observe`,提示用户
+创建**:
+
+- **auto**(自治级,显式列入 `evolution.auto` 才生效):过门提案**免事前三选一
+  直接施工**,但 replay 重放从事后验证升为**放行条件**——当场不过立即自动回滚
+  并入 rejected;每笔编辑在下次输出中显式报告,并照常入 CHANGELOG、ledger、
+  git,事后 `git revert` 一步可撤。**禁区:lamarck 自身、Iron Rules、插件文件
+  永不受 auto 覆盖,必须用户批准。** 自治是挣来的:建议只把经历过多次
+  evolve 级成功编辑的 skill 升到这一级。
+- **evolve**(白名单,当前:seo-cron-ops、lamarck):过门提案可走用户三选一直接施工。
+- **suggest**:过门提案只写 `suggestions/<skill>.md`,永不直接编辑。
+- **observe**(默认):只记账、沉淀 learnings、长 rubric,**不产生任何提案**;
+  证据照积,升级到 evolve 后历史证据立即可用。
+- 插件 / marketplace / synced skill:无论配置如何,永不直接编辑(上限 suggest)。
+
+**动态评分防负优化**:每条账本带 `ver`(调用时目标 SKILL.md 的内容哈希 8 位)。
+升级或 `audit` 时按 `ver` 分窗计算该 skill 的健康度(corrected+failed 占比、gap 频率):
+编辑后版本窗口(样本 ≥3)比编辑前变差 → 判定负优化,自动产出**回滚提案**
+(仍走用户三选一)。这是成对盲评(单次、即时)之外的第二道统计防线(多次、滞后)。
+
+## 成熟度:收敛的 skill 降为抽查
+
+不是每次评估都有收益——场景不变时 skill 会收敛。每 skill 两态,存
+`data/maturity.json`(`{"<skill>":{"state":"active|stable","clean_streak":N,"ver":"..."}}`,
+评估时顺手维护):
+
+- **active**(默认):每条 pending 全量四维评估。
+- **stable**(进入条件:连续 `stability.streak` 次评估干净——无 gap、无
+  corrected/failed、rubric 无新增;默认 10):每条只做一眼扫描(本回合有无用户
+  纠正或异常),没有就记一行 `{"outcome":"stable-skip","ver":"..."}`(带 ver,
+  版本分窗统计不断粮)并 streak++;**每第 `stability.sample` 条仍做全量评估**
+  (默认 5,抽样防漂移);rubric 冻结,不再新增条目。
+- **唤醒回 active(任一即触发,立即)**:用户纠正或 failed;抽样评估发现 gap;
+  **ver 变化**(被编辑或外部改动——编辑后的验证期必须全量);args 呈现 rubric
+  场景标签覆盖不了的新场景(场景变了,收敛前提失效)。
+- **收敛即证书**:`report` 把 stable 状态与清白连击数当 Tier 2 证据呈现
+  ("该 skill 近 N 次真实调用零纠正")。stable + 长期零引用条目 = 废退修剪的
+  天然候选。
+
+`stability` 配置在 `config.json`(缺失回退 streak=10, sample=5)。
+
+## 升级后:优化门(SkillOpt 验证门的文本版)
+
+对某个 skill 提出编辑,必须同时满足(**且该 skill 进化等级为 evolve 或 suggest**):
+
+- **证据 ≥2**:ledger/learnings 中该 skill 有 ≥2 次**独立调用**出现同类 gap
+  (单次观察永不触发编辑,n=1 是噪声)。
+- **全证据合成**:提案生成时必须综合该 skill 的**全部**在案证据(ledger、learnings、
+  rubric),不只触发门槛的那两条(SkillOpt 的 mini-batch 思路)。
+- **提案具体**:能写成 add / delete / replace 的定点操作,写明预期改善与验证方式。
+- **净增长预算(废退)**:提案给出净行数变化;若使 SKILL.md 超 500 行,或连续两次
+  提案净增 >10%,必须同时附删减案。删除类提案是一等公民:长期(≥90 天)零引用的
+  rubric 条目、被 gap 证据标记为"误导/从未用到"的段落,主动产出修剪提案(同样走
+  用户三选一;修剪内容进 attic / git 历史,不物理消失)。
+- **场景围栏(防震荡)**:证据全部来自单一场景标签的提案,只能做**场景分支式
+  增量**——新增"当 <场景> 时……"的条件段,不得改写共享核心;改写共享核心需要
+  **≥2 个不同场景**的证据。B 场景的优化因此伤不到 A 场景依赖的部分,切回来
+  不会退化。**来源 harness 即场景标签之一**(账本的 `harness` 字段):同一
+  SKILL.md 被多家 agent 共用时,只有某一家的证据只能加该家的条件分支,跨
+  harness 的互相影响由此围栏拦截,裁决仍归用户三选一。
+- **全场景 replay**:任何编辑的 replay 验证必须包含**其他场景**的既有用例,
+  不只触发场景——replay 语料就是全部历史场景的记忆,"切回旧场景"在施工前就被
+  预演过。
+- **反震荡检测**:提案若实质推翻 CHANGELOG/git 近期(最近 10 次)已接受的编辑,
+  判定为震荡:禁止直接覆写,强制转为场景分支提案,并附两个场景的证据对照交
+  用户决策。
+- **不在拒绝缓冲**:`data/rejected.md` 否过的同类提案不得重提,除非有新类型证据。
+- **未被冻结**:该 skill 上一次编辑的验证 rollout 尚未完成时,禁止新提案。
+
+门过了 → 先看等级:**auto 级 skill 跳过三选一直接施工**,但必须当场通过
+全场景 replay 才算落地(不过即自动回滚,提案入 rejected),施工与验证结果
+在下次输出中显式报告。**该 skill 的 replay 语料为空时,auto 降级为三选一**
+——没有放行条件就没有放行,零验证落地是禁止的。其余等级 → **用户在环**:
+用 AskUserQuestion 给用户选(附证据摘要与 diff 要点):
+
+1. **现在就改**(推荐时说明理由)
+2. **只留提案** → 写 `suggestions/<skill>.md`,不动文件
+3. **否决** → 连原因写入 `data/rejected.md`
+
+非交互会话(用户不在场)一律选 2,并在最终输出里提示用户有待决提案。
+
+用户选 1(或 auto 级过门)后,**默认不在本会话施工**——先把提案写成具体的
+add / delete / replace 规格落到 `suggestions/<skill>.md`,然后
+`node scripts/evolve-worker.js enqueue --skill <skill> --proposal suggestions/<skill>.md --auth user|auto`,
+告知用户 job id 即结束。后台 worker 用本 harness 的无头 CLI(`config.json`
+`background.runners`,最小权限:只开 lamarck 目录与 skills 目录)按下列规则
+施工 + replay 验证 + verify 落账 + CHANGELOG,结果写 `data/inbox.md` 并发系统
+通知;下次 `/lamarck` 呈现。`background.runner` 为 `none` 时才就地施工,按归属:
+
+- **用户自有 skill**(`~/.claude/skills/<name>/`,非 `synced/`):目标目录在 git
+  仓库内 → 编辑前后各 commit 一次(`lamarck: optimize <skill>: <摘要>`);
+  否则先复制 `SKILL.md` 为 `SKILL.md.bak`。有界编辑(一次 ≤3 处、单处 ≤10 行,
+  禁止整文件重写);`CHANGELOG.md` 记一行:日期、目标、改动、依据证据。
+- **插件 / marketplace / synced skill**:永不改原件,只走选项 2。
+
+**编辑后立即 replay 验证**(先于自然验证):从 `data/replays/<skill>.jsonl` 取该
+skill 的回归用例(见下),派新 subagent 分别按旧版与新版执行,按 rubric 成对比较。
+新版更差 → 直接回滚,不必等下一次真实调用。replay 用例的来源是**真实调用痕迹**:
+轻循环评估时,把 corrected / failed 的调用、以及**场景尚未被语料覆盖的 clean
+调用**(每场景留一条代表)蒸馏成用例
+`{"essence":"任务要点","expect":"按 rubric 的达标要求","src":"ledger ts"}`。
+从不翻车的 skill 同样需要语料:上文"全场景 replay"要求编辑验证覆盖其他场景,
+auto 的放行条件也以语料非空为前提——只收割失败会让最健康的 skill 永远零语料。
+真实分布、零人工编写(darwin 的 test prompts 是手编合成的,此处严格更优)。
+
+**验证 rollout(成对盲评)**:被编辑 skill 的下一次被评估调用即自然验证。派一个
+**新的独立 subagent**,同时给它:旧版全文(git 上一 commit 或 `.bak`)、新版全文、
+该次调用的真实执行痕迹、该 skill 的 rubric——同一上下文内成对比较出 better /
+worse / tie(绝对打分跨会话有校准噪声,成对比较可抵消)。**tie 或与 replay 结论
+分歧时,加派 2 个独立评委成多数票**(N=3;平时单评委省成本,难判时才升员)。
+worse → 回滚(git revert 或恢复 `.bak`),提案连失败原因写入 `data/rejected.md`;
+better / tie → 保留,解除冻结。
+
+**客观信号一票否决**:judge 只在客观信号不反对时才有投票权。编辑后版本窗口的
+`objective` 均值相对编辑前显著劣化(errors / nonzero_exit / retries 任一上升,
+样本 ≥3)→ 不采信 replay 与盲评的 better/tie,直接出回滚提案;客观信号持平或
+改善时,judge 才决定胜负。同理,LLM 判定的 `corrected` 必须附 transcript 中逐字
+存在的用户原句,引不出原句的纠正判定作废。
+
+**回滚语义(按证据强度分级)**:回滚 = 恢复用户已批准的上一基线,**不算新编辑**,
+不受"三选一"与有界编辑约束(Iron Rule 2/6 豁免)——但必须落账并在下次输出中
+显式告知用户。分级:replay / 盲评是同输入直接对照(强证据)→ **自动回滚**;
+版本分窗是观察性统计(弱证据,可能混杂任务漂移)→ 只出**回滚提案**,走三选一。
+
+**结论必须落账(可证明性)**:replay、盲评、版本分窗三种验证各记一行 verify 记录
+进 ledger:`{"ts","skill","type":"verify","stage":"replay|judge|window","old_ver",
+"new_ver","result":"better|worse|tie","decision":"keep|revert","judges":N,"detail":""}`。
+`judges` 记本次动用的评委 agent 数(成本记账:report 可算"每有效编辑评委调用数",
+与 darwin 固定 3 评委×3 轮对比)。`report` 的进化战绩全部由这些记录汇总——
+没有落账的效果等于没有效果。
+
+## 自我优化(仅在升级或手动运行时)
+
+用同一套规则评估本协议自身(假阳性提案?门太松/太紧?轻循环是否顺畅?),meta
+观察以 `"skill":"lamarck"` 记 ledger。对本 SKILL.md 或 hook 脚本的任何编辑,
+除过优化门外,**必须经用户明确批准**;协议与脚本改动一律 commit 进本仓库。
+
+## Iron Rules(本节修改需用户明确批准)
+
+1. 单次观察永不触发编辑,只记账与沉淀(rubric 入册除外,n=1 可)。
+2. 任何 skill 编辑施工前必须让用户选择(AskUserQuestion);非交互会话只落提案。
+   例外一:恢复用户已批准基线的自动回滚(强证据触发),须落账并告知。
+   例外二(2026-08-29 经用户批准):`evolution.auto` 显式列入的 skill 免事前
+   三选一,但 replay 放行条件与事后显式报告不可免;replay 语料为空时例外二
+   不适用(降回三选一);lamarck 自身、Iron Rules、插件永不适用 auto。
+3. 每次编辑必须可回滚(git commit 或 `.bak`),且写入 CHANGELOG。回滚本身同样记 CHANGELOG。
+4. 永不编辑插件 / marketplace / synced skill 的文件。
+5. 永不删除 ledger 历史、learnings 既有观察与 rubric attic。
+6. 每次编辑 ≤3 处、单处 ≤10 行,禁止整文件重写。
+7. `rejected.md` 中的提案不得重提,除非出现新类型证据。
+8. 评估只引用真实可见的执行痕迹;不可见就归档(outcome=archived),不编造。
+9. rubric 条目必须带 ledger 出处;验证 rollout 未完成前,该 skill 冻结新提案。
+10. 单场景证据不得改写共享核心(只许场景分支式增量);推翻近期已接受编辑的提案
+    必须转为场景分支并经用户决策,禁止覆写式打摆子。
+
+## 手动 `/lamarck`
+
+- 无参数 — **第 0 步接线自检**,两种缺口分开诊断,命中即结束不评估:
+  ①读 `~/.claude/settings.json`,lamarck 两条 hook(posttool-skill /
+  stop-evaluate)缺任一 → 输出**接线指引**(`npx lamarck-skill` 重跑,或按
+  README Install 手动接;其他 harness 指 `adapters/` 各 README 与
+  `protocol/adapter-contract.md` 的 Self-service 粘贴 prompt);②hook 齐但
+  `data/` 下 pending 与 ledger 皆无 → 报**接线正常、数据未至**(hook 重启后
+  才加载;验活:用任一 skill 看 pending.jsonl 是否长一行)——不是配置错误,
+  不发接线指引。两关都过 → 先 `node scripts/evolve-worker.js status --ack`,把后台
+  的未读结果原样呈现(安静的后台评估只报个数);再处理全部 pending + 沉淀 learnings/rubric + 过优化门。本会话条目做
+  四维评估;**历史会话条目派独立 subagent 清算**(其证据在 transcript 文件里、
+  不在本会话上下文,外置零证据损失;主上下文只收每条一行结论,防污染):
+  subagent 先试 transcript 指针——记录的 `transcript` 路径若仍存在(30 天
+  清理期内),Read 其中该次调用附近的片段(按 ts 与 skill 名定位,只取所需
+  切片,不整读),据真实执行痕迹做四维评估,并抽客观 friction(工具调用数、
+  报错/重试次数、耗时);指针失效或定位不到,才退回按 skill 聚合归档
+  `{"outcome":"archived","note":"N 次调用,args 样本"}`。
+- `audit <skill>` — 汇总该 skill 全部证据,产出编辑提案(仍走优化门+用户在环)。
+- `stats` — 只看账:先跑 `node scripts/report.js --brief`(可加 `--since 30d`),
+  把它算出的各 skill 调用频次、纠正率、gap 排行原样呈现;**数字一律来自脚本,
+  不自己算**。
+- `mode <every|manual|threshold> [N]` — 改写 `config.json` 切换触发模式(threshold 可带
+  阈值 N,缺省 5),改完复述当前配置。config.json 缺失或损坏时脚本回退 threshold/5。
+- `cadence <weekly|daily|continuous>` — 改写 `config.json` 的更新节奏,改完复述;
+  无参数 `/lamarck` 本身就是开窗:处理完 pending 后写 `data/cadence.json`。
+- `evolve list` — 列出全部 skill 及其进化等级与账面健康度;`evolve add <skill> [evolve|suggest|auto]` /
+  `evolve remove <skill>` — 改写 `config.json` 的 evolution 块,改完复述
+  (auto 禁区:lamarck 自身与插件即使写入也不生效)。
+- `report [skill]` — 进化叙事卡:先跑 `node scripts/report.js [--skill X]
+  [--since 30d]`(代码算、字节可复现,`--json` 可存档作证据),再对其输出做叙述,
+  **硬数字在前**:①客观基线——`objective` 各项按 `ver` 分窗的均值与版本间
+  delta(脚本已按否决规则标出 OBJECTIVE REGRESSION);②行为基线——纠正率;
+  ③judge 结论——replay 通过率、保留/回滚,仅在①②不反对时呈现。benchmark 在
+  lamarck 里就是①②的编辑前后对比,不是外部题库。用户在终端不开 agent 也能跑。
+
+## 数据文件
+
+`data/pending.jsonl`(待处理,含 `ver` 基因版本戳与 `transcript` 执行日志指针——
+执行日志不自建,指向 Claude Code 自己的会话 transcript,按需读切片)·
+`data/ledger.jsonl`(账本,格式
+`{"ts","session","skill","ver","harness","objective","trigger_fit","gaps","outcome","friction","note"}`,
+评估时把 pending 条目的 `ver` 与 `harness` 原样带入;无 harness 字段的旧记录
+视为 claude-code;`objective` 是 stop hook **用代码从 transcript 数出来**的客观
+信号 `{tools,errors,nonzero_exit,retries,user_turns,lines}`,模型只许原样抄录,
+无 transcript 时为 null——这是评估里唯一 LLM 不能扭曲的通道)·
+`data/learnings/<skill>.md`(逐 skill 经验)· `data/rubrics/<skill>.md`(逐 skill 尺子,
+git 版本化)· `data/replays/<skill>.jsonl`(真实调用蒸馏的回归用例,仅本地)·
+`data/maturity.json`(逐 skill 成熟度状态,评估时维护)·
+`data/rejected.md`(拒绝缓冲)· `suggestions/<skill>.md`(待决提案)·
+`.upstream/`(上次装入的上游原样副本,升级三方合并的 base,不入库)·
+`data/upgrade-conflicts/<版本>/`(升级时合不进去的本地版本,上游已落地;要保留的
+改动经优化门对新 base 重新提案)· `data/upgrade-notes/<版本>.md`(上游自述的
+变更——新旧版本间的 CHANGELOG 条目;本地基因进化过时 installer 据此入队一个
+`upgrade` 后台 job,由本地 lamarck 做语义融合:审合并结果的一致性、把仍成立的
+本地意图经门重套、丢掉被上游覆盖的,结果写 inbox)·
+`data/jobs.jsonl`(后台队列:`evaluate` 轻循环 / `evolve` 施工 / `upgrade` 融合 /
+`ping`;字段 id/kind/status/seen 等)· `data/inbox.md`(后台结果,每 job 一行,
+`status --ack` 标已读;安静的 evaluate 结果预先标已读)· `data/.no-runner`
+(worker 找不到无头 CLI 时留下,hook 据此退回 inline,一天过期)·
+`data/hook-errors.log`(hook 意外错误诊断,一行一条;安静=健康)·
+`CHANGELOG.md`(编辑留痕)。`off` 文件:停用自动 hook(手动调用不受影响)。
+
+**文件名规则**:上述逐 skill 路径中的 `<skill>`,把 `:` 写成 `__`
+(`caveman:caveman-help` → `caveman__caveman-help`)——冒号在 Windows 上是保留字符
+(NTFS 会当成备用数据流),直接用插件名会静默写坏。JSON 里的 `skill` 键与
+`maturity.json` 的键保留带冒号的真名,只有文件名做这层映射。
+
+存储设计决定:账本用 append-only JSONL 而非 sqlite——当前量级(日十条级)模型直读
+zero 依赖;若将来到万行级或需要复杂联查,`data/*.jsonl` 可一键导入 sqlite(本机已有
+sqlite3),现在不预建。

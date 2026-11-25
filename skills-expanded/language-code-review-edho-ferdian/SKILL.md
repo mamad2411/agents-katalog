@@ -1,0 +1,193 @@
+---
+name: language-code-review-edho-ferdian
+description: >-
+  Stack-specific review lenses on top of code-review: idioms, framework
+  misconfigurations, ORM query traps, performance and test conventions
+  across ~20 stacks. Load it for any review of code in a named framework,
+  even one or two files. Use for "review kode Go/Python/React ini", "audit
+  Django models", "cek FastAPI endpoint ini".
+metadata:
+  last_reviewed: "2026-10-09"
+---
+
+# Language Code Review — Edho Ferdian Mode (Lens Layer)
+
+You are still the **same senior engineer** from `code-review-edho-ferdian` —
+this skill does not replace that review, it sharpens it. A generic checklist
+catches generic bugs. It does not know that a Django serializer with
+`fields = '__all__'` leaks columns, that a FastAPI route awaiting nothing
+inside `async def` blocks the event loop, or that `key={index}` silently
+corrupts React list state. That is what this skill adds: **per-stack idiom,
+framework-misconfiguration, and ORM/query knowledge**, expressed as extra
+criteria slotted into the domains the general skill already reports under.
+
+## Relationship contract (read this first)
+
+**This is a lens layer, never a standalone review.** It does not have its own
+Phase 0–5 pipeline, its own report format, or its own Reflection/Critique
+gate — it borrows all of that from `code-review-edho-ferdian`.
+
+- If `code-review-edho-ferdian`'s Phases aren't already running, **run them
+  first**. This skill's job is Phase 0's "conditional-lens detection" step
+  and Phase 1's domain checklists — nothing else.
+- Every lens finding lands inside **Domain 1 (CQ)**, **Domain 2 (SEC)**, or
+  **Domain 3 (PERF)** of the general report, using that domain's existing
+  severity table, confidence labels, and finding template. A lens never opens
+  a new top-level domain (contrast with `accessibility-lens.md`'s `A11Y-##`,
+  which the general skill already treats as a deliberate exception because
+  accessibility doesn't fit CQ/SEC/PERF cleanly — language lenses do fit, so
+  they stay inside those three).
+- **Security items (SEC-08) no longer live in these reference files.** Each
+  `references/*.md` file below used to hold its own stack-specific security
+  criteria inline; those have all moved to `security-review-edho-ferdian/
+  references/language-specific.md` as the single source of truth (removes
+  the drift risk of the same criterion existing in two places). Each
+  reference file still says, at its "Code placement" line, exactly which
+  security items moved and where — load that file (or delegate to
+  `security-review-edho-ferdian` directly) when Domain 2 needs stack-specific
+  security depth.
+- **Never duplicate what the general checklist already owns.** Generic
+  injection (SQL/command/path), generic secret handling, generic function
+  length/nesting/magic-number checks, and generic N+1 detection are owned by
+  `references/review-checklist.md` in the general skill. A language lens adds
+  only what is **specific to that language/framework** — e.g. Django's
+  `select_related`/`prefetch_related` mechanics for N+1, not N+1 itself.
+  Every lens file below states this boundary again at its own top.
+- Both Phases 3 (Reflection) and 4 (Critique-Correction Loop) in the general
+  skill already run over the *whole* finding set, lens findings included —
+  this skill does not add a second reflection pass.
+
+## Phase 0 extension — stack detection
+
+Run this as part of the general skill's Phase 0 "conditional-lens detection"
+step, immediately after the database/accessibility/RAG lens checks. Detect by
+**manifest file first, extension second** — a `.py` file alone doesn't tell
+you whether it's plain Python, Django, or FastAPI, but `manage.py` does.
+
+| Signal found | Load | Requires (load first) |
+|---|---|---|
+| `package.json` dependencies (`dependencies` or `devDependencies`) include `react` or `react-dom` | `references/react.md` | — |
+| `manage.py` at repo root, or a `settings.py` with `INSTALLED_APPS`/`django.` imports | `references/python-django.md` | `python.md` |
+| A FastAPI import (`from fastapi import FastAPI` / `import fastapi`) in `main.py`, `app/main.py`, or the file(s) in review scope | `references/python-fastapi.md` | `python.md` |
+| `celery` in `requirements*.txt`/`pyproject.toml`, or a `celery.py`/`tasks.py` pattern in scope (add-on to the Django/Python detection) | `references/python-django-celery.md` | `python.md` + `python-django.md` |
+| `@nestjs/core`/`@nestjs/common` in `package.json`, a `nest-cli.json` at the project root, or `@Module`/`@Controller`/`@Injectable` decorators in scope (detect per-project in an Nx/monorepo layout) | `references/nestjs.md` | — |
+| `package.json` dependencies include `@angular/core` (load `nestjs.md` too when `@nestjs/core` is also present — e.g. an Nx monorepo with an Angular app and a Nest API) | `references/angular.md` | — |
+| `go.mod` at repo root, or any `.go` file in scope | `references/go.md` | — |
+| `Cargo.toml` at repo root, or any `.rs` file in scope | `references/rust.md` | — |
+| `package.json` dependencies include `vue` (its own §9 sub-section covers Nuxt when `nuxt` is also present) | `references/vue.md` | — |
+| `composer.json` has `laravel/framework` | `references/laravel.md` | — |
+| `pom.xml`/`build.gradle*` has a `spring-boot` dependency, or `@SpringBootApplication` present (Quarkus sub-section inside the same file when `quarkus` dependencies are present instead) | `references/java-spring.md` | — |
+| any `.kt`/`.kts` file in scope, or `build.gradle.kts` | `references/kotlin.md` | — |
+| `Package.swift`, or any `.xcodeproj`/`.xcworkspace` | `references/swift.md` | — |
+| `package.json` has `react-native` | `references/react-native.md` | `react.md` |
+| `pubspec.yaml` has a `flutter` dependency | `references/flutter.md` | — |
+| `AndroidManifest.xml` present, or a Gradle module applying the Android plugin | `references/android.md` | — |
+| `build.gradle.kts` has `org.jetbrains.compose` | `references/compose-multiplatform.md` | `android.md` |
+| any `.csproj`/`.fsproj`/`.sln` file | `references/dotnet.md` | — |
+| `CMakeLists.txt`, or any `.cpp`/`.hpp`/`.cc` file in scope | `references/cpp.md` | — |
+| `torch` import or dependency in scope | `references/pytorch.md` | `code-review-edho-ferdian/references/mle-lens.md` |
+| any `.pl`/`.pm`/`.t` file, or `cpanfile`/`Makefile.PL`/`.perlcriticrc` at repo root | `references/perl.md` | — |
+| `oh-package.json5`/`module.json5` at repo root, or `.ets` files in scope | `references/arkts.md` | — |
+| `Gemfile` at repo root, `config/routes.rb`, or `.rb`/`.rake`/`.erb` files in scope | `references/ruby.md` | — |
+| Any `.py` file in scope and no Python framework row above matched | `references/python.md` alone | — |
+
+Multiple signals can be true at once — load every reference that matches
+(e.g. a Django project with a React frontend in the same repo loads
+`react.md` + `python.md` + `python-django.md`; a Django project that also
+uses Celery loads `python.md` + `python-django.md` + `python-django-
+celery.md`). State which lens file(s) you loaded in the Phase 0 summary,
+same as the other conditional lenses. If no signal matches (a stack without
+a reference file yet), skip silently — the general four-domain review still
+applies in full; there is just no extra lens on top yet.
+
+A file in the "Requires" column assumes its prerequisite's general idiom
+checks already ran and only adds framework-specific criteria on top — each
+such file declares "Requires: ... (load first)" at its own top too.
+
+## Ground-truth-first rule
+
+Every reference file below has a **Ground-truth commands** section with
+real, runnable commands for that stack. Run them — via the general skill's
+Phase 2 verification step — before asserting a lens finding as fact. This
+mirrors the general skill's own rule (`database-lens.md` already sets this
+precedent for `EXPLAIN ANALYZE`): reading code and guessing what a linter or
+type-checker "would" say is reasoning, not verification.
+
+**Unverified findings are capped at [Medium confidence].** A lens finding
+that could be confirmed by a ground-truth command but wasn't (tool not
+installed, not reachable, or you chose not to run it) never gets [High
+confidence] — say what command would confirm it, exactly as the general
+skill's Phase 2 confidence rule already requires.
+
+## Confidence floor & noise control
+
+- **>80% confidence threshold before flagging.** If you are not at least
+  80% sure a pattern is a real problem in this codebase's actual context
+  (not just "this pattern is often bad"), don't flag it — or flag it at
+  [Low confidence] with the specific uncertainty named, not silently omit
+  the caveat.
+- **Consolidate repeated findings.** The same anti-pattern hit five times in
+  one file (e.g. five `Model.objects.all()` loops missing `select_related`)
+  is **one finding with a count and all five locations listed**, not five
+  separate findings. This keeps the report actionable instead of noisy.
+- **Never flag CRITICAL on unchanged/pre-existing code.** If the review scope
+  is a diff (the general skill's default) and the offending line existed
+  before this change, cap it at MEDIUM and note it's pre-existing — CRITICAL
+  is reserved for what this change introduces or what blocks this change from
+  shipping safely. Pre-existing debt is real but it is not this PR's fault.
+
+## Reflection gate addition
+
+Before finalizing any lens finding, add one more check to the general
+skill's Phase 3 Reflection pass: **does this project's own configuration or
+convention already endorse this pattern?** Check, in order:
+1. `CLAUDE.md` / `AGENTS.md` / `.cursorrules` at the repo root for an explicit
+   statement that accepts the pattern (e.g. "we intentionally use `fields =
+   '__all__'` on internal-only admin serializers").
+2. The stack's own linter/formatter config (`.eslintrc*`, `ruff.toml` /
+   `pyproject.toml [tool.ruff]`, `.flake8`) — a rule explicitly disabled with
+   a comment explaining why is a documented exception, not a miss.
+3. A code comment at the exact site explaining the deliberate choice.
+
+If any of these explicitly endorse the pattern, do not flag it — or flag it
+at INFO with "project convention, not re-litigating" rather than as a defect.
+This is the same false-positive discipline the general skill's
+`false-positive-catalogue.md` already applies; this is its stack-specific
+extension.
+
+## Lens maturity
+
+Angular, NestJS, Python, and React lenses are field-proven; every other
+stack's lens is **FOLD-M** — medium-depth and plausible, but not yet
+verified against a real project, so its findings get the same confidence
+discipline as the Ground-truth rule above, not field-proven trust. Kotlin
+and the four mobile stacks (React Native, Flutter, Android, Compose
+Multiplatform) have no stack-specific section in
+`security-review-edho-ferdian` yet — route their security findings to the
+general SEC-01/02/10 codes and name the gap rather than inventing
+stack-specific criteria. Per-stack history, status, and provenance live in
+`references/lens-status.md` — open it when adding a stack or auditing where
+a lens came from, not on a normal review.
+
+## Language routing (inherited — see code-review-edho-ferdian, which points to skill-authoring-edho-ferdian's canonical contract)
+
+Inherited, not restated — this lens has no report format of its own (see
+"Relationship contract" above), so it follows whichever language routing
+`code-review-edho-ferdian` is running under (itself pointing to
+`skill-authoring-edho-ferdian` §7). Nothing to configure here.
+
+## Global rules
+
+1. **Lens, not a second review.** Always runs inside `code-review-edho-ferdian`'s
+   phases, never standalone.
+2. **No duplication.** Generic injection/secrets/nesting/magic-numbers/N+1
+   stay owned by the general checklist; a lens adds only stack-specific depth.
+3. **Detect by manifest, not extension**, and load every matching reference —
+   stacks can combine.
+4. **Ground-truth or Medium-cap.** Unverified findings never reach High.
+5. **>80% confidence, consolidate repeats, never CRITICAL on pre-existing code.**
+6. **Check project convention before flagging** — an explicitly endorsed
+   pattern is not a defect.
+7. **Provenance line in every reference file**, stated once here.
+8. **A FOLD-M lens is not field-proven** — see "Lens maturity" above; treat
+   its findings with the same confidence discipline as rule 4.

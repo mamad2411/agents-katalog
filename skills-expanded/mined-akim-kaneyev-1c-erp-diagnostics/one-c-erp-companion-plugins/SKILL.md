@@ -1,0 +1,72 @@
+---
+name: one-c-erp-companion-plugins
+description: Safely coordinate the verified 1C companion ecosystem—Unica, 1C Skills and optional Jev—plus host-managed document, repository, UI and sandbox capabilities without fabricating availability or dependencies.
+---
+
+# Verified companion coordination
+
+Use only after Gate 0 confirms actual installation, permissions and runtime availability.
+
+## Canonical companion identities
+
+The ecosystem marketplace exposes these independently maintained plugins:
+
+- `unica` — Unica `0.13.0`, source `IngvarConsulting/unica-marketplace`, immutable ref `885ca40dffd127dc29715f637d2ebdd7846b8b6e` (release tag `v0.13.0`).
+- `1c-skills` — 1C Skills PowerShell, source `Nikolay-Shirokov/cc-1c-skills`, immutable generated ref `8cb7868145281d8e353831512cc1ffa72f1b5c89`.
+- `1c-skills-py` — 1C Skills Python, source `Nikolay-Shirokov/cc-1c-skills`, immutable generated ref `c1f79f5ac9f31c620b8508f75464f8c42c559ae4`.
+- `jev-browser-use` — Jev browser action planner `0.1.0`, source `wy-coliney/jev-browser-use`, immutable ref `cf7e76607d4ec70592b24becadd0296dcda8177a`.
+
+They are offered from one marketplace but remain separate plugins with their own licenses, permissions, updates and confirmation rules. Never claim that their implementation is embedded in `one-c-erp-diagnostics`.
+
+## Updating installed plugins
+
+Use the [Windows update procedure](references/plugin-updates.md). Refresh the catalog separately from installed plugins, compare offered and installed versions, and install only changed versions. A running Windows MCP bootstrap can lock its installed version directory; do not repair that lock by granting broader filesystem permissions or stopping 1C processes. Keep the canonical plugin ID and immutable source pin.
+
+Unica 0.13.0 changes the public tool contract: discover current schemas such as `unica.view`, `unica.check`, `unica.apply` and `unica.run`, including their preview/revision receipts and deferred result delivery. The old operation-specific tools are not aliases. Do not assume an earlier session's schemas represent a freshly updated server. A bare `unica.run {}` reads the operation dictionary; it does not start a database operation. Start a fresh Codex task after an update.
+
+## Typical roles
+
+- **Unica (`unica`)** — metadata/BSL navigation, development workflows, controlled build/test operations and implementation review. A code finding is not an accounting root cause until linked to the exact document/movement/register chain.
+- **1C Skills PowerShell (`1c-skills`)** — Windows-first XML/configurator/web-client tooling, MXL/СКД/form/report operations and controlled 1C automation. Default to read-only inspection; any base-changing operation is `R3` unless proven otherwise.
+- **1C Skills Python (`1c-skills-py`)** — cross-platform XML/configuration artifact parsing, deterministic comparison and controlled automation.
+- **Jev (`jev-browser-use`)** — optional navigation/click/toggle/scroll planning for an authorized CUA-controlled browser. It does not type, interpret 1C semantics or verify its own result. Treat it as `confirmation_required` until the external provider, page-data transfer, origin allowlist and runtime are explicitly accepted. Do not use it for the deterministic Infoblog index search.
+- **PDF / Spreadsheets / Documents** — artifact extraction and structured comparison.
+- **GitHub / Drive** — retrieval only when the user has identified the source and has access.
+- **Computer Use** — observation or explicitly approved UI interaction; production-changing operations require the applicable risk gate.
+- **OpenSandbox** — isolated executable validation when Gate 5 establishes value.
+- **Local SonarQube (`sonarqube-bsl-local`)** — a separately installed host adapter for sanitized static BSL analysis. It is not a marketplace companion; coordinate it through `one-c-erp-local-static-analysis` only when Gate 0 confirms the actual loopback runtime.
+
+## Dynamic selection
+
+For each requested capability, record:
+
+1. canonical plugin/tool name;
+2. Gate 0 status: `available | confirmation_required | unavailable | prohibited`;
+3. exact task assigned and evidence IDs;
+4. read/write surface and `R0–R3` risk;
+5. tool version/ref where available;
+6. execution identity when the operation produces executable evidence: `run_id`, `case_id`, input evidence hashes/identifiers, timestamps when available, output location/hash;
+7. limitations, errors and fallback;
+8. whether another method independently reproduced the material result.
+
+Never reuse a companion result merely because its filename, issue ID or report title matches. If its execution identity does not match the current case and current material inputs, classify it as stale until rerun or proven equivalent.
+
+Use the smallest sufficient companion set. Prefer one primary specialist and no more than two secondary specialists unless the dependency graph proves additional value.
+
+## Conflict handling
+
+When companion outputs disagree:
+
+- preserve both outputs and provenance;
+- compare inputs, versions, run identities, scope and analytic keys;
+- do not vote by majority;
+- seek the earliest factual divergence in the case evidence;
+- downgrade the conclusion until the contradiction is resolved.
+
+## Boundary
+
+External plugins and host adapters are invoked, not copied. Their runtime availability is host-managed. The marketplace entry makes the four canonical companion plugins discoverable from one source; it does not include SonarQube or bypass installation, permissions, authentication, external-provider disclosure or action confirmation.
+
+A missing companion triggers a documented fallback or `blocked`, never a simulated result.
+
+The optional `codex-test-bridge-local` host adapter is separate from all marketplace entries. Apply `one-c-erp-test-bridge` only for an explicitly identified disposable local contour; preserve exact request/response hashes and current case/analytic context. The protocol-reference commit does not attest the installed bridge. Upstream msrv-tech code/CFE is not bundled or automatically installed.

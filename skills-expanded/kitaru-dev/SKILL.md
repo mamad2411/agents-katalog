@@ -1,0 +1,109 @@
+---
+name: kitaru-dev
+description: Kitaru just recipes, CLI structure and structured-output contract, analytics events, and PR-description conventions. Use when running project commands, adding CLI commands or analytics events, or writing a PR description.
+---
+
+# Kitaru Development, CLI, and PR Workflow
+
+Use this when you need the command catalog beyond the daily loop in the root `AGENTS.md`, or when adding CLI commands, analytics events, or PR descriptions.
+
+## Python Workflows
+
+- `uv sync`: install the base SDK and development dependencies
+- `uv sync --extra cli`: include the optional CLI
+- `uv sync --extra mcp`: include the optional native MCP server
+- `uv sync --extra server`: include server components
+- `uv sync --extra worker`: include worker components
+- `uv sync --extra otel`: include OpenTelemetry integrations
+- `just check`: run formatting, lint, OpenAPI freshness, changelog fragments, typecheck, typos, YAML, actions lint, and links
+- `just openapi-check`: verify that the committed OpenAPI specification matches the application schema
+- `just changelog-check`: validate the changelog fragments under `changelog.d/`
+- `just fix`: auto-fix formatting, lint issues, and YAML
+- `just test`: run the full pytest suite
+- `just test tests/test_file.py::test_name`: run one targeted test
+- `just lint`: lint only
+- `just typecheck`: type check only
+- `just typos`: typo check only
+- `just format-check`: check formatting without modifying files
+- `just yaml-check`: check YAML formatting
+- `just actions-lint`: lint GitHub Actions workflows; requires `actionlint`
+- `just zizmor`: audit GitHub Actions workflow security with `zizmor`
+- `just audit`: audit Python dependencies with `pip-audit` and the documented ignore list
+- `just links`: check Markdown links offline; requires `lychee`
+- `just links-external`: check links including external URLs; slow
+- `just example-coverage-audit`: validate `examples/example-coverage.yaml` metadata and waivers
+- `just build`: build wheel and sdist locally
+- `just cli-artifact-smoke`: verify clean CLI wheel and source installations
+- `just plugin-artifact-smoke`: build every default-plugin wheel, load its configured entrypoints, and verify default registration
+- `just mcp-schema-check`: verify public MCP registry budgets and committed snapshots
+- `just mcp-wheel-smoke`: verify clean base and `[mcp]` installs from the wheel under `dist/`
+- `just migration-check`: compare Alembic migrations with the ORM schema; requires PostgreSQL
+
+There is no v2 `kitaru init` command or `local` extra. Do not carry the v1 `.kitaru/` project-marker setup into v2 instructions or tests.
+
+When resolving `pyproject.toml` or `uv.lock` conflicts, do not regenerate the whole lockfile: that silently reverts intentional dependency-security bumps. Upgrade only the packages involved and run `just audit` before pushing.
+
+## New Distribution Integration Review
+
+Before opening a PR that creates an independently published package, trace how it will be built, installed, discovered, and released. This applies to a new adapter, importer, evaluator, or other Python distribution; adding an evaluator inside the existing `kitaru-evaluator` wheel does not create a new distribution. For substantial packages, ask a bounded independent subagent to review the integration points and omissions, then verify its findings against the code. Record the applicable paths and any deliberate exclusions in `Reviewer Notes` or `Release context` so a reviewer can check the complete package path.
+
+- Add the package manifest, source, tests, README, changelog, plugin workspace lock entry, and a row in `plugins/README.md`. Add artifact import metadata for a non-default package, and check whether `plugins/pyproject.toml` needs an update.
+- Add every new Python distribution to `release/release-units.toml` and the expected inventory in `tests/scripts/test_release_units.py`. Check that the release workflow and CI matrix discover it; edit fixed selections only when they actually exclude the new package.
+- Add every new PyPI `kitaru-*` distribution to `src/kitaru/worker/process.py::_FIRST_PARTY_KITARU_PACKAGES`, including packages outside the default server catalog. Run the inventory-based test in `tests/worker/test_process.py`; the server catalog is not the worker's package list.
+- Decide separately whether the server should offer the package by default. Set `default-catalog` in the release inventory accordingly, and change `DEFAULT_PLUGIN_DEFINITIONS` and its tests only for an approved default. Do not add adapters to the server catalog.
+- Inspect package-specific selections and exclusions, including candidate-wheel builds, example dependencies, and the quickstart's `--no-install-package` list in `.github/workflows/ci.yml`. There is no global plugin ignore list; those exclusions apply to their particular example or build. Update them only when the new package enters that path.
+- Check the required core version, release order, documentation, and runnable examples. For worker-installed exact pins, test candidate-wheel resolution with a cutoff predating the package, verify that supported `uv` accepts the package exception, and verify that older `uv` retains the prior command and warns. Only a postpublication registry install proves the published wheel resolves under that cutoff. Run the focused package tests, release-inventory test, and `just plugin-artifact-smoke` before handoff.
+
+Use `plugins/DEVELOPMENT.md` for package and candidate-server commands, and the `kitaru-release` skill for version selection and publication. Do not treat registration metadata or a local wheel as proof that the published package can be installed by a worker.
+
+## Docs Workflows
+
+These require Node 22+ and pnpm.
+
+- `just docs`: preview docs locally at `localhost:3000`
+- `just docs-build`: build the static docs export
+- `just docs-validate`: validate the export as served under `/docs`
+- `just generate-docs`: regenerate the SDK and CLI reference content
+
+`scripts/generate_sdk_docs.py` extracts the v2 SDK reference through a `PUBLIC_API` allowlist. Edit that allowlist and `tests/scripts/test_generate_sdk_docs.py` together; the test compares each published module against its `__all__`. The generator needs the fumapy bridge after installing the docs dependencies. `scripts/generate_cli_docs.py` generates CLI reference content from the offline `kitaru schema` contract rather than a hardcoded command list.
+
+## Native MCP Server
+
+The native v2 server is installed with `kitaru[mcp]` and started with `kitaru-mcp`. It defaults to `read-only`; `standard` and `destructive` expose progressively broader capabilities.
+
+Treat `tests/mcp/snapshots/metrics.json` and `src/kitaru/mcp/registry.py` as the inventory authorities. Do not copy tool counts into prose. Run `just mcp-schema-check` after changing MCP models, registry declarations, descriptions, annotations, or SDK versions. Build the wheel and run `just mcp-wheel-smoke` after entrypoint, packaging, lifecycle, or optional-import changes.
+
+## CLI Structure
+
+The `kitaru` console script is defined in `pyproject.toml` under `[project.scripts]`. `src/kitaru/cli/__init__.py` is the lazy entry point, `src/kitaru/cli/app.py` runs one command and converts its errors, `src/kitaru/cli/command_registry.py` defines the shared Cyclopts applications, each `src/kitaru/cli/*_commands.py` module registers one family of leaf commands, and command implementations live under `src/kitaru/cli/`.
+
+Register new leaf commands with `build_spec(...)` and `register_command(...)` from `src/kitaru/cli/command_registry.py`, in the matching `*_commands.py` module; a new command module must also be imported in `src/kitaru/cli/app.py` so its commands register. Tests should call `main([...])` with an explicit argument list and assert the returned integer exit code.
+
+When changing evaluation, replay, or experiment commands or contracts, read [Evaluation contracts](references/evaluation-contracts.md).
+
+## Structured Output Contract
+
+Agent-facing commands use the version-1 structured contract. Success documents include `schema_version`, `command`, `ok`, `warnings`, `links`, and `next_actions`, plus `item` for one result or `items`, `count`, and `page` for a list. Streaming commands emit JSONL events. Structured errors are one JSON object on stderr with a stable error kind and exit code.
+
+For agent-facing use, prefer `--output json --machine --non-interactive --no-browser`. A deliberate dashboard or device-login handoff is the exception.
+
+Document login consistently: `kitaru login` starts the interactive managed-cloud device flow and connects to the Kitaru workspace selected or created in the browser. `kitaru login SERVER` targets the full managed or self-hosted instance URL, while `kitaru login --local` provisions or reuses the CLI-owned Docker or Podman Compose deployment. The local deployment defaults to `http://localhost:8000`; `--port` takes precedence over `KITARU_LOCAL_PORT`, and the selected port persists with the deployment. `kitaru logout` stops that deployment when it is selected, and `kitaru logout --volumes` also deletes its PostgreSQL data.
+
+`kitaru status` shows the selected server, provenance, credential state, compatibility, and live-worker count. `kitaru info` adds local package, Python, platform, and server details. `kitaru doctor` runs independent local, server, authentication, and tooling checks without stopping after the first failure. These commands never print secret values.
+
+## Analytics
+
+Analytics events live in `src/kitaru/analytics/events.py`; source attribution lives in `src/kitaru/analytics/source.py`. Server-side feature events are emitted through the application analytics service. MCP attribution is set once for the MCP lifecycle through `AnalyticsSource.MCP`.
+
+- Add event names to `AnalyticsEvent` in `src/kitaru/analytics/events.py`.
+- Track only reviewed, non-sensitive metadata such as event names, boolean flags, enum values, and counts.
+- Never include user content, file paths, prompts, credentials, or secret values.
+- Keep analytics failures non-fatal.
+
+## Pull Requests
+
+Use a clear human-readable title without a `[Codex]` prefix. Include what changed, why it was needed, important implementation decisions, and reviewer focus areas. Link related issues when applicable.
+
+Add a `changelog.d/<pr-number>.<section>.md` fragment for user-facing changes instead of editing `CHANGELOG.md`. Any slug works in place of the number while the PR does not exist yet. See `changelog.d/README.md` for the format.
+
+Every PR description should include a `Reviewer Notes` H2 or H3 section that explains the story and risks of the change, plus a concrete `Reproduction` subsection. Keep local hygiene commands as a short note after reproduction rather than using them as a substitute for reviewer guidance.

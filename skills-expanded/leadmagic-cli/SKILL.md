@@ -1,0 +1,162 @@
+---
+name: leadmagic-cli
+description: >-
+  Use the LeadMagic CLI for enrichment automation — find emails, validate contacts,
+  enrich CSVs in batch, find decision-makers by role, and push to outbound platforms
+  (Smartlead, Instantly). Use when automating enrichment from the command line,
+  batch-processing contacts, or integrating LeadMagic into scripts. Triggers on:
+  "LeadMagic CLI", "lm find", "lm validate", "lm enrich", "LeadMagic command line",
+  or any request about CLI-based enrichment.
+license: MIT
+compatibility: Claude Code, Codex, GitHub Copilot, Cursor, Gemini CLI, OpenCode, Goose, Hermes, Windsurf, Zed
+metadata:
+  version: "1.1.1"
+  author: LeadMagic
+  category: leadmagic
+  tags: [leadmagic, cli, automation, enrichment, batch-processing]
+  frameworks:
+    - "LeadMagic docs — CLI installation and commands"
+    - "LeadMagic docs — Credits"
+    - "Command Line Interface Guidelines (clig.dev)"
+  related_skills: [leadmagic-waterfall, leadmagic-integrations, api-enrichment]
+---
+
+# LeadMagic CLI
+
+## Overview
+
+The LeadMagic CLI provides terminal access to email finding, validation, company
+enrichment, and outbound platform integration. Use it to automate enrichment
+workflows, batch-process CSV files, and push verified contacts to sending
+platforms — all without leaving the terminal.
+
+## Authoritative Foundations
+- **LeadMagic docs — CLI installation and commands** — Install lm-tui, authenticate with `lm login` (browser OAuth), and check `lm --help` rather than pasting API keys into config.
+- **LeadMagic docs — Credits** — Check the credit balance and estimate cost before bulk runs; failed lookups and credit rules are documented per endpoint.
+- **Command Line Interface Guidelines (clig.dev)** — Prefer machine-readable output, meaningful exit codes, and non-interactive flags when scripting the CLI in pipelines.
+
+## When to Use
+
+- "Use the LeadMagic CLI to find emails"
+- "Validate a CSV of contacts from the command line"
+- "Push enriched contacts to Smartlead via CLI"
+- "Automate enrichment in a shell script"
+- "Batch process contacts with LeadMagic"
+- "Find specific roles at companies via CLI"
+
+## Authentication and current documentation
+
+Install [lm-tui](https://leadmagic.io/docs/cli/installation), then use `lm login` for browser OAuth. Never paste a REST API key into normal CLI configuration. Check `lm --help` and the [command reference](https://leadmagic.io/docs/cli/commands) for the installed version before writing automation.
+
+## Key Commands
+
+### Email Finding
+```bash
+lm find email -f Jane -l Smith -d company.com
+```
+Returns a verified work email for the given name and domain. Pay-per-result
+pricing — only charged when a valid email is found.
+
+### Email Validation
+```bash
+lm validate -f contacts.csv -c email
+```
+Validates all emails in the specified CSV column. Returns valid/invalid/risky/
+unknown status per email. Process 4 validations per credit.
+
+### Bulk CSV Enrichment
+```bash
+lm enrich -i contacts.csv --batch-size 25
+```
+Enriches a CSV with auto-detected columns. Processes in configurable batches
+for reliability. Adds columns for found emails, verification status, and
+enrichment metadata.
+
+### Role Finding
+```bash
+lm find role -c "Acme Corp" -t "VP Sales"
+```
+Finds people with specific titles at a company. Returns name, title, and
+verified email where available.
+
+### Profile Enrichment
+```bash
+lm find profile-search -p linkedin.com/in/janesmith
+```
+Fetch full professional profiles from profile URLs. Includes work history,
+education, and skills data.
+
+### Outbound Platform Push
+```bash
+lm integrations smartlead connect
+lm integrations smartlead campaigns
+lm integrations smartlead push --campaign <id>
+```
+Connect to Smartlead, Instantly, or EmailBison. List campaigns, push enriched
+contacts, view stats. All from terminal.
+
+## Workflow Pattern
+
+1. **Find contacts:** `lm find role` or `lm find email` for individual lookups
+2. **Bulk enrich:** `lm enrich -i input.csv` for batch processing
+3. **Validate external addresses:** use `lm validate -f external.csv -c email` for emails sourced outside LeadMagic
+4. **Push:** `lm integrations smartlead push` to outbound platform
+
+Email Finder returns validated work emails; do not immediately run them through validation again. Review consent, suppression status, and the final audience before any sequencer push.
+
+## Scripting Integration
+
+```bash
+# Shell script: enrich and push weekly
+#!/bin/bash
+lm enrich -i weekly_leads.csv --batch-size 25 -o enriched_$(date +%Y%m%d).csv
+# Finder-returned emails are already validated; validate external lists separately.
+lm integrations smartlead push --campaign main_campaign
+```
+
+## Output Format
+
+Commands produce structured JSON or CSV output. All results include source
+attribution and confidence indicators. Pipe into other tools or import into
+spreadsheets.
+
+
+## Quality Check
+
+Before delivering, verify:
+- [ ] All required sections are complete
+- [ ] Output matches the user's stated need
+- [ ] Named frameworks are cited for key recommendations
+- [ ] No vague claims — every recommendation has a specific action
+- [ ] Deliverable is ready for operational use, not just conceptual
+
+## Common Pitfalls
+
+1. **Paying twice for verification.** Finder-returned work emails are already validated. Use validation for externally sourced or stale CRM lists.
+
+2. **Batch size too large.** Stick to 25-50 per batch for reliability. Larger
+   batches risk timeouts.
+
+3. **Treating all email sources alike.** Keep finder results separate from external email lists so only the latter need a validation pass.
+
+4. **Wrong CSV column mapping.** Check detected columns with `lm enrich -i input.csv --dry-run` before running paid batches.
+
+## Execution Artifacts
+
+- `references/framework-notes.md` — CLI patterns, source-aware email verification, Eric scale ops
+- `templates/output-template.md` — command sequence + verify gate deliverable
+- `scripts/check-output.py` — local checklist validator for required sections
+This skill includes lightweight artifacts the agent can load on demand:
+- `references/cli-workflow-patterns.md` — source-aware enrichment pipelines (Patterns A–E)
+- `references/waterfall-column-spec.md` — Clay alternative for recurring
+- the `smartlead-workflows` skill (clay-enrollment-handoff.md) — post-CLI sequencer handoff
+- `references/pat-spielmann-outbound-copy.md` — verify-before-send (Pat Spielmann)
+- `references/gtm-experts-outbound-index.md` — expert router
+Use the artifacts when the user asks for an implementation-ready deliverable, a repeatable workflow, or a quality check rather than generic advice.
+
+## Related Skills
+
+- **leadmagic-waterfall**: Clay waterfall with LeadMagic primary
+- **leadmagic-integrations**: Platform-specific integration guides
+- **leadmagic-bulk-enrichment**: API-based bulk processing
+- **leadmagic-job-change**: Job change monitoring via CLI

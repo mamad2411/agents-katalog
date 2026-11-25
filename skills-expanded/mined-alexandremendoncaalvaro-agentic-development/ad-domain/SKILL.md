@@ -1,0 +1,88 @@
+---
+name: ad-domain
+description: 'Create or update CONTEXT.md, the project''s glossary of canonical terms and aliases to avoid. Use on "glossary", "what should we call", "naming drift", "domain term".'
+summary: Lazy lifecycle owner of `CONTEXT.md` (Layer 2 — ubiquitous language per Evans 2003). Captures canonical project-specific nouns with aliases-to-avoid, relationships, and flagged ambiguities. Single-context or `CONTEXT-MAP.md` multi-context.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+---
+
+# /ad-domain
+
+Implements ADR-0019 — Layer 2 of the artifact stack. Lazy lifecycle owner of `CONTEXT.md`. Process scaffold for capturing the project's ubiquitous language.
+
+The skill owns *capture* of vocabulary. The *trigger* for most updates lives in adjacent skills:
+
+- `ad-grill-me` resolves a term during interview → routes here.
+- `ad-spec` introduces a new noun while drafting a spec → routes here.
+- `ad-architecture` names a domain-bound concept → routes here.
+- `ad-drift` detects code/glossary drift → routes here.
+- Direct `/ad-domain` invocation when the user wants to add a term explicitly.
+
+## Step 0 — Detect existing structure
+
+Before writing, locate the existing artifacts.
+
+1. `Read CONTEXT.md` at the repo root. If present → single-context repo; updates land here.
+2. `Read CONTEXT-MAP.md` at the repo root. If present → multi-context repo; updates land in the per-context `CONTEXT.md` named by the map.
+3. Neither present → no `CONTEXT.md` exists yet. Decide:
+   - Single-context (default): plan to create `CONTEXT.md` at the repo root.
+   - Multi-context: only declare this when the user has explicitly named ≥2 bounded contexts. Plan to create `CONTEXT-MAP.md` plus the relevant per-context file.
+
+Lazy-creation rule: do not create the file just because the skill was invoked. Create it only when there is at least one resolved term to write.
+
+## Step 1 — Resolve the term
+
+A glossary entry has four parts — see the glossary-entry shape in [references/context-templates.md](references/context-templates.md).
+
+Resolution discipline:
+
+- **Be opinionated.** One canonical name. Others become `_Avoid_` aliases with a one-line reason.
+- **Short definitions:** a lead sentence that defines the term on its own, plus at most two sentences of scope or exclusions. If it takes a paragraph, the term is not yet sharp.
+- **Project-specific only.** "Customer", "Triage role", "Materialization cascade" qualify. "Service", "Handler", "Controller" do not (those belong to architectural vocabulary per ADR-0020, not domain).
+- **Flag conflicts.** If two terms could mean the same thing, add the conflict to the **Flagged ambiguities** section instead of forcing a premature resolution.
+
+## Step 2 — Locate the insertion point
+
+`CONTEXT.md` has three canonical sections — see the CONTEXT.md layout in [references/context-templates.md](references/context-templates.md).
+
+Insert the new term under `## Language` next to the terms it relates to. If a relationship clause is implied by the new term, append it to `## Relationships`. If the resolution surfaces an ambiguity rather than closing one, append to `## Flagged ambiguities` and mark the term entry "(resolution pending)".
+
+## Step 3 — Write or update
+
+Use `Write` for the first creation, `Edit` for subsequent updates. Preserve existing entries — never reorder or rewrite past terms while adding new ones (the file is append-shaped within sections).
+
+For first creation, the file shape is the first-creation shape in [references/context-templates.md](references/context-templates.md).
+
+For multi-context repos, `CONTEXT-MAP.md` is the index — see the CONTEXT-MAP shape in [references/context-templates.md](references/context-templates.md).
+
+## Step 4 — Cross-reference adjacent layers
+
+Per ADR-0019 §6 reciprocity rules, the following side-effects matter:
+
+- **Code → Domain.** When the new term has obvious code references, list them in the entry's `**Related code:**` line. Use `Glob` / `Grep` for the canonical noun and the aliases; the latter often surfaces drift (variables still using an `_Avoid_` name).
+- **Spec → Domain.** If a spec under `doc/specs/` introduced this term without resolving it, the spec is now the term's first reference; consider updating the spec's prose to use the canonical noun.
+- **ADR → Domain.** If an ADR named the term (e.g., the cross-pollination ADR-0019 cited "Triage role" from Pocock's example), cite the ADR by number in the entry's prose.
+
+These cross-references are *suggestions*, not file edits — the skill does not modify specs or ADRs to chase drift. That work is `ad-drift`'s.
+
+## Step 5 — `AGENTS.md` pointer (one-time)
+
+When `CONTEXT.md` is created for the first time, the artifact stack reference in `AGENTS.md` should mention it. Per ADR-0019 §8, the `ad-bootstrap` skill inserts the pointer on its next run. This skill does not edit `AGENTS.md` directly; it announces the side-effect:
+
+> "Created `CONTEXT.md`. Next `/ad-bootstrap` run will insert the Layer 2 pointer in `AGENTS.md`."
+
+## Output contract
+
+Side-effects only. The skill writes one of:
+
+- New `CONTEXT.md` at the repo root (first creation, single-context).
+- New `CONTEXT-MAP.md` + per-context `CONTEXT.md` files (first creation, multi-context).
+- Edit to existing `CONTEXT.md` adding a new entry / relationship / flagged ambiguity.
+
+Then reports the change as a one-liner: file, term, section. No `## Next` slash-command spam in output.
+
+## Next
+
+- After capture: route back to the calling skill (`ad-grill-me`, `ad-spec`, `ad-architecture`) to resume the original turn.
+- If the resolution surfaced a binding decision (hard to reverse, surprising without context, real trade-off): `/ad-adr` to record it.
+- If the term is one of several pending resolutions: stay in `/ad-grill-me` to walk the next branch of the decision tree.
+- For periodic drift sweeps: `/ad-drift` checks `CONTEXT.md` against current code.

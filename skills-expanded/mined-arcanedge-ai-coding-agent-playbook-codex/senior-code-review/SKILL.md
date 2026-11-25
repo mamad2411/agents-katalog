@@ -1,0 +1,82 @@
+---
+name: senior-code-review
+description: Use before finalizing a meaningful code change. Reviews the final diff for correctness, scope control, maintainability, validation gaps, safety risk, performance risk, accessibility risk, and subagent claims that still need verification.
+---
+
+# Senior Code Review Skill
+
+Use this skill before finalizing meaningful code changes.
+
+Review only the checks relevant to the final diff. Preserve required gates.
+
+## Scope and ownership
+
+- unrelated changes
+- accidental formatting churn
+- generated, vendored, compiled, or package-owned files
+- unused imports, variables, types, functions, or files caused by the change
+- behavior changes beyond the request
+
+## Design and maintainability
+
+- naming clarity
+- consistency with existing patterns
+- incomplete fixes that minimize the diff while leaving required behavior unresolved
+- abstractions without a demonstrated boundary, invariant, meaningful duplication, or variability
+- substantial flow replacements without evidence of a significant benefit over improving the existing implementation, accounting for migration, verification, and maintenance costs
+- unnecessary change amplification across unrelated components
+- material technical debt without its scope, rationale, and follow-up condition
+- speculative configurability
+
+## Behavior and affected risks
+
+- API compatibility required by supported consumers or explicit commitments
+- legacy paths or fallbacks retained without demonstrated dependencies, or removed despite unresolved consumers
+- support commitments invented for hypothetical users, obsolete test accounts, fixtures, or intermediate development versions
+- code retirement that discards useful data without authority or weakens necessary correctness safeguards
+- migration risk
+- safety risk
+- performance risk
+- accessibility regressions
+
+## Validation
+
+- missing or weak evidence for the complete affected behavior
+- redundant tests, fixtures, or mocks, or tests preserving abandoned fixes or implementation details instead of required behavior
+- proposed cases without a credible wrong result the remaining checks would miss, or focused tests outside an explicit repository exception for a named rule impractical to cover at a supported entry point
+- optional harness retries after one evidence-based setup correction fails, production changes made solely to satisfy a mock, or removal of temporary tests before their required assertions have passing coverage
+
+## Delegation and worktrees, when used
+
+- subagent claims that were not independently verified
+- helper launches or retries that exceeded the recorded finite allowance or were not reconciled
+- unnecessary helper use whose concrete benefit does not justify context, coordination, and review overhead
+- child runtime that differs from the authorized per-task selection or applicable default, unverifiable settings, or permissions, scope, authority, or workspace expansion beyond the parent assignment
+- progress or task-reporting messages that set `model`, `reasoning_effort`, `thinking`, or analogous destination-setting overrides, or altered a parent or peer task
+- task-created auxiliary worktrees without integration evidence and a verified `removed` or exact-blocker `preserved` disposition
+
+## Acceptance and report
+
+Ask:
+
+```text
+Would I approve this in code review?
+```
+
+If not, fix the issue or report the remaining risk clearly.
+
+For each proposed case, ask which specific wrong outcome could pass if this addition were removed. Prefer an existing E2E flow. A sufficient existing check can justify zero new tests. Investigate failures against the supported contract. Keep required assertions and repository gates, preserve user-owned tests, and remove only task-created diagnostics and their exclusive support after required coverage passes.
+
+Final report format:
+
+```text
+Summary:
+- Changed X to do Y.
+
+Verification:
+- Ran: [command or check]
+- Result: [passed/failed/not run, with reason]
+
+Notes:
+- [Assumptions, unrelated issues, subagent usage, follow-ups, or risk notes if any]
+```

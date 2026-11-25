@@ -1,0 +1,538 @@
+---
+name: kernelcad-mcp
+description: kernelCAD MCP server (kernelcad mcp) — introspect a running model, list features, run edit ops, fetch diagnostic codes. Use when you need to inspect a live model dynamically rather than re-evaluate from source.
+---
+
+# kernelCAD — MCP companion
+
+## When to load this skill
+
+Load when `kernelcad mcp` is available and you need to inspect or edit a live model without re-running the full CLI on every change. The MCP server exposes dynamic introspection tools that operate on evaluated in-memory state.
+
+### Sandbox mode
+
+If the server's `initialize` instructions start with `kernelCAD SANDBOX MODE is ON`
+(the server was started with `kernelcad mcp --sandbox` or `KERNELCAD_SANDBOX=1`),
+three rules apply. Every path you pass, and every path a script reads, must
+resolve inside the named workspace: use workspace-relative paths. All outbound
+network is refused. Network modes return `cli.sandbox-network-denied`:
+`import_step` url/upload, `fetch_part`/`find_part` `partsBaseUrl` or
+`model.url`, `trace_from_image` with an http(s) image, `render_preview`
+`base_url`, a URL `environment`, and the Studio selection tools.
+`send_to_printer` returns `cli.sandbox-command-refused`. Switch to the offline
+input (`content_base64`, a workspace file, a bundled HDRI preset) and do not
+retry the same call. Paths that escape return `cli.sandbox-path-denied` and
+name the argument.
+
+## MCP tool surface
+
+When you have `kernelcad mcp` available, use the MCP tools for dynamic introspection rather than re-running the CLI. The MCP server exposes the current tool registry, including:
+
+### Point-cloud analysis
+
+- `fit_plane({ points })` — fit an orthogonal least-squares plane to at least three non-collinear XYZ triples (up to 100,000). Returns the centroid, deterministic unit normal, signed orthogonal residual per point, RMS residual and maximum absolute residual. Pass points parsed by the caller from a scan or mesh; this tool estimates parameters only and does not parse files or create a surface body.
+- `load_scan_reference` / `fit_model_to_scan` — read a PLY or XYZ cloud as a non-solid reference and compare a parametric bounding box. Details are in the tool list below. The cloud is not drawn in Studio.
+
+### Evaluation and introspection
+
+
+- `evaluate_script({ file? code?, dryRun? })` — pass/fail + featureCount + diagnostics + `sceneSummary` (`valid`, `volume` in mm³, BREP `faceCount`, conservative world bounding `size: [x,y,z]` in mm); plus a `parts` summary `{ count, names }` when the scene is assembly-built (absent for single-shape / non-assembly scripts). `dryRun: true` is the fast iteration mode: transpile + capture + capture-light checks without building solids, DFM gates, or meshing — milliseconds instead of seconds. A dry run catches script throws, capture-time API misuse, and assembly validity-gate failures, but NOT lowering failures (failed booleans, oversized fillets) or `dfmSpec` diagnostics, and it leaves the active session untouched — finish with a full `evaluate_script` before using session-dependent tools. A model with moving joints or motion intent (an animation track, `mechanicalJoint`, transmission) also gets `mechanismSummary` — `{ verdict, maxLevel, statement, checked, skipped, failures }` (`maxLevel`: `error` broken, `warning` not checked, `ok` checked). The verdict also fails an animation key that drives a joint past its limits (`kinematic.pose.out-of-limits`), a closed loop that does not close (`assembly.mate.over-constrained` / `assembly.solver.did-not-converge`, naming the mate) and a loop mate that comes apart at a swept pose (`mechanism.mate-unsatisfied`); a moving DOF with no limits is listed in `skipped` (range not checked), not failed. Quote `statement`: `Motion checked` says what ran, `Motion not checked` is not a pass (say it was not checked), `Mechanism broken` names the joint. An animated param or drive on a `fastened` joint fails as `mechanism.motion-on-fixed-joint`: make that joint revolute/prismatic and pass the param as its `pose`; never animate a transform of a fastened part's geometry with that param. Studio shows the same verdict as a badge; saving is never blocked by it.
+- `diff_scripts({ baseFile? baseCode?, file? code? })` — structured geometric delta between a baseline script and a revision. Returns per-part `added`/`removed`/`renamed`/`changed` (volume mm³ + exact bbox deltas; numbers match `inspect({ of: 'part-stats' })`), interference totals per side + `deltaMm3` with per-pair detail, mate-graph changes (type, connectors, pose, limits), and param changes (value/min/max). Single-shape scripts diff as one `(root)` pseudo-part. Use after editing a script to verify exactly what changed physically before re-rendering; read-only, never touches the active session.
+- `diff_geometry({ baseFile? baseCode?, file? code?, params?, render? })` — the deeper sibling of `diff_scripts`, for when a volume/bbox delta is ambiguous: a boss that grew and a pocket that deepened report the same |ΔV|, and a part that only moved reports ΔV = 0. The revised side is either another script (`file`/`code`) or the SAME script re-lowered with `params` overrides (declared `param()` name → new value — the one-script form a parameter sweep asks for). Bodies pair by name, falling back to declaration-order positional pairing; leftovers land in `unmatched` and raise `diff.body.unmatched`. Per matched body: `addedMm3` = volume(revised − base), `removedMm3` = volume(base − revised), `commonMm3` = volume(base ∩ revised), exact bbox with min/max/extent deltas, face/edge/hole count deltas, `maxDeviationMm` (two-sided discrete Hausdorff distance), and a `verdict` — `identical` | `moved` | `resized` | `topology-changed` (precedence: topology-changed > resized > moved > identical). **Branch on the verdict; cite the numbers.** Each body also has `faces` — WHICH faces changed: `{ added, removed, modified, unchangedCount }`, each entry `{ surfaceType, areaMm2, center, normal?, axis?, radiusMm?, ref? }` (`ref` is a stable `@kc[...]` face ref on the revised model when the face has a lineage name); modified entries add `{ before, after, offsetMm, change: 'moved' | 'resized' | 'reshaped', matchedBy: 'lineage' | 'geometry' }`. Faces pair by lineage first (so a translated box reports six moved faces), then by geometry (same type, parallel normal/axis, nearest centroid); lists are capped at 50 with `truncated` and true totals. `summary.text` says it in plain language, e.g. `Body '(root)' topology-changed: 1 face added (cylinder r=3 at (20, 20, 3)), 2 faces resized (…)`. `{ render: true }` also writes an overlay PNG — added green, removed red, unchanged material as a translucent ghost — through the `render_preview` pipeline; the scene itself is a re-runnable `diff-overlay.kcad.ts` over lossless BREP sidecars in `render.out_dir`. It fails open: the numeric diff is returned either way, with `render.error` naming what the render pipeline needs. Read-only. `diff_scripts` sets `deeperDiffAvailable` when its own numbers are not enough to say what physically changed; follow that pointer here instead of reaching for a render.
+- `inspect({ of: 'features', file? code? })` — array of feature summaries (kind/id/params/inputs)
+- `inspect({ of: 'assemblies', file? code? })` — captured assembly intent: assemblies, parts, named connectors, fixed connections, joints, and aggregate models
+- `inspect({ of: 'assembly', file? | code?, assembly? })` — physical assembly inventory for agents: named parts, bboxes, explicitly assigned engineering `material` (from `assembly.part(..., { material })`), connectors, mates, mechanical review facts, disconnected solids, `unexplainedGeometry`, and a next-action prompt. `componentCount` is a disconnected-mesh diagnostic only; it is not a stable cell/region identity and cannot be assigned an independent material. Assign separate materials by modeling separate named assembly parts. Run this before accepting visually suspicious mechanisms; random/floating geometry must be repaired or explicitly justified by the original prompt.
+- `inspect({ of: 'step', file })` — inspect a STEP file directly, without evaluating a script (`{ file }` is required; no `{ code }` mode): solid tree (index + best-effort name), per-solid exact bounding box + volume + face count, and detected cylindrical holes (axis origin + direction, diameter, depth, blind/through; co-axial seam-split faces merge into one bore). A bore whose wall is breached (a slot, pocket, or nearby fillet/chamfer runs into it) is still reported, flagged `partial: true` with `angularCoverageDeg`; the report then says `holeDetection: 'heuristic'` (also when an ambiguous concave cylinder was left out) — treat those holes as candidates to confirm with a render or section. `'exact'` means every concave cylinder was a full bore or clearly a fillet/slot end. `depthMm` is the cylindrical wall length: a mouth chamfer/fillet shortens it. Run this before placing an imported vendor part — find mounting-hole positions and verify the part-local frame from exact geometry instead of measuring renders. CLI equivalent: `kernelcad inspect step <file.step>`.
+- `inspect({ of: 'shape', file? code?, feature_id? })` — volume/surfaceArea/bbox of a feature (default: last)
+- `inspect({ of: 'topology', file? code?, feature_id? })` — canonical face names + edge count
+- `inspect({ of: 'face-edges', file? code?, feature_id?, face_name })` — boundary edges of a face (centroid, length, isClosed)
+- `inspect({ of: 'edges', file? code?, feature_id? })` — enumerate all edges (index, centroid, length, isClosed)
+- `inspect({ of: 'faces', file? code?, feature_id? })` — enumerate all faces with area and centroid
+- `inspect_nurbs({ file? code?, feature_id? })` — read captured NURBS data from a `nurbsCurve`/`spline3d` feature: degree, knots and multiplicities, poles, weights, parameter range, `rational` (weights not all equal), `uniformWeights` (all equal), and `hasNonUnitWeights` (any differs from 1). This reports authored curve data, not post-operation B-rep edge/face extraction; surfaces and blends are not supported.
+- `apply_surface_blend({ code, shape_binding, operation?, radius?, distance?, selector?, continuity? })` — insert a `Shape.fillet(...)` or `Shape.chamfer(...)` line before a direct top-level `return shape_binding`, return that blend result, evaluate the patched code, and return `new_code` plus diagnostics and scene summary. `selector` uses the existing `EdgeSelector` conventions (`@kc[...]` edge ref/query, an array of selected stable edge refs, or `{ face: canonical name | face label | FaceQuery descriptor }`); omit it to affect all sharp edges. Fillets accept `continuity: 'G1' | 'G2'` through the existing public API; chamfers use `distance`. This authors and evaluates the geometry operation. It does not extract blend-surface NURBS poles; that still requires kernel surface extraction.
+- `inspect({ of: 'face-labels', file? code?, feature_id? })` — canonical face names resolvable on a feature
+- `query({ mode: 'lineage', file? code?, feature_id, ref })` — walk the HistoryMap chain that produced a named face/edge ref; returns `{ chain, usedFallback }`.
+
+### Shared local Studio selection
+
+- `get_selection({ studio_url, session })` — read the primary face/edge pick and the complete multi-selection (`selections`) from the same local Studio session. The Studio URL is a local HTTP origin; acquire `session` from `GET /__kernelcad/session?script=<path>` for the script open in Studio. A pick has `{ shapeIndex, kind, id, featureId }`; edge picks also include a stable `stableId` and an operation-ready `ref`, such as `@kc[box_1/edge/s0123456789abcdef]`. Edge IDs fingerprint curve type, length, and nine 3D samples quantized to `1e-6` model units, independent of edge orientation and traversal order. They survive re-evaluation while geometry is unchanged; ambiguous matches are rejected. For a selected-edge fillet or chamfer, pass the edge refs from `selections` to `apply_surface_blend.selector`. Face picks keep their existing signature-based remap. The tools currently support local Studio sessions, not hosted sessions.
+- `set_selection({ studio_url, session, model_generation, selection, selections? })` — replace the primary viewer selection and optionally the full face/edge multi-selection, or clear with `selection: null` and `selections: []`. Pass the model generation from the latest `get_selection` response. Stable edge IDs are checked against the current mesh; stale generations and mismatched refs are rejected. Studio updates its existing highlights on the next sync cycle. These tools change selection only, not geometry, and currently support local Studio sessions, not hosted sessions.
+
+### Diagnostics
+
+- `why_did_this_fail({ file? code?, feature_id?, diagnostic? })` — walk the upstream chain of a failing feature; returns each upstream feature's id/kind/health/diagnostics in topological order (per-code hints already inline on every diagnostic). Use when `code` is `recompute.input.missing` to find the root cause. Also returns `trace` (every feature joined to its call site, AST node range, inputs and dependents), `repairRegion` (the only lines an edit may touch), and ordered `candidates` with real patches — or `candidateStatus: 'no-automatic-candidate'` when no mechanical fix exists.
+- `repair_script({ file? code?, diagnostic?, strategy?, max_attempts? })` — apply those candidates one at a time, re-evaluate after each, and keep the first that clears the diagnostic without new errors. `strategy`: `'try-all'` (default), `'apply-first'`, `'dry-run'`. Returns `new_code` + `diff` + before/after health maps. Refuses any patch outside `repairRegion` (`tool.repair.out-of-region`). Load `kernelcad-repair` for the full loop.
+- `lookup_diagnostics({})` — return the full diagnostic catalogue with hint templates, structured next-actions, and per-code metadata (one-shot; useful at session start to pre-populate retry strategies).
+- `lookup_api({})` — full curated API surface (globals, Shape methods, Sketch methods, constrained-sketch capability)
+- `lookup_cookbook({ query, k? })` — retrieve up to k canonical pattern snippets ranked by BM25; returns `{ ok, hits[] }`. Empty hits is a valid success ("no canonical pattern; proceed without cookbook help").
+- `execute_cookbook({ id?, query?, openInStudio?, dryRun? })` — **prefer this after `lookup_cookbook` for industry demos when you need evaluate + optional Studio in one step**; empty lookup is not a stop (freehand-author instead). Resolves by `id` or BM25 top hit (same as lookup), runs `evaluate_script` on the snippet body (bounded vendor timeouts), returns `{ ok, cookbookId, title, evaluate, openInStudio?, executionId, code?, stage?, error? }` with concrete `stage`: `resolve` | `evaluate` | `open_in_studio`. `openInStudio:true` (default false) publishes via `open_in_studio` after a green full evaluate on hosted MCP. **`dryRun:true` is NOT evidence** the cookbook builds a solid — finish with `dryRun:false` (default) before claiming success or opening Studio.
+- `import_step({ url? | upload? | content_base64?, file_name?, format?, output_dir?, name?, allow_open? })` — start from the user's own STEP/STL in chat. Give a public https URL, a ChatGPT attachment (`upload`, declared via `openai/fileParams`), or base64 bytes (max 50 MB). Writes the file and a starter `<name>.kcad.ts` (`lib.fromSTEP` / `lib.fromSTL` as the base body), evaluates it, and returns `{ ok, format, model_path, script_path, code, bbox }`. Pass the returned script path as `{ file }` to other tools.
+- `blockout_assembly({ name?, parts: [{ name, bboxMm, positionMm, rotationDeg?, anchors? }], connections? })` — turn a plain list of parts (bbox `[x,y,z]` and lower-corner `positionMm` in mm, optional `rotationDeg` about Z or XYZ Euler, optional named `anchors: [{ name, positionMm }]` in assembly coordinates) into an evaluable placeholder assembly script and return `{ ok, part_count, connection_count, script, warnings }`. Each part is a corner-anchored box with built-in connectors (`origin`, `bbox_center`, `bbox_x_min`..`bbox_z_max`) plus its anchors (emitted as `anchor_<name>`). `connections: [{ from, to }]` use `"part.anchor"` references and become `fastened` mates that express connectivity intent only. The tool reads no files, cuts nothing and generates no wire geometry; route real wires or tubes with sweeps along a path, and refine the boxes with `add_part` / `add_feature`. Use it when a layout, spreadsheet or another tool hands you part sizes and positions; for one part at a time use `add_part`.
+- `estimate_cost({ file|code, process?, material?, quantity? })` — labelled offline USD heuristic for a fabricated part or assembly. `process` is `'3d-print' | 'cnc' | 'sheet-cut'`; omit it to compare all three. Reuses volume, bounding box, and any `assembly.part` material, FabProcess, and StockSpec. Returns `currencyLabel: 'USD estimate'`, a material + setup + cycle breakdown, confidence, and key drivers. Not a supplier quote. Purchased catalog parts are skipped. No solid returns `estimate.no-geometry`.
+- `analyze_tolerance_stack({ contributors } | { file|code, chain, requirement? })` — labelled 1D worst-case and RSS stack. Contributors are `{ id, nominal_mm, upper_mm, lower_mm, sense: '+' | '-' }`. `requirement` is `{ kind: 'gap' | 'clearance' | 'length', min_mm?, max_mm? }`. `chain` names `shape.dimension` ids or labels; a chain `tol` overrides the declaration. A missing tolerance returns `cli.invalid-args` (ISO 2768 is not applied). RSS is the independent ±3σ band, using each half-width `(upper−lower)/2` as the ±3σ proxy. `requirement.pass` follows the worst case. This is a 1D arithmetic stack, not a full GD&T capability study. `shape.tolerance` frames and `require()` clearances stay on `verify({ check: 'requirements' })`.
+- `load_scan_reference({ file | data, units?, max_points? })` — read an ASCII PLY, little-endian binary PLY, or XYZ/XYZRGB cloud as a non-BREP reference. Coordinates are millimetres unless `units` is `m` or `in`. Returns `point_count`, `bbox` `{ min, max, size }`, and `centroid`. Clouds above `max_points` (default and cap 200000) are stride-downsampled and flagged; the bbox still uses every parsed point. `binary_big_endian` and list vertex properties are refused by format name. Booleans on the scan are refused. `mesh_to_features` and `lib.fromSTL` still promote meshes; they do not consume this cloud. Studio does not draw it.
+- `fit_model_to_scan({ file | code, scan_file | scan_data | scan_bbox, units?, requirement? })` — measure the script with the existing bounding box and compare it to a scan file or to `{ min_mm, max_mm }` (`min` / `max` from a prior `load_scan_reference` bbox are accepted). Returns `translate_mm` (model center onto the scan center), `scale.per_axis`, `scale.uniform` (largest isotropic factor that stays inside the scan; apply it about the model center, then translate), and `clearance_mm` (scan size minus model size; positive means the unscaled model extent fits inside). `requirement.min_clearance_mm` sets pass/fail. The scan is not booleaned into the solid.
+- `resolve_metric_thread` — ISO 261 coarse designation from a hole diameter in millimetres. 12 mm is M12x1.75. kind is nominal (default, within 0.05 mm), tap_drill (D − P within 0.1 mm; 5 mm is M6), or auto (nominal first, then tap drill). A clearance bore such as 13.5 mm is refused; use clearanceFitForHoleDiameter. In a script, `hole({ diameter: 12, thread: true })` or `metricThreadFromDiameter(12)` records the same coarse pitch. It does not cut geometry.
+- `split_keep_parts` — keep the overlap and both leftovers from `shape.split`. Pass `{ file | code }` that returns the split, or `{ body_code, tool_code }` (Shape expressions) which the tool wraps as `body.split(tool)`. `keep` is `parts` (default), `intersection`, a_only, or b_only, and it applies only on the wrapper. Parts are named `intersection` (A ∩ B), a_only (A − B) and b_only (B − A); a fragment at or below 1e-6 mm³ is omitted, so disjoint operands return two parts. Returns `parts` (`name`, volume_mm3, `bbox`), `ok` and `diagnostics`. `subtract` / `intersect` / `union` still return one Shape. Face refs that the cut splits stay ambiguous.
+- `dfm_review({ file|code, processes?, nozzle_mm?, max_overhang_deg?, max_bridge_mm?, printer?, build_direction?, tool_diameter_mm?, approach_axes?, max_undercut_area_mm2?, min_bend_radius_ratio?, hole_to_bend_thicknesses?, hole_to_edge_thicknesses?, min_flange_thicknesses?, pull_direction?, min_draft_deg?, min_wall_mm?, max_wall_mm?, max_wall_ratio?, min_radius_mm? })` — manufacturability checklist with no `dfmSpec` needed; `processes` is any of `'fdm' | 'cnc' | 'sheet-metal' | 'injection-molding'` (default `['fdm', 'cnc']`). FDM: overhangs, bridging, min wall (2 × nozzle), min hole/pin, bed fit, bed contact. CNC (3-axis): undercuts from the approach axes (one per setup) and internal corner radius vs the end-mill radius. Sheet metal (a `sheetMetal(...).bend(...)` part; thickness read from the model, anything else returns one `sheet.not-sheet-metal` warn): bend radius ≥ t, hole-to-bend ≥ 2.5 × t + R, hole-to-edge ≥ 2 × t, flange ≥ 4 × t, located on the flat pattern. Injection molding (the `dfmSpec({ process: 'moulding' })` engine; two-part mold along ±`pull_direction`, default `+z`): draft ≥ 1° (undrafted faces named by `@kc` ref), walls ≥ 1 mm (fail) and ≤ 4 mm plus a max/min ratio (warn), undercuts neither half releases, internal corners under R0.5 (warn). A script's `dfmSpec` fdm / moulding settings are the defaults; call options win. Returns `{ ok, verdict, checks: [{ id, process, part, status: pass|fail|warn, summary, value?, limit? }] }`.
+- `dfm_fix_recheck({ file|code, process? | processes?, finding_id?, diagnostic_code?, material?, ...same review options })` — one bounded fix, then the same `dfm_review`. Applies at most one edit: an existing fillet radius up to the named corner limit, a `shell()` thickness up to the minimum wall plus 0.01 mm, or a `draft()` angle up to the minimum draft. Sharp corners, undrafted faces, and dimensions that are not that feature argument come back as suggestions and are not edited. `material` is recorded and does not change the gates. Pass `process` or `processes`, not both. Returns `{ applied, status, before, after?, cleared, remaining, suggestions, change?, new_code?, refusal?, bounds }`. `new_code` is present only when `applied` is true; persist it yourself. Nothing is written. Recipe: `lookup_cookbook('dfm fix recheck')`.
+- **One viewer per project per response (hosted `open_in_studio`).** Every `open_in_studio` call renders a new viewer card in the chat. Order: `get_project` (read-only, never shows a viewer) → `evaluate_script` until green → `open_in_studio` **exactly once** → reuse its URL, revision and preview. Never re-call it after a success in the same response, and never poll it while `meshStatus` is `building` (poll `get_project`). On a later revision, call it once with `project: '<slug>'`; the newer viewer replaces the older one.
+
+#### Industry problem → cookbook id (call `lookup_cookbook` with these queries / ids)
+
+Use before freehand authoring on production / industry prompts. Prefer `design_loop` until green for housings and mechanisms. After a cookbook hit, prefer `execute_cookbook({ id })` (or `{ query }`) when you need evaluate + optional Studio in one step — do not stop at lookup alone.
+
+| Industry problem | Cookbook id | Notes |
+|------------------|-------------|-------|
+| Machined housing (walls, pockets, bosses, fillets, bearing bore) | `multi-feature-machined-housing` | Params + manufacturing intent; not stacked boxes |
+| NEMA motor mounting plate | `nema-motor-mounting-plate` | Prefer `lib.standard.nema17()`; snippet uses BREP stand-in for CI |
+| Hole-less development board cradle / rail with connector access | `holeless-board-cradle` | Parametric edge rails and snap catches; verify fit and flex against the actual PCB before printing |
+| Multi-body mechanism + joints + animation | `multi-body-mechanism-real-proportions` | Proven pin **MLl-f0Uq@1**; CDN mesh+anim |
+| Scissor-lift / scissor-jack table | `scissor-lift-closed-loop` | Sweep-clear open-chain table: prismatic platform + fixed outboard X-links; ParamRef cannot drive their Math.sqrt geometry. For a solved closed-loop scissor (crossed links + sliders, lift angle driven), use kernelcad-kinematic cookbook 04 |
+| 4-DOF / multi-axis production robot arm | `multi-dof-robot-arm-4axis` | Bridged yokes, yaw clearance, mechanicalJoint chain, reach anim |
+| Articulated arm built from imported vendor meshes (STL links + STEP end-effector parts) | `so-arm100` | `execute_cookbook({ id: 'so-arm100' })` runs `examples/robot-arm/so100/so100-arm.kcad.ts` — shows mesh-link import with a STEP tool. Do not substitute a primitive-only arm when real meshes are supplied |
+| 4-DOF release/evidence pack (static hold, BOM, drawing, USD, FEA stop) | `4dof-release-evidence-pack` | Runnable arm + honest FEA-unavailable / USD-mate stops |
+| 2-DOF pan/tilt inspection head + rigid routed tube + animation | `mated-inspection-head-routed-tube-animation` | `param()` beside `animationView`; tube is rigid, not a hose |
+| Shop-release GT2 belt rotary actuator (housing, 608, cover, materials) | `gt2-shop-release-actuator` | Cord/nubs ≠ tooth mesh; no USD (cylindrical mate) |
+| Shop-release planetary gearbox (housing, carrier, cover, materials) | `planetary-gearbox-shop-release` | Fastened pitch pose; no tooth-contact dynamics, no spin animation |
+| Clamshell enclosure release pack (clevis shells, lid swing, BOM) | `clamshell-enclosure-release-pack` | `param()` beside `animationView`; gasket close not modeled |
+| NEMA plate + shaft/bearing + spur pair drive stack | `nema-shaft-spur-drive-stack` | Geometric mesh; no USD (cylindrical mate) |
+| T-slot frame corner + gusset + cap screws BOM | `tslot-frame-fastener-bom` | Clearance shanks, not a swept V-thread; T-nuts not modeled |
+| Bracket with fasteners / BOM | `non-overlapping-l-bracket`, `iso-metric-bolt-and-nut`, `bom-ready-assembly` | |
+| Gear / pulley drive | `involute-spur-gear-pair`, `gt2-timing-belt-drive` | |
+| Enclosure lid (screw-on cover) | `enclosure-lid-with-screw-bosses` | Hinge alt: `clamshell-hinge-two-part-assembly` |
+| DFM finding with one safe parameter bump | `dfm-fix-recheck` | `dfm_fix_recheck`: one fillet, shell, or draft edit, then the same review. Persist `new_code` |
+| Shaft + bearing seat | `shaft-and-bearing-cylindrical-mate` | 4-arg `cylindrical`; catalog shaft-d8-l50 + bearing608 |
+| Sheet-metal bend (≤2 bends, sharp fuse) | `sheet-metal-l-bracket-bend` | Slice-1 limits; see `kernelcad-sheet-metal` |
+| T-slot extrusion + bracket | `tslot-extrusion-and-bracket` | |
+| Pipe / tube route | `pipe-route-swept-tube` | |
+| Freight box trailer with roof solar-battery packs | `freight-trailer-roof-solar-batteries` | Keep-out grid + kingpin/bogie reaction station. Not FEA. Doors fastened shut. |
+| Drawings + GD&T callouts | `drawing-auto-dimension-gdt`, `drawing-hole-and-gdt-callouts` | |
+| Static-hold / actuator torque | `static-hold-actuator-torque-check` | Also kinematic skill cookbooks |
+
+Mate authoring reminder: **`arm.mate(name, a, b, type)`** (4-arg). Retired 3-arg `{ kind }` form is wrong — see `kernelcad-parts` / `kernelcad-assemblies`.
+
+### Local live Studio link
+
+Set `KERNELCAD_VIEWER_DIST` to a separately supplied viewer bundle containing
+`index.html` to enable the optional local viewer. A full local `evaluate_script`
+then returns `viewerUrl` from the first built model.
+Open it once and reuse it: full evaluations and source-edit MCP results update
+the same source, feature history and geometry. This is a loopback link owned by
+the MCP process, not a published project or share URL. Dry runs do not update it;
+genuine build failures retain the last built view. Built models with DFM gate
+failures remain viewable. If provisioning fails, `viewerError` is separate from
+CAD diagnostics, and geometry evaluation remains available. Without an explicit
+viewer bundle, `viewerError` explains how to configure one. Package and checkout
+viewer directories are never detected automatically.
+The viewer's build diagnostics do not replace `review_cad`. Hosted/`--cloud`
+results retain the gateway's own URL behavior.
+
+### Source edit operations
+
+All edit tools return the modified source plus diagnostics. Re-run `kernelcad evaluate` on the returned source before committing.
+
+- `set_param({ code, param_name, new_value })` — edit a `param()` default value and return modified code plus diagnostics. Add `preview: true` to build the edit in a scratch session and return the `diff_geometry` summary, the requirements-ledger diff (status flips, margin shrink/grow, added/removed) and the S1 bindings that moved or re-bound. Preview writes nothing; `after.requirementsOk` says whether the edit preserves declared intent. Feature mode `set_param({ code, feature: 'cylinder_1', changes: { r: 3.3 } })` changes a feature's own literal arguments in place by feature id (ids and parameter names from `inspect({ of: 'features' })`), verifies each rewrite by re-capturing the script, rebuilds before and after, and returns `new_code`, `edits`, `changedParams` and the same diff payload as `preview: true`. A value driven by `param()` is refused with a hint to set that param instead.
+- `add_feature({ code, feature_code })` — insert one source line before the last top-level return and return modified code plus diagnostics
+- `add_part({ code, assembly_binding, part_name, shape_expression, binding_name?, at? })` — insert `const <binding> = <assembly>.part(...)` and return modified code plus diagnostics. Use the returned/bound part ref for connector edits.
+- `add_connector({ code, part_binding, name, type, origin, axis?, normal? })` — insert `<partBinding>.connector(...)` durably in source. Side-effect-free.
+- `add_mate({ relation, code, assembly_binding, ... })` — author a mate-graph relationship durably in source. `relation: 'mate'` → `{ name, a, b, type, pose?, limitsDeg?, limitsMm? }` inserts `<assembly>.mate(...)`; `relation: 'coupling'` → `{ driven, source, ratio, offset? }` inserts `<assembly>.coupleMates(...)`; `relation: 'transmission'` → `{ name, kind, sourceMate, drivenMates, path, actuator?, input?, output?, ratio?, notes? }` inserts `<assembly>.transmission(...)` (kinds: `direct`, `link-rod`, `four-bar`, `gear-pair`, `belt`, `tendon`).
+- `add_workspace_target({ code, assembly_binding, connector_ref, reachable, toleranceMm? })` — insert `<assembly>.workspace(...)` so `solvedModel(..., { posesGate: 'envelope' })` / `review_cad` can check reachability.
+- `set_scene_return({ code, assembly_binding, mode, poses?, options? })` — replace the final top-level return with `<assembly>.model()` or `<assembly>.solvedModel(poses, options?)`. Use `solvedModel({})` for mate-authored mechanisms so FK and validation run.
+- `add_surface({ kind, code, ... })` — author a NURBS Surface; returns modified code + diagnostics. Chain `.thicken(t)` / `.toShape()` via the existing `add_feature` tool on the returned binding name. Select the path with `kind`:
+  - `add_surface({ kind: 'nurbs', code, controls?, degree?, weights?, knots?, periodic?, section_sketch_ids?, binding_name? })` — insert a `nurbsSurface(...)` or `surfaceFromCurves(...)` call.
+  - `add_surface({ kind: 'boundary', code, curve_bindings, continuity?, sampling?, binding_name? })` — insert a `surfaceFromBoundary([c1, c2, c3, c4], opts?)` declaration: one NURBS filling face through 4 boundary Curve3D refs. `curve_bindings` must be a tuple of 4 Curve3D variable names declared earlier in exact loop order: `[0]` bottom, `[1]` right, `[2]` top, `[3]` left; each is regex-validated. `continuity` accepts a single grade (`'C0' | 'C1' | 'C2'`) applied to all 4 edges or a length-4 per-edge array; defaults to `'C0'`.
+  - `add_surface({ kind: 'trim', code, surface_binding, by_binding, op?, binding_name? })` — insert a `<surface>.trimTo(<by>)` call (`op: 'trim'`) or `<surface>.split(<by>)` tuple (`op: 'split'`). `surface_binding` and `by_binding` must be existing `Surface` variables. `trimTo` keeps the largest imprinted piece; `split` returns both halves as `[Surface, Surface]`. Use to align coincident patch edges before calling `sew`. Emits `feature.surface-trim.no-intersection` if the cutter does not intersect the surface.
+  - `add_surface({ kind: 'sew', code, surface_bindings, tolerance?, require_closed?, binding_name? })` — insert a `sew([...], opts?)` top-level call. `surface_bindings` is an array of `Surface` variable names (from `nurbsSurface`, `surfaceFromBoundary`, or prior `.trimTo()` calls); edges within `tolerance` mm (default 1e-6) are merged. Set `require_closed: true` when authoring a closed solid — the lowerer emits `feature.surface-sew.open-shell` immediately if the result is still open, catching seam gaps early. The result is a `Shape` flowing into booleans and export.
+  - `add_surface({ kind: 'draft', code, target_binding, angle_deg, face, neutral_plane?, pull_dir?, binding_name? })` — insert a `<shape>.draft(angleDeg, opts)` chained call. `target_binding` must be an existing `Shape` variable. `face` accepts a canonical name, label, or FaceQuery (same selector as `shell()`). `neutral_plane` sets the parting-line face (defaults to `face`); `pull_dir` is the demoulding direction `[x, y, z]` (defaults to face normal at lower time). Use after `sew` or on any Shape whose faces must release from a mold. Emits `feature.draft.failed` if the selected faces cannot be drafted at that angle.
+- `add_curve({ kind, code, ... })` — author a 3D Curve3D before the last top-level return; consumable by `variableSweep` as a spine and by `surfaceFromBoundary` as a boundary edge. Select the path with `kind`:
+  - `add_curve({ kind: 'nurbs', code, controlPoints, degree?, weights?, knots?, closed?, binding_name? })` — insert a `nurbsCurve(...)` declaration. Validates Vec3 + control-point count; full validation re-runs via the post-edit evaluateScript pass.
+  - `add_curve({ kind: 'hermite', code, a, b, binding_name? })` — insert a `hermiteG2(a, b)` declaration, where each endpoint is `{ point: Vec3, tangent: Vec3, curvature?: Vec3 }`. Use to bridge two existing curves with G2 continuity — tangent magnitude is the first derivative (not unit length); typical magnitude ~ chord length between endpoints.
+- `add_path_segment({ kind, code, chain_anchor, ... })` — append a curved segment to an EXISTING PathBuilder chain on the named `chain_anchor` variable, injected immediately before any `.close()` in the chain (or before the statement terminator if absent). Select the segment with `kind`:
+  - `add_path_segment({ kind: 'spline', code, chain_anchor, points, tension?, startTangent?, endTangent?, binding_name? })` — inject a `.spline(points, opts?)` call. `points` is a `Vec2[]` (mm) ≥ 2; the path interpolates through every waypoint. Use for freeform 2D outlines authored from measured waypoints (eyewear brow, ergonomic handles). 2D analogue of `add_curve({ kind: 'nurbs' })` for the path-builder lane.
+    - `startTangent?: [number, number]` — optional 2D tangent vector at the first waypoint. Direction matters; magnitude is normalised internally.
+    - `endTangent?: [number, number]` — optional 2D tangent vector at the last waypoint. Same semantics as `startTangent`.
+    - Tangent-constrained fits route through the JS interpolator and round-trip through the kernel so authoritative geometry stays canonical. When both tangent fields are omitted, the call lowers through the existing fast path unchanged.
+  - `add_path_segment({ kind: 'nurbs', code, chain_anchor, controlPoints, degree?, weights?, knots?, binding_name? })` — inject a `.nurbsSegment(controlPoints, opts?)` call. `controlPoints[0]` must match the current pen position within 1e-6 mm; default `degree: 3`. Use when the control net is the natural mental model (programmatic profile generation, NURBS round-tripping).
+  - `add_path_segment({ kind: 'hermite', code, chain_anchor, a, b, binding_name? })` — inject a `.hermiteG2(a, b)` call. Each endpoint is `{ point: Vec2, tangent: Vec2, curvature?: Vec2 }`; `a.point` must match the current pen position. Use for G2-continuous transitions between adjacent path runs (eyewear bridge ↔ brow). 2D analogue of `add_curve({ kind: 'hermite' })`.
+- `trace_from_image({ imageUrl, hint?, features?, maxWaypointsPerFeature?, backend? })` — trace pixel-space features from a reference photo into normalized `[0..1]` waypoints feedable to `add_path_segment({ kind: 'spline' })` / `add_path_segment({ kind: 'nurbs' })` after a scale-anchor conversion to mm. Three backends are dispatched: `opencv` (deterministic; uniform-bg silhouette only), `vision-llm` (vision model), `hybrid` (opencv silhouette + LLM-labeled named points); default `backend: 'auto'` routes by corner-color stddev. Per-feature confidence is reported. Pair with the `kernelcad-trace-from-image` sub-skill (under `kernelcad-from-reference/`) for the conversion-to-mm pipeline. The response also carries a `ledger` classifying every fact `visible`/`inferred`/`assumed`/`missing`; resolve open facts with `resolve_assumptions` before building geometry from it.
+- `resolve_assumptions({ ledgerPath, resolutions })` — confirms (`{ id, confirm: true }`) or overrides (`{ id, value }`) open facts in a `<model>.ledger.json` assumption ledger written by `trace_from_image` or `drawing_to_cad`. Rewrites the ledger file and returns `{ ok, ledger, paramOverrides, diagnostics }` — feed `paramOverrides` straight into `set_param`.
+- `drawing_to_cad({ path? pdfBase64?, page?, projection?, out?, verify? })` — engineering drawing PDF → editable part. Deterministic: reads vector linework (width, dash) and positioned text, classifies visible/hidden/center/dimension/extension lines, reads title-block scale/units/projection symbol, identifies front/top/side views by projection alignment, ties `⌀`/`R`/`4×`/`±`/`THRU` text to its lines (stated values win over drawn lengths), and rebuilds an extruded silhouette or a revolved turned part plus holes. Returns `{ ok, sheet, views, reconstruction, params, script, ledger, fidelity, diagnostics }`; `fidelity.verdict` (match | partial | mismatch | failed) comes from evaluating the script and re-projecting it through the `svg-drawing` view stage (extents, hole diameters, per-view silhouette IoU). `out` writes the script and `<stem>.ledger.json` for `resolve_assumptions`. Diagnostics: `reference.drawing.raster-only` (a scan — use `trace_from_image`), `reference.drawing.view-ambiguous`, `reference.drawing.dimension-unassociated`, `reference.drawing.depth-missing`. See `kernelcad-from-reference` § Engineering drawing PDF.
+- `add_variable_sweep({ code, spine_binding, sections, closed?, continuity?, binding_name? })` — insert a `variableSweep(spine, [{t, profile}, ...], opts?)` declaration before the last top-level return. `spine_binding` and each `sections[i].profile_binding` must already exist as variable names in `code` (regex-validated by the tool). `sections` is a `{ t: number; profile_binding: string }[]` array with strictly increasing `t`, anchored at `t=0` and `t=1`. Orientation is not exposed by MCP until runtime orientation support is wired.
+- `add_text({ mode, code, ... })` — author text before the last top-level return; returns modified code plus diagnostics. Select the path with `mode`:
+  - `add_text({ mode: 'sketch', code, content, size, font?, align?, position?, rotation?, bindAs? })` — insert a `sketch.text(...)` call. Pair with subsequent `.extrude(...)` / `cut(...)` edits to land an engraved or raised text feature.
+  - `add_text({ mode: 'emboss', code, target, textContent, size, depth, face, fontFamily?, align?, anchorU?, anchorV?, rotation?, scaleMode?, bindAs? })` — insert a `<shape>.embossText({...})` chained call. `depth > 0` raises text out of the face (fuse); `depth < 0` engraves text into it (cut). UV anchors are face-local in `[0, 1]`. Use for branded consumer products (Ray-Ban temple, CE compliance marks, appliance model numbers).
+- `project_curve({ code, target, commands, face, scaleMode?, bindAs? })` — insert a `<shape>.projectCurve({ source: { kind: 'sketchCommands', commands: [...] }, face })` chained call before the last top-level return. `commands` is the closed 2D path as plain-number segments (start with `moveTo`, end with `close`). Wraps the curve onto a 3D face along the face normal; returns a `Sketch` — pair with `.extrude(d)` for raised silhouettes or with the parent's `.subtract(...)` for engraved logos. Open-wire `asEdge: true` is not implemented and is rejected at edit time.
+- `remove_feature({ code, match })` — remove one uniquely matched non-return line and return modified code plus diagnostics
+
+### Params
+
+- `inspect({ of: 'params' })` — list symbolic parameters declared on the active evaluated session, including current value, default, type, and metadata.
+- `set_param({ code, param_name, new_value, preview? })` — edit a `param()` default in the source string (source-only; no active-session mutation) and return modified code plus diagnostics. With `preview: true`, return the geometry diff, ledger diff and S1 binding diff from scratch builds instead, without touching the active session or caches.
+
+### Constrained sketches
+
+- `solve_sketch({ entities, constraints })` — solve a 2D POINT/LINE/CIRCLE sketch constraint set; returns `{ ok, entities, constraints }` or validation errors. Side-effect-free.
+- `add_constraint({ constraints?, constraint })` — validate and append one sketch constraint to a constraint list; returns the updated list. Side-effect-free.
+- `inspect({ of: 'constraints', constraints? })` — list supported sketch constraint types (`COINCIDENT`, `DISTANCE`, `HORIZONTAL`, `VERTICAL`, `PARALLEL`, `PERPENDICULAR`, `EQUAL_LENGTH`, `TANGENT`, `RADIUS`, `ANGLE`, `CONCENTRIC`, `SYMMETRIC`) and echo the provided constraint list.
+
+### Sheet metal and SDF probes
+
+- `flatten_pattern({ file? | code?, feature_id? })` — return an unfolded sheet-metal `Region` as JSON with outer ring, holes, and bend lines. Use before CAM/nesting assumptions.
+- `inspect({ of: 'bend-table', file? | code?, feature_id? })` — list sheet-metal bend records with K-factor bend allowance, axis line, and parent options.
+- `evaluate_sdf({ file? | code?, fieldName, point })` — sample a bound SDF field at `[x, y, z]`; returns distance/inside/AABB/kind without materializing the field.
+
+### Assembly and mate tools
+
+- `inspect({ of: 'mates', assembly? })` — return the declared mate records on the active assembly: `{ mates: [{ name, a, b, type, pose?, limitsDeg?, limitsMm? }, ...] }`.
+- `verify({ check: 'assembly-path', file? | code?, assembly?, directions?, disassemblyOrder?, sequence?, threadedFasteners?, stability?, gravity?, fixtures?, contactToleranceMm? })` — straight-line mesh removal with per-part blockers, valid directions and three-way states (removable / blocked / unknown); optional greedy disassembly order/stuck set, and `sequence: true` plans a build sequence with a model stamp. Fastened/fixed clusters become subassemblies planned inside and installed as one unit (`Step.subassembly`); deterministic heuristics order valid steps; stuck sets use a budgeted partition and a sampling fallback whose `search` paths are labelled found-by-search, never proven. Catalog screw/bolt/nut families are automatically `unknown: non-straight-path` until P2. `stability: true` adds the approximate P3 support test: each part's mesh centre of mass must project inside the support polygon of its contacts with already-stable parts; unsupported steps are `needs-hold` and stable steps may carry `heldBy`. `gravity` (default [0,0,-1]) and `fixtures` declare the build orientation and base. This is a projection, not physics or a fixture solve. See `docs/guide/assembly-path.md` for contact policy and limits.
+- `verify({ check: 'assembly', assembly? })` — run the mate-aware validator on the active assembly; returns `{ status, diagnostics, partCount, jointCount }` where each diagnostic carries `code` and `hint` for recovery.
+- `solve_mates({ assembly?, poses? })` — run the mate-graph solver on the active assembly; returns `{ status, poses, iterations? }` with each pose serialized as `{ translation, rotateAxis, rotateDeg }`. The `poses` input overrides mate pose values by mate name; coupled driven mates are expanded from their source mate before solve.
+- `review_cad({ file? | code?, assembly?, includePoseEnvelope?, includeInterference?, samplesPerMate?, combinatorial?, epsilonMm3?, trackConnectors?, timeBudgetMs? })` — evaluate a script, validate its assembly/mate graph, check that mate connectors touch modeled material, sample declared mate limits, optionally run BREP interference checks at those samples, report connector workspace bounds, and return raw diagnostics plus a fitness summary (`fitness.functional`, `fitness.blockingReasons`, `fitness.mechanismSummary`) after an assembly is selected. `samplesPerMate` (integer ≥ 1, default 1) is the **total** sample count per declared-limit mate — `1`/`2` = corners only, `>=3` adds `samplesPerMate - 2` uniform interior points. `combinatorial` (default false) emits all `2^M` min/max corner-tuples across mates with declared limits and is capped at `M <= 8` (`M=9` throws with `combinatorial sampling capped at 8 mates with declared limits`). `review_cad` always returns `repairContext: RepairContext` (see below). It runs within `timeBudgetMs` (default 90 000 ms): once the budget is spent the remaining heavy stages (pose envelope, physical use case, mechanism sweep) are skipped and listed in `skippedStages` (their checks did NOT run; `mechanism` is then `unverified`), and `stageTimingsMs` shows where the time went. On a single part (no `assembly()` captured) it returns the part-level verdict — build, union guard, DFM — as `assembly: 'part-only'` with `mechanism: 'unverified'`, not an error.
+- `design_loop({ goal, attempts, assembly?, preserveInterfaces?, includePoseEnvelope?, includeInterference?, samplesPerMate?, combinatorial?, epsilonMm3?, trackConnectors?, stopOnPass?, consensus?, autoRevise?, allowReviewWarnings?, requireVisualReview?, outputRecordPath?, recordTitle? })` — **prefer for complex multi-part builds**: review ordered attempts, return repair prompts (`nextActionPrompt`) + structured `revisionAssist` (suggestedPatches / autoApplied for repairable feature failures), iterate until `ok` or `convergence.escalate`. Optionally write a Studio-compatible replay record. `samplesPerMate` / `combinatorial` are forwarded to `review_cad` with the same semantics (corners-only at `1`, interior coverage at `>=3`, full-corner sweep at `combinatorial: true`, cap of 8 limited mates). `nextActionPrompt` is rendered from each attempt's `repairContext` — blocking reasons first, then the top three diagnostics with explicit `widen by N` / `narrow by N` directives when a `suggestedDelta` is present. Accepted visual reviews must include `screenshotPath`, non-empty `findings`, and passing checks; otherwise `assembly.visual.review-incomplete`, `assembly.visual.review-evidence-weak`, or `assembly.visual.review-check-failed` keeps the attempt from passing. Set `requireVisualReview: false` only for explicit non-visual batch checks. `consensus: true` treats `attempts` as N independent candidates for the same goal: all run, invalid solids are dropped, and the geometric medoid (lowest mean symmetric Chamfer distance to the others) is selected — ties go to more gates passed, then the shorter script; see `consensus.reason`.
+
+`review_cad` returns this `repairContext` on both the `ok: true` and `ok: false` branches so a calling agent always has a structured handle on what to fix and what to preserve:
+
+```typescript
+interface RepairContext {
+  readonly blockingReasons: readonly string[];    // formatted "code: message" from fitness.blockingReasons
+  readonly topDiagnostics: ReadonlyArray<{
+    readonly code: string;
+    readonly sampleName?: string;
+    readonly mateName?: string;
+    readonly suggestedDelta?: { mate: string; widenBy?: number; narrowBy?: number };
+  }>;
+  readonly preserveInterfaces: readonly string[];
+  readonly designGoal: string;
+}
+```
+
+`suggestedDelta.widenBy` / `narrowBy` are in **degrees** for revolute / cylindrical / pin_slot mates and **mm** for prismatic mates — the same unit as the diagnostic's `limits` field. `topDiagnostics` is capped at three entries, ordered by severity. `preserveInterfaces` and `designGoal` echo the inputs so the repair agent doesn't drop them between attempts.
+
+### Export
+
+- `export({ target: 'model', file? | code?, output_path, format, feature_id?, options?, no_verify? })` — write the script geometry to a file server-side. `format` includes `stl`, `step`, `dxf`, `3mf`, `glb`, `asset-pack`, `obj`, `ply`, `usd`, `svg-drawing`, `pdf-drawing`, `gcode`, `usd-isaac` and the existing robot formats. `obj` writes Wavefront indexed triangle meshes. `ply` writes one Stanford PLY mesh (assembly parts merged in world space, coloured per part). `usd` writes an ASCII USDA mesh stage with millimeter coordinates and Z-up orientation; multi-part scenes keep one named mesh per part. `usd-isaac` remains the separate UsdPhysics assembly exporter with per-link mesh layers. STL and STEP exports run a watertight verify **by default**; a failing mesh still writes the file (so the broken mesh can be inspected) but the call returns `ok: false` with `export.mesh.not-watertight` (open-edge and non-manifold-edge counts + up to 5 crack-cluster locations). STEP exports additionally run a B-rep validity check (BRepCheck) and fail with `export.brep.invalid` on invalid topology such as an unorientable face. Pass `{ no_verify: true }` only to skip the gates. stl/step/3mf/obj/ply/gcode exports also run a **geometry-quality gate** on every solid body (tiny faces below `tiny_face_area_mm2`, default 0.01 mm²; short edges below `short_edge_length_mm`, default 0.1 mm): `qualityGate: 'warn'` (default) exports and returns `geometryQuality { ok, tinyFaces, shortEdges, worst, thresholds, parts }` with warn diagnostics `export.geometry-quality.tiny-faces` / `export.geometry-quality.short-edges`; `'block'` fails the call and writes nothing; `'off'` skips it. Returns `{ ok, output_path, byte_count, feature_count, format, geometryQuality?, diagnostics }`. `feature_count` is the total features in the script, not the count contributing to the exported shape.
+
+  **Per-format options** (passed via `options`):
+  - `stl` — `verify?: boolean` (default `true`): the watertight verify gate. Equivalent to the top-level `no_verify: true` when set to `false`.
+  - `gcode` — `printer?: string`, `layerHeight?: number` (mm), `infill?: number` (percent), `supports?: boolean`, `material?: 'pla' | 'petg'`; requires installed OrcaSlicer. Optional `gcode_stats` contains header provenance and slicer predictions.
+  - `step` — `unit?: 'mm' | 'cm' | 'in'`; `verify?: boolean` (default `true`): B-rep validity and downstream mesh watertightness checks. Set `false` to keep STEP bytes without these diagnostics.
+  - `dxf` — `unit?: 'mm' | 'cm' | 'in'` (default `mm`); `tolerance?: number` (chord tolerance for polyline flattening; mm; default 0.05); `layers?: DxfLayerSpec[]` (named layers for cut profiles; bend lines always emit on a dedicated `BEND` layer). Output is `LWPOLYLINE`-only; circular edges stay exact arcs and circles as vertex bulges. Sources: a returned Region or a sheet-metal part (flat pattern); a flat part — plate, panel, extruded profile, in any orientation — exports its outline and holes in its own plane, moved so the outline starts at (0, 0); `section?: { axis: 'x' | 'y' | 'z', at: number }` exports the cross-section of any part at that plane in world coordinates (plans, floor plans, profiles). A multi-part model (a CNC cut list) needs every part flat: `output_path` gets all parts side by side, one layer per part, and `parts/<part>.dxf` holds one file per part (reported in `part_files`); `layout?: 'per-part' | 'sheet'` (default `per-part`; `sheet` writes the combined sheet only). With `section`, a multi-part model writes one file, one layer per part. Any other part fails with `export.dxf.non-planar`; its hint names `section`, `flatten_pattern` and STEP/STL.
+  - `3mf` — `printUnit?: 'mm' | 'cm' | 'in'` (default `mm`); `embedSource?: boolean` (when `true`, the source script is attached to the 3MF under `Metadata/source.kcad.ts`). Slicer-ready options: `arrange?: 'none' | 'plate' | 'assembled'` (default `none` = modelled positions; `plate` = one build item per part, dropped to Z=0 and packed on the `printer` bed without overlap; `assembled` = one multi-part object for multi-colour prints, dropped to Z=0 and centred); `orient?: boolean` (`plate` only: largest flat face down); `slicer?: 'generic' | 'bambu' | 'orca' | 'prusa'` (default `generic`; the others add a per-object name + filament-slot sidecar under `Metadata/`, slot N = the Nth distinct colour/material); `printer?: string` (printer profile id, default `generic-fdm`; sets the `arrange` bed and the `slicer` default; list them with `kernelcad print printers`, see the kernelcad-print skill; an unknown id is refused with the valid ids). `printUnit` rescales the written numbers to match the declared unit (a 10 mm cube is `1` in `cm`). With `arrange`, parts that do not fit the bed are still written and reported as `warn` diagnostics `export.3mf.plate-overflow` (parts past the bed edge, with the needed footprint) or `export.3mf.exceeds-bed` (a part or assembled object larger than the bed or taller than the build height); the hint names the smallest bundled profiles the layout fits on. Colours are core-spec `<basematerials>` named by the part's `material` (e.g. `pla`) or the part name. Watertightness is verified before write; non-manifold meshes fail with `export.3mf.not-watertight`. Stress-graded infill: `infill?: { fromFea: '<study>' | true, bands?: [{ name, fromYield, densityPercent }], pattern?: string, cellMm?: number }` solves the script's `feaStudy` (requires the local CalculiX + gmsh toolchain; without it the call fails with `fea.solver.unavailable` and writes nothing) and writes modifier volumes, each with its own sparse infill density (slicer defaults to `orca`, the Orca/Bambu format; `slicer: 'prusa'` writes PrusaSlicer's format instead, so pick the slicer the file will be opened in). The result adds `infill { bands, saving, fea, images { heatmap, bands, cutaway } }`; recipe `stress-graded-infill-fdm`.
+  - `glb` — `axis?: 'y-up' | 'z-up'` (default `y-up`; world-units convention is mm). `draco?: false` is reserved for a follow-up slice; passing `draco: true` is a static type error today and a runtime `export.glb.draco-glass-conflict` if the type is widened upstream.
+  - `asset-pack` — a deterministic zip named from `meta({ id })` (else a slug of the asset name or file name). Contents: `<id>.kcad.ts` when the SPDX licence allows source distribution, `<id>.glb` at the script's default parameters (named materials and mesh stats), `<id>.params.json`, `README.md` (knobs, presets, stats, three.js / Unity / Blender load notes), `LICENSE.txt`, `index.html` (a self-contained three.js viewer) and `manifest.json` (sha256 per file plus the generator version). No extra option keys.
+  - `obj` — Wavefront OBJ triangle mesh; coordinates are millimeters and face indices reference the shared vertex list.
+  - `ply` — Stanford PLY triangle mesh in millimeters, Z-up, for MeshLab, Blender, trimesh and Open3D. `encoding?: 'binary' | 'ascii'` (default `binary`, written as `format binary_little_endian 1.0`); `normals?: boolean` (default `true`: per-vertex `nx ny nz`, vertices split where faces meet at more than 30° so flat faces stay flat and curved faces stay smooth); `colors?: 'vertex' | 'face' | 'none'` (default `vertex`: `uchar red green blue` per vertex, read by Blender; `face` writes them on the face element for MeshLab / trimesh). The colour is the part's `.finish()` / `.material()` base colour, else its `.color()` token or hex (same lineage as GLB and 3MF), else the viewport default grey. An assembly is merged into one file with every part placed in world space; `comment part <i> <name>` header lines list the parts in file order. Faces are `property list uchar int vertex_indices` triangles from the same export mesher as STL / OBJ / USD. An unknown key or value fails before the script runs with `export.ply.invalid-options`.
+  - `usd` — ASCII USDA triangle mesh; stage metadata declares `metersPerUnit = 0.001` and `upAxis = "Z"`. This is polygon mesh USD, not analytic B-rep. NVIDIA's usd-brep BrepArray is not emitted because its custom schema requires carrying full B-rep topology and curve/surface geometry; the current export mesh API exposes tessellated vertices and triangles only. The existing `usd-isaac` output is a separate physics-stage feature.
+  - `svg-drawing` — third-angle engineering-drawing sheet (front/top/left + isometric, hidden edges dashed, tangent edges thin, overall bbox dimensions, title block). `sheet?: 'a4' | 'a3'` (default `a4` landscape); `modelName?: string` (title block; defaults to the script file name); `date?: string` (title block; defaults to a placeholder for deterministic output). Accepts single bodies and assembly Scenes — parts project together so inter-part occlusion renders as hidden lines. Pass `exploded: { factor, mode }` to explode the isometric cell (`mode` is `mate-axis` or `radial`); `balloons: true` draws one balloon per BOM unique item (numbers match `inspect({ of: 'bom' })` item numbers); `partsList: true` draws item/name/qty/material above the title block. A script with no assembly fails explode with `render.explode.no-assembly` and warns `drawing.balloons.bom-unavailable` if balloons were requested. See `kernelcad-drawings` for the full sheet anatomy.
+  - `pdf-drawing` — the same sheet as a printable vector PDF on a standard sheet, in one call. `sheet?: 'a4' | 'a3' | 'a2' | 'a1' | 'a0' | 'ansi-a' … 'ansi-e' | 'auto' | 'auto-ansi'` (default `a3` landscape; `auto` picks the smallest sheet that holds the views at 1:1); `projection?: 'third' | 'first'`; title-block fields `title?`, `partName?`, `material?` (default: the assembly parts' shared material), `revision?`, `date?` (default today). `autoAnnotate` is on by default (datums, hole callouts, GD&T, overall size) unless `annotations` are given; `sections`, `exploded`, `balloons`, `partsList` work as for `svg-drawing`, and section views stay inside the named sheet. Returns `drawing_report` like `svg-drawing`.
+
+  PBR materials propagate from `.finish(name)` and `.material({...})` calls in the script (a finish expands to the same PBR record) through `MeshPhysicalMaterial` into the glTF `KHR_materials_*` extensions (transmission / clearcoat / anisotropy / sheen / volume / ior). 3MF carries the `baseColor` only (the format has no rich PBR slot); PLY carries it as 8-bit RGB per vertex or per face. STEP carries a flat per-part colour only — finish/PBR surface character is a render-time property and is not written to STEP. DXF carries no material.
+
+- `export({ target: 'part', file? | code?, part?, output_path?, output_dir?, no_verify? })` — export solved-assembly parts as individual binary STL files in their modeled (world-frame) positions. The script must return `assembly.solvedModel(...)` / `assembly.model()`. Pass `{ part, output_path }` for one part, or `{ output_dir }` (with `part` omitted or `'all'`) for all parts — files land at `<output_dir>/<part>.stl`. A watertight verify runs on every exported mesh **by default**; a failing part still writes its file (so the broken mesh can be inspected) but fails the call with `export.mesh.not-watertight` (open-edge count + up to 5 crack-cluster locations). Pass `{ no_verify: true }` only to inspect broken meshes. Unknown part names fail with `export.part.not-found` listing the valid names. The same `qualityGate` / threshold keys screen each part (reported per part in `geometryQuality.parts`). Returns `{ ok, written: [{ part, output_path, byte_count, watertight }], geometryQuality?, diagnostics }`.
+
+- `inspect({ of: 'part-stats', file? | code? })` — list solved-assembly parts with print-prep stats: name, exact world-frame bounding box (from the export tessellation), volume (mm³), surface area (mm²), and export triangle count (same mesher as the STL exporter, so the numbers match `export({ target: 'part' })` exactly). Returns `{ ok, parts: [{ name, bbox, volumeMm3, surfaceAreaMm2, triangleCount }], diagnostics }`.
+- `inspect({ of: 'bom', file? | code?, assembly? })` — bill of materials over `assembly.model()`/`solvedModel()`: one row per DISTINCT part, grouped by geometry/catalog identity (never by name) so pattern-placed and repeated-name instances collapse into one row with a real `quantity`. Each row: `{ item, name, quantity, kind: 'fabricated'|'purchased', material, density, massGPerUnit, massGTotal, bboxMm, process: '3d-print'|'cnc'|'sheet-cut'|null, processSource: 'declared'|'inferred'|null, stock?, catalog?, instancePaths }`. `stock` is the declared blank (`bar` length + diameter or rectangular section, `plate` length × width × thickness, `blank` L×W×H, or `filament` diameter), millimetres, and is omitted when the part did not declare one. `material`/`density`/mass are `null` (never a guessed water-density number) when the part has neither `opts.material` nor `opts.density` — flagged by `bom.material.unassigned`. Purchased parts (`lib.fetchPart`/`fetch_part` origin) carry `catalog: { id, vendor, partNumber, source, license }`; missing vendor provenance is flagged by `bom.purchased.catalog-metadata-missing`. Returns `{ ok, rows, totals: { partCount, uniquePartCount, totalMassG }, diagnostics }`. Same numbers as `export({ format: 'bom-csv' | 'bom-json' })` — one computation, two surfaces. Declare with `asm.part(name, shape, { material, process, stock })`. Process omitted = inferred (sheet-metal chain → `sheet-cut`, STEP/STL import → `cnc`, else `3d-print`), and `processSource` says which it was. Purchased rows carry `process: null`. Example: `asm.part('shaft', cylinder(10, 80), { material: 'aluminum-6061', process: 'cnc', stock: { kind: 'bar', lengthMm: 80, diameterMm: 20 } })` or a sheet plate `stock: { kind: 'plate', lengthMm: 200, widthMm: 120, thicknessMm: 3 }`.
+
+- `capture_animation({ file, output_path?, frames_dir?, fps?, no_verify?, verify_every?, focus?, hide? })` — capture the script's `animationView({...})` timeline (see `kernelcad-authoring`) to an MP4 (default) or a PNG frame sequence (`frames_dir`, zero external dependencies; mutually exclusive with `output_path`). **File-only** — there is no `{ code }` mode (the capture engine renders from a file on disk so relative `lib.fromSTEP(...)` imports resolve); passing `{ code }` is refused with `cli.invalid-args`. Animation-pose interference verification runs **by default** (keyframe times + segment midpoints, plus every n-th frame time with `verify_every`); `no_verify: true` skips it. `focus` / `hide` (arrays of feature ids or assembly part names, mutually exclusive — same semantics as `kernelcad render`) isolate parts in the rendered frames for cutaways; visibility is render-only and does NOT affect the pose verification, which always runs against the full model. Returns `{ ok, output_path, frame_count, duration_ms, fps, verified, verify_skipped?, collisions: [{ t_ms, a, b, volume_mm3 }], diagnostics }`. **Collisions do NOT flip `ok`**: a captured artifact with interfering poses is still `ok: true` with `verified: false` and `collisions[]` populated (`animation.collision` diagnostics) — the artifact is the evidence. Only a could-not-capture fault (bad file, build error, no `animationView` record, unsolvable pose, ffmpeg missing, browser bootstrap failure) returns `ok: false` with a `failure_kind` of `model` or `environment`. Like `kernelcad render`, capture drives a headless browser against a running studio dev server (`VITE_PORT` / localhost:5173). CLI equivalent: `kernelcad animate <file.kcad.ts> [out.mp4]`.
+
+- `explode_view({ parts, assembly_order?, mode?, axis?, spacing?, duration_ms? })` — compute a reversible exploded-view plan without changing the model or Studio UI. Supply named part `center` and `size` vectors in mm. Order is the explicit `assembly_order`, then declaration order; unknown refs are reported. `mode: 'axis'` (default) moves successive parts along `axis` (default +Z); `mode: 'radial'` moves each part away from the assembly centroid, with order determining separation distance. Returns `tracks` to assemble, `reverseTracks` to disassemble, and a `cameraPlan` with framing target, distance and start/end keyframes. Apply each part offset through a script `param()` translation and pass the returned scalar keys to `animationView()` before calling `capture_animation`. `cameraPlan` is framing guidance; camera keyframes are not consumed by `animationView` / `capture_animation`. This is a geometric spacing heuristic, not a clearance or assembly-path check.
+
+### Visual preview
+
+- `render_preview({ code? | file?, views?, pose?, focus?, hide?, out_dir?, width?, height?, environment?, shading?, screenshot_timeout_ms?, no_watermark?, no_mechanism_check?, base_url?, explode? })` — render a script to deterministic PNG views and **look at them**: the visual half of the evaluate → render → inspect → fix loop, with **no studio / dev-server precondition**. Pass exactly one of `{ code }` (inline source; relative imports resolve against a temp dir — use `{ file }` for scripts with relative `lib.fromSTEP(...)` imports) or `{ file }`. Renders the canonical engineering views (`front`, `right`, `top`, `iso`; pass `views: ['iso']` for fastest iteration) plus an optional `pose: '<az>,<el>'` arbitrary camera angle. Pass `explode: { factor, mode }` to pull a multi-part assembly apart (`mode`: `mate-axis` default, along parent mate/joint axes, or `radial` from the assembly centroid) — same mesher as `kernelcad render --explode`; a script with no `assembly()` fails with `render.explode.no-assembly`. The render is served from a prebuilt static player on an ephemeral local port automatically (a running studio dev server is used as fallback; `base_url` forces one) — the only environment dependency is playwright chromium (`npx playwright install chromium`). `focus` / `hide` isolate parts, same semantics as `kernelcad render --focus/--hide`. PNGs land in `out_dir` (default: a fresh temp session dir) and come back as absolute paths with per-view camera descriptions (kernelCAD is Z-up: front looks along +Y, right along -X, top straight down, iso from the front-right-above octant). Mechanism truth runs first with `kernelcad render` parity: a broken mechanism still renders but every tile is watermarked **MECHANISM BROKEN** (`KERNELCAD_RENDER_STRICT=1` refuses instead) — read `{ mechanism, mechanism_failure_codes }`. The probe runs full BREP interference sweeps and can dominate latency on large assemblies — pass `no_mechanism_check: true` for fast visual iteration (the preview then reports `mechanism: 'unverified'`; ignored under strict mode, where the gate always runs). `shading: 'flat'` switches to face normals to expose tessellation; `screenshot_timeout_ms` raises Playwright's 30 s screenshot deadline for heavy lofts. Returns `{ ok, images: [{ name, path, description }], out_dir, bounds, mechanism, render_source, render_ms, diagnostics }`. Paths are local to the machine running the MCP server: local stdio clients read them directly; hosted/remote clients should use `open_in_studio` instead. CLI equivalents: `kernelcad render <file>` (composite), `kernelcad render --explode <factor> --explode-mode radial|mate-axis`, `kernelcad render inspect <file> <outDir>` (manifest bundle + mask/depth/normals channels).
+
+### DFM gates
+
+- `verify({ check: 'edge-radius', file? | code?, min_radius_mm?, max_radius_mm?, require_edge_break?: 'external'|'internal'|'all', feature_id?, assembly?, parts?, edges?, faces? })` — general final-BREP edge-break/radius spec: sharp convex/concave edges, analytic cylinder/torus fillets and sphere junctions, heuristic planar chamfer strips (no radius). Selectors/points are part-local. Unknown/empty coverage cannot pass; min/max alone apply to existing fillets. See `docs/guide/edge-radius-check.md` and `examples/edge-radius/rounded-block.kcad.ts`.
+- `verify({ check: 'geometry-quality', file | code, feature_id?, tiny_face_area_mm2?, tiny_face_relative?, short_edge_length_mm?, symmetry_tolerance_mm?, mesh_deflection_mm?, asserted_plane?: { origin, normal } })` — one solid's BREP tiny-face/short-edge findings with rebuild-scoped ids and model-frame locations; sampled mirror symmetry about centroid XY/YZ/XZ and inertia-axis planes with maximum deviation/witnesses. Defaults: 0.01 mm², relative 0 (fraction of total surface area, ORed with absolute area), 0.1 mm edges, 0.05 mm symmetry tolerance, absolute mesh deflection tolerance/4 (must be <= tolerance/2). Zero disables a topology threshold. Candidate matches are discovery; an asserted plane gates `ok`. This is a local sampled tessellation screen, not exact BREP symmetry or manufacturing certification. See `docs/guide/geometry-quality.md`.
+
+- `verify({ check: 'dfm', file? | code? })` — run the print-readiness gates declared by `dfmSpec()` in the script: part-pair clearance (exact BREP distance), minimum wall thickness (inward ray sampling), void/channel topology (voxel flood-fill), and with `process: 'fdm'` the FDM printability check (overhangs, bridges, nozzle-relative walls and features, bed contact, bed fit, ranked print orientations). Returns the flattened report `{ ok, clearance, walls, voids, fdm?, timings, diagnostics }` (`fdm[]` only when declared); errors if the script declares no `dfmSpec`. Iteration notes:
+  - **Enforcement is inherited.** ANY `evaluate_script` call on a script that declares a `dfmSpec(...)` runs the same gates and fails on the same diagnostics (the CLI surface is `kernelcad dfm <file>`). `verify({ check: 'dfm' })` exists to surface the full report struct — `clearance[]` pair statuses, per-part `walls[]`/`voids[]`, `timings` — which the `evaluate_script` envelope omits; it is not an opt-in switch.
+  - **Gates re-run on every evaluate call** — budget up to ~10 s extra per call on large assemblies (per-phase wall time is in `timings`).
+  - **Dfm-only failures keep the MCP session alive**: when the build succeeded and only gate diagnostics are fatal, the active session is retained/refreshed, so the session-dependent tools stay usable while iterating on a fix. Genuine build failures still clear it.
+  - `'unknown'` clearance entries mean the measurement failed (kernel error) — warn-only, never flips `ok`. Locations embedded in diagnostics are world-frame; the raw `walls[]`/`voids[]` structs are part-local.
+
+### Requirements ledger
+
+- `verify({ check: 'requirements', file? | code?, requirements?: [{ name, predicate }] })` — build the script and return the one requirements ledger. Script declarations (`require()` in the `.kcad.ts`) and call-time external requirements are measured together; external entries are tagged `source: 'external'` and never persisted. With `check` omitted, passing `requirements` alone is the verification. Each entry is `{ name, source, status: pass | fail | not-evaluated, measured, limit, margin, selections[] (S1 fingerprints), message? }`; `ok` is true only when every entry passed (a `not-evaluated` entry is never green). Use it when an eval task or customer spec supplies the acceptance criteria separately from the design script. `dfmSpec`, gated `feaStudy.minSafetyFactor` and mechanical intent report into the same ledger on every `evaluate_script`, and `design_loop` grades attempts from it.
+
+## Topology references — the `@kc[...]` grammar
+
+kernelCAD addresses faces, edges, vertices, and connectors as stable string references that survive most upstream edits. The grammar is kernelCAD's topology-reference language; it is emitted by introspection tools and accepted by every tool that consumes a face / edge / connector handle.
+
+### Form
+
+```
+ref       ::= '@kc[' path ']'
+path      ::= owner ( '/' kind ( '/' segment )* )?
+owner     ::= name | name '[' digit+ ']'
+kind      ::= 'face' | 'edge' | 'vertex' | 'connector' | 'sketch' | 'part' | 'solid'
+segment   ::= name | name '[' digit+ ']'
+name      ::= [A-Za-z][A-Za-z0-9_-]*
+modifier  ::= '#' ( 'normal' | 'axis' | 'center' )
+```
+
+The seven kinds carry distinct semantics:
+
+| Kind | Refers to |
+|---|---|
+| `face` | A single face of a shape (canonical or user-labeled). |
+| `edge` | A single edge of a shape (canonical box / cylinder / sketch-derived names). |
+| `vertex` | A single vertex. (v1: surface acceptance; resolver lift queued for v2.) |
+| `connector` | A named connector frame on an assembly part. |
+| `sketch` | A captured `sketch()` binding by name. |
+| `part` | A named assembly part (default kind when only `@kc[<owner>]` is given). |
+| `solid` | A top-level captured solid feature. |
+
+Three v1 modifiers attach a sub-aspect of the named entity:
+
+| Modifier | Meaning |
+|---|---|
+| `#normal` | The face-normal vector at the entity. |
+| `#axis` | The principal axis vector (cylinder edge, axis connector). |
+| `#center` | The entity's centroid. Default when no modifier is supplied on a `face` ref. |
+
+`segment` and `owner` accept an optional `[N]` index — used by batched feature emitters (`mountingHoles[2]`) and by indexed array entries inside the path. Spec §3.1 indexed segments survive round-tripping through `formatTopoRef`.
+
+### Reserved characters
+
+These characters are reserved by the grammar wrapper and the path separators; the capture-time uniqueness validator rejects any face label, part name, connector name, or feature name containing one of them:
+
+```
+. / * ? , # [ ] @ <whitespace>
+```
+
+Renaming offenders is the recovery path; the gate does not loosen.
+
+### Examples
+
+```
+@kc[base/face/top]                      # canonical face on a primitive
+@kc[base/face/lid]                      # user-declared faceLabel
+@kc[base/edge/top-front]                # canonical box edge
+@kc[shoulder-servo/connector/flange]    # connector on a named part
+@kc[hole1/face/wall]                    # ordinal feature ref: hole #1's wall
+@kc[mountingHoles[2]/face/wall]         # indexed access into a batched feature
+@kc[base/face/top#normal]               # sub-aspect modifier — face-normal vector
+@kc[servo/edge/top#axis]                # cylinder cap edge as an axis vector
+@kc[base/part]                          # bare part ref (kind defaults to 'part')
+```
+
+### When to use refs vs structured forms
+
+| Situation | Form |
+|---|---|
+| Agent passing a face/edge/connector handle between tools | `@kc[...]` string (canonical handoff) |
+| Output of `inspect({ of: 'faces' })` / `inspect({ of: 'edges' })` / `inspect({ of: 'assembly' })` | always emits `ref: '@kc[...]'` strings |
+| Hand-authored `.kcad.ts` against canonical names | bare canonical name (e.g. `'top'`) — still accepted |
+| Programmatic / batch construction of selectors | structured form (e.g. `{ kind: 'face-center', name: 'lid' }`) — still accepted |
+| Cross-tool agent emission and resolution | `@kc[...]` string — most stable, lineage-walked first, snapshot-fallback second |
+
+The structured forms remain valid escape hatches. The `@kc[...]` string form is the preferred handoff because it survives the resolver's two-path lookup (lineage first, then geometry snapshot) and round-trips cleanly through MCP tool envelopes.
+
+## Tools that emit refs
+
+| MCP tool | Field |
+|---|---|
+| `inspect({ of: 'faces' })` | `faces[i].ref` (string) and `faces[i].lineage` (struct). The legacy `faces[i].id: 'f<idx>'` stays one release with `deprecated: true`. |
+| `inspect({ of: 'edges' })` | `edges[i].ref` (string). |
+| `inspect({ of: 'assembly' })` | Topology-bound connector summaries carry `origin: '@kc[<part>/<kind>/<name>]'` plus a `resolved: [x, y, z]` numeric vec3 for direct downstream consumption. |
+
+### Tools that accept refs
+
+| MCP tool | Input slot |
+|---|---|
+| `add_mate` | `a` / `b` accept the legacy `'<partName>.<connectorName>'` dot form OR `'@kc[<partName>/connector/<connectorName>]'`. |
+| `add_connector` | `origin` accepts `[x, y, z]`, a structured `ConnectorOrigin`, OR `'@kc[<part>/face/<name>]'` (face-center default; `#normal` for the face-normal direction). |
+| `add_feature` | When the feature line includes a face selector (`hole`, `holes`, `cutout`, `shell`, `fillet`, `chamfer`), the selector accepts `@kc[<owner>/face/<name>]` strings, structured `{ face: <name> }` forms, or bare canonical names. |
+| `query({ mode: 'resolve' })` | The discovery primitive — pass `{ ref, file? | code? }` to confirm a ref still resolves on the current geometry. |
+
+Capture-time `Connector.origin` (the script API on `partRef.connector(name, opts)`) also accepts `origin: '@kc[<part>/face/<name>]'` directly; the ref is normalised to a structured `ConnectorOrigin` at capture-time so downstream review tools see the same shape they always did.
+
+### Resolution semantics
+
+When a ref is consumed, the resolver tries two paths in order:
+
+1. **Name-propagation** (primary). The ref's `<owner>/<kind>/<name>` tuple matches against the lineage map carried on every shape — canonical names, user-declared `faceLabels`, feature-kind + ordinal + label combinations.
+2. **Geometry-snapshot fallback**. When lineage returns zero hits but a snapshot captured at the ref's original creation still matches a current face within tolerance, the resolver recovers the entity geometrically and surfaces an info-severity warning.
+
+Three diagnostic codes surface through `KernelError.hint` and the MCP error envelope:
+
+- `feature.face-ref.not-resolvable` — both paths returned zero. Hint lists nearest current-face candidates.
+- `feature.face-ref.ambiguous-after-split` — lineage matched N >= 2 surviving descendants. Hint lists the N candidate refs.
+- `feature.face-ref.snapshot-fallback-used` — info-severity; resolution went through the snapshot path and is provisional. Tighten the ref or accept the warning.
+
+Read the hint — it carries the recovery move (paste a candidate ref, narrow the selector, or accept provisional resolution).
+
+### `query({ mode: 'resolve' })` — discovery primitive
+
+`query({ mode: 'resolve', file? | code?, ref })` is the tool an agent calls when it already holds a ref (typically from a prior `inspect({ of: 'faces' })` / `inspect({ of: 'edges' })` / `inspect({ of: 'assembly' })` call) and wants to confirm the ref still resolves on the current geometry, or wants to inspect what an upstream tool emitted.
+
+```json
+{
+  "name": "query",
+  "input": { "mode": "resolve", "code": "<.kcad.ts source>", "ref": "@kc[base/face/top]" },
+  "output_ok": {
+    "ok": true,
+    "ref": "@kc[base/face/top]",
+    "entity": { "kind": "face", "hash": "...", "path": "lineage" }
+  },
+  "output_ambiguous": {
+    "ok": false,
+    "errorCode": "feature.face-ref.ambiguous-after-split",
+    "candidates": ["@kc[base/face/top-1]", "@kc[base/face/top-2]"],
+    "errorHint": "..."
+  }
+}
+```
+
+`entity.path` reports which resolver path succeeded — `'lineage'` (preferred, stable) or `'snapshot'` (geometric fallback, provisional). Use the ambiguity / not-resolvable hint to repair the ref, then re-call.
+
+### Notes on script API vs MCP tools
+
+`arm.transmission(name, { kind, sourceMate, drivenMates, actuator?, input?, output?, path, ratio?, notes? })` is script API and can be authored durably through `add_mate({ relation: 'transmission' })`. Use it when `coupleMates(...)` declares a driven mate. `review_cad` emits `assembly.transmission.missing-for-coupled-mate` if a coupled mate has no matching transmission path, and `assembly.transmission.path-disconnected` when consecutive transmission `path` parts are separated at the current or any sampled mate-limit pose.
+
+For the full mechanism build loop (robot arms, grippers, linkages), see `kernelcad-assemblies`.
+
+## Query DSL — the `@kcq[...]` grammar
+
+`@kcq[...]` is the string surface for composed Queries. Use `@kc[...]` when one entity is addressable by `<owner>/<kind>/<name>`; use `@kcq[...]` when set algebra or filter composition matters. Both surfaces dispatch through the same evaluator (strings-as-sugar), so the resolved entity set is identical regardless of which form the agent reaches for.
+
+### Grammar
+
+```
+queryRef    ::= '@kcq[' expr ']'
+expr        ::= union | intersection | subtraction | filter | empty
+empty       ::= 'nothing()' | 'everything(' entityKind ')'
+union       ::= 'union(' exprList ')'
+intersection::= 'intersection(' exprList ')'
+subtraction ::= 'subtraction(' expr ',' expr ')'
+filter      ::= entityKind '(' filterList? ')'
+entityKind  ::= 'face' | 'edge' | 'vertex' | 'connector' | 'part' | 'solid'
+filterList  ::= filterExpr (',' filterExpr)*
+filterExpr  ::= 'createdBy(' string (',' entityKind)? ')'
+              | 'newSince(' string (',' entityKind)? ')'
+              | 'derivedFrom(' string (',' entityKind)? ')'
+              | 'ownedByPart(' expr ')'
+              | 'ownerPart(' expr ')'
+              | 'containsPoint([' x ',' y ',' z '])'
+              | 'closestTo([' x ',' y ',' z '] (',' k)?')'
+              | 'geometryType(' geomType ')'
+              | 'withLabel(' string ')'
+              | 'withFeatureName(' string ')'
+              | 'nthElement(' expr ',' integer ')'
+              | expr
+```
+
+### Examples
+
+```
+@kcq[face(createdBy("arm"))]                           # equivalent to kc.q.face(kc.q.createdBy('arm'))
+@kcq[face(newSince("box_1"))]                          # faces that do not descend from box_1
+@kcq[edge(derivedFrom("fillet_1"))]                    # edges that descend from fillet_1's output
+@kcq[face(createdBy("arm"), closestTo([0,0,10]))]      # narrowed face
+@kcq[union(face(createdBy("a")), face(createdBy("b")))]
+@kcq[subtraction(face(createdBy("a")), face(withLabel("lid")))]
+@kcq[nothing()]                                        # empty
+@kcq[everything(face)]                                 # all faces
+```
+
+### Coexistence with `@kc[...]`
+
+The MCP-boundary dispatcher (`parseAnyTopologyInput`) distinguishes by prefix:
+
+- `@kc[...]` → `parseTopoRef` → `topoRefAsQuery` → `Query<unknown>` (simple-ref path)
+- `@kcq[...]` → `parseQuery` → `Query<unknown>` (composed-query path)
+- JSON-AST object → reconstructed from `ast` → `Query<unknown>`
+- Query value → passthrough unchanged
+
+Both surface syntaxes resolve through the same evaluator; the kernel sees one type either way. Diagnostic prose pins on the `@kc[...]` form by default (more compact and prose-pasteable); reach for `@kcq[...]` when the build needs set algebra or multi-filter narrowing. `Query.toString()` always serialises to the canonical `@kcq[...]` form, so `parseQuery(q.toString())` round-trips structurally.
+
+## Cookbook — Query DSL inspect-first pattern
+
+### Q-S6 — Inspect first, build after
+
+The canonical agent flow whenever the expected entity count is uncertain: express the Query, inspect the AST or the canonical `@kcq[...]` descriptor via `.toString()`, then narrow or consume. `Query<T>` values are lazy — construction is cheap and side-effect-free, so an agent can build many candidate Queries and reason over their descriptors before committing.
+
+```typescript
+// 1. Express the candidate Query.
+const candidates = q.face().and(q.withFeatureName('box1'));
+
+// 2. Inspect the descriptor without resolving. `.toString()` emits the
+//    canonical `@kcq[<expr>]` form per the grammar above. For
+//    `q.face().and(q.withFeatureName('box1'))` the descriptor is
+//    `@kcq[intersection(everything(face), withFeatureName("box1"))]`,
+//    which round-trips via `parseQuery(...)` to a structurally-equal AST.
+const descriptor = candidates.toString();
+
+// 3. The AST is plain data; the agent can walk it to read the filters at
+//    each level.
+candidates.ast;     // { op: 'intersection', queries: [...] }
+
+// 4. Narrow further or consume — both stay on the same Query value.
+const narrowed = candidates.and(q.withLabel('lid'));
+
+// 5. JSON.stringify round-trips cleanly; chainable methods are
+//    non-enumerable so the wire form carries only data fields. The
+//    `query({ mode: 'evaluate' })` MCP tool (ships in a follow-on slice) consumes
+//    exactly this JSON shape from outside the script.
+JSON.stringify(narrowed);   // { "_kind": "kc.query", "target": "face", ... }
+```
+
+See `cookbook/snippets/Q-S6-inspect-first-build-after.kcad.ts`.
+
+## Verification gates
+
+| Gate | Pass criterion |
+|------|----------------|
+| G-mcp-reachable | `kernelcad mcp` is listening; tool calls return JSON-RPC results not transport errors |
+| G-feature-id-stable | After re-evaluating the same script, `inspect({ of: 'features' })` returns the same IDs (deterministic capture) — if not, the script is non-deterministic and should be fixed before using MCP edits |
+| G-edit-then-reeval | After `add_feature` / `add_surface({ kind: 'nurbs' })` etc., re-run `kernelcad evaluate` on the resulting source to confirm the edit landed and evaluates clean |
+| G-diagnostic-hint-cited | When relaying an MCP error to the user, include the `hint` field — it points at the fix |
+
+## Related skills
+
+### `mesh_boolean`
+
+Use this when the user wants to union, subtract, or intersect two imported
+triangle mesh solids. Each operand accepts a server-side `{ file }` path or
+base64 `{ data }`, with STL, OBJ, and 3MF supported. The result includes its
+volume in mm³, triangle count, and a binary STL payload; pass the payload to the
+import tool as base64 content to reopen it as a mesh body. Inputs must be
+closed, consistently oriented 2-manifold meshes. Open or non-manifold input
+returns an error. The result remains faceted and has no editable B-rep face or
+edge references.
+
+- `kernelcad-authoring` — the API surface MCP operates on.
+- `kernelcad-params` — `set_param({ code, param_name, new_value })` is the source-edit path for symbolic parameters.
+- `kernelcad-features` — face-ref queries and add-feature edits route through MCP.
+- `kernelcad-assemblies` — assembly-specific MCP tools (`inspect({ of: 'assembly' })`, `review_cad`, `design_loop`) and the mechanism build loop.
+- `kernelcad-repair` — the bounded repair loop on top of `why_did_this_fail` + `repair_script`, for when an evaluation failed.
+
+### G-code export receipts
+
+### NURBS inspection
+
+`inspect_nurbs({ file|code, feature_id? })` reads authored NURBS curve data captured from a `nurbsCurve`/`spline3d` feature, including degree, knots, multiplicities, poles, weights, and parameter range. It does not extract exact B-rep edge or face NURBS surfaces.
+
+### Ray picking
+
+`ray_pick({ file|code, origin, direction, studio_url, session, feature_id? })`
+casts a ray in model units (mm), normalizes its nonzero direction, and returns
+the first hit on each face, nearest first. Pass the local Studio URL and the
+session token issued for the same script; the tool reads the current
+`model_generation`. Every hit includes `set_selection`, a complete argument
+object that can be passed directly to `set_selection`. `feature_id` must name a
+displayed terminal shape; intermediate features have no current viewer
+`shapeIndex`. Intersections use the viewer's per-face tessellation, so curved
+surface points and normals are approximations at that mesh resolution. Empty
+intersections return `hits: []`.
+
+`export({ target: "model", format: "gcode", file, output_path, options })`
+uses an installed OrcaSlicer CLI. Successful exports include optional
+`gcode_stats` with header generator identity, estimated time, filament grams
+and meters, layer count and max Z. These are slicer predictions; unavailable
+fields are omitted. Export alone does not contact a printer.
+
+Build receipts from full evaluation, source edits, exports and previews include `sceneSummary`. It measures the returned root, excluding later helper geometry. Assembly volume and faces sum each part (overlapping volumes count per part); size covers their modeled world positions. `valid` checks BREP geometry separately from DFM and mechanism verdicts. A dry run or a failed build reports null measurements; null never means zero or valid. `execute_cookbook` carries the same summary in its nested `evaluate` result.

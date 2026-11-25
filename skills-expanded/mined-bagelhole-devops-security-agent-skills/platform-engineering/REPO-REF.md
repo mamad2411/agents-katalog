@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bagelhole/devops-security-agent-skills (path: devops/platforms/platform-engineering/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build internal developer platforms (IDPs) with self-service infrastructure, golden paths, and developer portals using Backstage, Crossplane, and score.

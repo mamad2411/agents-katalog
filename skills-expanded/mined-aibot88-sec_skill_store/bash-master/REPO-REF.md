@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/bash-master/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Expert bash/shell scripting system across ALL platforms. PROACTIVELY activate for: (1) ANY bash/shell script task, (2) System automation, (3) DevOps/CI/CD scripts, (4) Build/deployment automation, (5)

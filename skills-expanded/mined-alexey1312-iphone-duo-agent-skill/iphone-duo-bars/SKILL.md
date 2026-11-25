@@ -1,0 +1,234 @@
+---
+name: iphone-duo-bars
+description: >-
+  Prepare navigation bars, toolbars and tab bars for iPhone Duo's vertical bars,
+  where controls move to the side of the outer display and of the inner display in
+  landscape. Use when a developer asks about vertical bars, bar item ordering, back,
+  custom back or close button placement, pinned trailing or prominent actions,
+  toolbar items without titles, axisBehavior, symbol-only items and badges, custom
+  views in toolbars, toolbarVerticalEdge or verticalBarEdge, overflow menus and
+  ToolbarOverflowMenu, visibilityPriority, toolbar or tab bar compression, custom
+  UIToolbar or UINavigationBar instances, hand-built tab bars or bars that must stay
+  custom, sheet toolbars and presentationPlacement, backgrounds under the bar with
+  backgroundExtensionEffect, or opting out with toolbarVerticalBehavior. Covers
+  SwiftUI and UIKit, based on Apple's "Raise the bar with iPhone Duo", "Preparing
+  your app for iPhone Duo" and Apple engineers' forum answers.
+---
+
+# iPhone Duo vertical bars
+
+On the outer display and on the inner display in landscape, iPhone Duo moves controls
+that normally sit at the top and bottom to the side, keeping vertical space for content
+and controls within reach. Only the inner display in portrait keeps horizontal bars.
+Top to bottom the side stack is Dynamic Island, status bar, toolbar (with navigation
+buttons), tab bar. (Tech Talk 111462, 0:28; Tech Talk 111466, 5:07; HIG *Designing for
+iPhone Duo* › Vertical controls)
+
+Read `references/vertical-bars.md` for the code; `references/api-availability.md` for
+which parts compile with the selected SDK — `axisBehavior`, `toolbarVerticalEdge`,
+compression behavior and the opt-out need the **iOS 27.1 SDK**, which ships with
+Xcode 27.1, so on that toolchain they are a deployment-target question rather than a
+blocked one; titles, symbols, badges, placements, `visibilityPriority` and
+`ToolbarOverflowMenu` are iOS 27.0 and work on either. `verticalBarEdge` has no
+`UITrait` class — observe it with
+`registerForTraitChanges(UITraitCollection.systemTraitsAffectingVerticalBarEdge)`.
+Where the corner camera and the side controls physically sit:
+`references/device-geometry.md`.
+
+## How the system decides
+
+- **Only container bars participate.** SwiftUI: `.toolbar` inside `NavigationStack`
+  or `NavigationSplitView`. UIKit: `UINavigationController` and `UITabBarController`.
+  Standalone `UIToolbar`, `UINavigationBar`, `UITabBar` content is not considered.
+  (2:00)
+- **One shared region.** Navigation, toolbar and tab bar controls stack into one
+  vertical region. In split views only the detail column participates; inspectors
+  get no bar of their own. The bar is aligned with the hardware and stays on the same
+  side in right-to-left languages. (3:09)
+- **Sheets differ per display.** On the outer display a sheet's toolbar goes vertical
+  by default. On the inner display sheets are centered with horizontal bars;
+  `presentationPlacement(_:)` with `.leading` or `.trailing` (UIKit:
+  `sheetPresentationController?.preferredPlacement`) moves a sheet to an edge, and
+  only a trailing sheet receives a vertical bar. `.automatic` is the default and
+  `.center` the fourth value. The bar's axis therefore follows the placement.
+  (3:58; *Preparing your app for iPhone Duo* › Optimize bars for vertical
+  presentation; `PresentationPlacement` documentation)
+  *Booted* (`scripts/probes/sheet_inset_probe.swift`): a sheet works out its own bar.
+  On the outer display it keeps the bar when the presenter opts out,
+  and an opted-out sheet leaves the presenter's bar in place.
+  On the inner display in landscape a centred or folded sheet has no bar,
+  while the presenter keeps one.
+  Read a sheet's own view for its inset and edge
+  (`references/device-geometry.md` › Sheets and pose pairs, measured).
+- **Keyboard accessory bars stay with the keyboard.** (10:00)
+- **Fixed width, flexible height.** Items with an icon go vertical; text-only items
+  stay horizontal. The title is still required — it is used in overflow menus and
+  expanded forms. (5:56)
+- **Custom views stay horizontal by default.** (8:00)
+- **The system picks the axis.** Heuristics decide where each bar goes; the tab bar
+  stays horizontal on the inner display in portrait by design. Never force a vertical
+  tab bar or build layout that assumes one (Forums 847817).
+- **Overflow runs bottom to top**, and toolbars compress before the tab bar by
+  default. Overflow happens sooner on the outer display in landscape, with the
+  keyboard up, and with Picture in Picture pinned at the top in open portrait.
+  (11:40, 13:10)
+
+## Audit checklist (per screen)
+
+1. **Container.** Is every bar item owned by a navigation or tab container? Scanner
+   rule `DUO007` finds standalone bars; move their items into the container.
+   A hand-built tab bar or toolbar never moves by itself — no API moves it
+   (Forums 847644). Migrate it first. A team that cannot migrate now still gets the
+   migration as a plan item — the long-term fix — with what the custom bar keeps
+   missing: overflow, compression, visibility priority and the inner display's
+   sidebar come only with `TabView` / `UITabBarController` (Forums 847644).
+   When it must stay custom for now (Forums 847835):
+   - read the side from `verticalBarEdge` / `toolbarVerticalEdge`, observed through
+     `systemTraitsAffectingVerticalBarEdge`;
+   - reserve its strip with `view.layoutGuide(for: .bar(onEdge:extent:))` (UIKit,
+     27.1) or `safeAreaBar(edge:)` with a `HorizontalEdge` (SwiftUI, iOS 26).
+     *Booted*: a 56 pt trailing bar region sits inside the 84 pt trailing inset, below
+     the status-bar strip (120 pt on Xcode 27A9269, 124 pt on 27A9275) — the system
+     bar's own slot. `.unspecified` means no bar for this view, not for the display:
+     the window still reads an edge when a view controller opts out (*Booted*);
+   - do not trust safe-area insets alone for the camera and Dynamic Island strip:
+     query the `.occlusion` regions (Forums 847644);
+   - rebuild what a system bar gives for free: item labels that expand on a long
+     press, and the Large Content Viewer from *Accessibility Medium* text sizes up
+     (`UILargeContentViewerInteraction`, `showsLargeContentViewer`;
+     SwiftUI `accessibilityShowsLargeContentViewer()`).
+   Code: `references/vertical-bars.md` › A bar that must stay custom.
+2. **Order.** Top of the vertical bar: primary navigation (back or close), then
+   prominent actions (done, save). Use `.cancellationAction` / leading item groups
+   with `leftItemsSupplementBackButton = false` for close, and
+   `.topBarPinnedTrailing` / `pinnedTrailingGroup` for prominent actions. Keep
+   controls associated with the container they belong to. (4:29) Group related items
+   with `ToolbarItemGroup` / `UIBarButtonItemGroup` instead of manual spacing, and keep
+   controls next to the content they affect — Mail's list controls stay above the
+   leading pane. (HIG › Vertical controls)
+   A **custom back button** that only changes the chevron: set the back indicator image
+   on `UINavigationBarAppearance` and keep the system back button, which joins the
+   vertical bar by itself. A back item that really is custom (a custom view): set its
+   `axisBehavior` to `.verticalPreferred` and fit it to the bar's fixed width
+   (Forums 847875).
+3. **Title and symbol on every item.** Provide both, even when only the symbol shows.
+4. **Text that carries information stays horizontal.** A symbol plus redundant text →
+   symbol only (use a badge for counts, iOS 26 badge API). Text with standalone value
+   (a cart showing a total) → keep, and it stays in the horizontal bar. The system
+   Edit button and wide controls such as segmented controls stay horizontal on their
+   own. (9:00; 8:25; Tech Talk 111466, 6:20)
+5. **Axis for items that change shape.** An item that switches between symbol and
+   text (Select ↔ Done) → `.horizontalOnly`, and keep related items on the same axis.
+   A custom view that has a vertical representation → `.verticalPreferred`. (8:00)
+6. **Custom views fit.** Fixed bar width, or a vertically adapted layout keyed off
+   `toolbarVerticalEdge` / `verticalBarEdge`. Flexible spacers collapse to zero
+   vertically; fixed spacers keep their minimum. Legible with no scroll edge effect
+   and with the Reduce Transparency background. (10:07)
+   Inside a toolbar item, switch the layout on the edge only for a `.verticalPreferred` item.
+   The value is the preferred edge for the whole window or presentation,
+   not the edge of the bar that holds the item.
+   *Booted* (SwiftUI): items in the horizontal bottom bar read `.trailing`,
+   so a label that stacks for every non-`nil` value stacks there too.
+   Keep the layout of an item in the horizontal bar side by side.
+   Views outside the toolbar read the edge as before.
+   UIKit's `verticalBarEdge` was not measured.
+   Code: `references/vertical-bars.md` › A custom item that joins the vertical bar.
+7. **Overflow.** One overflow menu, and the ellipsis symbol belongs to it (scanner rule
+   `DUO011`). A custom ellipsis menu is one of two things: a grab bag of secondary
+   actions — move it into `ToolbarOverflowMenu` / `additionalOverflowItems` so people
+   see one "more" instead of two — or a single named function such as Filter, which
+   deserves its own symbol and title so it can survive in the vertical bar. (11:40)
+   A confirmation for an overflow-menu item cannot anchor to the menu: drive
+   `confirmationDialog` from state that the item's action sets (Forums 847644).
+   For a dot or count on a tab, use a badge, not a `UITabAccessory` (Forums 847644).
+8. **Compression.** Navigation-focused apps: default, or explicitly
+   `.prefersTabBar` (toolbar compresses first). Task-oriented screens where actions
+   matter more than tabs: `.toolbarVerticalCompressionBehavior(.prefersToolbarItems)` /
+   `verticalBarCompressionBehavior = .prefersBarItems`. (12:23)
+   When the items do not fit, `.prefersToolbarItems` collapses the tab bar into one
+   control that shows the selected tab's symbol (*Booted*, outer display closed).
+   Tell the developer that the other tabs then go out of view.
+9. **Priority.** Set `visibilityPriority` on groups first, then items. Compose / New
+   Note / primary creation: high. Status-bearing items (badged inbox): high, to
+   preserve glanceability. Rare actions: low. Finer steps:
+   `ToolbarItemVisibilityPriority(higherThan:)` / `(lowerThan:)`; UIKit's default is
+   `.standard`. (13:10)
+10. **Opt-out only where it fits.** Single-page, bottom-heavy layouts (Calculator-like)
+    and sheets with a single close button — the sheet then stops short of the camera
+    and the status bar repositions (Tech Talk 111466, 9:03). Not as a fix for items
+    that overflow. (14:21) The behavior resolves per window or presentation: a
+    `NavigationStack` uses its top view, a `TabView` its selected tab, a
+    `NavigationSplitView` its trailing-most column; make it a stable choice, never a
+    toggle on a view's state, and use `toolbarVisibility` to hide bars instead.
+    Varying it by horizontal size class is legitimate only when the regular-width UI
+    really differs — Safari disables the vertical bar in regular width because its
+    tabs stack horizontally (Forums 847864). UIKit:
+    `preferredVerticalBarBehavior`, `childForPreferredVerticalBarBehavior`,
+    `setNeedsUpdateOfVerticalBarConfiguration()`. Otherwise don't override the default
+    placement; a full-width layout suits only immersive, non-scrolling screens that
+    don't conflict with the Dynamic Island or status bar. (HIG › Vertical controls;
+    Tech Talk 111466, 6:33)
+    *Booted*: the opt-out removes the 84 pt side inset, and a navigation title keeps
+    its 82 pt top bar either way. `prefersStatusBarHidden` removes only the clock and
+    leaves the column empty.
+    No scroll edge effect draws in the column, even when one is set for that edge,
+    so decide with the designer what content shows under it
+    (`references/vertical-bars.md` › Opt out).
+11. **Backgrounds under the bar.** A hero image or full-bleed header extends under the
+    vertical bar with `backgroundExtensionEffect()` / `UIBackgroundExtensionView`
+    (iOS 26) rather than a manually stretched frame; scrollable foreground content
+    stays inset. (*Preparing your app for iPhone Duo* › Optimize bars for vertical
+    presentation; Tech Talk 111466, 6:33)
+12. **Sheets.** Start from the default. A sheet whose items live in its own
+    `NavigationStack` toolbar adapts with no code: vertical on the outer display,
+    centred with a horizontal bar on the inner display, moved off the fold when
+    folded. No hinge code is needed for that. (Tech Talk 111466, 8:36)
+    - **Placement needs a reason.** One reason is keeping the content behind the sheet
+      visible, as with a map and `.leading`. Another is keeping the sheet on the side
+      of the item that opened it. Do that in regular width only, and leave compact
+      width `.automatic`. A pose-specific side follows the fold
+      (`iphone-duo-layout`, Forums 847797). The same-side pattern comes from a
+      third-party post (Nil Coalescing, 2026-10-04), not from Apple.
+    - **A placement that varies changes the bar.** The same sheet is vertical when
+      trailing and horizontal when centred or leading. Its items need a title and a
+      symbol so they work on both axes (step 3). Close goes first, in
+      `.cancellationAction`; `Button(role: .close)` (iOS 26) supplies the standard
+      label.
+    - **A single-control sheet may opt out.** Apply `toolbarVerticalBehavior(.disabled)`
+      to the top view inside the sheet's own `NavigationStack`. It resolves for that
+      presentation, so the presenter keeps its vertical bars (step 10;
+      `toolbarVerticalBehavior(_:)` documentation).
+    - **Check every trailing sheet on the device or simulator.** On the iOS 27.1 beta,
+      a third party saw `.trailing` sheets without explicit detents lose their
+      vertical bar, with controls under the status bar and camera. In book pose the
+      status display covered Close. Writing out `presentationDetents([.large])`, the
+      default detent, fixed it in that testing. Label it *Unverified* (Nil Coalescing,
+      2026-10-04): it is absent from the Xcode 27.1 RC release notes and was not
+      reproduced here. Recommend it only together with the P3/P5 check that shows
+      whether the app needs it. Never opt a screen out of vertical bars to hide the
+      collision. UIKit's equivalent, `detents = [.large()]`, was not part of that
+      report.
+    Code: `references/vertical-bars.md` › Sheets.
+
+## Output
+
+One recommendation per screen (not per item) in the format of
+`references/recommendation-format.md`, listing the checklist steps that apply. Items
+that need 27.1 APIs are marked *blocked* when the SDK lacks them; everything else can
+ship now and improves bars on every iPhone.
+
+## Verify
+
+Pose matrix P1 (outer display: side controls), P2 (outer display landscape, keyboard
+up), P3 (inner landscape: vertical bar), P4 (inner portrait: horizontal), P11 (right-to-left), P12 (Reduce Transparency)
+from `references/pose-test-matrix.md`.
+Check which items overflow and in what order.
+Check whether the tabs collapse into one control.
+Check that each custom label stacks only in the vertical bar.
+For each sheet, present it in P1, P3 and P5. Check that a trailing sheet's top control
+sits below the status-bar strip, and that an opted-out sheet leaves the presenter's
+bars vertical.
+`scripts/duo_pose.py shoot <dir> --poses closed,closed-landscape,closed-landscape-flipped,flat,flat-portrait`
+captures P1, both P2 orientations, P3 and P4 with both displays
+(third-party `hinge` CLI 0.3.0 or later; ask first).
+In one P2 orientation the vertical bar is on the **leading** edge.

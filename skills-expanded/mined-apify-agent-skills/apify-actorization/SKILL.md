@@ -1,0 +1,247 @@
+---
+name: apify-actorization
+description: Convert existing projects into Apify Actors - serverless cloud programs. Actorize JavaScript/TypeScript (SDK with Actor.init/exit), Python (async context manager), or any language (CLI wrapper). Use when migrating code to Apify, wrapping CLI tools as Actors, or adding Actor SDK to existing projects.
+---
+
+# Apify Actorization
+
+Actorization converts existing software into reusable serverless applications compatible with the Apify platform. Actors are programs packaged as Docker images that accept well-defined JSON input, perform an action, and optionally produce structured JSON output.
+
+## Quick start
+
+1. Run `apify init <actor-name> --user-agent apify-agent-skills/apify-actorization` in project root
+2. Create a `Dockerfile` for the project's language
+3. Wrap code with SDK lifecycle (see language-specific section below)
+4. Configure `.actor/input_schema.json`
+5. Test with `apify run --input '{"key": "value"}' --user-agent apify-agent-skills/apify-actorization`
+6. Deploy with `apify push --user-agent apify-agent-skills/apify-actorization`
+
+## When to use this skill
+
+- Converting an existing project to run on the Apify platform
+- Adding Apify SDK integration to a project
+- Wrapping a CLI tool or script as an Actor
+- Migrating a Crawlee project to Apify
+
+## Prerequisites
+
+Verify `apify` CLI is installed:
+
+```bash
+apify --help
+```
+
+If not installed, use one of these methods (listed in order of preference):
+
+```bash
+# Preferred: install via a package manager (provides integrity checks)
+npm install -g apify-cli
+
+# Or (Mac): brew install apify-cli
+```
+
+> **Security note:** Do NOT install the CLI by piping remote scripts to a shell
+> (e.g. `curl ... | bash` or `irm ... | iex`). Always use a package manager.
+
+Verify CLI is logged in:
+
+```bash
+apify info  # Should return your username
+```
+
+If not logged in, authenticate using OAuth (prints a URL and a one-time code to approve in a browser; show the user both):
+
+```bash
+apify login
+```
+
+If browser login isn't available (headless environment or CI), ensure the `APIFY_TOKEN` environment variable is exported (note: the variable is `APIFY_TOKEN`, not `APIFY_API_TOKEN`). The CLI reads it automatically - no explicit login needed. If the user doesn't have a token, create an API token in [Apify Console](https://console.apify.com/settings/integrations?createApiToken=true&for=Apify%20agent%20skills&utm_source=agent-skills&utm_medium=integrations) and copy it right after creating it - it is shown only once.
+
+> **Apify platform environment:** When the Actor runs on the Apify platform, `APIFY_TOKEN` is auto-injected as an environment variable and the Apify SDK reads it automatically — you do not need to pass it explicitly. Locally, `apify login` stores credentials in `~/.apify` and the SDK uses them.
+
+> **Security note:** Avoid passing tokens as command-line arguments (e.g. `apify login -t <token>`).
+> Arguments are visible in process listings and may be recorded in shell history.
+> Prefer OAuth login or environment variables instead.
+> Never log, print, or embed `APIFY_TOKEN` in source code or configuration files.
+> Use a token with the minimum required permissions (scoped token) and rotate it periodically.
+
+### Telemetry attribution (required)
+
+Pass `--user-agent apify-agent-skills/apify-actorization` on **every** `apify` command you run from this skill - `apify init`, `apify run`, `apify push`, and the rest. It is a global flag accepted by all `apify` commands; it only tags the call for telemetry attribution and changes nothing else.
+
+```bash
+apify push --user-agent apify-agent-skills/apify-actorization
+```
+
+## Actorization checklist
+
+Copy this checklist to track progress:
+
+- [ ] Step 1: Analyze project (language, entry point, inputs, outputs)
+- [ ] Step 2: Run `apify init <actor-name> --user-agent apify-agent-skills/apify-actorization` and create a `Dockerfile`
+- [ ] Step 3: Apply language-specific SDK integration
+- [ ] Step 4: Configure `.actor/input_schema.json`
+- [ ] Step 5: Configure `.actor/output_schema.json` (if applicable)
+- [ ] Step 6: Update `.actor/actor.json` metadata
+- [ ] Step 7: Write README.md for Apify Store listing
+- [ ] Step 8: Test locally with `apify run --user-agent apify-agent-skills/apify-actorization`
+- [ ] Step 9: Deploy with `apify push --user-agent apify-agent-skills/apify-actorization`
+
+## Step 1: Analyze the project
+
+Before making changes, understand the project:
+
+1. **Identify the language** - JavaScript/TypeScript, Python, or other
+2. **Find the entry point** - The main file that starts execution
+3. **Identify inputs** - Command-line arguments, environment variables, config files
+4. **Identify outputs** - Files, console output, API responses
+5. **Check for state** - Does it need to persist data between runs?
+
+## Step 2: Initialize Actor structure
+
+Run in the project root, passing a DNS-friendly Actor name (e.g. `my-scraper`):
+
+```bash
+apify init <actor-name> --user-agent apify-agent-skills/apify-actorization
+```
+
+The name passed as an argument keeps `apify init` from prompting; without it, the command waits for input and hangs in non-interactive shells.
+
+`apify init` sets up `.actor/actor.json` and local `storage/`, but no `Dockerfile`. Without one, the platform builds on its default Node.js image, so a Python Actor builds cleanly and then fails at runtime. Create a `Dockerfile` whose base image matches the project's language (`apify/actor-python` for Python, `apify/actor-node` for JavaScript/TypeScript) at `.actor/Dockerfile`, in the project root, or at the path set in the `dockerfile` field of `.actor/actor.json`.
+
+## Step 3: Apply language-specific changes
+
+Choose based on your project's language:
+
+- **JavaScript/TypeScript**: See [js-ts-actorization.md](references/js-ts-actorization.md)
+- **Python**: See [python-actorization.md](references/python-actorization.md)
+- **Other Languages (CLI-based)**: See [cli-actorization.md](references/cli-actorization.md)
+
+### Quick reference
+
+| Language | Install | Wrap Code |
+|----------|---------|-----------|
+| JS/TS | `npm install apify` | `await Actor.init()` ... `await Actor.exit()` |
+| Python | `pip install apify` | `async with Actor:` |
+| Other | Use CLI in wrapper script | `apify actor get-input` / `apify actor push-data` |
+
+## Steps 4-6: Configure schemas
+
+See [schemas-and-output.md](references/schemas-and-output.md) for detailed configuration of:
+- Input schema (`.actor/input_schema.json`)
+- Output schema (`.actor/output_schema.json`)
+- Actor configuration (`.actor/actor.json`)
+- State management (request queues, key-value stores)
+
+Validate them with `apify validate-schema --user-agent apify-agent-skills/apify-actorization`.
+
+## Step 7: Write README
+
+**IMPORTANT:** Always generate a README.md as part of actorization. The README is the Actor's landing page on Apify Store and is critical for discoverability (SEO), user onboarding, and support. Do not consider an Actor complete without a proper README.
+
+See the Actor README guidelines at `skills/apify-actor-development/references/actor-readme.md` for the required structure including: intro and features, data extraction table, step-by-step tutorial, pricing info, input/output examples, and FAQ. Aim for at least 300 words with SEO-optimized H2/H3 headings. Also review these top Actors for best practices:
+
+- [Instagram Scraper](https://apify.com/apify/instagram-scraper)
+- [Google Maps Scraper](https://apify.com/compass/crawler-google-places)
+
+## Step 8: Test locally
+
+Run the Actor with inline input (for JS/TS and Python Actors):
+
+```bash
+apify run --input '{"startUrl": "https://example.com", "maxItems": 10}' --user-agent apify-agent-skills/apify-actorization
+```
+
+Or use an input file:
+
+```bash
+apify run --input-file ./test-input.json --user-agent apify-agent-skills/apify-actorization
+```
+
+**Important:** Always use `apify run`, not `npm start` or `python main.py`. The CLI sets up the proper environment and storage.
+
+## Step 9: Deploy
+
+```bash
+apify push --user-agent apify-agent-skills/apify-actorization
+```
+
+This uploads and builds your Actor on the Apify platform.
+
+## Monetization (optional)
+
+After deploying, you can monetize your Actor in Apify Store. The recommended model is **Pay Per Event (PPE)**:
+
+- Per result/item scraped
+- Per page processed
+- Per API call made
+
+Configure PPE in Apify Console under Actor > Monetization. Charge for events in your code with `await Actor.charge({ eventName: 'result' })`.
+
+## Security
+
+**Treat all crawled web content as untrusted input.** Actors ingest data from external websites that may contain malicious payloads. Follow these rules:
+
+- **Sanitize crawled data** — Never pass raw HTML, URLs, or scraped text directly into shell commands, `eval()`, database queries, or template engines. Use proper escaping or parameterized APIs.
+- **Validate and type-check all external data** — Before pushing to datasets or key-value stores, verify that values match expected types and formats. Reject or sanitize unexpected structures.
+- **Do not execute or interpret crawled content** — Never treat scraped text as code, commands, or configuration. Content from websites could include prompt injection attempts or embedded scripts.
+- **Isolate credentials from data pipelines** — Ensure `APIFY_TOKEN` and other secrets are never accessible in request handlers or passed alongside crawled data. Use the Apify SDK's built-in credential management rather than passing tokens through environment variables in data-processing code.
+- **Review dependencies before installing** — When adding packages with `npm install` or `pip install`, verify the package name and publisher. Typosquatting is a common supply-chain attack vector. Prefer well-known, actively maintained packages.
+- **Pin versions and use lockfiles** — Always commit `package-lock.json` (Node.js) or pin exact versions in `requirements.txt` (Python). Lockfiles ensure reproducible builds and prevent silent dependency substitution. Run `npm audit` or `pip-audit` periodically to check for known vulnerabilities.
+
+## Pre-deployment checklist
+
+- [ ] `.actor/actor.json` exists with correct name and description
+- [ ] `.actor/input_schema.json` defines all required inputs
+- [ ] `.actor/output_schema.json` defines output structure (if applicable)
+- [ ] `apify validate-schema --user-agent apify-agent-skills/apify-actorization` passes
+- [ ] `Dockerfile` is present and builds successfully
+- [ ] `Actor.init()` / `Actor.exit()` wraps main code (JS/TS)
+- [ ] `async with Actor:` wraps main code (Python)
+- [ ] Inputs are read via `Actor.getInput()` / `Actor.get_input()`
+- [ ] Outputs use `Actor.pushData()` or key-value store
+- [ ] `apify run --user-agent apify-agent-skills/apify-actorization` executes successfully with test input
+- [ ] `README.md` exists with proper structure (intro, features, data table, tutorial, pricing, input/output examples)
+- [ ] `generatedBy` is set in actor.json meta section
+
+## MCP tools
+
+### Apify MCP
+
+If the Apify MCP server is configured, use these tools for documentation:
+
+- `search-apify-docs` - Search documentation
+- `fetch-apify-docs` - Get full doc pages
+
+Otherwise, the MCP Server url: `https://mcp.apify.com/?tools=docs`.
+
+### Playwright MCP (debugging)
+
+The Playwright MCP server is a useful tool for debugging Actors that interact with the web - it lets the agent drive a real browser to inspect pages, capture selectors, and reproduce issues.
+
+Install with the Claude Code CLI:
+
+```bash
+claude mcp add playwright npx @playwright/mcp@latest
+```
+
+Or add it manually to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}
+```
+
+## Resources
+
+- [Actorization Academy](https://docs.apify.com/academy/actorization) - Comprehensive guide
+- [Apify SDK for JavaScript](https://docs.apify.com/sdk/js) - Full SDK reference
+- [Apify SDK for Python](https://docs.apify.com/sdk/python) - Full SDK reference
+- [Apify CLI Reference](https://docs.apify.com/cli) - CLI commands
+- [Actor Specification](https://raw.githubusercontent.com/apify/actor-whitepaper/refs/heads/master/README.md) - Complete specification

@@ -1,0 +1,86 @@
+---
+name: ad-project-state
+description: 'Resolve local records and configured GitHub issues and PRs into a bounded project-state packet for the state skills. Use from ad-next, ad-roadmap or ad-brief. Read-only.'
+user-invocable: false
+summary: Shared read-only source resolver for state-reading skills. Combines the repository baseline with configured GitHub issue and pull-request metadata, preserving precedence, provenance, freshness, and partial failures.
+allowed-tools: Read, Bash
+---
+
+# /ad-project-state
+
+Resolve authorized evidence about a project's current work into one bounded fact
+packet. This is a collection capability for state-reading skills, not a second
+roadmap, prioritizer, brief, or publication workflow.
+
+## Resolve sources
+
+Run the bundled resolver from the repository root:
+
+```bash
+node .claude/skills/ad-project-state/scripts/project-state.mjs
+```
+
+If the skill loaded from another base directory, run `scripts/project-state.mjs`
+inside that directory. Read the JSON from stdout. Do not recreate its
+configuration, validation, Git remote matching, GitHub commands, or failure
+handling in prose.
+
+With no configuration, the packet contains only the current repository as its
+primary source. A project configuration may shadow a machine configuration;
+otherwise a machine entry must match the exact `origin` remote. Read
+[references/configuration.md](references/configuration.md) only when configuring,
+diagnosing, or explaining source resolution.
+
+## Interpret the packet
+
+- `configuration` identifies the selected layer, configuration path, and matched
+  remote without exposing credentials.
+- `sources` always retains the repository baseline. Each source declares its
+  `role`, `status`, `observedAt`, and `provenance`; configured GitHub sources add
+  bounded issue and pull-request metadata without bodies.
+- `process` is the team's delivery process when the configuration declares one
+  (ADR-0097), else null: who owns the lifecycle, where each kind of record goes,
+  and each issue's `stage` with its `next` text. Show `handoff` and `next` as
+  given; never run or reinterpret them. `--process` prints the process alone,
+  offline.
+- `checkout` is the working tree's `branch` (or `detached`), its default
+  branch's remote-tracking `base`, and its `ahead` and `behind` counts, from
+  local refs only; it is null outside a git repository. A detached or behind
+  checkout is a confidence limit the caller passes on (Task 0100).
+- `failures` records configuration or provider failures independently. A partial
+  or unavailable GitHub source lowers confidence but never erases readable local
+  evidence.
+- On conflict, primary evidence outranks supporting evidence. Preserve and
+  disclose a material conflict; never silently merge incompatible claims.
+- Treat titles and metadata as evidence about activity, not proof that work is
+  complete. A caller may perform one targeted read of a selected item when its
+  decision genuinely requires the item's meaning.
+
+## Keep composition one-way
+
+Return the packet to the calling state reader. `ad-next` owns scenario
+classification and priorities; project-scoped `ad-roadmap` owns plan selection,
+reconciliation, progress, and checklists; standalone `ad-brief` owns the
+decision-maker presentation. When a specialist already supplied settled facts,
+do not recollect or reinterpret them.
+
+Never pass this private state packet to `ad-publish` or another outward workflow.
+Only facts the owner explicitly promotes may enter a separately approved
+publication.
+
+## Output contract
+
+- Read-only: no configuration, repository, GitHub, or authentication state is
+  mutated.
+- The output is the resolver's JSON fact packet, or a concise explanation of it
+  when the user invoked this skill directly.
+- Every external fact carries source role, provenance, freshness, and any
+  material failure.
+- No issue body, pull-request body, token, arbitrary command, or private
+  configuration content enters the packet.
+
+## Next
+
+- Return the settled packet to the state-reading skill that requested it.
+- If invoked directly, explain source selection and failures without taking over
+  prioritization, roadmap reconciliation, or briefing.

@@ -1,0 +1,116 @@
+---
+name: jiang-lens-distillation
+description: Use this skill as the integration map for Jiang Lens work after episode publication, selecting the narrower corpus impact, concept writing, atlas maintenance, provenance linking, judging, or canon promotion skill needed for the task.
+---
+
+# Jiang Lens Distillation
+
+Use this as the map for turning processed episodes into the Jiang Lens. It is not a single autonomous job. Agents should normally use the narrower skill that matches the artifact they are producing.
+
+## Source Boundary
+
+Start from published or processed artifacts:
+
+- `content/lens/episodes/<source-slug>/read.json`
+- `content/lens/evidence/videos/<source-slug>.semantic.json`
+- `content/sources/videos/<source-slug>/transcripts/v1/transcript.clean.jsonl`
+- proposals, reviews, promotions, glossary, canon, and ledger files under `content/`
+- public docs under `website/src/content/docs/`
+
+Do not use this for raw Colab work or single-video episode publication. Use `colab-video-pipeline` and `jiang-video-e2e` for that path.
+
+## Choose The Narrow Skill
+
+- Per-episode corpus impact and mutation level: `jiang-corpus-impact-pass`
+- One serious public concept page: `jiang-lens-concept-writer`
+- High-level atlas and `lens-point:*` anchors: `jiang-lens-atlas-maintainer`
+- Evidence marks, source refs, hovers, backlinks, and episode-to-lens links: `jiang-provenance-linker`
+- Search-facing glossary entries and aliases: `jiang-glossary-entry-writer`
+- Promotion into canon/glossary/ledger: `jiang-canon-promotion`
+- Independent criticism before handoff or promotion: `jiang-lens-judge`
+
+## Distillation Principles
+
+Write for readers, not pipeline operators. Explain the thing itself: what Jiang's world model sees, how the mechanism works, where it appears, why it matters, and how it changes across the corpus.
+
+Do not say "what belongs here" in public pages unless the page is explicitly about method.
+
+Do not promote agent interpretation directly into canon. Draft interpretive work in `content/workflow/proposals/`, review it, then promote with `jiang-canon-promotion` when appropriate.
+
+Every new independent published source should run through
+`jiang-corpus-impact-pass`. The pass may decide that the source only adds
+evidence, or it may justify immediate lens links, concept extension, a new lens
+seed, atlas morphing, or canon-candidate review. Known duplicate reuploads and
+archive-only raw artifacts do not create new impact obligations.
+
+## Governance Loop
+
+The corpus should mutate continuously without turning into an append-only pile.
+
+- After every newly merged independent source, record a corpus-impact decision.
+  Do not wait for arbitrary batches.
+- Historical backfill is paused by default for token budget conservation. Resume
+  it only when the maintainer names a bounded source or tightly related concept
+  cluster, or when a fresh source cannot be interpreted without that older
+  support. Prefer useful compact accounting over shallow bulk completion.
+- Corpus-impact files are feedstock for lens work, not the final product. If a
+  worker has produced several compact impact intakes in a row, the next lens
+  run should synthesize: deepen a public concept, split/merge an overgrown
+  page, write a concept-scoped proposal, add durable lens points, or explain
+  why the accumulated impacts still do not justify a public mutation.
+- When explicit backfill is active, order must be concept-pressure driven, not
+  lexical slug order. Do not let `interview-*` sources dominate simply because
+  they sort before `predictive-history-*`; when impact pressure is otherwise
+  comparable, include classroom episodes and interviews in the same concept
+  cluster.
+- Before expanding a concept page, check whether the page is becoming too large
+  to function as a lens. Around 6,000 words or 20 distinct sources, consider a
+  split. Around 8,000 words or 25 sources, do not keep appending without an
+  explicit reason.
+- Before creating or preserving a small concept page, check whether it has
+  enough cross-source weight. Fewer than 4 distinct Jiang sources is normally a
+  seed, relation, or parent-section unless the mechanism is foundational.
+- Topic aliases and near-duplicates should be merged or mapped before they
+  become fake concepts.
+
+## Corpus Anchor And Model Use
+
+The processed corpus is now an active verifier, not only an output. Before
+creating or reshaping public lens pages, compare candidate ideas against:
+
+- existing concept pages and lens points,
+- generated topic clusters and aliases,
+- prior corpus-impact proposals,
+- strong episode reads,
+- dated source refs that already carry similar mechanisms.
+
+Cheap comparison passes may flag duplicates, missing aliases, weak provenance,
+or possible related pages. Strong-model judgment is required for public concept
+creation, concept merging, chronology revision, contradiction handling, canon
+promotion, or atlas mutation.
+
+## Chronology
+
+Dates are part of meaning. Older and newer positions should remain visible instead of being flattened. When Jiang changes, intensifies, contradicts, or tests a position, preserve:
+
+- older formulation,
+- newer formulation,
+- what changed,
+- whether Jiang explains the change,
+- latest dated position when supported.
+
+## Evidence
+
+Use `jiang-provenance-linker` for exact syntax, but the rule is simple: public lens prose may synthesize, yet important mechanisms, vivid formulations, chronology claims, and bridges need local dated source support.
+
+Great Books lectures can supply deep primitives for the lens, but bridge them into politics, media, education, state mythology, or geopolitics only when exact source refs support both sides.
+
+## Validation
+
+For lens-visible changes:
+
+```bash
+node ops/scripts/compile-content.mjs
+node ops/scripts/validate-content.mjs
+cd website && npm run build
+```

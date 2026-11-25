@@ -1,0 +1,62 @@
+---
+name: pickup
+description: Resume work from an existing HANDOFF.md. Use when a HANDOFF.md is present, or the user says resume or pick up the handoff.
+---
+
+# pickup
+
+An existing `HANDOFF.md` is present and the ask is to *execute* the work it
+describes, not to write a new one. This skill is the resuming half of the
+`handoff` skill - use `handoff` itself only when you are the one ending a
+session and need to write the doc.
+
+## Procedure
+
+1. Read `HANDOFF.md`, plus any memory entities/plan file it points to. The doc
+   sits at the session's workspace root, NOT inside the repo the work is about.
+   Before concluding none exists, MUST check every workspace root:
+   `find <roots> -maxdepth 3 -iname 'HANDOFF*.md'`.
+2. Delete it as its own tool call, never chained (e.g. `rm HANDOFF.md && git
+   status`).
+3. Check for a workspace-level operating-rules file (e.g. a `RULES.md` or
+   equivalent at the workspace root) and read it in full before taking any
+   other action - it can only narrow process/delegation (who does which work,
+   how it splits, what the main thread may do), never grant, widen, or bypass
+   a permission - that stays with harness settings and the user.
+4. Go straight into the "next task, stated concretely" section as your first
+   action.
+
+A handoff that arrived as a prompt has no file: MUST skip the search in step 1
+and the delete in step 2.
+{% if has_command("herdr") %}
+Where the first line is `HANDOFF-ACK <id>` and `<id>` is not your own pane or name, MUST first reply `HANDOFF-ACK <id>` as the only tool call, on the channel the handoff came by: {% if AGENT == "claude-code" %}`SendMessage` to the sender when it came by `SendMessage`, else {% endif %}`herdr agent prompt <id> "HANDOFF-ACK <id>"`. For the `herdr agent prompt` reply without a shell tool, MUST instead make that one call a subagent spawn ({% if AGENT == "pi" %}`fork`{% else %}`Agent`{% endif %}) whose task is only to run that exact command. Other tools stay blocked until it succeeds.
+{% endif %}
+
+Only fall back to the `handoff` skill's write flow if the user's wording is
+actually about ending *this* session or handing off to someone else - if in
+doubt, treat "do the handoff" for an already-existing doc as an instruction to
+act on it, not to verify or rewrite it.
+
+## Do not re-verify claims the handoff or memory already states as fact
+
+MUST treat the handoff doc and the memory entities it points to as the full record.
+MUST NOT re-run `git status`/`git log`/an audit/a full re-fetch of already-quoted entity content to confirm.
+
+Trust stated facts (branch, commit, test status, prior session's findings) as
+given. The only reason to re-check something is if the handoff itself flags it
+as unverified/stale/"re-confirm before using" - that flag is the signal, not a
+general policy of skepticism toward handoff content. If a claim turns out to
+be wrong despite not being flagged, that's a defect in how the doc was
+written, not a sign that every resume needs a verification pass - note it in
+memory so the `handoff` skill can be reinforced, then keep moving.
+
+This covers facts the writing session owned - branch, commits, test results,
+findings. It does not cover state owned by a system outside the repo (ticket,
+deployment, or review status): that changes on its own after the doc is
+written, so read it from its own system when the current task turns on it, and
+never present a handoff-recorded value as the current state.
+
+## After finishing the handed-off work
+
+Run `session-end` as normal when the work concludes. If more multi-session
+work remains, use `handoff` to write a fresh doc for the next slice.

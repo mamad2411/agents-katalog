@@ -1,0 +1,64 @@
+---
+name: ad-adr
+description: 'Record a binding, hard-to-reverse architecture decision as an ADR. Use on "record this decision", "write an ADR", "why did we choose".'
+summary: Draft a new ADR at `doc/adr/NNNN-<slug>.md`.
+allowed-tools: Read, Write, Glob, Bash
+---
+
+# /ad-adr
+
+Drafts `doc/adr/NNNN-<short-title>.md` for one architecture decision. Status lifecycle: `proposed` → `accepted` → `deprecated` | `superseded by ADR-NNNN`.
+
+## Step 1 — Determine NNNN
+
+First run `node .claude/skills/ad-project-state/scripts/project-state.mjs --process`. With `process.records.adr.path`, use that directory in place of `doc/adr` here and in Step 4. With `naming: date`, skip the number and name the file `<YYYY-MM-DD><sep><slug>.md`, `<sep>` being the separator the directory's existing records use (`-` when none exist). With `destination: external`, show the `handoff` text and stop.
+
+Run `node .claude/skills/ad-adr/scripts/next-number.mjs doc/adr` from the consumer root. Use JSON `next` as NNNN; it preserves archived gaps. If `unreadable` is non-empty, stop until access is resolved; if `exhausted` is true, stop for a numbering decision. If loaded elsewhere, substitute the skill base path. The decision scope stays in this step's text.
+
+## Step 2 — Confirm scope
+
+The ADR captures **one** decision. If the user's request implies multiple decisions, ask which one to write first; the others become follow-up ADRs.
+
+## Step 3 — Fill from conversation only
+
+Use the template below. Fill `Context`, `Decision`, `Consequences`, and `Alternatives Considered` from this conversation only — **no fabrication**, no inferring beyond what the user said. If a section has no signal, ask one question per gap rather than guessing.
+
+* `Decision` must be a directive ("We will…"), not a description.
+* `Consequences` lists positive and negative; do not balance for the sake of balance.
+* `Alternatives Considered` lists each rejected option with a one-line reason.
+
+## Interview UX
+
+When the host exposes `AskUserQuestion`, use it for multi-choice prompts (`Status: proposed / accepted / deprecated / superseded`, decider role selection, alternative-option ranking) and for confirmation gates with non-trivial branching. Inline text questions are the fallback only when the host lacks a structured-prompt primitive (Codex). One card per multi-choice gate beats chained text questions.
+
+## Step 4 — Write the file
+
+Path: `doc/adr/<NNNN>-<short-slug>.md`. Slug: kebab-case, ≤6 words, derived from the decision title. Status: `proposed`. Date: today, ISO format. Deciders: ask the user.
+
+**When this decision changes part of an earlier one, declare it in the header.** `Status:` covers whole-document supersession; the partial case — one stanza, one rejected alternative, one decision's realization — is what `Amends:` and `Amended by:` are for. Write `Amends: ADR-NNNN` here, then offer to add the matching `Amended by:` line to that ADR's header. The pair is the point: either field alone leaves a relation only prose can find, so a reader has to open every record in the directory to learn what still binds. Omit both lines entirely when there is no amendment — an empty field is worse than an absent one.
+
+Stop after writing. Do **not** flip status to `accepted` — that requires user review.
+
+## Template — `doc/adr/NNNN-<slug>.md`
+
+The ADR skeleton lives in [references/adr-template.md](references/adr-template.md) — one decision per ADR; Status starts at `proposed`.
+
+## Output contract
+
+A single new file at `doc/adr/<NNNN>-<short-slug>.md`. Status `proposed`. No invented content.
+
+Existing ADRs are otherwise left alone, with **one bounded exception**: when this ADR declares `Amends: ADR-NNNN`, offer to add the matching `Amended by:` line to that ADR's header, and write it only on explicit confirmation. Header line only — the body stays the immutable record, so this records a new relation rather than retconning an old decision. Declining is a valid answer; `/ad-drift` reports the unpaired relation.
+
+ADRs are decision-record artifacts and are **exempt** from the no-dates rule (Documentation Discipline §2): the `**Status:**` lifecycle and `**Date:**` field are required for Nygard supersession ordering. The remaining Documentation Discipline rules (`WORKFLOW.md` §2) apply at write time:
+
+- No emoji anywhere in the file.
+- `Context` is the business-context-first section — the *forces* and *problem* before the *decision*.
+- One scope: one decision per ADR. If the user's request implies multiple decisions, ask which one to write first; the others become follow-up ADRs.
+- No speculation. `Decision` is a directive ("We will…"); rejected paths go in `Alternatives Considered`, not the body.
+
+## Next
+
+- Continue the work the ADR was scoped to support. Status starts `proposed`; the user flips to `accepted` after review (the agent does not).
+- If the ADR touches `ARCHITECTURE.md`'s Active ADRs list, add the entry there.
+- `/ad-task` for the work units that implement the decision.
+- `/ad-drift` periodically to confirm the decision still holds against the code.

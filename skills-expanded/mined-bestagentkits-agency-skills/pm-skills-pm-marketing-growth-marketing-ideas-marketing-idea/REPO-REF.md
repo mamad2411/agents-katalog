@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bestagentkits/agency-skills (path: skills/pm-skills/pm-skills-pm-marketing-growth-marketing-ideas-marketing-ideas/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Generate 5 creative, cost-effective marketing ideas with channels, messaging, and engagement rationale. Use when brainstorming marketing campaigns, planning product promotion, or looking for creative 

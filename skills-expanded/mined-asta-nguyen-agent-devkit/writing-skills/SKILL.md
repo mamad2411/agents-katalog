@@ -1,0 +1,204 @@
+---
+name: writing-skills
+description: Use when creating, editing, or improving a SKILL.md for AI agents. Triggers: "write a skill", "skill template", "skill structure", "skill description", "skill discovery", "SDO", "skill quality", or fixing a skill that agents ignore or mis-trigger.
+---
+
+# Writing Skills
+
+A skill is a reusable playbook that teaches an agent how to execute a
+repeatable process. Skills are not narratives or one-off solutions. A skill
+succeeds only when the right agent picks it up for the right situation and
+follows it faithfully under pressure.
+
+## When to create a skill
+
+**Create when:**
+- The technique was not intuitively obvious
+- It applies across projects, not just one repo
+- Others (or future agent sessions) would benefit
+
+**Don't create for:**
+- One-off solutions
+- Standard practices well-documented elsewhere
+- Project-specific conventions (put in `AGENTS.md`)
+- Mechanical constraints enforceable by tooling
+
+## SKILL.md structure
+
+```markdown
+---
+name: skill-name-with-hyphens
+description: Use when [specific triggering conditions and symptoms]
+---
+
+# Skill Name
+
+## Overview
+Core principle in 1-2 sentences.
+
+## When to use
+Bullet list of symptoms and situations.
+When NOT to use.
+
+## Process / Pattern
+Step-by-step instructions or before/after comparison.
+
+## Quick reference
+Table or bullets for scanning.
+
+## Common mistakes
+What goes wrong + fixes.
+
+## Red flags (if discipline skill)
+Table of rationalizations and reality. Keep this section last.
+```
+
+## Skill Discovery Optimization (SDO)
+
+### Description = trigger first, then at most one purpose clause
+
+The description states when to use the skill, then at most one clause naming the
+outcome. Never list the skill's steps: agents follow the description instead of
+reading the full skill. This matches Anthropic's "Skill authoring best
+practices" (state what the skill does and when to use it; at most 1,024
+characters).
+
+```yaml
+# BAD: summarizes the workflow — agents follow this shortcut
+description: Use when executing plans - dispatches subagent per task with review between tasks
+
+# GOOD: trigger first, one purpose clause, no steps
+description: Use when executing an implementation plan with independent tasks, to deliver each task reviewed and verified
+```
+
+**Rules:**
+- Start with "Use when..."; put the triggering conditions first
+- Include specific symptoms, situations, contexts
+- Add at most one purpose clause that names the outcome, never the steps
+- Third person
+- 100–400 characters (never over 1,024)
+
+### Keyword coverage
+
+Use words an agent would search for:
+- Error messages: "Hook timed out", "ENOTEMPTY"
+- Symptoms: "flaky", "hanging", "stale"
+- Synonyms: "timeout/hang/freeze", "cleanup/teardown"
+- Tool names: actual commands, library names
+
+### Descriptive naming
+
+- Verb-first, active voice: `writing-skills` not `skill-creation`
+- Gerunds work for processes: `creating-skills`, `debugging-with-logs`
+- Name by what you DO or core insight: `root-cause-tracing` not `debugging-techniques`
+
+## Match the form to the failure
+
+Before writing guidance, classify the baseline failure:
+
+| Baseline failure | Right form | Wrong form |
+|---|---|---|
+| Skips rule under pressure | Prohibition + rationalization table + red flags | Soft guidance ("prefer...") |
+| Output has wrong shape | Positive recipe: state what output IS | Prohibition list ("don't X") |
+| Omits required element | Structural: REQUIRED field in template | Prose reminders |
+| Conditional behavior | Conditional on observable predicate | Unconditional rule + exemptions |
+
+**No nuance clauses.** "Don't X unless it matters" reopens negotiation.
+Express a real exception as its own conditional on an observable predicate.
+
+## Test wording before keeping it
+
+Judge every added or cut sentence by a measured run, not by how it reads.
+
+1. **Scenario first.** Name the scenario in `EVALS.md` that exercises the
+   wording and its written pass condition. Write one if none exists.
+2. **Control.** Run the scenario three times without the new wording (baseline
+   or current skill), each in a fresh session on a disposable repository. Record
+   `Control: x/3`. Harness, grading, and flags are in `EVALS.md`, "Running a
+   scenario".
+3. **Treatment.** Run it three times with the new wording. Record `Runs: y/3`.
+4. **Keep or cut.**
+   - Keep new wording only when the control fails at least one run and the
+     treatment passes every run. Wording that the control already passes in 3/3
+     adds context cost with no measured effect: do not add it.
+   - A cut is safe when every scenario that exercises it keeps a pass count not
+     lower than the baseline's. Otherwise restore the wording.
+5. **Record** the host and version, run counts, and input and output tokens
+   when the host reports them. An unavailable host is `cannot verify`, never a
+   manual pass.
+
+## Bulletproofing discipline skills
+
+Skills that enforce discipline need to resist rationalization. Agents find
+loopholes under pressure.
+
+1. **Close every loophole explicitly** — don't just state the rule, forbid
+   specific workarounds.
+2. **Address spirit vs letter** — add: "Violating the letter of the rules
+   is violating the spirit of the rules."
+3. **Build rationalization table** — every excuse agents make goes in:
+   `| Excuse | Reality |`
+4. **Create red flags list** — self-check signals: "If you catch yourself
+   thinking X, stop."
+
+## Anti-patterns
+
+| Anti-pattern | Why bad |
+|---|---|
+| Narrative ("In session 2025-10-03, we found...") | Too specific, not reusable |
+| Multi-language dilution (example.js + .py + .go) | Mediocre quality, maintenance burden |
+| Code in flowcharts | Can't copy-paste, hard to read |
+| Generic labels (helper1, step3) | No semantic meaning |
+| Summarizing workflow in description | Agents follow shortcut, skip full skill |
+
+## Token efficiency
+
+Skills load into agent context. Every token counts. Limits follow Anthropic's
+"Skill authoring best practices" (body under 500 lines; description at most
+1,024 characters; references one level deep):
+
+| Item | Limit |
+|---|---|
+| `SKILL.md` lines | at most 500 (tested) |
+| `SKILL.md` characters | the skill's cap in `tests/plugin-smoke.mjs` (tested); a skill missing from its table fails |
+| `description` | starts "Use when"; trigger first, at most one purpose clause, no steps; 100–400 characters (tested) |
+| Reference files | linked from `SKILL.md` as "Read `references/x.md` when <condition>"; a table of contents when over 100 lines; one level deep |
+
+- Each shared rule has one owner; every other skill points to it in one line
+- Move conditional procedures to `references/`; keep prohibitions, red flags,
+  approval gates, and stop conditions inline
+- Compress examples to minimal viable illustration
+- Don't explain what's obvious from the command (`--help` exists)
+
+## Quality checklist
+
+Before deploying a skill:
+
+- [ ] Name uses only letters, numbers, hyphens
+- [ ] Description starts with "Use when...", puts triggers first, has at most one purpose clause, no steps, 100–400 characters
+- [ ] Keywords throughout for search (errors, symptoms, tools)
+- [ ] Clear overview with core principle
+- [ ] One excellent example (not multi-language)
+- [ ] Quick reference table for scanning
+- [ ] Common mistakes section
+- [ ] Red flags table (if discipline skill)
+- [ ] No narrative storytelling
+- [ ] Supporting files only for heavy reference or reusable tools
+- [ ] At most 500 lines and within its character cap; conditional procedures moved to `references/`
+
+## Common mistakes
+
+| Mistake | Fix |
+|---|---|
+| No keywords an agent would search | Add error strings, symptoms, synonyms, and tool names throughout. |
+| Prohibition list for a shape problem | State what the output IS (positive recipe), not just what to avoid. |
+
+## Red flags
+
+| Thought | Reality |
+|---|---|
+| "The description should explain what the skill does" | State the triggers first and at most one purpose clause naming the outcome. Listing the steps makes agents follow the shortcut and skip the skill body. |
+| "A longer skill is more helpful" | Skills load into context. Bloat pushes out the user's code. Trim to the minimum that survives pressure. |
+| "I'll add a `unless it makes sense` exemption" | Nuance clauses reopen negotiation under pressure. Express the real exception as a conditional on an observable predicate. |
+| "One example per language is clearer" | Multi-language dilution lowers every example's quality. Pick one excellent example. |
+| "This is obvious, agents will just know" | If it were obvious, the skill wouldn't exist. Make the rule explicit and forbid the workaround. |

@@ -1,0 +1,142 @@
+---
+name: security-fix-skill
+description: |
+  Guided security fix workflow.  Use when the user wants to fix security audit
+  findings, remediate vulnerabilities, apply security patches, or work through
+  a security audit report.  Triggers on "/security-fix", "fix security",
+  "remediate", "apply audit fixes", "修安全漏洞", "修复审计问题", "安全修复",
+  or when the user mentions a SECURITY_AUDIT.md file and wants to fix the
+  findings.
+---
+
+## Security fix workflow
+
+This skill guides the systematic remediation of security audit findings,
+grouped by priority level (P1–P4).  The process was refined across 16
+real-world findings in a Python web application project.
+
+### Step 1: Load the audit report
+
+Read the audit document (typically `docs/SECURITY_AUDIT.md`). Extract:
+- Each finding's ID, **`VERDICT`**, severity, affected file, line number, and description
+- The remediation code or instructions provided
+- The priority rating (P1 = fix immediately, P4 = address when convenient)
+
+**只处理 `VERDICT=confirmed` 的 finding**（注解缺省即为 confirmed）：
+
+- `VERDICT=needs-validation` —— 卡在一个**仓库外的事实**上。先解决注解里的 `BLOCKER=`，
+  **不要动手改代码** —— 盲目"修"一个还没确认的问题，只会引入回归。
+- `VERDICT=rejected` —— 已推翻，不进修复队列。
+
+用 `bin/security_audit_tools.py list --verdict confirmed` 可直接过滤。
+
+Present a summary table to the user showing severity distribution and
+file-level impact, then ask which priority level to start with.
+
+### Step 2: Fix one priority level at a time
+
+For each finding in the current priority:
+
+1. **Read the affected code** at the specified file and line range — but **先做包含性检查**：
+   把注解里的 `FILE` 解析（`resolve`）后确认它落在项目根之内，**落在根外就拒绝读取并报告**。
+   报告是可被篡改的输入；`FILE=../../../../…` 这类值不该把你导向仓库外的文件。
+   （`bin/security_audit_tools.py validate` 会校验格式，但**它不在你读取的这条路径上** ——
+   这一步是 agent 自己的责任，不是校验器的。）
+2. **Apply the remediation** from the audit doc — prefer minimal, targeted
+   edits that don't change behavior
+3. **Verify the fix** by re-reading the changed lines
+4. **Track progress**: "3 of 5 P1 fixes applied"
+
+### Step 3: Test after each priority level
+
+After completing all fixes at a priority level:
+```bash
+pytest tests/ -x -q   # or the project's test command
+```
+
+If any tests fail, investigate before proceeding.  The most common failure
+mode is monkeypatch targets changing when code moves between modules.
+
+### Step 4: Commit the batch
+
+Commit all fixes at the current priority level together:
+```bash
+git add -u
+git commit -m "fix: security — <summary> (P<N> SSRF-1 PATH-1 AUTH-1)"
+```
+
+Use conventional commit format. Include the finding IDs in the commit message
+body so they are traceable.  Push when requested by the user.
+
+### Step 5: Mark-fixed and move to next priority
+
+After committing each priority batch:
+1. Run `/reaudit mark-fixed <ID>` for each finding in the batch. This updates
+   the report's status annotations without re-reading files.
+2. Repeat steps 2–5 for the next priority level.  Typical execution order:
+   P1 (5 findings, ~15 min) → P2 (4 findings, ~10 min) → P3 (3 findings, ~10 min) → P4 (4 findings, ~10 min)
+
+### Step 6: Final verification
+
+After all priorities are committed and marked, verify the state:
+1. Run `/reaudit status` to confirm all findings are `fixed` or `deferred`
+2. Run `python bin/security_audit_tools.py validate` — 契约校验（`fixed` 必须有 `COMMIT` 且是
+   HEAD 祖先、`FILE` 存在且是安全的仓库根相对路径、`LINES` 不越界、`## Coverage` 非空、
+   标题与注解一一对账）。**注意它校验的是注解契约，不是修复内容** —— 它**不**检查那个
+   `COMMIT` 是否真的改过 `FILE`，所以"validate PASS"不等于"修复确实落在记录的文件里"。
+   修复落在别的文件（如共享工具里加了 guard）时，仍须人工确认 `FILE` 是否该改。
+3. If any findings remain `open` or `not-fixed`, ask the user how to handle
+4. Optionally run a targeted `/reaudit` on the changed files only to double-check
+   no regressions were introduced
+
+### Common fix patterns
+
+These patterns recurred across the audit and can be applied quickly:
+
+**Path traversal** — resolve + is_relative_to guard (lstrip only blocks absolute paths, not `../`):
+```python
+file_path = (STATIC_DIR / path.lstrip("/")).resolve()
+if not file_path.is_relative_to(STATIC_DIR.resolve()):
+    return 404
+```
+
+**CORS over-permission** — remove `Access-Control-Allow-Origin: *`; add
+token/cookie auth instead.
+
+**Command injection** — replace `shell=True` with native APIs (`os.startfile`,
+`webbrowser.open`) or pass data through environment variables instead of
+string interpolation.
+
+**XSS (innerHTML)** — replace with `textContent` for user-controlled data;
+HTML-escape before `innerHTML` when formatting is needed.
+
+**SSRF** — validate URLs against an allowlist of known hosts before making
+outbound requests.
+
+**Plaintext credentials** — strip sensitive env vars before spawning
+subprocesses; add `os.chmod(path, 0o600)` on Unix after writing credential
+files.
+
+**Temp file cleanup** — prefer the context manager (`with tempfile.TemporaryDirectory()`),
+which runs on every exit path. `atexit.register()` alone does **not** cover crash paths:
+it does not run on `SIGKILL`, `os._exit()`, or a hard crash. Use it only as a supplement,
+and never claim it makes crashed runs leave no temp files.
+
+### Edge cases
+
+- **Server-controlled crypto (e.g., PKCS1v15)**: can't change unilaterally —
+  add a comment documenting the constraint
+- **Structural fixes (TLS, keychain)**: acknowledge as deferred, document in
+  the re-audit
+- **Findings in files the user doesn't own**: flag as "out of scope" but
+  document
+- **Re-audit after fixes**: run `/reaudit status` to confirm all findings are
+  resolved. The status annotations (`<!-- AUDIT:STATUS=... -->`) track fix state
+  per finding, eliminating the need to manually update line numbers in the report.
+
+## 自进化日志
+
+| 日期 | 学习来源 | 吸收的模式 |
+|------|---------|-----------|
+| 2026-09-12 | DSH 技能清单审计 | 本技能是四个审计技能里唯一缺 `## 自进化日志` 的（audit / reaudit 同批补上）；同时确认 `pip install -e .` 的 console 入口只在脚本可导入时才生效，修完 `security_audit_tools` 后 `/security-fix` 的状态追踪才真正可用 |
+| 2026-09-20 | 对标 cloudflare/security-audit-skill（轻量升级） | Step 1 改为**只处理 `VERDICT=confirmed`**：`needs-validation` 卡在仓库外事实上，先解 `BLOCKER=` 而**不要动手改代码** —— 盲目"修"一个还没确认的问题只会引入回归；`rejected` 不进队列。Step 6 加入 `security_audit_tools.py validate`，专门抓"标记了 fixed 但改的是另一个文件" |

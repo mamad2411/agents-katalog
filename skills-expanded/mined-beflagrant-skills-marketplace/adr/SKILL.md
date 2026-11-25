@@ -1,0 +1,219 @@
+---
+name: adr
+description: "Write an Architecture Decision Record (ADR), advise on ADR-worthiness, or update an existing ADR's status (accept, supersede, deprecate, amend). Use when the user says \"write an ADR\", \"is this ADR-worthy?\", \"mark ADR NNNN superseded\", \"amend ADR NNNN\", or is making a choice affecting structure, dependencies, interfaces, or construction techniques."
+allowed-tools: Read, Glob, Write, Edit, Skill
+metadata:
+  publish: marketplace
+---
+
+# ADR Writer
+
+An Architecture Decision Record captures **why** a significant decision was made, in the context it was made in. This skill helps author ADRs that are useful to a future reader (often future-them) trying to answer: *Was this a conscious decision? Why is it this way? Can it change?*
+
+## When to write an ADR
+
+Only for **architecturally significant** decisions — ones that affect the structure, non-functional characteristics, dependencies, interfaces, or construction techniques of the system. Not every decision.
+
+Good candidates:
+- Choice of framework, runtime, language, or major library
+- Data model shape, key schema choices, or migration strategies
+- Cross-cutting patterns (auth, background jobs, caching, realtime)
+- Integration boundaries with external systems
+- Build, deployment, or test infrastructure shifts
+- Reversing or superseding an earlier decision
+
+Not ADR-worthy (don't write one):
+- A specific bug fix
+- A refactor that doesn't change structure
+- Routine dependency bumps
+- Local implementation details a reader can derive from code
+
+If the user asks for an ADR on something that isn't architecturally significant, push back gently: "This looks more like an implementation detail than an architecture decision — want me to write it anyway, or drop a comment in the code instead?"
+
+## Advisory mode
+
+Sometimes the user isn't asking for a draft — they're asking whether a decision is ADR-worthy in the first place ("Is this ADR-worthy?", "Should we write an ADR for the auth switch?"). Handle these directly instead of jumping to drafting:
+
+1. If the decision isn't clear from context, ask one question: "What's the decision and what made it architecturally significant?"
+2. Apply the criteria above. Be specific about *which* criterion matches (or doesn't) — "this changes an integration boundary with an external system" is more useful than "yes, it's significant."
+3. Give a plain yes/no with that reasoning.
+4. If yes, offer to draft it now. If no, suggest the lighter-weight alternative (a code comment, a commit message, a line in the PR description) and name it specifically.
+
+Advisory mode shares the criteria with the drafting path — don't restate them, point back to them. If the user follows up with "okay, write it," drop into the normal drafting process.
+
+## Where ADRs live
+
+Default locations, in order of preference:
+1. `docs/adr/` (most common)
+2. `doc/adr/`
+3. `architecture/decisions/`
+4. Repo root if none of the above exist — but ask first before creating a new directory.
+
+Always check the repo for an existing ADR directory before assuming a path. Use Glob for `**/adr/*.md` or `**/decisions/*.md`.
+
+## Numbering
+
+ADRs are numbered sequentially with a 4-digit zero-padded prefix: `0001-`, `0002-`, etc.
+
+To pick the next number:
+1. List the existing ADR directory.
+2. Find the highest numeric prefix.
+3. Add 1, zero-pad to 4 digits.
+
+**Gotcha:** duplicate numbers happen when branches are merged out of order. If you find two files with the same number already in the tree, note it to the user but don't try to renumber — renumbering breaks inbound links. Just use the next unused number.
+
+## Filename format
+
+`NNNN-kebab-case-title.md` — derived from the title, under ~60 characters. Strip articles (`a`, `the`), drop punctuation, lowercase. Example: `0008-tour-data-sync.md`.
+
+## Format
+
+Match the style of existing ADRs in the repo if any exist — read one or two first to pick up conventions (heading level for the title, date format, status vocabulary, whether pros/cons are bulleted or prose). The template below is the minimal Nygard-style baseline; conform to the house style when there is one.
+
+```markdown
+# ADR NNNN: Title in Title Case
+
+**Date:** YYYY-MM-DD
+**Status:** Proposed | Accepted | Superseded by ADR NNNN | Deprecated
+
+## Context
+
+What is the situation that forced this decision? What constraints, prior
+decisions, incidents, or requirements apply? What options were considered?
+Why did a decision need to be made at all?
+
+Be specific. A reader who has never seen this system should understand
+*why you were in the position of needing to decide something*.
+
+## Decision
+
+What did you decide? State it plainly and specifically. Name the thing.
+If it's a technical choice, name the version, the library, the pattern.
+Avoid hedging language — "we will use X" not "we might consider X".
+
+Unless the decision is very clear with no significant trade-offs, include
+an `### Options` subsection listing the alternatives considered, with pros
+and cons for each. No more than 3 options.
+
+## Consequences
+
+What does this make easier, harder, or impossible? Every bullet must
+begin with **`Positive:`**, **`Neutral:`**, or **`Negative:`** — that
+valence is what makes trade-offs visible at a glance. Name the topic
+in the body of the bullet, not as a competing prefix.
+
+- **Positive:** Rollback is straightforward — flip the flag and redeploy.
+- **Neutral:** ...
+- **Negative:** Adds a runtime dependency on the cache layer; outages here now degrade the auth path.
+
+Use a separate bullet per consequence. If a bullet mixes polarities
+("simpler to operate, but slower at p99"), split it into two.
+
+A decision with no negative consequences is suspicious — keep looking.
+If one of the negatives turns out to be unacceptable, that's a signal
+to revisit the decision before writing the ADR.
+```
+
+Beyond the baseline template above, add these sections only when they carry weight:
+- `## Schema changes` — migrations, index additions, column changes
+- `## Alternatives considered` — when the road not taken is itself instructive
+- `## References` — links to prior ADRs, external docs, incident reports, PRs
+
+## Process
+
+When invoked:
+
+1. **Confirm it's ADR-worthy.** If unsure, ask one question: "What's the decision and what made it architecturally significant?" Skip this if the user has already explained.
+2. **Find the ADR directory.** Glob for existing locations. If none exists, ask before creating.
+3. **Read 1-2 existing ADRs** from the repo to match house style (heading format, date format, status vocabulary, bullet conventions).
+4. **Pick the next number.** Highest existing + 1, zero-padded to 4 digits.
+5. **Draft the ADR** with today's date and status `Proposed`. Fill every section with real content — don't leave placeholders. If you don't know something, ask the user before drafting rather than guessing. Only use `Accepted` for decisions that are already in use or being backfilled historically.
+6. **Write the file** at the computed path.
+7. **Report back** with the file path and a one-sentence summary of what was decided.
+8. **Invoke the `adr-refine` skill** on the file you just wrote. The draft is not done until it has survived a critique pass. Do not move on to implementation work between steps 7 and 8 — refinement comes first.
+
+## Writing quality
+
+Write the ADR as a conversation with a future developer. Use full sentences organized into paragraphs. Bullets are acceptable for visual style — or when explicitly called for, such as pros/cons or consequences — not as an excuse for writing sentence fragments.
+
+The ADR's job is to help a future reader who has *only* the code and the ADR. Write accordingly:
+
+- **Context should survive the decision.** Describe the world as it was, not as it will be. If you write "we use Rails 8" in context, it'll read wrong in five years when Rails 12 is current. Write "at the time we were choosing a framework, we wanted..."
+- **Decision should be concrete.** Not "use a background job system" but "use Solid Queue as the Active Job backend, running on a dedicated worker dyno."
+- **Consequences should name real trade-offs.** "More complex" is not a consequence. "The worker dyno must be explicitly scaled on Heroku or jobs queue silently" is.
+- **Link to prior ADRs** when superseding or building on them. Use relative paths: `[ADR 0011](0011-date-range-picker.md)`.
+- **Be willing to be wrong later.** ADRs are a historical record. When a decision is reversed, write a new ADR that supersedes the old one — don't edit the original except per the rules in *Updating an existing ADR* below.
+
+## Backfilling historical ADRs
+
+If the user asks to document a decision that was already made:
+
+- State clearly in the context that this is a historical record written after the fact.
+- Use the **original** decision date if known, not today's. If unknown, use the commit date of the change that introduced it, or write "circa YYYY-MM" and say so.
+- Be honest about what you don't know. "The reasoning is inferred from the commit history and code shape; original discussion is not available" is better than fabricated context.
+- Mark status `Accepted` if the decision is still in force, `Superseded` if not.
+
+## Lifecycle
+
+An ADR moves through states:
+
+- **Proposed** — the working state. The ADR has been drafted and refined (see Process step 8 — the draft is not done until it has survived a critique pass), but the decision hasn't been validated by working code yet. Edits are expected: implementation often surfaces gaps, contradictions, or constraints the draft missed, and those should feed back into the ADR while it's still Proposed. Re-refining a Proposed ADR after implementation reveals new information is normal.
+- **Accepted** — the decision has been validated by working code (or is being backfilled as a historical record). The ADR becomes effectively immutable; see *Updating an existing ADR* below.
+- **Superseded** / **Deprecated** — a later ADR has replaced or retired this one. Update the status line and add references; don't rewrite.
+
+Only flip `Proposed` → `Accepted` once the implementation has validated the decision. Don't accept prematurely just to mark the document "done" — that forfeits the ability to fix the ADR based on what implementation teaches you.
+
+## Updating an existing ADR
+
+Once an ADR is `Accepted`, it is effectively immutable. The only edits permitted are:
+
+1. **Status line updates** when a later ADR changes the picture. Examples:
+   - `**Status:** Deprecated (see ADR 23)`
+   - `**Status:** Superseded (see ADR 13)`
+   - `**Status:** Accepted — broadcast mechanism superseded by ADR 0021`
+   - `**Status:** Accepted — amended 2026-05-21 (ADR 0029)`
+   - `**Status:** Accepted — amended 2026-05-21 (ADR 0029), 2026-08-12 (ADR 0034)`
+   - `**Status:** Accepted — amended (see Amendment sections below)` *(when the inline list gets unwieldy)*
+2. **Reference additions in the body** when a later ADR only *partially* supersedes this one and a future reader needs to be pointed at the relevant new ADR. Do not rewrite the original reasoning to reflect the new state — that's what the new ADR is for.
+3. **Amendments appended as new sections** when a later ADR shifts the *facts surrounding* the decision (a column renamed, a join path changed, an index replaced) without changing the decision itself. Use the format:
+
+   ```
+   ## Amendment — YYYY-MM-DD (ADR NNNN)
+
+   [What shifted. The original ADR said X; ADR NNNN changed Y; the relevant code/schema now reads Z. Point at the implementing issue or PR.]
+   ```
+
+   The amendment is a top-level (`##`) section appended after all existing sections of the ADR — always at the end, regardless of what it touches. Multiple amendments stack chronologically at the bottom. The original sections are not edited. The parenthetical names the triggering ADR.
+
+   Update the status line in the same edit (see item 1 examples). Status itself stays `Accepted`; the extension after the em-dash signals "this ADR has been amended" so a reader who never scrolls past Decision still gets the pointer.
+
+Anything beyond these belongs in a new ADR, not an edit to the existing one.
+
+### Amend vs. supersede
+
+The distinction is what changed:
+
+- **Supersede** — the *decision* is replaced. The original was right at the time but is no longer the chosen approach. Status becomes `Superseded by ADR NNNN`; the new ADR carries the new decision.
+- **Amend** — the *decision still stands* but the surrounding facts have shifted under it (a downstream ADR changed a column name, a join path, an index, a model). Rewriting the original would erase the historical decision context; marking it superseded would overclaim what changed; a passing reference is too easy to miss. Append an Amendment section instead.
+
+If you find yourself wanting to rewrite the original's reasoning to "make it accurate now," that's a sign you should either be writing a new ADR (supersede) or appending an amendment — never editing the original sections.
+
+#### When in doubt
+
+Read the Decision section literally. Has the thing it names been replaced, or just the world around it?
+
+**The substitution test.** Can a reader of the new code still apply the original Decision's *intent* by mechanically substituting names (column, table, provider, method)? If yes → amend. If no → supersede. *Example:* an ADR that says "persist user uploads to durable object storage" can be amended when the provider moves from S3 to GCS; an ADR that says "store uploads in S3" must be superseded when uploads move to GCS.
+
+**The partial-supersede trap.** If half the original decision is now wrong, that's a partial supersession — status update + body reference (option 2 above), not an amendment. *Example:* "all subscriptions are monthly via Stripe" → "annual plans move to invoice billing; monthly plans stay" replaces half the decision. Amendment is wrong because the surrounding facts didn't shift; half the decision changed.
+
+**The outdated-rationale trap.** If the original *reasoning* no longer applies but the same decision is being made for different reasons, that's an amendment — not a supersede. *Example:* "process synchronously because volume is low" still keeps the sync job when volume is high if the team accepts the cost for risk reasons; the decision is unchanged, the rationale shifted.
+
+**When amendments stack.** Amendments accumulate around an unchanging core decision. An ADR with five amendments whose Decision is still the right call stays Accepted; an ADR whose Decision is now the wrong call needs a supersede regardless of amendment count.
+
+## Anti-patterns to avoid
+
+- **Decision logs masquerading as ADRs.** If every minor choice gets an ADR, the signal drowns. Aim for a handful per quarter, not dozens.
+- **Restating the code.** Don't describe *what* the code does. Describe *why* it does it that way.
+- **Consequence-free decisions.** If you can't name a real negative, you probably haven't thought hard enough.
+- **Rewriting accepted ADRs to make them "accurate."** Supersede or append an Amendment instead — see *Updating an existing ADR*. The historical record matters.
+- **Vague status.** "In progress" is not a status. Use Proposed / Accepted / Superseded / Deprecated.

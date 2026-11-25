@@ -1,0 +1,117 @@
+---
+name: ad-prd
+description: 'Draft or update the product requirements: target user, problem, goals, metrics, roadmap. Use when scoping a product or on "PRD", "product brief", "roadmap".'
+summary: Lazy lifecycle owner of `doc/product/PRD.md` (or `doc/product/<slug>.md` multi-product). Layer 3 — product-level scope (target user, problem, success metrics, multi-feature roadmap) that feature specs inherit from. Distinct from `ad-spec` (feature-level).
+allowed-tools: Read, Write, Glob, Bash
+---
+
+# /ad-prd
+
+Layer 3 of the artifact stack. Lazy lifecycle owner of the PRD (Product Requirements Document). One product = one PRD; multi-product repos use a `PRODUCT-MAP.md` index plus per-product `<slug>.md` files.
+
+PRD is product-level scope, not feature-level scope. A feature spec (`ad-spec`, Layer 4) implements *part* of a PRD; a PRD is never implemented by a single task. If the user's ask is single-feature, route to `/ad-spec` instead.
+
+## Not for
+
+- Scope is one feature → `/ad-spec` (Layer 4).
+- Scope is a vocabulary question → `/ad-domain` (Layer 2).
+- Scope is an architectural decision → `/ad-adr`.
+- Scope is fuzzy and needs interview-before-research → `/ad-grill-me`, which can route back here once the product framing is sharp.
+
+A spike or one-off change does not need a PRD. If the user invokes `/ad-prd`, their request establishes that a durable product contract is in scope; write only the scope the work needs.
+
+First run `node .claude/skills/ad-project-state/scripts/project-state.mjs --process` (ADR-0097). When `lifecycleOwner` is `external`, the team's own delivery process owns the product record and `process.records.prd` decides. With `external` or no record, show its `handoff` text and write nothing (name the `ownerLabel` when no handoff is given). With `issue-comment`, draft it in the OS temporary directory, show it, and post it with `gh issue comment` on the work item the owner names only after the owner approves; then delete the draft. With `repo-path`, write the file under its `path`.
+
+## Step 1 — Codebase-first scan
+
+Before asking a single question, look. The repo often answers half the fields.
+
+Process:
+
+1. Check `doc/product/` — does a PRD already exist? Single-product `PRD.md` or multi-product `<slug>.md` files?
+2. Read `AGENTS.md` `## Project Overview` — pulls product name, one-line description, deployment target.
+3. Read `README.md` head — pulls product framing for users who land via the public README.
+4. Read `CONTEXT.md` if it exists — anchors the canonical nouns the PRD must use.
+5. Read `doc/specs/` index — existing feature specs surface the implicit product scope (which features have been shipped or are in flight).
+6. Read `package.json` `name` / `description` / `keywords` for product framing signal.
+
+Only after the scan produces no answer does the skill ask. Asking the user about something the repo already states wastes their attention.
+
+## Step 2 — Determine slug and target file
+
+**Single product (default).** File path: `doc/product/PRD.md`. No slug needed.
+
+**Multi-product.** Ask whether this is a multi-product repo. If yes, the file path is `doc/product/<product-slug>.md` and a `doc/product/PRODUCT-MAP.md` index lists each product. Slug: kebab-case, ≤4 words, derived from the product name.
+
+Status starts at `draft`. Created: today, ISO format. Updated: today, ISO format. Owner: ask once — defaults to the repo's primary committer (from `git config user.name`) if unset.
+
+## Step 3 — Interview to fill
+
+Ask **one question at a time**, in this order. Skip questions whose answers are already obvious from the Step 1 scan; surface what the scan found and ask only for confirmation.
+
+If the product framing is vague ("improve efficiency", "build a dashboard", "use AI", "make it easier"), run a short sharpening pass before filling the PRD fields. Keep these as facilitation notes, not PRD sections:
+
+- **Today statement.** "Today, `<target user>` must `<painful workflow>` when `<trigger>`. They need a way to `<unmet need>`."
+- **How Might We.** Reframe the problem broad enough to allow multiple solutions, narrow enough to exclude generic improvement.
+- **North Star.** "Deploy `<what>` to change `<metric 1>` and `<metric 2>` so that `<ultimate outcome>`." Require baseline, target, and measurement source when available.
+
+If the user starts with a solution, validate it against the Today statement and North Star before accepting it into Roadmap. If it serves a different user, fails to move the named metrics, or prescribes implementation before the problem is clear, route back to `/ad-grill-me`.
+
+- **Product.** Name and one-sentence positioning. *"X is a Y that does Z for W."*
+- **Target User.** Specific role / persona, not "developers" or "users". Cite the primary success-bearing user; secondary users go under Personas if they affect the product shape.
+- **Problem.** What the target user can't do today, or does badly today. The cost of the status quo. *"What breaks if this product does not exist?"*
+- **Goals.** 3–5 measurable outcomes the product is for. State each as a plain bullet (no checkbox — PRD is definition, not tracking). Pass/fail must be observable; tracking of whether each goal is met lives in per-feature tasks.
+- **Non-goals.** Explicit out-of-scope items readers might assume are in scope. Prevents scope creep without an audit trail.
+- **Success Metrics.** Product-level KPIs — measurable and durable, not procedural. *"Weekly active users above N at 90 days"* — yes. *"Users love it"* — no. Each metric carries the measurement source (analytics event, survey, business dashboard).
+- **Roadmap.** Multi-feature scope. Each line names a feature, the user value it carries, and the (rough) sequence. Concrete enough to drive `/ad-spec` later; not a binding commitment. Mark `MVP`, `Next`, `Later`; no dates.
+- **Constraints.** What binds across the entire product — regulatory (HIPAA, GDPR, PCI), business (price ceiling, partner contracts), technical (platform availability, legacy integration). Skip if none; do not invent.
+- **Personas (optional).** If the product has secondary users whose needs reshape it (admin vs end user, free tier vs paid tier), name them. Skip when one persona drives everything.
+- **Open Questions.** Deferred decisions. Each line becomes a future ADR, a spec-time decision, or an explicit punt with rationale.
+- **Related.** ADRs touched by this PRD, feature specs that implement parts of it, other PRDs this one supersedes or relates to. Filled lazily as the surface grows.
+
+Do **not** invent values. When the user does not know, leave `<TODO>` in the field and continue.
+
+## Step 4 — Interview UX
+
+When the host exposes `AskUserQuestion`, use it for:
+
+- Multi-choice prompts (`Status: draft / accepted / superseded`).
+- Owner selection.
+- Single-product vs multi-product confirmation.
+- Roadmap-tier selection (`MVP / Next / Later`) per feature line.
+
+Inline text questions are an acceptable fallback only when the host lacks the primitive (Codex). One question per gate; do not chain three text questions when one card lists the options.
+
+## Step 5 — Write the file
+
+Path: `doc/product/PRD.md` (single-product) or `doc/product/<slug>.md` (multi-product). Use the template at [references/prd-template.md](references/prd-template.md).
+
+Stop after writing. Do **not** flip status to `accepted` — that requires user review.
+
+## Step 6 — Editing guidance for later turns
+
+When the user later works on the PRD:
+
+- Update Success Metrics phrasing only when a metric definition changes; per-metric status tracking lives in per-feature tasks, not in the PRD.
+- Append to **Open Questions** — close them with a resolution paragraph; never delete the original question line.
+- Flip `Status` to `accepted` once the user signs off and feature specs start being written against this PRD.
+- Flip `Status` to `superseded by <slug>` when a later PRD replaces this one.
+- Add `Roadmap` lines as the product grows; mark superseded roadmap items with a strikethrough and a one-line note, do not delete them (the audit trail survives renames).
+- Add `Related → Specs` entries as `/ad-spec` runs reference this PRD.
+
+Never rewrite existing prose — append rationale to **Open Questions** as a resolution paragraph rather than mutating the original requirement text. Open Questions is the append-only resolution surface.
+
+## Output contract
+
+- Primary output: `doc/product/PRD.md` or `doc/product/<slug>.md`.
+- Multi-product side-effect: `doc/product/PRODUCT-MAP.md` written or updated.
+- Status starts `draft`; never flipped to `accepted` by the skill.
+- No dates inside narrative prose; the `Created` and `Updated` lifecycle fields are decision-record primitives, exempt from the no-dates rule.
+
+## Next
+
+- After writing the PRD: `/ad-spec` for each `MVP` roadmap item — feature specs inherit target user, success metrics scope, and constraints from this PRD.
+- When the PRD surfaces an architectural commitment (technology choice, deployment model, data-residency constraint): `/ad-adr` per the three-criteria rule (hard to reverse, surprising without context, real trade-off).
+- When a roadmap item is technique-uncertain: `/ad-spike` (WORKFLOW §14).
+- When the PRD framing is fuzzy and the user is still resolving target user / problem boundaries: `/ad-grill-me` to sharpen, then return here.
+- Periodic drift check: `/ad-drift` flags feature specs whose target user or success metrics contradict the PRD.

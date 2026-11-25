@@ -1,0 +1,85 @@
+---
+name: vakiflar-hukuku
+description: "Yeni (yerleşik) bir vakfın kurulması, vakıf senedinin hazırlanması, tescil/teftiş süreçleri ya da vakfın amacının/mallarının değiştirilmesi sorunları için kullanılır."
+---
+
+# Vakıflar Hukuku (Kuruluş, Tescil, Amaca Tahsis)
+
+## Görev
+Bir vakfın kuruluşunu TMK m.101-117 ve 5737 sayılı Vakıflar Kanunu çerçevesinde kurmak/denetlemek: vakıf senedi, mal tahsisi, tescil ve amaç/yönetim değişikliği taleplerini doğru usulle yapılandırmak.
+
+## Soğuk başlangıç (intake)
+- Vakfın amacı belirli ve sürekli mi; kanunun yasakladığı bir amaç taşıyor mu?
+- Amaca özgülenen (tahsis edilen) malvarlığı amacı gerçekleştirmeye yeterli mi?
+- Kuruluş resmî senetle/ölüme bağlı tasarrufla mı yapılıyor?
+- Talep yeni kuruluş mu, yoksa mevcut vakıfta amaç/yönetim/mal değişikliği mi?
+
+## Denetim şeması
+1. **Kuruluş ve amaç** — TMK m.101: vakıf, kişilerin belirli ve sürekli bir amaca özgüledikleri yeterli mal ve hakların topluluğudur. Üyesi olmaz. Cumhuriyetin niteliklerine, kanuna/ahlaka aykırı, siyasi/ırk-cemaat esasına dayalı veya belli bir ırkın/cemaatin desteklenmesi amacıyla vakıf kurulamaz (m.101/son).
+2. **Vakıf senedi** — TMK m.102: kuruluş, resmî senetle veya ölüme bağlı tasarrufla yapılır. Senet; vakfın amacını, özgülenen mal ve hakları, organlarını ve yerleşim yerini gösterir; eksiklik mahkemece tamamlattırılabilir.
+3. **Tescil** — TMK m.102-104: vakfın yerleşim yeri asliye hukuk mahkemesine başvurularak tescil istenir; mahkeme, Vakıflar Genel Müdürlüğü'nün görüşünü alır ve tescile karar verir; vakıf, mahkeme siciline tescille tüzel kişilik kazanır, ayrıca merkezi sicile kaydolunur.
+4. **Mal tahsisi** — Özgülenen malların mülkiyeti tescille vakfa geçer (m.101/3); amaca yeterlilik denetlenir.
+5. **Değişiklik ve denetim** — TMK m.112-113: amacın değiştirilmesi/genişletilmesi ancak özgülenme amacının değişen koşullar altında gerçekleşmesine imkân kalmaması gibi hâllerde, vakıf yönetiminin başvurusu ve denetim makamının görüşüyle mahkeme kararıyla olur. Vakıflar Genel Müdürlüğü teftiş ve gözetim yetkisine sahiptir (5737 SK).
+6. **Sona erme** — TMK m.116: amacın gerçekleşmesi imkânsızlaşır ve değiştirilemezse vakıf kendiliğinden sona erer; mahkeme kararıyla sicilden silinir.
+
+## Çıktı modülleri
+- Amaç/mal yeterliliği değerlendirmesi + dayanak.
+- Vakıf senedi zorunlu içerik kontrol listesi.
+- Tescil/başvuru iskeleti (asliye hukuk, VGM görüşü).
+- Değişiklik/sona erme yolu notu + `[doldurulacak]` yerleri.
+
+## Plugin bağlamı
+
+Bu beceri `kisiler-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

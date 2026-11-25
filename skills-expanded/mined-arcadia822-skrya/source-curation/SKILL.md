@@ -1,0 +1,90 @@
+---
+name: source-curation
+description: Use when the user wants to add, remove, or refine sources, auto-connectable channels, or runtime retrieval capabilities for a configured topic after the briefing intent is already clear. Trigger for Chinese requests like "用某个检索工具抓一下", "把这个来源加进去", "这个网站能不能接入", or "换一批来源".
+---
+<!-- AUTO-GENERATED from source-curation/SKILL.md.tmpl; regenerate with `python -m skrya_orchestrator.main build-skill-pack --root . --host all` -->
+
+# Source Curation
+
+Curate sources for a configured topic after the topic intent is already clear.
+
+Always resolve an explicit internal `topic-id` before reading or writing files, but do not ask nontechnical users for raw ids when a natural topic name can be mapped.
+Before reading or writing topic files, resolve the Skrya data root. Topic configuration and generated artifacts live under `<skrya-data-root>/`, not necessarily under the skill repository.
+
+## Read First
+
+- `<skrya-data-root>/topics/<topic-id>/topic.json`
+- `<skrya-data-root>/topics/<topic-id>/brief.json`
+- `<skrya-data-root>/topics/<topic-id>/sources.json`
+
+If recent digest behavior matters to the source decision, also read:
+
+- `<skrya-data-root>/topics/<topic-id>/digest.md`
+- `<skrya-data-root>/runs/<topic-id>/latest-digest.md` when available
+
+Also inherit any applicable workspace defaults from `AGENTS.md`, `CLAUDE.md`, or the equivalent repository instruction file.
+
+## Core Rule
+
+Use confirmed topic intent to judge which sources are a fit before changing `sources.json`.
+After a new or expanded recurring topic is confirmed, source curation is not optional unless the topic already has adequate confirmed sources for the new scope.
+
+## Preset Library Lookup
+
+Before proposing source recommendations, check whether any preset in the `presets/` directory matches the confirmed topic intent:
+- Match by `tags` against topic keywords and domains, or keywords against preset `name` and `description`.
+- If a matching preset is found, use its `source_groups` as an initial recommendation baseline:
+  - Tailor candidate sources to the user's specific sub-focus, language requirements, or scope (select relevant groups, prune unnecessary feeds, adapt query keywords).
+  - Presets are static advisory templates only, not direct configuration; inspecting presets never writes topic files, connects feeds, or activates background daemons.
+- If no preset matches, fall back to autonomous source reasoning.
+- In all cases, preserve the confirmation gate: propose the tailored source plan with rationale, channel type, and auto-connection feasibility, and obtain explicit user confirmation before writing `sources.json`.
+
+## Feasibility Rule
+
+- internally, sources with RSS are connectable
+- internally, sources without RSS are connectable only through a confirmed RSSHub route with explicit instances
+- Do not expose RSS as a user-facing requirement.
+- Tell the user whether a source can be "自动接入" or is "暂时不能自动接入" under the current connector limits.
+- When the channel depends on a runtime retrieval skill, write a provider-neutral `runtime-retrieval` source that records capabilities, queries, languages, and time windows.
+- If the user mentions a specific provider such as `agent-reach`, do not save the provider name in durable `sources.json`; keep it only in runtime ingest artifacts.
+- If the environment exposes configured source-channel skills such as X or WeChat official account retrieval, evaluate them as possible retrieval capabilities instead of ignoring them.
+- RSSHub entries in presets document standard route patterns and instance references, but do not activate any services automatically.
+
+## RSSHub Sources
+
+- Before declaring a candidate not auto-connectable, consult the shipped `presets/rsshub-routes.json` directory and domain presets. They are discovery starting points, not an exhaustive route allowlist.
+- For a route absent from the shipped candidates, verify its exact pattern against official RSSHub documentation before proposing it. Confirm the source and explicit instance with the user; never guess a route or implicitly run or self-host an instance.
+- A proposed RSSHub source entry carries `type: rsshub`, an explicit `route`, and at least one explicit instance via `instance_urls` (or `instance`); optional `timeout_ms` and `hedge_delay_ms` tune the hedged fetch.
+- Propose a provider-neutral fallback block (`capabilities` such as `web_search`/`news_search` plus `queries` covering the same source) together with every proposed RSSHub source; an explicit fallback block overrides the runtime default. Without one, the runtime requests the same confirmed source by its configured name and topic terms. Keep credential-bearing route text out of generated queries; RSSHub is never a hard dependency.
+- When an RSSHub source keeps failing, describe the handoff to the user as agent-mediated: a source-health refresh records the failure state, the runtime emits a neutral retrieval request for the same confirmed source, the agent fetches and records normalized ingest v2, and the next digest includes the results. Skrya itself never calls external providers directly.
+
+## Required Behavior
+
+1. Make sure the topic intent is already clear enough to judge source fit.
+2. Evaluate each proposed source against that confirmed intent.
+3. Explain recommendations in terms of event coverage, not generic source prestige.
+4. Say clearly when a desired source is not currently auto-connectable, without making the user reason about RSS.
+5. Confirm additions or removals before writing `sources.json`.
+6. For runtime retrieval channels, write capabilities such as `web_search`, `news_search`, `site_search`, `social_search`, or `document_fetch`, not third-party skill names.
+7. Do not let an agent claim "已接入" or create recurring automation for a new source scope until the source plan has been confirmed.
+8. When source-channel skills such as X or WeChat official account retrieval are configured, include them in the recommendation or explain why they do not fit the confirmed topic intent.
+9. When the topic intent is clear and the prompt or host names available retrieval capabilities, produce the concrete source plan now instead of only describing the capability list or future process.
+10. Query `presets/` by tags, name, and description before proposing new sources; tailor matches to the specific intent instead of blindly dumping entire presets.
+
+## Output Rules
+
+- Keep source discussion practical and concise.
+- Do not write unconfirmed source candidates into `sources.json`.
+- File names are internal execution details; do not show file names in normal user-facing replies unless the user asks for implementation details.
+- Prefer sources that repeatedly surface the kinds of events the user actually wants.
+- For broad requests like "BYD / 新能源汽车 / 储能，国内外主流媒体优先", propose a concise source plan grouped by coverage area before writing files.
+- For each source group, show why it fits, which retrieval channel/capability would be used, and whether it is 自动接入 or 暂时不能自动接入.
+- Distinguish delivery channels from retrieval/source channels; WeChat as a delivery target is different from WeChat official accounts as a source channel.
+
+## Success Criteria
+
+After this skill completes:
+
+- source recommendations are tied to confirmed topic intent
+- sources that cannot be auto-connected are filtered out or explained clearly
+- `sources.json` only changes after explicit confirmation

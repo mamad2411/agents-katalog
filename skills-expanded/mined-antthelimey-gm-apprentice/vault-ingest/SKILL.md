@@ -1,0 +1,196 @@
+---
+name: vault-ingest
+description: "Ingest old campaign materials — notes, character sheets, images, transcripts, spreadsheets — into a structured vault: sort the material, interview the GM to recover what actually happened, and synthesize inputs for downstream skills. Use for bootstrapping a vault from old notes, adding a discovered character sheet mid-campaign, or reconstructing past sessions from archived transcripts. Trigger on 'ingest', 'import old notes', 'I have some old campaign files', 'process these notes into the vault', 'I found some old character sheets', or any request to bring external material into an existing or new vault."
+---
+
+Vault ingestion assistant: translates messy old campaign material
+into structured inputs that existing skills process, handing off
+conversationally (not programmatically) to campaign-organizer,
+session-wrapup, `shared/reconcile.md` and, optionally,
+campaign-qa.
+
+`shared/` is the `shared` folder beside this skill's folder (if it is missing, tell the GM to run `npx skills add AntTheLimey/gm-apprentice --skill shared` with the same `-g` and `#tag` they used for this skill, then stop). `gma` is `python3 "<shared>/scripts/gma.py"`,
+with the whole path quoted; `gma llms` lists its commands.
+
+**Shared references:** Read on first invocation:
+`shared/session-principles.md`, `shared/session-document-chain.md`,
+`shared/reconcile.md`.
+
+**Skill references:** Read before each phase:
+- `references/classification-taxonomy.md` — Phase 1
+- `references/image-handling.md` — Phase 1, when images are present
+- `references/keeper-interview.md` — Phase 4
+- `references/synthesis-templates.md` — Phase 5
+
+## Input Channels
+
+Any mix in one invocation, in any of: Markdown, plain text, Word,
+PDF, images, CSV/Excel, chat/VTT exports.
+
+1. **Staging folder** — `_inbox/` in the vault.
+2. **External path** — a folder or file outside the vault.
+3. **Pasted content** — treat as an implicit source document.
+
+## Bootstrap Detection
+
+On invocation, check for a vault (`_meta/`). If none:
+
+> "I don't see a campaign vault here. Want me to set one up, or
+> point me to your vault's location?"
+
+To set one up, ask where it should live, then follow
+`campaign-organizer/references/vault-setup.md` with `--inbox`. Do
+not proceed without a vault — entities need its folders, templates
+and `_meta/` schema to file correctly.
+
+**Version check:** on first invocation, run the Version Gate in `shared/session-principles.md`.
+
+## Gotchas
+
+1. **A new entity goes in through `entity-new`** (session-wrapup Step 4: a block of the batch, or `gma vault-write <vault> entity-new --type <type> --name "<Name>"` with the body on stdin: preview, then `--write`) — it fills the vault's template, which is canonical; read `_Templates/_Template_{Type}.md` for its section names. Copying existing entities propagates drift and deprecated fields.
+2. **One file per entity** — multiple entities per file break wiki-links and publish rendering.
+3. **Never modify external source files** — they are the GM's backup and proof of ownership.
+4. **Process buckets chronologically, earliest first**, each through Phases 3-6 before the next — later buckets reference entities created by earlier ones.
+5. **Archive, never delete, processed `_inbox/` files** — `gma ingest-survey <vault> --archive FILE... --write` moves them to `_inbox/_processed/` with a date stamp, keeping the subpath and refusing to overwrite. Dry-run (no `--write`) first to confirm destinations.
+6. **Prep is not play** — scenario prep describes potential, not reality. Dice rolls, skill-check results or specific PC actions are play records wherever they appear.
+7. **Flag, don't guess** — anything ambiguous goes to the GM, never resolved by invention.
+
+## The Pipeline
+
+Six phases. vault-ingest owns 1-4; 5-6 hand off to existing skills.
+
+### Phase 1: Survey & Classify
+
+Run `gma ingest-survey <source-dir>` before reading anything. `DECIDED` rows (settled by
+extension, frontmatter or heading signature) need nothing. Read a
+`SCORED` row's file only to confirm or override its proposal,
+using `references/classification-taxonomy.md`. `UNSCORED` rows
+(Word/PDF/VTT) need a manual read. Report `ERROR` rows to the GM.
+
+**Images:** run `gma ingest-images <vault> <source-dir>` (dry-run) before touching any image by
+hand, then `--execute`. Work its report per
+`references/image-handling.md`.
+
+**Output:** a manifest table — every item with classification,
+brief summary and time-period guess. Ask: "Does this look right?
+Any misclassifications?"
+
+### Phase 2: Sort into Buckets
+
+Group items by chapter/session/time period, using explicit
+references ("Session 5 notes"), timeline references, NPC/location
+clustering (same cast = same period) and the GM's Phase 1 context.
+Each bucket gets a working label, its items and a certainty
+(certain / probable / needs-GM-input). Ambiguous items go to an
+"unsorted" bucket, resolved at the start of Phase 4.
+
+### Phase 3: Extract Play Events
+
+Per bucket, read all AUTHORITATIVE material. Source priority:
+1. `_Campaign/Timeline.md`
+2. Existing session wrap-ups
+3. Play transcripts and fragments
+4. The PC notes (`gma vault-check <vault> active-pcs --all`) — each
+   PC's player and status
+5. Existing entity files — current canon
+
+**Output:** confirmed events (with source citations) and gaps
+(things prep says could have happened, unconfirmed).
+
+After creating this bucket's entities, re-run `gma ingest-images <vault> <source-dir> --execute` so images match against them too.
+
+### Phase 4: Keeper Interview
+
+The skill's core value. Read `references/keeper-interview.md` and
+follow its Core Rules. Order:
+
+1. Resolve the Phase 2 unsorted items.
+2. Resolve image rows left for the GM (`references/image-handling.md`).
+3. One question per active PC about their arc across the period
+   (`keeper-interview.md` § PC Narrative Arcs).
+4. The play-event interview.
+
+### Phase 5: Synthesize & Hand Off
+
+Read `references/synthesis-templates.md`.
+
+1. Buckets with no session files → campaign-organizer creates the
+   chapter/session skeleton.
+2. Write the synthesis as a Play Notes file per
+   `shared/session-document-chain.md`. Block/seam test: keep
+   finished-prose blocks from the sources verbatim; author only
+   fragment-derived text and seams. A `Session export` row is
+   filed whole as an Export note with `export-new`, not synthesized
+   (synthesis-templates.md § Synthesis Rules, rule 7).
+3. Follow the session-wrapup workflow for the Wrap-Up file and
+   entities. One new entity often implies others (an NPC brings
+   locations) — create them too.
+4. Each PC active in the period gets a consolidated character
+   story entry (synthesis-templates.md § Character Story
+   Backstory Entries). A PC whose sources hold no stats:
+   `shared/pc-body-structure.md` § A sheet kept somewhere else; on a
+   campaign that does not publish sheets (`player_site.sheets.show`
+   off) do not ask where one is kept; when `gma vault-check <vault> pc-body`
+   emits no Stat Sheet rows there is nothing to ask.
+5. A PC who died, retired or left play in the period: record it in
+   the period's session material, and set `status:` on that PC's own
+   note only to where the PC stands now (a PC who left and came back
+   is active); the PC note is the only place a PC's player and
+   current status are kept.
+
+Check each entity as you write it: entity mentions are
+`[[Entity Name]]` wiki-links; `play_date` is `YYYY-MM-DD`;
+`in_game_date` follows `shared/session-document-chain.md` (never a
+fabricated Gregorian date; no time of day once the campaign's dates
+carry a year). Per bucket, run
+`gma vault-check <vault> frontmatter --folder <dir>` (see
+`shared/vault-access.md`) and fix every ERROR before the next
+bucket.
+
+Include a `> [!info] Reconstruction Note` (sources, limitations)
+between `<!-- gm-only -->` and `<!-- /gm-only -->` lines; mark
+uncertain items `<!-- UNVERIFIED (S{n}) -->`, tagged with the
+session ingested (`Ch{c} S{n}` if it has a chapter).
+
+**Planning documents** (arc structures, investigation flows)
+become `type: plan` entities in `Chapters/{chapter}/Planning/` per
+`_Templates/_Template_Plan.md`, with `plan_type` `arc`, `scene`,
+`investigation` or `timeline`. A design for one scene becomes a scene
+file instead: `gma vault-write <vault> scene-new --chapter
+"<chapter>" --title "<title>" --write`, then its text goes in the
+body and its `entities`/`locations` get the wiki-links it names.
+
+Entity files parallelize well across subagents; the Phase 4
+interview stays sequential.
+
+### Phase 6: Review
+
+Walk the GM through the wrap-up with `shared/reconcile.md`; on
+approval it becomes `reviewed` and AUTHORITATIVE.
+
+## Post-Ingestion
+
+After all buckets:
+- Deduplicate entities — `gma vault-check <vault> names`
+- Cross-bucket relationship chains — `gma graph-check <vault> all`,
+  `gma vault-check <vault> relationships` (a tone WARNING on a relationship
+  this ingest wrote: use the word the row names, or where it names
+  none the listed word that fits, as `relationships words` in the publish
+  tool prints them;
+  leave any other to campaign-qa and never run `gma tones` here)
+- Timeline consistency across buckets — by eye (`gma vault-check <vault> timeline` does not check cross-bucket ordering)
+- Entity status progression — `gma vault-check <vault> stale-drafts`
+- `gma vault-check <vault> wrapup` over the generated wrap-ups
+- Route inconsistencies back through reconcile
+
+**Pictures:** if the version check printed `# pictures on:`, then once everything above is done and reported, follow "When no one asked" in `gma llms image` for the notes this ingest created.
+
+Then offer, without pushing: "I've ingested N sessions of
+material. Want to run a vault health check?" (campaign-qa)
+
+## Compaction
+
+Preserve: confirmed events + sources, GM answers verbatim,
+manifest, unresolved items, entity paths. Discard: intermediate
+reasoning, processed source text, failed extractions, superseded
+interview chains.

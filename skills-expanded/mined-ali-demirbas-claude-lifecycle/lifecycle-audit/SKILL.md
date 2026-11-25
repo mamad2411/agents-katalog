@@ -1,0 +1,78 @@
+---
+name: lifecycle-audit
+argument-hint: "[journey-doc-or-description]"
+description: Audit an existing journey portfolio — user-described, imported from a CRM tool, or previously generated. Scores coverage, conflicts, depth-vs-data fit, and copy compliance. Use when the user says "journey'lerimi denetle", "audit my flows", "mevcut otomasyonları incele", "portfolio audit".
+metadata:
+  version: 0.3.0
+  category: analysis
+  updated: "2026-11-10"
+---
+
+# Lifecycle Audit — Portfolio Review
+
+Score an existing set of journeys against the same rules the engine uses to generate them. Output: an **Audit Report** with per-journey findings and a portfolio-level verdict.
+
+## When NOT to use this
+
+- **No journeys exist anywhere yet** — nothing described, generated, or imported — there's nothing to score; that's a `lifecycle-connect` → `lifecycle-journeys` conversation instead.
+- **The user wants the findings acted on**, not just diagnosed — this skill never rewrites journeys itself (see Never do below); generation is a separate, offered step via `lifecycle-journeys`.
+- **Real performance or holdout data exists and the ask is whether a journey is actually working** — that's `lifecycle-results`, which judges measured incremental outcomes; this skill judges structure and methodology without live results.
+
+## Inputs
+
+Journeys as: prior engine output, user description ("we have a welcome email and a cart reminder"), or CRM exports/screenshots. Sparse descriptions are fine — audit what is known, list what could not be assessed. If available, also use the DQS + stage map; without them, stage-coverage **and depth-vs-data-fit** findings are marked "data-blind" — dimension 3 specifically cannot be judged without knowing what the data supports, so guessing "over-engineered" or "under-leveraged" from journey shape alone is a fabrication risk (CLAUDE.md rule 3), not a finding.
+
+## Audit dimensions (score each 0–5, with evidence)
+
+| # | Dimension | What is checked |
+|---|---|---|
+| 1 | Stage coverage | Each lifecycle stage with events has ≥ 1 journey; blind spots named (uses playbook `pattern_priorities` as the expectation) |
+| 2 | Priority fit | Are the sector's P0 patterns running? A missing P0 (e.g. no abandoned-cart in e-commerce) is a Critical finding when its events exist; when it can't run because events are missing, it is a High tracking gap |
+| 3 | Depth-vs-data fit | Journey complexity matches what the data supports: 10-step branched flows on thin data = over-engineered; 2-step flows on rich data = under-leveraged |
+| 4 | Trigger & exit hygiene | Event triggers vs blast schedules; success exits defined; re-entry policies exist |
+| 5 | Frequency & conflict | Aggregate worst-case messages/user/week vs caps in `knowledge/compliance/consent-and-quiet-hours.md`; overlapping triggers |
+| 6 | Measurement | Primary KPI + guardrail per journey, judged against the journey's own measurement design (see `knowledge/measurement.md`, "Evaluate by measurement design"): holdout → incremental lift vs a randomized holdout read intent-to-treat, not an attributed number; service/transactional → operational outcomes/SLA + harm guardrails (no holdout is correct, not a finding); pre_post → directional with confounders named; low volume → the stated alternative. Power stated from baseline, effect, both arms' sizes and allocation, never a fixed conversion count |
+| 7 | Copy compliance *(if copy provided)* | Spot-check against channel hard rules + lexicon banned lists |
+| 8 | Portfolio currency | Has the portfolio changed (journeys added/removed) since the last conflict review? A stale conflict review — cap math not covering the current journey set — is automatically a High finding |
+
+**Dimension 4 also covers sector-benchmark fit.** When a running pattern has sector-specific timing guidance in `knowledge/industries/<sector>.md` ("Sector-specific timing & cadence"), compare the journey's actual/stated trigger timing and channel escalation order against that guidance and cite the specific range verbatim (e.g. "fires at 48h against the sector's 1–4h cart-abandonment window") — never an invented industry average (CLAUDE.md rule 3: ranges from knowledge files may be cited, nothing may be fabricated). A deviation is a finding scaled to its degree, not an automatic Critical — existing-but-slow still beats missing (dimension 2), and severity comes from revenue/compliance impact, not distance from the benchmark alone.
+
+## Scoring posture (anti-inflation)
+
+Score as an adversarial reviewer of someone else's work, not as the author: if you cannot name a concrete gap for a dimension, you have not looked hard enough to score it high. When torn between two adjacent scores, take the lower. Mostly-top scores on a first pass are a signal to re-examine the scoring, not evidence of quality. Never reverse-engineer scores from a desired overall verdict.
+
+Two failure modes get confused under this posture and must be told apart: **no evidence provided** (the description simply didn't cover it — mark "not assessable," exclude it from the average, but count it in coverage) is not the same as **evidence of absence** (the journey was described and plainly has no exit criteria, a marketing journey with volume for a holdout has none and names no alternative, etc. — that scores low). Defaulting ambiguous cases to "not assessable" rather than a guessed-low score keeps the adversarial posture from tipping into fabrication.
+
+When the verdict gates a real decision (budget, headcount, killing a program), treat one pass as provisional: a second independent pass (fresh session, or a different model) that disagrees by ≥ 2 points on any dimension is the same "two judgments to gate" discipline `evals/rubric.md` already applies to copy and journey judging — one adversarial pass catches more than no review, but it is still one reviewer's read.
+
+## Report format
+
+1. **Verdict** — one paragraph + overall score (avg of the *scored* dimensions, /5) + evidence coverage stated inline, the same way the DQS reports its flags in the score line itself rather than burying them — `6/8 dimensions scored, 2 not assessable (measurement, copy compliance — no config visibility)` — never a bare average silently computed over however many dimensions happened to be visible. A verdict built on fewer than half the dimensions says so in the paragraph itself, not just in the coverage tag.
+2. **Findings table** — severity (Critical/High/Medium/Low) | journey | finding | fix. Critical = revenue leaking or compliance risk.
+3. **Coverage map** — same stage table as the portfolio template §3.
+4. **Recommended actions** — ordered; each one maps to a concrete next step (`run /lifecycle journeys for the missing P0s`, `re-run copy for flow X`, and when the user has performance data: `run /lifecycle results to score these against holdouts`).
+5. **Audit trail** — when a brand config exists, check `output/<project>/audit-history.md` (create it if absent, same convention as `results-log.md`): a Critical/High finding matching one from the prior run's log (same journey + same dimension) is flagged `repeat finding, open since <date>` instead of reported as new; a prior Critical/High that doesn't reappear gets one line `resolved since last audit`. Append this run's Critical/High findings before closing out. No brand config (ad hoc/anonymous audit) → skip this step and note once that findings aren't being tracked across runs.
+
+## Common Pitfalls
+
+**Pitfall 1: "Not assessable" used to dodge a hard call.**
+Symptom: several dimensions come back "not assessable" on a review where the user actually described the journeys in reasonable detail — the ambiguity is judgment-shaped, not evidence-shaped.
+Consequence: the audit is technically defensible (nothing was fabricated) but useless (nothing was decided) — this is the exact gap the "no evidence provided vs evidence of absence" distinction above exists to close, restated as a self-check on the finished report.
+Fix: before marking a dimension "not assessable," confirm it is truly unstated rather than stated-but-bad — a journey with a described exit that just happens to be weak scores low, it doesn't get exempted.
+
+**Pitfall 2: Severity flattens to Medium.**
+Symptom: the findings table reads Medium down the entire severity column.
+Consequence: a compliance-class issue and a wording nitpick become indistinguishable, and the one output an audit exists to produce — what to fix first — disappears.
+Fix: apply "Critical = revenue leaking or compliance risk" literally per finding, not as a description of the audit's overall tone; most audits should have a mix, and an all-Medium table is a signal to re-examine severity, the same way an all-high-score pass is a signal to re-examine scores.
+
+**Pitfall 3: Score creep without a named gap.**
+Symptom: a dimension lands at 4/5 or 5/5 with a one-line justification that doesn't point at anything specific the journey is missing.
+Consequence: this is the fabrication risk the scoring-posture section already names — a high score with no gap attached is indistinguishable from a score that was never actually checked.
+Fix: if the write-up can't name a concrete gap, the score is not yet earned — drop to the next tier down or go back and look again, per the "when torn, take the lower" rule already stated above.
+
+## Never do
+
+- Never score dimensions without stating the evidence ("no exit criteria mentioned for 3 of 5 journeys").
+- Never fail a journey for missing information the user didn't provide — mark "not assessable" instead.
+- Never mark a service/transactional journey down for having no holdout, and never require every journey to justify itself with holdout lift or iROI — the measurement design decides the evaluator.
+- Never rewrite the user's journeys inside the audit — the audit diagnoses; generation is a separate, offered step.

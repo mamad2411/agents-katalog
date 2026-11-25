@@ -1,0 +1,68 @@
+---
+name: resume-ssot
+version: "2.21.0"
+description: >-
+  Career archive + JD-tailored resumes (HTML/PDF/plain); official job match; application tracker;
+  positioning / HR pitch; interview predict-grill-review-debrief; offer comparison and mainland salary estimates.
+  改简历、投递版、岗位定位、要点改写、HR开场、搜可投岗位、投递进度、Offer、面试预测、模拟面试、简历追问、面试复盘、暴露台账。
+  Use when user mentions resume, CV, JD, internship, offer, tracker, job match,
+  改简历, 投递, 网申, 可投岗位, 开场白, 岗位定位, 面试, 模拟面试, 追问, 复盘, or 暴露台账.
+  人类只读 README.md；禁止对用户暴露 agent/ 与内部术语。
+disable-model-invocation: false
+license: MIT
+---
+
+# resume-ssot（Agent 入口）
+
+**人类用户** → [README.md](README.md) · 示例 [在线预览](https://bak262.github.io/resume-ssot/fixtures/example-resume.html)
+
+**Agent 安装** → [agent/INSTALL.md](agent/INSTALL.md)
+
+**Agent 操作手册** → [agent/ROUTER.md](agent/ROUTER.md)（路由与智能默认，唯一权威）
+
+内部文档均在 `agent/`、`scripts/`、`templates/`、`fixtures/`。**不要**让用户阅读这些路径。
+
+## 对用户怎么说
+
+
+| 内部                         | 对外                 |
+| -------------------------- | ------------------ |
+| ssot.json                  | 经历档案（AI 维护，不用打开）   |
+| industry_base.html         | 通用版简历              |
+| industry_<slug>.html       | 投递版简历              |
+| .txt                       | 网申粘贴文本             |
+| job-match-industry.html    | 可投岗位表              |
+| application-tracker.html   | 投递进度表              |
+| offer-comparison.html      | Offer 对比看板          |
+| candidate-profile.json     | 求职画像（技能/偏好）   |
+| interview-rN-*.md          | 面试复盘（单岗）           |
+| interview-exposure-ledger.md | 暴露台账（跨岗）         |
+
+
+## 快速路由
+
+
+| 意图                  | 读                                                          |
+| ------------------- | ---------------------------------------------------------- |
+| 任何任务开始前             | [agent/ROUTER.md](agent/ROUTER.md)                         |
+| 从 GitHub 安装            | [agent/INSTALL.md](agent/INSTALL.md)                       |
+| 设计边界 / legacy skill | [agent/DESIGN.md](agent/DESIGN.md)                         |
+| 初始化                 | [agent/workflows/init.md](agent/workflows/init.md)         |
+| 维护事实                | [agent/workflows/maintain.md](agent/workflows/maintain.md) |
+| 写简历 / 定位开场 / 要点包装 | [agent/workflows/resume.md](agent/workflows/resume.md) + [agent/rules/resume.md](agent/rules/resume.md) |
+| 轻量编辑               | [agent/workflows/patch.md](agent/workflows/patch.md)       |
+| 总结技能 / 求职偏好 / 优势赛道 | [agent/workflows/candidate-profile.md](agent/workflows/candidate-profile.md) |
+| 搜可投岗位 / 刷新岗位表     | [agent/workflows/candidate-profile.md](agent/workflows/candidate-profile.md) + [agent/workflows/job-match.md](agent/workflows/job-match.md)（多渠道实搜；local Chrome first） |
+| 投递进度 / Offer         | [agent/workflows/offer.md](agent/workflows/offer.md)       |
+| Offer 对比 / 谈薪 / 薪酬拆解 / 五险一金 | [agent/workflows/offer-comparison.md](agent/workflows/offer-comparison.md) |
+| Offer 阶段新增消息 / 文件 / 复盘 / 员工反馈 | [agent/workflows/offer-comparison.md](agent/workflows/offer-comparison.md)（主动提取并更新对比表） |
+| 面试预测 / 追问 / 复盘 / 暴露台账 | [agent/workflows/interview.md](agent/workflows/interview.md) |
+
+
+更新看板或关联求职资料时，执行 [当前信息复核](agent/ROUTER.md#当前信息复核)：以已确认信息替换旧说法，并联动本地资料与链接。
+
+## Website access
+
+For website reading and interaction in this skill, prefer connected local Google Chrome and its existing signed-in profile. Follow [agent/ROUTER.md](agent/ROUTER.md#website-access) for login checks, access failures, and fallback tools.
+
+变更记录 → [CHANGELOG.md](CHANGELOG.md)

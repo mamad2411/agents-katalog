@@ -1,0 +1,85 @@
+---
+name: dogrulama-kontrol-listesi-teslim-oncesi
+description: "Bir layiha, mütalaa veya sözleşme teslim edilmeden hemen önce; tüm mevzuat, içtihat ve doktrin atıflarının doğruluğunu, güncelliğini ve işaretlenmemiş uydurma kalmadığını topluca denetlemek için kullanılır."
+---
+
+# Teslim Öncesi Atıf Doğrulama Kontrol Listesi
+
+## Görev
+Bir hukuki metin teslim edilmeden önce, içindeki tüm atıfları sistematik bir kontrol listesinden geçirerek hatalı, güncelliğini yitirmiş veya doğrulanmamış hiçbir dayanağın kalmadığından emin olmak.
+
+## Soğuk başlangıç (intake)
+- Belge türü ve muhatabı kim (mahkeme, müvekkil, karşı taraf)?
+- Metinde kaç mevzuat, kaç içtihat, kaç doktrin atfı var?
+- Hangileri teyit edildi, hangileri hâlâ `[doğrulanacak]`?
+- Son değişiklikten sonra yeni eklenen atıf var mı?
+
+## Denetim şeması
+1. **Envanter** — Metindeki tüm atıflar listelenir: mevzuat (madde/fıkra/bent), içtihat (künye), doktrin (yazar-sayfa). Her biri için "teyit kaynağı" sütunu açılır.
+2. **Mevzuat denetimi** — Her madde mevzuat.gov.tr'den açılır; numara, fıkra, bent ve yürürlük durumu (güncel/değişik/mülga) doğrulanır; zaman bakımından uygulama sorunu yoksa işaretlenir.
+3. **İçtihat denetimi** — Her künye resmî bankadan teyit edilir; teyit edilemeyen künye `[doğrulanacak]` ile bırakılır veya çıkarılır — **asla tahmin numarasıyla tamamlanmaz.** İBK/AYM bağlayıcılığı doğru sunulmuş mu kontrol edilir.
+4. **Doktrin denetimi** — Yazar-eser-sayfa doğrulanır; doğrulanamayan atıf "kaynak teyit edilecek" notuyla bırakılır.
+5. **Tutarlılık ve dürüstlük** — Aleyhe yerleşik içtihat gizlenmemiş; tek karar "yerleşik" diye sunulmamış; doktrin kural gibi gösterilmemiş; kesinlik derecesi dürüstçe yansıtılmış mı?
+6. **İşaret taraması** — Metinde kalan tüm `[doğrulanacak]` / `[doldurulacak]` işaretleri raporlanır; bilerek bırakılanlar dışında işaretsiz uydurma kalmadığı teyit edilir.
+
+## Çıktı modülleri
+- Atıf envanter tablosu (tür / dayanak / teyit durumu).
+- Mevzuat ve içtihat doğrulama sonucu (geçti/düzeltildi/`[doğrulanacak]`).
+- Dürüstlük/tutarlılık denetimi notu.
+- Kalan işaret listesi ve teslim hazırlık özeti.
+
+## Plugin bağlamı
+
+Bu beceri `atif-turk-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

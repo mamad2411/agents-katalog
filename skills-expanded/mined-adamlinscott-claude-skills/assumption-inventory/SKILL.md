@@ -1,0 +1,140 @@
+---
+name: assumption-inventory
+description: '[Adam''s Skills] DEPRECATED — superseded by /build-it. Do not use for new work. Surfaced the load-bearing assumptions behind a task before a long run — goal, root, what may be edited, what is off-limits, what done means, open questions — tagging each as cited fact or guess, and gating the load-bearing guesses on confirmation. Its six slots are now the four headings of the scope note /build-it writes before any code, so running both duplicated most of a pass; the root and platform check and the cite-or-flag discipline moved across with it. Kept installable only so existing setups are redirected rather than broken. If invoked, say it is deprecated and offer /build-it instead.'
+disable-model-invocation: true
+---
+
+# Assumption Inventory — DEPRECATED
+
+> **This skill is deprecated. Use [`/build-it`](../build-it/SKILL.md) instead.**
+>
+> If someone has invoked this, do not run the protocol below. Tell them in two lines that it is
+> retired and why, then offer `/build-it` — pointed at a ticket number if they have one, or at a
+> plan file, a spec, or just a description of the work if they do not. Run this one only if they
+> explicitly say they want it anyway, having been told.
+>
+> **Why it was retired.** It was built as the preflight for a long autonomous run, and the run it
+> fed (`/goal-workflow`) is retired too. `/build-it` now does the same work earlier and in one
+> pass: its scope note carries this skill's six slots as four headings — *Building* for the goal,
+> *Will change* for what may be edited, *Will not change* for what is off-limits, *Done when* for
+> the completion bar — and its interview surfaces the open questions. Running both meant filling
+> the same inventory twice.
+>
+> **What moved across rather than being lost:**
+>
+> - The **root, workspace and platform check** — is this the right repo, does the change stop at
+>   its edge, what must this actually run on — is now step 2 of `/build-it`.
+> - The **cite-or-flag discipline** — tag every claim `[cited: file:line]` or `[assumption]`,
+>   because "can I point at what makes this true?" is a stricter test than "am I unsure?" — is now
+>   step 4, and the scope-note template carries the tags.
+> - The **catalog of assumptions that feel like facts** — local auth, stale ADR contracts,
+>   single-platform, done-means-code-written — is in `/build-it`'s REFERENCE.
+>
+> **What did not move:** the critique of a plan's *existing* acceptance criteria as unmeasurable
+> or unproven. `/build-it` asks you what done looks like; it does not audit a bar someone else
+> already wrote. If you find you miss that, it is worth raising as its own small skill rather than
+> reviving this one.
+
+The original protocol follows, unchanged, for anyone who deliberately chooses to run it.
+
+---
+
+# Assumption Inventory
+
+Before a long run, the cheapest bug to fix is a wrong premise. This skill is a
+**preflight**: surface the assumptions the next stretch of work rests on, separate
+what you can *cite* from what you are *guessing*, and confirm the load-bearing guesses
+before the work starts — not after the diff lands.
+
+The mechanism is one distinction held strictly: a **fact** is something on disk or
+stated by the user (it gets a citation); an **assumption** is everything else (it does
+not). The danger is an uncited assumption quietly becoming load-bearing — the work
+builds on it, and the divergence only surfaces hours later. This skill drags those
+assumptions into the open and gates the load-bearing ones on evidence or confirmation.
+
+This is the front end of the triad: `assumption-inventory` (before), `reground`
+(mid-drift), `fresh-eyes` (after). Run it in order; do not skip to step 4.
+
+## 1. Decide whether to run
+
+Run this when the work ahead is long, expensive, hard to reverse, or multi-step **and**
+the target is not already crisply pinned. Skip it for a one-line change with an explicit
+target — the ceremony is not free. When in doubt on a big task, run it.
+
+## 2. Draft the inventory
+
+Fill every slot. For each, tag the basis: `[cited: file:line / user said X]` for a fact,
+`[assumption]` for a guess. Do not leave a slot blank — "unknown" is a valid, important
+answer.
+
+- **Goal** — what outcome am I trying to produce, in one sentence? Why now?
+- **Root / scope** — which repo, directory, or workspace is this rooted in? Is it
+  workspace-wide or one repo? What platform(s) must it run on?
+- **May edit** — which files / areas am I allowed to change?
+- **Must not touch** — what is off-limits (generated files, other repos, prod config,
+  contracts other code depends on)?
+- **Done means** — what concrete, checkable state counts as complete? How will I know?
+- **Open questions** — what do I not know yet that could change the above?
+
+## 3. Stress the assumptions
+
+For each `[assumption]`, ask: *what is the cheapest evidence that would settle this, and
+have I looked?* Then look. Read the file, run `pwd` / `git remote -v`, check for a
+CLAUDE.md or ADR, grep for the symbol. Cheap checks turn guesses into citations now,
+before they cost anything. See [REFERENCE.md](REFERENCE.md) for the catalog of
+assumptions that are silently wrong most often (platform, scope, auth, volatile
+contracts) — check those by default even when they feel obvious.
+
+## 4. Classify and gate
+
+Sort every surviving `[assumption]` by whether it is **load-bearing** — would the work
+be wrong, wasted, or harmful if it turned out false?
+
+- **Load-bearing and unconfirmed** → blocking. List it as an open question and ask the
+  user before proceeding. This is the whole point of the skill.
+- **Not load-bearing** → state it explicitly as a stated assumption and proceed; the
+  user can correct it cheaply because it is visible.
+
+**Pressure-test the acceptance criteria specifically.** The plan usually carries the
+"done means" criteria — but this is the moment to test them, not inherit them. Flag any
+criterion that is either **weak** (vague, unmeasurable, or untestable — "works well", "is
+fast", "handles errors") or **built on an unproven assumption** (it presumes a behavior,
+contract, schema, or file that step 3 could not cite). A criterion no one could objectively
+mark true or false, or one resting on a guess, is a blocking item — the plan looked done
+but its bar is soft. Surface these alongside the load-bearing assumptions; they are often
+the most valuable thing this preflight catches.
+
+## 5. Ask the blocking questions, then proceed
+
+Show the user the filled inventory as the written report (template in
+[REFERENCE.md](REFERENCE.md)) — that technical record stays. But for the **blocking
+items**, do not just list them in prose: **ask them with the AskUserQuestion tool.** A
+structured question forces a decision and makes the boundary explicit, where a prose note
+is easy to skim past. Reach for it whenever the uncertainty is about *what to do or where
+the edge of the task is* — the things the plan should have settled but didn't. Typical
+questions worth raising:
+
+- **Boundary** — "Is X in scope or out?" / "Does this stop at the API, or include the UI?"
+- **Interpretation** — "The goal could mean A or B — which?"
+- **Acceptance criteria** — "This criterion is unmeasurable / rests on an unproven
+  assumption — how should 'done' actually be judged here?"
+
+Offer concrete options (e.g. *in scope / out of scope / defer*) so the answer is a click,
+and recommend the one the evidence favors. Keep it tight — only genuinely load-bearing
+uncertainties become questions; the *do not over-ask* guardrail still holds, and if nothing
+is truly uncertain, say so and skip straight to proceeding. Stated non-blocking assumptions
+need no sign-off — they proceed unless corrected. Once the blocking questions are answered,
+the inventory (plus those answers) is the brief for the run; carry it forward and check work
+against it.
+
+## Guardrails
+
+- **Never silently upgrade an assumption to a fact.** If you did not cite it, it is still
+  a guess, no matter how confident it feels.
+- **Default to portable, not this-machine-first.** "Works on my OS / with my logins / in
+  this repo" is an assumption, not the goal — surface it, do not bake it in. See
+  [REFERENCE.md](REFERENCE.md).
+- **Do not over-ask.** Only load-bearing, unconfirmed assumptions block. Burying the user
+  in confirmable trivia is its own failure mode — check the cheap ones yourself first.
+- **This skill plans, it does not build.** Its output is the confirmed inventory, not a
+  started implementation. Begin the work only after step 5.

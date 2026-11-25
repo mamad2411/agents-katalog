@@ -1,0 +1,1553 @@
+---
+name: configure
+description: "View, create, or edit Accelerator plugin configuration. Manage document templates."
+argument-hint: "[view | create | help | templates ...]"
+disable-model-invocation: true
+allowed-tools:
+  - Bash(accelerator config *)
+  - Read
+  - Write
+  - Edit
+---
+
+# Configure Accelerator
+
+You help users manage their Accelerator plugin configuration.
+
+## Configuration Files
+
+Accelerator reads configuration from two files in the project's `.claude/`
+directory:
+
+| File                              | Scope       | Git        | Purpose                             |
+|-----------------------------------|-------------|------------|-------------------------------------|
+| `.accelerator/config.md`          | Team-shared | Committed  | Shared project context and settings |
+| `.accelerator/config.local.md`    | Personal    | Gitignored | Personal overrides and preferences  |
+
+Both files use YAML frontmatter for structured settings and a markdown body for
+free-form project context. Local settings override team settings for the same
+key, except for the [consent keys](#consent-keys), which are never read from
+the team file.
+
+## Consent Keys
+
+A consent key holds a value only you may supply, because the repository must
+not choose what runs on your machine or where your credentials go. There are
+seven:
+
+| Key                    | Kind            | Environment override               |
+|------------------------|-----------------|------------------------------------|
+| `jira.allowed_sites`   | hostname list   | `ACCELERATOR_JIRA_ALLOWED_SITES`   |
+| `jira.token_cmd`       | command         | `ACCELERATOR_JIRA_TOKEN_CMD`       |
+| `linear.token_cmd`     | command         | `ACCELERATOR_LINEAR_TOKEN_CMD`     |
+| `shortcut.token_cmd`   | command         | `ACCELERATOR_SHORTCUT_TOKEN_CMD`   |
+| `openalex.api_key_cmd` | command         | `ACCELERATOR_OPENALEX_API_KEY_CMD` |
+| `github.token_cmd`     | command         | (none)                             |
+| `design.browser_path`  | executable path | `ACCELERATOR_DESIGN_BROWSER_PATH`  |
+
+Every consent key follows one rule. The environment override is tried first,
+then `config.local.md`, and the first source that passes every check wins. A
+value in the team-shared `config.md` is always refused, so for these keys, and
+only these, a team value never stands in for a missing personal one. A
+personal value is admitted only from a `config.local.md` that is readable and
+not tracked by version control. Commands run through the
+[command runner](#command-runner), and an executable path must be absolute and
+outside the repository.
+
+Every refusal met on the way is printed as a `warning:` when a usable value
+remains, whether a later source or the key's built-in fallback. With nothing
+usable, the refusal from the highest-precedence source tried is fatal and the
+rest are still printed as warnings. Taking a consent key from the environment
+prints a `notice:` naming the variable. The `SessionStart` hook reports
+team-level and tracked-file refusals at the start of each session.
+
+| Code                                  | Meaning                                                                  | Remedy                                                                                     |
+|---------------------------------------|--------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| `E_CONSENT_KEY_TEAM_LEVEL`            | A consent key in the team-shared `config.md`                             | Move it to `config.local.md`, or set its environment override                             |
+| `E_CONSENT_KEY_TRACKED`               | A consent key in a `config.local.md` tracked by version control          | Untrack the file (`git rm --cached`, or `jj file untrack`)                                 |
+| `E_CONSENT_KEY_TRACKING_UNKNOWN`      | A consent key in a `config.local.md` whose tracking status is unknown    | Use the key's environment override; the message names it                                   |
+| `E_TOKEN_FROM_TRACKED_FILE`           | A plaintext credential in a tracked or tracking-unknown `config.local.md` | Untrack the file, or use `ACCELERATOR_JIRA_TOKEN`, `ACCELERATOR_LINEAR_TOKEN`, `ACCELERATOR_OPENALEX_API_KEY` or `GH_TOKEN` |
+| `E_TOKEN_MALFORMED`                   | A credential carrying a control character, from any source               | Fix the helper or value so it prints the credential alone                                  |
+| `E_LOCAL_PERMS_INSECURE`              | A `config.local.md` looser than `0600`, or a symlink; none of it is read | `chmod 600` it and replace a symlink with the file itself                                  |
+| `E_TOKEN_CMD_FAILED`                  | A command that could not start or exited non-zero                        | Run the command yourself under the runner's environment and fix it                         |
+| `E_COMMAND_TIMED_OUT`                 | A command that outlasted its deadline                                    | Use a helper that answers without prompting, such as a password manager's agent            |
+| `E_COMMAND_OUTPUT_EXCEEDED`           | A command that printed more than 65,536 bytes across stdout and stderr   | Silence the helper's tracing, such as `set -x`                                             |
+| `E_EXECUTABLE_PATH_RELATIVE`          | A relative executable path                                               | Use an absolute path outside the repository                                                |
+| `E_EXECUTABLE_PATH_INSIDE_REPOSITORY` | An executable path inside, or not shown to be outside, the repository    | Use an absolute path outside the repository and its main checkout                          |
+
+A `config.local.md` looser than `0600`, or a symlink, is not read at all:
+its values are not used, team values and the `ACCELERATOR_*` overrides still
+resolve, and a command fails with `E_LOCAL_PERMS_INSECURE` only when nothing
+usable remains. Commands that write refuse outright. On a filesystem that
+cannot honour file modes, keep team values in `config.md` and personal values
+in the `ACCELERATOR_*` overrides, and move `config.local.md` aside to run a
+command that writes. No override unlocks an insecure file, so the old
+insecure-local marker file does nothing and can be deleted.
+
+### Command Runner
+
+Every command-valued key (`jira.token_cmd`, `linear.token_cmd`,
+`openalex.api_key_cmd`, `github.token_cmd`, and the `ACCELERATOR_*_CMD`
+overrides) runs through one runner:
+
+- **Working directory**: a fresh temporary directory outside the repository,
+  removed afterwards. A command never runs in the repository or in `$HOME`;
+  when no temporary directory lies outside the repository, it is refused with
+  `E_TOKEN_CMD_FAILED`.
+- **Environment**: only `PATH`, `HOME`, `TERM`, `XDG_CONFIG_HOME`,
+  `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS`, plus what a key admits:
+  `github.token_cmd` admits `GH_HOST` and `GH_CONFIG_DIR`. Every other
+  variable, secrets included, is dropped.
+- **`PATH`**: an entry that is empty, relative, missing or inside the
+  repository is dropped, and so is an `XDG_CONFIG_HOME`, `XDG_RUNTIME_DIR` or
+  `GH_CONFIG_DIR` that points inside the repository. `bash` itself is found on
+  the filtered `PATH`, so call a helper by an absolute path outside the
+  repository.
+- **stdin** is empty.
+- **Timeout**: 30 s for Jira and Linear, and whatever remains of the 100 s
+  fetch deadline for OpenAlex. A command that outlasts it is refused with
+  `E_COMMAND_TIMED_OUT`.
+- **Output cap**: 65,536 bytes across stdout and stderr combined. More is
+  refused with `E_COMMAND_OUTPUT_EXCEEDED`, never truncated. stderr counts
+  towards the cap but is never shown.
+- **Result**: stdout, with surrounding whitespace trimmed. A command that
+  cannot start or exits non-zero is refused with `E_TOKEN_CMD_FAILED`.
+- **Interactive helpers** are unsupported. The command has no controlling
+  terminal in the foreground, so a helper that prompts on `/dev/tty` fails or
+  times out. Use a password manager's agent or desktop integration instead.
+- **Process group**: the command runs in its own process group. Once it exits,
+  anything it left in the group, such as a caching agent, receives `SIGTERM`,
+  then `SIGKILL` after a grace period of up to a second, so an agent can
+  finish its writes. A process that calls `setsid` leaves the group and is not
+  stopped.
+- **Interrupts**: Ctrl-C, `SIGTERM` or `SIGHUP` to the CLI during a run sends
+  the command's group `SIGTERM`, then `SIGKILL` after the grace period, and
+  the CLI then ends as the signal would have ended it. The group never
+  receives `SIGINT` itself, so a helper that cleans up in a trap should trap
+  `TERM`.
+
+`github.token_cmd` climbs the same chain as the tracker keys: `GH_TOKEN`,
+then `GITHUB_TOKEN`, then the personal `github.token`, then the personal
+`github.token_cmd`, then the team `github.token` only when `config.local.md`
+does not exist. It is refused from the same sources and with the same codes,
+with `GH_TOKEN` as the variable that still works.
+
+## Available Actions
+
+When invoked:
+
+1. **Check current configuration state**:
+  - Check if `.accelerator/config.md` exists
+  - Check if `.accelerator/config.local.md` exists
+  - If either exists, read and display current settings
+  - **If a config file already exists, always show its current contents and ask
+    the user to confirm before overwriting. Never silently replace an existing
+    config file.**
+
+2. **Based on the argument or user intent**:
+
+### `view` (or no argument with existing config)
+
+Display the current configuration:
+
+```
+## Current Accelerator Configuration
+
+### Team Config (.accelerator/config.md)
+[Display frontmatter settings as a formatted table]
+[Display markdown body if present]
+
+### Personal Config (.accelerator/config.local.md)
+[Display frontmatter settings as a formatted table]
+[Display markdown body if present]
+
+### Effective Settings
+[Show merged settings with source attribution]
+
+### Per-Skill Customisations
+[For each directory under .accelerator/skills/ that contains
+non-empty context.md or instructions.md, list:]
+
+- `<skill-name>`:
+  - context.md: [present / not found]
+  - instructions.md: [present / not found]
+
+[If no per-skill customisation directories exist:]
+
+No per-skill customisations found. See `/accelerator:configure help`
+for details on per-skill context and instructions.
+```
+
+### `create` (or no argument with no existing config)
+
+Help the user create a configuration file. Focus on gathering project context
+for the markdown body — this is the highest-value feature.
+
+1. Ask whether they want to create a team config (shared) or personal config
+   (local), or both
+2. If creating a personal config, check whether `.accelerator/config.local.md`
+   is in `.gitignore` (or `.accelerator/.gitignore`). If not, offer to add it
+   to the repo root `.gitignore`.
+3. Ask about their project context — frame questions around "What should
+   Accelerator skills know about your project?":
+  - What tech stack do they use? (languages, frameworks, build system)
+  - Any specific conventions or standards?
+  - Any domain-specific context that should inform skills?
+  - Build and test commands?
+4. Optionally ask about agent overrides: "Would you also like to configure
+   custom agent overrides? (This is an advanced feature — most users can skip
+   this.)" If yes, explain the available agents and their roles, then gather
+   override mappings.
+5. Mention that additional customisation is available: "You can also
+   customise review behaviour (lens selection, verdict thresholds, inline
+   comment limits), output paths (where skills write documents), document
+   templates (plan, ADR, codebase-research, validation formats), and per-skill
+   context and instructions (`.accelerator/skills/<skill-name>/`).
+   Run `/accelerator:configure help` for the full key reference."
+6. Write the config file with a markdown body containing the gathered context
+   and YAML frontmatter containing any agent overrides (or empty frontmatter
+   if none).
+
+### `help`
+
+Display the configuration reference, then the [Consent Keys](#consent-keys)
+section and its command runner:
+
+```
+## Accelerator Configuration Reference
+
+### File Format
+
+Both config files use YAML frontmatter with a markdown body:
+
+\```yaml
+---
+agents:
+  reviewer: my-custom-reviewer
+---
+
+# Free-form project context (markdown)
+Additional context that skills will consider when making decisions.
+\```
+
+### agents
+
+Override which agents are used when skills spawn sub-agents. Config keys
+use the same hyphenated names as the agents themselves:
+
+Available agents and their roles:
+
+| Config Key                | Default Role                                               |
+|---------------------------|------------------------------------------------------------|
+| `reviewer`                | Reviews plans, PRs, and work items using configured lenses |
+| `browser-analyser`        | Analyses screen state and behaviour in a running web app   |
+| `browser-locator`         | Finds routes, screens, and components in a running web app |
+| `codebase-locator`        | Finds relevant source files for a given task               |
+| `codebase-analyser`       | Analyses implementation details of components              |
+| `codebase-pattern-finder` | Finds similar implementations and usage examples           |
+| `documents-locator`       | Discovers relevant documents in meta/ directory            |
+| `documents-analyser`      | Deep-dives on research topics in documents                 |
+| `web-search-researcher`   | Researches topics via web search                           |
+| `researcher`              | Researches one `research-topic` focus area through a profile |
+| `composer`                | Composes a `research-topic` finding from its level notes   |
+
+\```yaml
+---
+agents:
+  reviewer: my-custom-reviewer
+  codebase-locator: my-locator
+  codebase-analyser: my-analyser
+  codebase-pattern-finder: my-pattern-finder
+  documents-locator: my-doc-locator
+  documents-analyser: my-doc-analyser
+  web-search-researcher: my-web-researcher
+---
+\```
+
+Only list agents you want to override. Unlisted agents use their defaults.
+Unrecognised keys produce a warning to stderr and are ignored. Override
+values can be any agent name — the plugin does not validate values since
+the override may reference a user-defined agent outside the plugin.
+
+**Warning — `researcher` and `composer` are confined.** A `PreToolUse` hook
+confines every subagent of the configured `researcher` or `composer` type,
+wherever it is spawned. The researcher may only run `accelerator research
+fetch` and write finding and level-note files under the research topics
+directory; the composer may only write finding files there, and may run no
+command at all. Point each at a dedicated agent, never at one used for other
+work, or that work will be blocked, and never at the same agent, which is
+then confined as the researcher. The researcher needs `Bash` for the academic
+profiles. An `agents.composer` override must grant only `Read` and `Write`:
+the hook confines neither WebFetch nor WebSearch, so the composer's lack of
+network access rests on its tool list alone. It must also read the injected
+finding outputter and the citing-once rule, and cite every source once by
+that rule.
+
+### review
+
+Customise review behaviour for `/accelerator:review-pr`,
+`/accelerator:review-plan`, and `/accelerator:review-work-item`. Config keys use
+underscores (e.g., `max_inline_comments`). Lens names within array values use
+their original hyphenated form (e.g., `code-quality`, `test-coverage`):
+
+Shared settings (apply to `review-pr`, `review-plan`, and `review-work-item`):
+
+| Key               | Default                                                    | Description                   |
+|-------------------|------------------------------------------------------------|-------------------------------|
+| `min_lenses`      | `4` (3 for work item)                                      | Minimum lenses to run         |
+| `max_lenses`      | `8`                                                        | Maximum lenses to run         |
+| `core_lenses`     | `[architecture, code-quality, test-coverage, correctness]` | Lenses considered "core four" |
+| `disabled_lenses` | `[]`                                                       | Lenses to never use           |
+
+PR review only (`review-pr`):
+
+| Key                           | Default    | Description                                                       |
+|-------------------------------|------------|-------------------------------------------------------------------|
+| `max_inline_comments`         | `10`       | Max inline comments                                               |
+| `dedup_proximity`             | `3`        | Line proximity for merging findings                               |
+| `pr_request_changes_severity` | `critical` | Min severity for REQUEST_CHANGES (`critical`, `major`, or `none`) |
+
+Plan review only (`review-plan`):
+
+| Key                       | Default    | Description                                              |
+|---------------------------|------------|----------------------------------------------------------|
+| `plan_revise_severity`    | `critical` | Min severity for REVISE (`critical`, `major`, or `none`) |
+| `plan_revise_major_count` | `3`        | Major findings count to trigger REVISE                   |
+
+Work item review only (`review-work-item`):
+
+| Key                            | Default    | Description                                              |
+|--------------------------------|------------|----------------------------------------------------------|
+| `work_item_revise_severity`    | `critical` | Min severity for REVISE (`critical`, `major`, or `none`) |
+| `work_item_revise_major_count` | `2`        | Major findings count to trigger REVISE                   |
+
+Work items are smaller artifacts than plans, so `work_item_revise_major_count`
+defaults to `2` (not `3`): a lower threshold produces equivalent signal density.
+
+Example configuration:
+
+\```yaml
+---
+review:
+  min_lenses: 3
+  max_lenses: 10
+  core_lenses: [architecture, security, test-coverage, correctness]
+  disabled_lenses: [portability, compatibility]
+  max_inline_comments: 15
+  dedup_proximity: 5
+  pr_request_changes_severity: major
+  plan_revise_severity: critical
+  plan_revise_major_count: 2
+  work_item_revise_severity: major
+  work_item_revise_major_count: 3
+---
+\```
+
+Note: YAML comments (`#`) are not supported by the config parser. Do not
+add inline comments to config values.
+
+#### Per-Review-Type Lenses
+
+Built-in lenses are partitioned by review type: the 13 code-review lenses
+(`architecture`, `code-quality`, etc.) are used by `review-pr` and
+`review-plan`; work-item-specific lenses (`completeness`, `testability`,
+`clarity`) are used by `review-work-item`. Each command sees only its own lenses
+in the Lens Catalogue.
+
+`core_lenses` and `disabled_lenses` entries are cross-mode: they are validated
+against the union of all built-in and custom lens names, so naming a PR lens in
+`core_lenses` does not produce a warning when running `review-work-item`. Entries
+not applicable to the active mode are silently filtered out, with an
+informational note in the `## Review Configuration` block so you have an audit
+trail. Entries that are not valid in any mode still produce an "unrecognised
+lens" warning.
+
+#### Custom Lenses
+
+Create custom review lenses in `.accelerator/lenses/`:
+
+\```
+.accelerator/lenses/
+  compliance-lens/
+    SKILL.md           # Follow the same structure as built-in lenses
+  accessibility-lens/
+    SKILL.md
+\```
+
+Custom lenses are auto-discovered and added to the available lens catalogue.
+They must have YAML frontmatter with a `name` field and follow the same
+SKILL.md structure as built-in lenses. Custom lenses that provide an
+`auto_detect` field participate in auto-detect selection like built-in
+lenses. Those without `auto_detect` are always included. Minimal template:
+
+\```markdown
+---
+name: compliance
+description: Evaluates regulatory and policy compliance
+auto_detect: Relevant when changes touch regulatory, compliance, or policy-related code
+---
+
+# Compliance Lens
+
+## Core Responsibilities
+- [What this lens evaluates]
+
+## Key Questions
+1. [Questions the reviewer should ask through this lens]
+
+## Boundary
+- [What is NOT in scope for this lens]
+\```
+
+See any lens in the plugin's `skills/review/lenses/` directory for full
+examples of the expected structure.
+
+**Optional fields** — by default a custom lens appears in all review modes
+(`pr`, `plan`, and `work-item`). To restrict it to specific modes, add an
+`applies_to` field:
+
+\```markdown
+---
+name: compliance
+description: Evaluates regulatory and policy compliance
+auto_detect: Relevant when changes touch regulatory, compliance, or policy-related code
+# no applies_to — applies to all modes: pr, plan, and work-item
+---
+\```
+
+\```markdown
+---
+name: work-item-style
+description: Evaluates work-item-specific style conventions
+applies_to: [work-item]   # work item reviews only
+---
+\```
+
+Accepted values: `pr`, `plan`, `work-item`. The field accepts a YAML flow array
+(`[pr, plan]`) or a bare scalar (`pr`). Omitting it is equivalent to all modes.
+The `applies_to` field is only for custom lenses — built-in lenses are
+partitioned via script arrays, not frontmatter.
+
+### research
+
+Tune how wide and deep `/accelerator:research-topic` goes. Config keys live under
+the `research.topic` namespace; all three are positive integers. (These behavioural knobs
+are distinct from the `paths.research_*` output-directory keys under `### paths`.)
+
+| Key           | Default | Description                             |
+|---------------|---------|-----------------------------------------|
+| `breadth`     | `8`     | Focus-area ceiling per `outline` round  |
+| `depth`       | `1`     | Recursion limit within a finding (1–10) |
+| `concurrency` | `20`    | Most agents `conduct` spawns at once    |
+
+Resolution order for each knob is **flag > personal (`config.local.md`) > team
+(`config.md`) > built-in default**: an `outline SLUG --breadth N`, `conduct
+SLUG --depth N` or `conduct SLUG --concurrency N` flag on the invocation
+overrides config, which overrides the built-in default. A resolved value that is
+not an integer of 1 or more is clamped to 1 with a warning naming the invalid
+value. An empty value is refused rather than clamped. Depth above 10 is clamped
+to 10 with a warning. Breadth has no upper bound — it is the per-round cost
+guard.
+
+**Concurrency and the subagent cap.** A `concurrency` above the subagent cap is
+clamped to the cap: the cap is `ACCELERATOR_SUBAGENT_CAP`, else
+`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, each when set to a value Claude Code
+would accept, otherwise 20, Claude Code's own limit. A flag or configured value
+above the cap warns; the built-in default clamps silently.
+
+- Set either variable in the shell that launches Claude Code, or under `env`
+  in a Claude Code settings file. `conduct` reads it through Claude Code's
+  Bash tool, so it must reach that tool's environment.
+- Each variable accepts surrounding whitespace and a leading `+`, as Claude
+  Code does; `concurrency` accepts only plain digits.
+- Set `ACCELERATOR_SUBAGENT_CAP` to pin a cap no higher than Claude Code's;
+  above it, Claude Code refuses the extra spawns.
+- To spawn more than 20 at once, raise both
+  `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` and `concurrency`.
+- The clamp applies on every Claude Code version and mode, including those that
+  enforce no cap: Claude Code below v2.1.217, and ultracode sessions. There,
+  set `ACCELERATOR_SUBAGENT_CAP` to the concurrency you want.
+
+**Web searches and the search cap.** `conduct` gives each web researcher a
+`WebSearch` budget sized from the search cap, which is
+`CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` when set to a value Claude Code
+would accept, otherwise 200, Claude Code's session limit as of v2.1.301.
+
+- It keeps back a twentieth of the cap, rounded up, for the main
+  conversation, `outline` and searches made earlier in the session.
+- When even one search per node exceeds what is left, every budget is 1 and
+  `conduct` warns: expect a halt, then run `/clear`, then re-run `conduct`;
+  for later runs, raise `CLAUDE_CODE_MAX_WEB_SEARCHES_PER_SESSION` and restart
+  Claude Code, or lower the depth (`--depth` or `research.topic.depth`).
+- Set the variable where both Claude Code and its Bash tool see it. A value
+  Claude Code would not accept is ignored with a warning.
+
+At `depth` 1, `conduct` spawns one researcher per (focus area, profile). At
+`depth` above 1, it researches each pair as a tree: every node writes a level
+note recording up to 4 follow-up questions at level 1, then 2, then 1 per
+node, and each follow-up becomes a node at the next level, down to `depth`.
+The `composer` then writes the pair's one finding from the notes. Cost grows
+with depth: up to 5×, 13× or 21× the researchers per pair at depths 2, 3 and
+4, plus one composer.
+
+Example configuration:
+
+\```yaml
+---
+research:
+  topic:
+    breadth: 6
+    depth: 1
+    concurrency: 12
+---
+\```
+
+Note: YAML comments (`#`) are not supported by the config parser. Do not
+add inline comments to config values.
+
+### Per-Skill Customisation
+
+Provide context or additional instructions for specific skills by placing
+files in `.accelerator/skills/<skill-name>/`:
+
+\```
+.accelerator/skills/
+  create-plan/
+    context.md          # Context specific to plan creation
+    instructions.md     # Additional instructions for plan creation
+  review-pr/
+    context.md          # Context specific to PR review
+    instructions.md     # Additional instructions for PR review
+  review-work-item/
+    context.md          # Context specific to work item review
+    instructions.md     # Additional instructions for work item review
+  commit/
+    instructions.md     # Additional instructions for commits
+\```
+
+**`context.md`** — Skill-specific context injected after global project
+context. Use this for information that is only relevant to a particular
+skill. For example, review-pr might need to know about specific review
+criteria, while create-plan might need architecture context.
+
+**`instructions.md`** — Additional instructions appended to the skill's
+prompt. Use this to customise skill behaviour: add extra steps, enforce
+conventions, or modify output format.
+
+Both files are optional. If neither exists for a skill, it behaves as
+before. Files are read at skill invocation time. Do not add YAML
+frontmatter to these files — their entire content is injected as-is.
+
+**When to use which**: Use **global context** (`.accelerator/config.md`)
+for information all skills should know. Use **skill context**
+(`context.md`) for information only one skill needs. Use **skill
+instructions** (`instructions.md`) to change how a skill behaves — add
+steps, enforce formats, or modify output. Per-skill context and
+instructions supplement global context (both are visible to the skill);
+per-skill instructions appear at the end of the prompt and will typically
+take precedence if they conflict with earlier instructions.
+
+**Shared vs personal**: Per-skill files are typically committed to the
+repository as team-shared customisations. For personal per-skill
+preferences, add the relevant directories to `.gitignore`.
+
+**Troubleshooting**: Directory names must match a known skill name exactly.
+The directory name matches the skill name after `/accelerator:` — for
+example, `/accelerator:review-pr` uses `review-pr/`,
+`/accelerator:create-plan` uses `create-plan/`. Run
+`/accelerator:configure view` to see all available skill names and any
+active per-skill customisations. The SessionStart hook output also lists
+detected per-skill customisations and warns about unrecognised directory
+names. To temporarily disable a customisation, rename the file (e.g.,
+`context.md.disabled`).
+
+Note: The `configure` skill is not customisable via this mechanism as it
+manages configuration itself.
+
+Example `context.md` for review-pr:
+
+\```markdown
+## Review Focus Areas
+
+Our team particularly cares about:
+- API backward compatibility (we have external consumers)
+- Database migration safety (zero-downtime deploys required)
+- Test coverage for error paths (we've had incidents from untested error handling)
+\```
+
+Example `instructions.md` for create-plan:
+
+\```markdown
+- Always include a "Security Considerations" section in plans
+- Reference our threat model at docs/security/threat-model.md
+- Plans touching the payments service require a rollback strategy
+\```
+
+### paths
+
+Override where skills write output documents. Paths are relative to the
+project root (absolute paths are also supported). A `work` or `integrations`
+path outside the repository, absolute or `..`-relative, syncs only when set in
+an untracked `.accelerator/config.local.md`; set in the team config or a
+tracked personal file, `work sync` refuses with exit 74 until it moves there:
+
+| Key                           | Default                            | Description                                                                      |
+|-------------------------------|------------------------------------|----------------------------------------------------------------------------------|
+| `plans`                       | `meta/plans`                       | Implementation plans                                                             |
+| `research_codebase`           | `meta/research/codebase`           | Codebase research documents                                                      |
+| `research_issues`             | `meta/research/issues`             | Issue / RCA research documents                                                   |
+| `research_design_inventories` | `meta/research/design-inventories` | Design-inventory artifacts (one directory per snapshot, with screenshots/)       |
+| `research_design_gaps`        | `meta/research/design-gaps`        | Design-gap analysis artifacts                                                    |
+| `decisions`                   | `meta/decisions`                   | Architecture decision records                                                    |
+| `prs`                         | `meta/prs`                         | PR descriptions                                                                  |
+| `validations`                 | `meta/validations`                 | Plan validation reports                                                          |
+| `review_plans`                | `meta/reviews/plans`               | Plan review artifacts                                                            |
+| `review_prs`                  | `meta/reviews/prs`                 | PR review working directories                                                    |
+| `review_work`                 | `meta/reviews/work`                | Work item review artifacts                                                       |
+| `templates`                   | `.accelerator/templates`           | User-provided templates (e.g., PR description)                                   |
+| `work`                        | `meta/work`                        | Work item files referenced by create-plan                                        |
+| `notes`                       | `meta/notes`                       | Notes directory                                                                  |
+| `tmp`                         | `.accelerator/tmp`                 | Ephemeral working data (gitignored)                                              |
+| `integrations`                | `.accelerator/state/integrations`  | Per-integration cached state (Jira fields/projects, future Linear/Trello caches) |
+
+Example configuration:
+
+\```yaml
+---
+paths:
+  plans: docs/plans
+  research_codebase: docs/research/codebase
+  research_issues: docs/research/issues
+  research_design_inventories: docs/research/design-inventories
+  research_design_gaps: docs/research/design-gaps
+  decisions: docs/adrs
+  prs: docs/prs
+  validations: docs/validations
+  review_plans: docs/reviews/plans
+  review_prs: docs/reviews/prs
+  review_work: docs/reviews/work
+  templates: docs/templates
+  work: docs/work
+  notes: docs/notes
+  tmp: docs/tmp
+  integrations: docs/integrations
+---
+\```
+
+Note: YAML comments (`#`) are not supported by the config parser. Do not
+add inline comments to config values.
+
+### work
+
+Configure work-item identifiers and the active remote tracker. Four keys are recognised:
+
+| Key                          | Default          | Description                                |
+|------------------------------|------------------|--------------------------------------------|
+| `integration`                | (empty)          | Active remote tracker. Allowed values: `jira`, `linear`, `shortcut`, `trello`, `github-issues`. When set, integration skills auto-scope to the tracker scope key (`jira.project_key` / `linear.team_key` / `shortcut.team_key`). Team→local override precedence applies; use `/accelerator:configure view` to confirm which source is active. |
+| `id_pattern`                 | `{number:04d}`   | DSL controlling work-item ID shape         |
+| `key`                        | (empty)          | Local ID prefix substituted into `{key}`. Required when `id_pattern` references `{key}`; unused under `{tracker}`. Work-owned and fully independent of the tracker scope key — it never derives from it. |
+| `default_project_code`       | (empty)          | **Deprecated** (removed in 1.25.0). A read-time alias resolving into `work.key` (tracker-less) or the tracker scope key (tracker-backed). Run `/accelerator:migrate` to materialise the replacement keys. |
+
+Example configuration for a project tracking issues with prefixed
+IDs (matching Jira/Linear conventions):
+
+\```yaml
+---
+work:
+  integration: jira
+  id_pattern: "{key}-{number:04d}"
+  key: "PROJ"
+jira:
+  project_key: "PROJ"
+---
+\```
+
+This produces work-item filenames such as `meta/work/PROJ-0042-add-foo.md`,
+H1 headings like `# PROJ-0042: add foo`, and an `id: "PROJ-0042"`
+frontmatter field.
+
+`work.key` (the local ID prefix) and the tracker scope key
+(`jira.project_key` / `linear.team_key`) are independent values with
+separate owners. They may match — a deliberate choice to mirror the tracker
+prefix — or diverge:
+
+\```yaml
+---
+work:
+  integration: jira
+  id_pattern: "{key}-{number:04d}"
+  key: "PP"
+jira:
+  project_key: "PROJ"
+---
+\```
+
+Here local IDs carry the `PP-` prefix while creation and discovery scope to
+the `PROJ` Jira project. A divergent `work.key` is a supported configuration,
+not a smell — no warning is raised.
+
+Changing `work.key` refuses nothing: items under the old key stay in
+shape, since any key is, and allocation starts a new sequence under the
+new key beside them. To move the old key's items onto the new one, run
+`/rekey-work-items` and pick the old key when it asks which keys to fold,
+or run `accelerator work rekey --preview --from-key <old key>`, then
+`accelerator work rekey`.
+
+#### Local-first storage
+
+Work items are always written to `meta/work/` as local files, regardless
+of whether `work.integration` is configured. The remote integration is an
+additional layer on top of local storage, not a replacement. A skill that
+pushes a work item to a remote tracker must still write the work item
+to `meta/work/` first.
+
+This invariant applies to every skill under `skills/work/`
+(`create-work-item`, `update-work-item`, `list-work-items`,
+`extract-work-items`, `refine-work-item`, `review-work-item`,
+`stress-test-work-item`, `rekey-work-items`). Integration skills under `skills/integrations/`
+add remote behaviour on top — they read from and write to the same
+local store. When `work.integration` is unset, every work-management
+skill operates purely against `meta/work/` with no external API calls.
+
+#### Pattern DSL Reference
+
+The `id_pattern` value is a small DSL with two tokens:
+
+- `{number[:format]}` — required, exactly one occurrence. The `format`
+  is a printf width spec of the form `0Nd` (e.g. `04d`, `05d`), at most
+  19 digits wide. If omitted, defaults to `04d`. The width is enforced
+  when generating new IDs, and existing items must be re-keyed to it:
+  until then `work create`, `create-batch`, `id next`, `id check`,
+  `resolve` and `promote` refuse with `E_REKEY_REQUIRED` (see *Width
+  changes vs structural changes*).
+- `{key}` — optional, at most one occurrence. The local ID prefix,
+  substituted at use time from `work.key` (or a `--project` flag). When a
+  pattern references `{key}`, `work.key` is required — it never silently falls
+  back to the tracker scope key.
+- `{project}` — **deprecated** synonym for `{key}`, removed in 1.25.0.
+  Existing `{project}` patterns keep working through the deprecation window and
+  are rewritten to `{key}` by `/accelerator:migrate`.
+
+`{tracker}` is a pattern on its own rather than a token beside others: the
+tracker owns every item's `id`. An item pushed at creation takes its Jira,
+Linear or Shortcut key as `id`; any other new item is a **draft** in
+`meta/work/drafts/` under a provisional `draft-xxxxxx` ID until `work
+sync` or `work promote` promotes it onto its key, keeping the draft ID in
+its `aliases`. Two rules apply: `{tracker}` must be the only token in
+`work.id_pattern`, and `work.integration` must be `jira`, `linear` or
+`shortcut`.
+`work.key` and `--project` are unused under it. Items created earlier
+must be re-keyed with `/rekey-work-items`: until then `work create`,
+`create-batch`, `id next`, `id check`, `resolve` and `promote` refuse
+with `E_REKEY_REQUIRED`, while `work sync` and `work rekey` still run and
+`work list` warns. It needs Accelerator 1.24.0 or later; upgrade every
+teammate before switching a shared config, since an older version cannot
+read the pattern.
+
+**Validation rules** for `{number}` patterns (enforced when the pattern is
+consumed):
+
+1. Pattern must contain at least one `{number}` token.
+2. Literal text is ASCII letters, digits, `.`, `_` and `-` only, so an
+   ID is safe in a filename and in any shell quoting. Filesystem-hostile
+   characters (`/`, `\`, `:`, `*`, `?`, `<`, `>`, `|`, `"`), spaces,
+   quotes and braces are all rejected. Escaped braces (`{{`, `}}`) are no
+   longer supported.
+3. Adjacent dynamic tokens must have at least one literal char between
+   them (`{key}{number}` is rejected; `{key}-{number}` is accepted).
+4. The `{number}` format spec must be `0Nd`, at most 19 digits wide.
+   Non-padded specs (`%d`) are rejected so the overflow guard cap is
+   well-defined.
+5. Key values must match `[A-Za-z][A-Za-z0-9]*`. This covers
+   Jira/Linear-style alphanumeric keys (`PROJ`, `ENG`, `ENG2`).
+   Keys with internal hyphens or underscores (`PROJ-FE`,
+   `proj_alpha`) are rejected — this is a known limitation of the
+   initial scope.
+6. No literal digit beside a token: literal text may not start with a
+   digit after `{key}` or `{number}`, nor end with a digit before
+   `{number}` (`v2{number:03d}` and `{key}1{number:04d}` are rejected), so
+   an ID's number is always a digit run of its own.
+7. At most one `{number}` token and one `{key}` token.
+
+#### `id` and `external_id`: local own-identity vs remote identifier
+
+A work item carries two distinct identity fields:
+
+- **`id`** — the **local own-identity**, allocated locally by
+  `accelerator work create` (via `accelerator work id next`) under
+  the configured `id_pattern`. It is **always a quoted YAML string**,
+  regardless of the pattern: new work items write `id: "0001"` under
+  the default pattern and `id: "PROJ-0001"` under
+  `{key}-{number:04d}`. Consumers must treat it as a string; do not
+  coerce to integer. (Legacy work items carry the same own-identity
+  value under `work_item_id:`; `accelerator work show` bridges the two
+  names transparently, so a consumer asking for `id` against a legacy file
+  still gets the value.)
+- **`external_id`** — the **remote tracker's identifier** (e.g. a Jira or
+  Linear key), written when the item is pushed to the configured
+  `work.integration`. It is the per-item local→remote mapping, so no
+  separate mapping store is needed. Its **presence is the synced signal**:
+  an item with a non-empty `external_id` is *synced* (exists remotely), an
+  item without one is *unsynced* (never pushed) — see `/list-work-items`.
+
+`id` and `external_id` **may coincide** when the local and remote ID schemes
+align (Jira/Linear, under `{key}-{number:04d}` with `work.key` mirroring the
+scope key) or be **independent** when they do not (Trello, whose card IDs are
+opaque). `external_id` is always
+written on a successful push, even when it equals `id`, because presence —
+not value — is what marks an item synced.
+
+#### Choosing between default and project-coded patterns
+
+Pick `{tracker}` when every new item should be named by its Jira, Linear or
+Shortcut key. Pick the default `{number:04d}` if your project tracks work items
+internally and does not link out to an external tracker. Pick
+`{key}-{number:04d}` (with an explicit `work.key`) when:
+
+- You mirror tickets from Jira, Linear, or another external tracker
+  and want filenames to align with the tracker's IDs.
+- Multiple projects share one repo and you want a clear visual
+  separation between project workstreams.
+
+#### Width changes vs structural changes
+
+Any change to the pattern, a width change (`{number:04d}` →
+`{number:05d}`) included, needs a re-key: until every item's `id` is in
+the new pattern's exact shape, each `work` command that reads or writes
+IDs (`create`, `create-batch`, `id next`, `id check`, `resolve` and
+`promote`) refuses with `E_REKEY_REQUIRED`, naming an item to
+converge. A work-item file whose IDs cannot be read, such as a slugless
+`0400.md`, is refused by the same commands with `E_WORK_ITEM_MALFORMED`,
+naming the fix. Run `/rekey-work-items` after changing the pattern. `work
+sync`, `work rekey` and `work id canonicalise` still run, and `work
+list` lists the items with the refusal as a warning. A reference
+written under the earlier pattern joins nothing until re-keyed.
+
+Changing the structural shape (default → `{project}-{number:04d}`,
+or vice versa) is converged the same way.
+Use `/accelerator:migrate` to apply migration `0002-rename-work-items-with-project-prefix`,
+which renames legacy `NNNN-*.md` files to the configured pattern with
+your `default_project_code`. The migration stays pending until both
+the pattern includes `{project}` and `default_project_code` is set; if
+neither applies, you can opt out via `accelerator migrate --skip
+0002-rename-work-items-with-project-prefix`. A skipped repository keeps
+its legacy `NNNN-*.md` files, which are off a `{key}` pattern's shape, so
+`work create`, `create-batch`, `id next`, `id check`, `resolve` and
+`promote` refuse with `E_REKEY_REQUIRED` until `/rekey-work-items`
+renames each under `work.key`, keeping its
+number: `0400-x.md` becomes `PP-0400-x.md`.
+
+#### Recognised keys
+
+Only `work.integration`, `work.id_pattern`, `work.key`, and the deprecated
+`work.default_project_code` are recognised. Other `work.*` keys are not
+consumed by any plugin script.
+
+### visualiser
+
+Configure the visualiser plugin.
+
+| Key               | Default                                                         | Description                                                                  |
+|-------------------|-----------------------------------------------------------------|------------------------------------------------------------------------------|
+| `kanban_columns`  | `[draft, ready, in-progress, review, done, blocked, abandoned]` | Ordered list of kanban column keys                                           |
+| `idle_timeout`    | `8h`                                                            | Idle auto-shutdown window (duration such as `30m` or `2d`; `never`/`0` to disable) |
+| `editor`          | (empty)                                                         | Editor deep-link command; absent disables the "open in editor" button        |
+| `editor_project`  | (empty)                                                         | Companion project argument passed alongside `editor`                         |
+| `binary`          | (bundled)                                                       | Override visualiser binary path (absolute or project-relative; must be executable) |
+
+Example configuration for a project using a reduced column set:
+
+\```yaml
+---
+visualiser:
+  kanban_columns: [ready, in-progress, review, done]
+---
+\```
+
+Each key becomes a kanban column; the display label is the key
+title-cased with hyphens replaced by spaces (`in-progress` → `In progress`).
+
+#### Boot-time validation
+
+| Condition                         | Behaviour                              |
+|-----------------------------------|----------------------------------------|
+| Key absent                        | Falls back to the seven defaults above |
+| Key present, non-empty list       | Accepted; each entry becomes a column  |
+| Key present, empty list (`[]`)    | Rejected at boot with a clear error    |
+| Malformed inline-array syntax     | Rejected at boot                       |
+
+The column set is read once at boot. Changing `visualiser.kanban_columns`
+requires a server restart; the browser will pick up the new columns on the
+next page-load (TanStack Query re-fetches `/api/kanban/config` each time).
+
+#### Idle auto-shutdown
+
+The visualiser server auto-exits after a period with no incoming HTTP
+requests. `visualiser.idle_timeout` sets that window as a duration string
+(`"8h"`, `"30m"`, `"1h30m"`, `"2d"`, with a day of 24 hours; months, years
+and negative durations are refused); it defaults to `8h` when absent.
+
+Setting it to `never` (case-insensitive), `0`, or any zero-length
+duration (`0s`, `0ms`) **disables** idle auto-shutdown — the idle timer
+never fires, which is **not** the same as "shut down immediately". The
+server still terminates when the process that launched it exits and on
+`/accelerator:visualise stop`.
+
+An unparseable value (e.g. `soon`) is rejected at launch with a clear
+error naming the bad value, rather than silently defaulting.
+
+The `ACCELERATOR_VISUALISER_IDLE_TIMEOUT` environment variable overrides
+the config key for one-shot, shell-scoped use. Precedence is
+**env var > `visualiser.idle_timeout` > 8h default**.
+
+The window is read once at boot and honoured to within one ~60s polling
+tick — shutdown lands on the next tick after the window elapses, so
+sub-minute values are effectively rounded up to the next tick. Changing it
+requires a server restart.
+
+#### Kanban write-back contract
+
+`PATCH /api/docs/{path}/frontmatter` validates the incoming `status` value
+against the configured column keys. A value outside the configured set —
+including values currently in the "Other" swimlane — is rejected with
+`400 unknown_kanban_status`. Recovery from an accidental drag is a direct
+file edit followed by VCS revert.
+
+See ADR-0024 for full rationale.
+
+#### Editor deep-link and binary override
+
+`visualiser.editor` and `visualiser.editor_project` are free-form passthrough
+strings that drive the doc "open in editor" deep-link; when both are absent the
+button is disabled. Precedence is **env var
+(`ACCELERATOR_VISUALISER_EDITOR` / `_EDITOR_PROJECT`) > config key > omitted**;
+a whitespace-only value collapses to absent. `visualiser.editor` is not a
+[consent key](#consent-keys), so a team value applies: the browser follows the
+link it builds, and nothing in Accelerator spawns it.
+
+`visualiser.binary` points the launcher at an alternative server binary instead
+of the bundled/downloaded one — useful for local development. The path may be
+absolute or project-relative and **must be executable** (a non-executable path
+fails the launch loudly). Precedence is **`ACCELERATOR_VISUALISER_BIN` env var >
+`visualiser.binary` > bundled binary**.
+
+#### Recognised keys
+
+Only `visualiser.kanban_columns`, `visualiser.idle_timeout`,
+`visualiser.editor`, `visualiser.editor_project`, and `visualiser.binary` are
+recognised. Other `visualiser.*` keys are not consumed by any plugin script.
+
+### jira
+
+Configure access to a Jira Cloud tenant. One key belongs in team-shared
+`config.md`:
+
+| Key              | Default | Description                                            |
+|------------------|---------|--------------------------------------------------------|
+| `site`           | (empty) | Cloud subdomain (e.g. `atomic-innovation`)             |
+
+Example shared configuration in `config.md`:
+
+\```yaml
+---
+jira:
+  site: atomic-innovation
+---
+\```
+
+#### Personal settings (do not commit)
+
+Four keys are personal and **must live exclusively in
+`config.local.md`**, which is gitignored:
+
+| Key             | Default | Description                                            |
+|-----------------|---------|--------------------------------------------------------|
+| `email`         | (empty) | Your Atlassian account email                           |
+| `token`         | (empty) | Plaintext API token (discouraged — prefer `token_cmd`) |
+| `token_cmd`     | (empty) | Shell command whose stdout is the token                |
+| `allowed_sites` | (empty) | Extra exact hostnames the Rust client may send the token to, beyond `*.atlassian.net` |
+
+`token_cmd` is a **consent key**, like `allowed_sites`: a committed
+`token_cmd` is a supply-chain command-injection sink (a single PR could land
+arbitrary shell that runs on every contributor's machine), so it follows the
+[consent-key rule](#consent-keys): a value in the team-shared `config.md` is
+refused, as a `warning:` when another credential resolves and fatally only
+when none does.
+
+`allowed_sites` exists for self-hosted and non-`atlassian.net` tenants. The
+Rust client refuses to send credentials to any host outside `*.atlassian.net`
+unless it is listed here as an exact hostname — no wildcard expansion, matched
+at a label boundary, so neither `atlassian.net.example.com` nor
+`evil-atlassian.net` is admitted. The repository may propose `jira.site`, but
+only you may widen where the token is sent, so `allowed_sites` is a **consent
+key**: it is read only from an untracked `config.local.md` or from the
+`ACCELERATOR_JIRA_ALLOWED_SITES` environment variable, whose entries are split
+on commas and whitespace:
+
+\```bash
+ACCELERATOR_JIRA_ALLOWED_SITES="jira.example.com, jira.example.org"
+\```
+
+A value found anywhere else is refused with one of the
+[consent-key codes](#consent-keys).
+
+A refused allowlist only warns when the site is an `*.atlassian.net` host,
+which the default rule admits anyway; for any other site it is fatal (exit
+24). Taking the allowlist from the environment prints a `notice:` line naming
+the variable and its value, so you can see which setting decided it.
+
+Trusting a repository's `mise.toml` or `.envrc` extends your consent to any
+`ACCELERATOR_JIRA_ALLOWED_SITES` it sets. mise trusts a file by its path unless
+paranoid mode is on, so later edits to a trusted file are not re-prompted.
+
+`token` plaintext is supported but discouraged — prefer `token_cmd` with a
+password manager. A `config.local.md` that is a symlink or looser than `0600`
+is not read, as the [consent keys](#consent-keys) section describes.
+
+Example `config.local.md` (preferred form, using a password manager):
+
+\```yaml
+---
+jira:
+  email: toby@go-atomic.io
+  token_cmd: "op read op://Work/Atlassian/credential"
+---
+\```
+
+Authentication resolves through this chain. The first rung that yields a
+usable value wins; a failed command or refused value is reported as a
+`warning:` and the chain continues:
+
+1. `ACCELERATOR_JIRA_TOKEN` env var.
+2. `ACCELERATOR_JIRA_TOKEN_CMD` env var (run by the [command runner](#command-runner)).
+3. `config.local.md` `jira.token`.
+4. `config.local.md` `jira.token_cmd` (run by the [command runner](#command-runner)).
+5. `config.md` `jira.token` *(only when `config.local.md` does not
+   exist; emits a runtime warning)*.
+
+`jira.token_cmd` runs only from the environment or an untracked
+`config.local.md`, and a `jira.token` in a tracked `config.local.md` is
+refused too. The [consent keys](#consent-keys) table lists every code. Each
+refusal is a `warning:` when a later rung resolves, and fatal (exit 24) only
+when none does. A command that fails, times out or prints too much falls
+through in the same way. Rationale: a committed `token_cmd` is a supply-chain
+command-injection sink — a single PR could land
+`jira.token_cmd: "<arbitrary shell>"` and that command would execute on every
+contributor's machine the next time any Jira helper or `/init-jira` ran.
+Restricting the executable indirection to the user's own sources keeps the
+blast radius bounded to the user's own machine.
+
+Taking the command from `ACCELERATOR_JIRA_TOKEN_CMD` prints a `notice:` line
+naming the variable. It never prints the command, which may carry a secret
+inline. When the tracking status cannot be determined, the refusal names the
+variable that still works, such as `ACCELERATOR_JIRA_TOKEN`.
+
+`token_cmd` is the supported integration point for password managers and
+keychains. 1Password CLI (`op read ...`) with its desktop-app integration,
+`pass`, macOS Keychain (`security find-generic-password ...`) and Freedesktop
+Secret Service (`secret-tool ...`) work as they are. A helper that needs a
+variable the [command runner](#command-runner) does not pass on, such as
+`AWS_PROFILE` for AWS Secrets Manager, has three workarounds:
+
+- set a static value inline: `env AWS_PROFILE=work aws secretsmanager ...`;
+- wrap the helper in a script, at an absolute path outside the repository,
+  that sets what it needs;
+- for a value that exists only in your session (`SSH_AUTH_SOCK`,
+  `OP_SESSION_*`, `OP_SERVICE_ACCOUNT_TOKEN`, temporary STS credentials),
+  resolve the credential yourself and export it as `ACCELERATOR_JIRA_TOKEN`,
+  `ACCELERATOR_LINEAR_TOKEN`, `ACCELERATOR_OPENALEX_API_KEY` or `GH_TOKEN`.
+
+The Jira scope key is **`jira.project_key`** — the integration-owned project
+key that resolves the creation-home project and discovery scope. It is
+independent of `work.key` (the local ID prefix) and needs no `work.*` present.
+The deprecated `work.default_project_code` still resolves into it through the
+1.25.0 removal window when `work.integration: jira`.
+
+#### Skill registration order
+
+The `skills` array in `.claude-plugin/plugin.json` is **workflow-ordered**, not
+alphabetical. Its sequence groups categories by lifecycle:
+
+```
+vcs → external trackers (github, integrations/jira) → planning → execution (work) → review → meta (config)
+```
+
+Integrations land in the `integrations/` group, in the order Jira, Linear,
+Shortcut. A future one (Trello) goes after `./skills/integrations/shortcut/`. Do not sort the array
+alphabetically.
+
+#### Recognised keys
+
+Only `jira.site`, `jira.allowed_sites`, `jira.email`, `jira.token`,
+`jira.token_cmd`, and `jira.project_key` are recognised. Other `jira.*` keys
+are not consumed by any plugin script. `jira.allowed_sites` has no bash
+consumer — it is read by the Rust client only.
+
+### linear
+
+Configure access to Linear. Linear is single-tenant SaaS, so there is no
+site/subdomain key — authentication is a personal API token only.
+
+Two keys belong in team-shared `config.md`:
+
+| Key        | Default | Description                                              |
+|------------|---------|----------------------------------------------------------|
+| `team_id`  | (empty) | The Linear team UUID the client creates and searches issues in |
+| `team_key` | (empty) | The Linear scope key (the `ENG` in `ENG-42`) that resolves the creation-home team and discovery scope, independent of `work.key`. |
+
+`team_id` has no bash consumer: the shell path reads `.team.id` from the
+`catalogue.json` that `/init-linear` writes, and the Rust client falls back to
+that same file when the key is unset, so an already-onboarded repository needs
+no new configuration.
+
+`team_key` resolves in the order `linear.team_key` → the deprecated
+`work.default_project_code` (gated on `work.integration: linear`, through the
+1.25.0 removal window) → the catalogue `/team/key`, so an already-onboarded
+repository resolves its scope from the catalogue with no configuration.
+
+#### Pull filters
+
+`linear.pull.filters` narrows discovery by `state`, `label`, `assignee` and
+`project`, each a list of values (values OR'd, keys AND'd). `project` is
+Linear-only: a Jira `pull` block accepts `state`, `label` and `assignee`, and
+refuses `project` at validation. Every value resolves to a Linear id through
+`catalogue.json` before anything is paged:
+
+- **Per team in scope.** A `state` or team `label` matches in each team the
+  pull covers and contributes that team's id; a workspace label matches
+  whichever teams are in scope. Within a team, an active record wins over
+  archived ones of the same name, and two active ones refuse as ambiguous.
+- **Assignees are members.** An `assignee` must be a member of a team in
+  scope, matched on their email, then their full name, then their display
+  name; the first tier with a match decides. A former member, or someone who
+  assigns work without being a member, refuses — use a current member, or
+  widen the scope.
+- **Projects are the scoped teams' projects.** A `project` matches by name
+  among the projects linked to a team in scope. An active project wins over
+  archived ones of the same name; two active projects of one name refuse as
+  ambiguous, listing the candidates — rename one in Linear.
+- **Refusals are loud.** A value no team in scope carries refuses the sync
+  with exit 74, under `pull filters could not be resolved:`, even when its
+  key's other values resolve. It is never silently dropped from the filter.
+
+The catalogue holds complete entries only for **synced teams** — the base
+team and each team that owns a tracked work item. A team in scope whose entry
+lacks what the filters need is fetched from Linear on each pull, for those
+sections only. An apply-mode sync then records complete entries for the
+synced teams it fetched, so commit `catalogue.json` with the pulled items;
+teams that are in scope but not synced are never written, and are fetched
+again on every filtered pull. A filtered pull that fetches every section live
+costs about 26,000 complexity points at 50 teams and 49,000 at 200 — under 7%
+of Linear's hourly allowance at one pull every 15 minutes.
+
+A complete entry is not refreshed by sync. States, labels, members or
+projects added in Linear to a synced team reach the catalogue only through a
+refresh: run `/accelerator:init-linear` (it refreshes every synced team) and
+commit the result.
+
+#### Personal settings (do not commit)
+
+Both token keys are personal and **must live exclusively in
+`config.local.md`**, which is gitignored:
+
+| Key         | Default | Description                                            |
+|-------------|---------|--------------------------------------------------------|
+| `token`     | (empty) | Plaintext API token (discouraged — prefer `token_cmd`) |
+| `token_cmd` | (empty) | Shell command whose stdout is the token                |
+
+Authentication resolves through this chain. The first rung that yields a
+usable value wins; a failed command or refused value is reported as a
+`warning:` and the chain continues:
+
+1. `ACCELERATOR_LINEAR_TOKEN` env var.
+2. `ACCELERATOR_LINEAR_TOKEN_CMD` env var (run by the [command runner](#command-runner)).
+3. `config.local.md` `linear.token`.
+4. `config.local.md` `linear.token_cmd` (run by the [command runner](#command-runner)).
+5. `config.md` `linear.token` *(only when `config.local.md` does not exist)*.
+
+`linear.token_cmd` is a [consent key](#consent-keys), refused from the same
+sources as `jira.token_cmd`: a committed `token_cmd` is a supply-chain
+command-injection sink. With nothing usable left, the exit code names the fatal
+refusal: 24 for a provenance refusal, 25 for a command that failed, timed
+out or printed too much, 27 for a malformed token, and 29 for an insecure
+`config.local.md`.
+
+Example `config.local.md` (preferred form, using a password manager):
+
+\```yaml
+---
+linear:
+  token_cmd: "op read op://Work/Linear/token"
+---
+\```
+
+`token_cmd` is the supported integration point for password managers and
+keychains (1Password CLI, `pass`, macOS Keychain, Secret Service), exactly as
+for Jira.
+
+#### Recognised keys
+
+Only `linear.team_id`, `linear.team_key`, `linear.token` and
+`linear.token_cmd` are recognised.
+Other `linear.*` keys are not consumed by any plugin script.
+
+### shortcut
+
+Configure access to Shortcut. A Shortcut API token belongs to one workspace
+and one member, so there is no site key: the client learns the workspace from
+the token.
+
+One key belongs in team-shared `config.md`:
+
+| Key        | Default | Description |
+|------------|---------|-------------|
+| `team_key` | (empty) | The base team: the team stories are created in and discovery searches. Give the team's mention name, or its display name when it has none. `/accelerator:init-shortcut` writes it. |
+
+`/accelerator:init-shortcut` also writes `catalogue.json`, which holds every
+team and workflow. It is committed, so a teammate pulls it rather than
+re-running init.
+
+#### Pull filters
+
+`shortcut.pull` takes the same shape as Linear's block:
+
+- `additional_teams` lists more team keys to discover, by mention name or
+  display name.
+- `all_teams: true` discovers every team the token can see. It cannot be set
+  beside `additional_teams`.
+- `filters` narrows discovery by `state`, `label`, `owner` and `type`, each a
+  list of values. Values for one key are OR'd, keys are AND'd, and a `~`
+  value is excluded. `owner` takes a member's mention name. `type` takes
+  `feature`, `bug` or `chore`, or a local kind.
+
+A value holding `"` or `\` is refused, because a Shortcut search cannot quote
+it.
+
+#### Personal settings (do not commit)
+
+Both token keys are personal and **must live exclusively in
+`config.local.md`**, which is gitignored:
+
+| Key         | Default | Description                                            |
+|-------------|---------|--------------------------------------------------------|
+| `token`     | (empty) | Plaintext API token (discouraged — prefer `token_cmd`) |
+| `token_cmd` | (empty) | Shell command whose stdout is the token                |
+
+Authentication follows the same chain as Linear's, with
+`ACCELERATOR_SHORTCUT_TOKEN` and `ACCELERATOR_SHORTCUT_TOKEN_CMD` as the
+environment overrides. `shortcut.token_cmd` is a [consent key](#consent-keys).
+Store the token without a `Bearer` prefix. Create one at
+<https://app.shortcut.com/settings/account/api-tokens>.
+
+#### Recognised keys
+
+Only `shortcut.team_key`, `shortcut.token`, `shortcut.token_cmd`,
+`shortcut.pull` and `shortcut.push` are recognised.
+
+### openalex
+
+Configure access to OpenAlex, the scholarly source behind
+`/accelerator:research-topic`'s `openalex` profile. A key is optional: without
+one, `accelerator research fetch openalex` runs on OpenAlex's keyless daily
+allowance, which a research round can spend quickly, and `conduct` reports the
+spent pairs with a configure-a-key next step. There are no team-shared keys.
+
+#### Personal settings (do not commit)
+
+Both key settings are personal and **must live exclusively in
+`config.local.md`**, which is gitignored:
+
+| Key           | Default | Description                                               |
+|---------------|---------|-----------------------------------------------------------|
+| `api_key`     | (empty) | Plaintext API key (discouraged — prefer `api_key_cmd`)    |
+| `api_key_cmd` | (empty) | Shell command whose stdout is the key                     |
+
+The key resolves through this chain. The first rung that yields a usable
+value wins; a failed command or refused value is reported as a `warning:` and
+the chain continues:
+
+1. `ACCELERATOR_OPENALEX_API_KEY` env var.
+2. `ACCELERATOR_OPENALEX_API_KEY_CMD` env var (run by the [command runner](#command-runner)).
+3. `config.local.md` `openalex.api_key`.
+4. `config.local.md` `openalex.api_key_cmd` (run by the [command runner](#command-runner)).
+5. `config.md` `openalex.api_key` *(only when `config.local.md` does not
+   exist)*.
+
+`openalex.api_key_cmd` is a [consent key](#consent-keys), like
+`jira.token_cmd`: a committed command is a supply-chain command-injection
+sink, so a value in the team-shared `config.md` is refused. The refusal is a
+`warning:` when another rung supplies a key. When none does, the fetch fails
+rather than going keyless, even beside a `config.local.md` that sets no key.
+A tracked `config.local.md` is refused when it supplies either setting, and
+one supplying neither leaves the fetch keyless.
+
+The key command runs under whatever remains of the fetch's 100 s deadline. The key is sent as an
+`Authorization: Bearer` header, never in a URL, and `accelerator config dump`
+hides both settings.
+
+Example `config.local.md` (preferred form, using a password manager):
+
+\```yaml
+---
+openalex:
+  api_key_cmd: "op read op://Work/OpenAlex/api-key"
+---
+\```
+
+#### Recognised keys
+
+Only `openalex.api_key` and `openalex.api_key_cmd` are recognised. Other
+`openalex.*` keys are not consumed by any plugin script.
+
+### templates
+
+Override document templates by placing custom template files in the
+templates directory (`paths.templates`, defaults to `.accelerator/templates/`):
+
+\```
+.accelerator/templates/
+  plan.md                # Custom plan template
+  codebase-research.md   # Custom codebase-research template
+  adr.md                 # Custom ADR template
+  validation.md          # Custom validation template
+  pr-description.md      # PR description template (used by describe-pr)
+  work-item.md           # Custom work-item template
+\```
+
+All templates — both skill structure templates (plan, ADR, codebase-research,
+validation) and user content templates (PR description) — live in the same
+directory. Override `paths.templates` to move them all:
+
+\```yaml
+---
+paths:
+  templates: docs/templates
+---
+\```
+
+For advanced use cases, you can also point individual templates to specific
+file paths using the `templates` config section:
+
+\```yaml
+---
+templates:
+  plan: docs/templates/our-plan-format.md
+  adr: docs/templates/our-adr-format.md
+  pr-description: docs/templates/our-pr-template.md
+---
+\```
+
+Resolution order: `templates.<name>` config path (if set) → templates
+directory (`paths.templates`) → plugin default. `research-topic`'s level notes
+have no `templates.*` key, but a `topic-research-level-note.md` in the
+templates directory overrides them like any other template. Use the plugin's
+`templates/` directory as a starting point for customisation.
+
+**Note on cross-references**: Default templates contain hardcoded references
+to other skills' output paths (e.g., the plan template references
+`meta/research/codebase/` in its References section). If you override output paths
+(e.g., `paths.research_codebase: docs/research/codebase`), you should also provide custom
+templates with updated cross-references.
+
+#### Template Management Commands
+
+Use `/accelerator:configure templates <action>` to manage templates:
+
+| Command                 | Description |
+|-------------------------|--------------------------------------------------------|
+| `templates list`        | List all templates with resolution source and path     |
+| `templates show <key>`  | Display the effective template content                 |
+| `templates eject <key>` | Copy plugin default to your templates directory        |
+| `templates eject --all` | Eject all templates at once                            |
+| `templates diff <key>`  | Show differences between your template and the default |
+| `templates reset <key>` | Remove your customisation, revert to plugin default    |
+
+Available template keys: `plan`, `codebase-research`, `adr`, `validation`, `pr-description`, `work-item`.
+
+### Project Context
+
+The markdown body is injected into skills as project-specific guidance:
+
+\```markdown
+---
+agents:
+  reviewer: my-custom-reviewer
+---
+
+# Project Context
+
+## Tech Stack
+- Language: TypeScript with strict mode
+- Framework: Next.js 14 with App Router
+- Database: PostgreSQL via Prisma ORM
+- Testing: Vitest for unit tests, Playwright for E2E
+
+## Conventions
+- All API routes use GraphQL (no REST endpoints)
+- Database migrations must be backward-compatible
+- Feature flags managed via LaunchDarkly
+
+## Build & Test
+- Build: `npm run build`
+- Test: `npm run test`
+- Lint: `npm run lint`
+- Full check: `npm run check`
+\```
+
+Use the project context for:
+- Tech stack description
+- Coding conventions
+- Domain-specific terminology
+- Build and test commands
+- Architecture notes
+
+### Parser Constraints
+
+The configuration parser supports simple scalar YAML values. The following
+are not currently supported in frontmatter values:
+- Multi-line YAML values (block scalars `|` / `>`)
+- YAML comments (the `#` character in values is included as-is)
+- Nesting deeper than 2 levels
+```
+
+### `templates`
+
+When the user's argument starts with `templates`, dispatch based on the
+action that follows. The `CLAUDE_PLUGIN_ROOT` environment variable points
+to the plugin installation directory where scripts are located.
+
+#### `templates list`
+
+Run the list script and display its output. Run the bare path **directly** as an
+executable; never prefix it with `bash`/`sh`/`env` (a wrapper prefix escapes the
+skill's `allowed-tools` permission and forces an unnecessary prompt):
+
+```bash
+accelerator config templates list
+```
+
+Present the table output to the user.
+
+#### `templates show <key>`
+
+Run the show script with the template key. Run the bare path **directly** as an
+executable; never prefix it with `bash`/`sh`/`env` (a wrapper prefix escapes the
+skill's `allowed-tools` permission and forces an unnecessary prompt):
+
+```bash
+accelerator config templates show <key>
+```
+
+Present the source metadata and template content to the user. If the user
+doesn't specify a key, ask which template they'd like to see, or suggest
+running `templates list` first.
+
+#### `templates eject <key>` or `templates eject --all`
+
+**Before ejecting**, run with `--dry-run` to preview what will happen. Run the bare
+path **directly** as an executable; never prefix it with `bash`/`sh`/`env` (a wrapper
+prefix escapes the skill's `allowed-tools` permission and forces an unnecessary
+prompt) — this applies to every `config-eject-template.sh` invocation in this
+subsection:
+
+```bash
+accelerator config templates eject --dry-run <key|--all>
+```
+
+Present the dry-run output to the user. If any templates already exist
+(exit code 2), ask whether they want to overwrite. If the user confirms
+overwriting, run a second dry-run with `--force` to show the full preview
+(including which files will be overwritten):
+
+```bash
+accelerator config templates eject --dry-run --force <key|--all>
+```
+
+Present this preview, then run the actual eject with `--force`:
+
+```bash
+accelerator config templates eject --force <key|--all>
+```
+
+If no templates already exist (exit code 0 from the initial dry-run),
+proceed directly with the eject (no `--force` needed):
+
+```bash
+accelerator config templates eject <key|--all>
+```
+
+If the user says `eject --all` or `eject all`, pass `--all` to the script.
+
+After successful ejection, inform the user:
+- Which file(s) were created and where
+- That they can now edit the template(s) at the ejected path
+- That the customised template will be used by the relevant skill on next
+  invocation
+
+#### `templates diff <key>`
+
+Run the diff script. Run the bare path **directly** as an executable;
+never prefix it with `bash`/`sh`/`env` (a wrapper prefix escapes the skill's
+`allowed-tools` permission and forces an unnecessary prompt):
+
+```bash
+accelerator config templates diff <key>
+```
+
+Present the diff output to the user. If exit code is 2, no customisation
+exists — relay the "using plugin default" message.
+
+#### `templates reset <key>`
+
+This action removes a user's customised template to revert to the plugin
+default. Reset operates on a **single template at a time** — if the user
+requests resetting all templates, process them one-by-one with individual
+confirmations. Run the bare path **directly** as an executable;
+never prefix it with `bash`/`sh`/`env` (a wrapper prefix escapes the skill's
+`allowed-tools` permission and forces an unnecessary prompt) — this applies to
+both `config-reset-template.sh` invocations below.
+
+1. Determine the template key. If not provided, ask the user.
+2. Run the reset script without `--confirm` to check for an override:
+   ```bash
+   accelerator config templates reset <key>
+   ```
+3. If exit code 2: tell the user "No customised template found for '<key>'
+   — already using plugin default."
+4. If exit code 0: present the override information to the user and ask for
+   confirmation. Show the file path and note about config entry if present.
+   If the output includes "Warning: This file is outside the project
+   directory", explicitly highlight this to the user and ask them to
+   confirm they want to delete a file outside the project root.
+5. On confirmation, run with `--confirm`:
+   ```bash
+   accelerator config templates reset --confirm <key>
+   ```
+6. Inform the user that the template was reset. If the script output
+   includes a note about removing a config entry (i.e., the override was
+   a config path / Tier 1), also remove the `templates.<key>` entry from
+   the config using the Edit tool. Check both `.accelerator/config.md`
+   (team) and `.accelerator/config.local.md` (local) for the entry:
+   - If the entry exists in **local only**: remove it from local.
+   - If the entry exists in **team only**: remove it from team.
+   - If the entry exists in **both with the same value**: remove from both.
+   - If the entry exists in **both with different values**: remove from
+     local only (team config may affect other team members). Inform the
+     user that the team config still has a `templates.<key>` entry and
+     they should coordinate with their team if it should also be removed.
+
+## Important Notes
+
+- Config changes take effect on the next skill invocation (no restart needed
+  for skills using the `!` preprocessor)
+- The SessionStart hook summary requires a session restart to update
+- `.local.md` files should be gitignored — the `create` action will help
+  with this
+- Team config should contain only project-relevant context, not personal
+  preferences
+
+## Related Skills
+
+- `/accelerator:init` — bootstrap a fresh repository with all directories
+- `/accelerator:migrate` — apply pending schema migrations after a plugin upgrade
+  (renames `meta/` directories and config keys to match the latest conventions)

@@ -1,0 +1,89 @@
+---
+name: ad-architecture
+description: 'Generate or audit ARCHITECTURE.md from the code: layers, patterns, boundaries, deployment. Use on "document the architecture", "audit ARCHITECTURE.md".'
+summary: Generate or audit `ARCHITECTURE.md` at the repo root.
+allowed-tools: Read, Write, Glob, Grep, Bash
+---
+
+# /ad-architecture
+
+Produces `ARCHITECTURE.md` at the repo root. Pairs with ADRs in `doc/adr/` — architecture is the binding pattern; ADRs are individual decisions with status. ADRs in `doc/adr/` with `Status: accepted` are binding; read every one before writing.
+
+## Step 0 — Detect mode
+
+Run from the consumer repo root before inspecting it:
+
+```bash
+node .claude/skills/ad-architecture/scripts/project-signals.mjs ARCHITECTURE.md --host claude-code
+```
+
+If this skill loaded from a different base directory (stated at the top of the skill load), substitute it — the script lives at `scripts/project-signals.mjs` inside it.
+
+Parse its JSON. Its `mode` selects the branch below; use `stacks` to focus the code scan and surface every `unreadable[]` entry as a scan gap, never as an absent path. Then inspect the repo:
+
+* `ARCHITECTURE.md` exists at the repo root → **audit** mode. **Do not rewrite it.** Stop after producing a drift list (see Step 4).
+* `ARCHITECTURE.md` absent → **bootstrap** mode. Scan first, pre-fill, ask only the gaps.
+
+## Step 1 — Scan the code
+
+Read in this order, taking the first that exists for each category:
+
+* Top-level directory listing — infer the layered/hexagonal/clean structure.
+* Main entry points — servers (`main.go`, `app/server.ts`, `manage.py`, `cmd/`), CLI binaries, background jobs.
+* Boundary code — `handlers/`, `controllers/`, `repositories/`, `gateways/`, `middleware/`.
+* Config and env loading.
+* Observability hooks — logger setup, metrics export, tracing init.
+* Deploy config — `Dockerfile`, `docker-compose.yml`, `k8s/`, `terraform/`, `.github/workflows/`, `Procfile`, `serverless.yml`.
+* `doc/adr/` — `doc/adr/` is the canonical ADR ledger. Read accepted ADRs to inform pattern descriptions; do not duplicate the index inside `ARCHITECTURE.md`.
+
+Build a model of: layers and boundaries, data access pattern, HTTP middleware chain, async/messaging, error and validation patterns, naming conventions, logging/metrics/tracing, deployment topology.
+
+## Step 2 — Pre-fill
+
+For every `<placeholder>` in the referenced template, fill from observed signals. **No fabrication.** If a section has no signal, write `<TODO: not yet wired>` in one line and move on.
+
+## Step 3 — Show only the gaps
+
+Print to the user:
+
+* (a) placeholders without a code signal;
+* (b) places where the code shows two competing patterns (some handlers go through middleware, some don't; mixed data-access styles, etc.).
+
+One question per gap.
+
+When the host exposes Plan Mode, the agent may render the proposed `ARCHITECTURE.md` body inside the plan for user approval before write. Plan Mode is opt-in — skip for incremental edits where the user already saw the prior content.
+
+## Step 4 — Write the file
+
+On user confirmation, write `ARCHITECTURE.md` at the repo root. Cut every line that does not lock a binding pattern. At the end of the response, list any decision that should become an ADR — flag, do not write the ADR yet (use the `ad-adr` skill for that).
+
+**Audit-mode override:** do **not** write the file. Produce a drift list. Format each line as:
+
+```
+[file or section]: spec says X, code says Y. Suggested resolution: change spec / change code / discuss.
+```
+
+If something the user says contradicts what the code shows, surface the conflict. Don't silently trust the user; don't silently trust the code.
+
+## Template — `ARCHITECTURE.md`
+
+The `ARCHITECTURE.md` skeleton lives in [references/architecture-template.md](references/architecture-template.md) — fill its `<placeholders>` from the scan; omit sections with no signal.
+
+## Output contract
+
+A single `ARCHITECTURE.md` at the repo root. Every line locks a binding pattern. ADR candidates flagged in the response, not written. In audit mode: drift list only, no file written.
+
+`ARCHITECTURE.md` is a narrative document, so the Documentation Discipline rules in `WORKFLOW.md` §2 apply at write time:
+
+- No emoji anywhere in the file.
+- No dates, version stamps, `DRAFT` markers, or changelog blocks. Architecture is the current binding pattern; the lifecycle of "when did this become true" lives in ADRs and git history.
+- `Overview` is the business-context-first paragraph — *what the system does* and *what would break without it* before layers and patterns.
+- One scope: system-level patterns and boundaries. Per-decision rationale lives in ADRs; per-project operations live in `AGENTS.md`. Link, do not copy.
+- No speculation. If a layer has no observed signal, write `<TODO: not yet wired>` once; do not propose patterns that aren't already in the code.
+
+## Next
+
+- `/ad-spec` when starting a feature whose scope spans the patterns this document records.
+- `/ad-domain` when writing or auditing the architecture resolves project vocabulary.
+- `/ad-adr` for any binding decision that surfaced while writing or auditing this file (one decision per ADR).
+- `/ad-drift` periodically to check pattern drift between this document and the code.

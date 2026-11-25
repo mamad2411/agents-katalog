@@ -1,0 +1,463 @@
+---
+name: test-roadmap
+description: >
+  Phase 4 of the test-readiness pipeline. Synthesizes the three prior artifacts (inventory, system design, migration) into a single executable roadmap `test-readiness-plan.md` with five sequenced milestones and an agent-executable task list. Includes mandatory sections on where we are now, where we want to be, the gap, the speed delta, and open risks. Output is suitable for handoff to an engineer or to `shipwright /dev-task`. Invoke when the `/test-roadmap` command runs.
+---
+
+# test-roadmap skill
+
+## Purpose
+
+Synthesize. Take the three phase artifacts and produce the single document that drives execution.
+
+## When invoked
+
+By the `/test-roadmap` command. Requires:
+- `docs/test-readiness/test-inventory.md`
+- `docs/test-readiness/test-system.md`
+- `docs/test-readiness/test-migration.md`
+
+## Output structure
+
+`docs/test-readiness/test-readiness-plan.md` opens with a `## Coverage Gate` block — the
+headline machine-checkable verdict (`feature_coverage_pct`, `feature_coverage_source`,
+`line_coverage_pct` (nullable), `line_coverage_source`, `branch_coverage_pct` (nullable),
+`branch_coverage_source`, `verdict`, `targets`), computed by
+`${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts` and rendered verbatim (see Process step 8) — followed by
+six sections:
+
+### 1. Where we are now
+
+Distilled from Phase 3:
+- Layer coverage map (counts: how many tests at each layer, how many ought to be there)
+- Local-runnable status: % of tests that run locally with no network
+- Canary status: size of current canary suite vs. target (from Phase 2 critical-path roster)
+- Speed status: Tier 1 aggregate wall-clock vs. budget; per-layer p95 only if Tier 2 was triggered
+- "Rebuild" debt: count by layer and effort
+- "Delete (redundant)" count and what it implies about false-confidence coverage
+
+### 2. Where we want to be
+
+Distilled from Phase 2:
+- Framework matrix per layer
+- Local-substitute map
+- Coverage targets per tier
+- Canary suite definition (critical-path roster)
+- Speed budgets per layer
+
+### 3. The gap
+
+The concrete diff between sections 1 and 2:
+- Missing layers (e.g., "no integration tests at all")
+- Wrong-layer tests (count and severity)
+- External-only deps with no local substitute (blockers)
+- Canary suite size vs. target
+- **Speed delta** — leads with the aggregate-vs-budget number: the Tier 1 aggregate wall-clock
+  pulled in test-migration Step 4a vs. the <15 min Full PR pipeline budget from
+  `speed-budgets/SKILL.md`, expressed as ratio or time-to-close. Per-layer p95 numbers are
+  included only when Tier 2 was actually triggered by a prior `/test-migration` pass (i.e. the
+  aggregate breached speed-budgets' escalation formula and a per-layer breakdown exists) — do
+  not fabricate per-layer numbers when only the Tier 1 aggregate is available.
+
+### 4. Roadmap — five milestones
+
+Always five, in this order. Each milestone has a clear definition-of-done (DOD) that gates the next.
+
+#### Milestone 1: Infrastructure baseline
+Set up runners, local substitutes, CI pipeline shape. No new tests written yet — just the rails.
+- DOD: `bun test` (or stack equivalent) runs at every layer with the Phase 2 framework. Docker-compose / testcontainers boot all named deps. CI runs the unit + integration + smoke layers under budget.
+
+**Mandatory M1 task — naming convention + runner-exclusion config:** Milestone 1 must always include an explicit task to establish the test file naming convention and runner-exclusion configuration. File-discovery collisions (the canary config picking up local tests, or Jest running Playwright specs) cause cascading failures across the roadmap. Establish the rules before writing any tests.
+
+This task covers:
+1. **File-naming convention** — define the suffix rules for each entry point:
+   - `.canary.ts` / `.canary.spec.ts` — canary-only tests (Playwright project or filtered script)
+   - `.smoke.ts` / `.smoke.spec.ts` — smoke layer (pre-merge local run)
+   - `.integration.ts` / `.integration.spec.ts` — integration layer (testcontainers / docker-compose)
+   - `.unit.ts` / `.unit.spec.ts` or default (no suffix) — unit layer
+   Use one consistent convention across the repo; document it in a `docs/test-readiness/naming.md` or equivalent.
+2. **Runner-exclusion config** — each runner must explicitly exclude the other layers' files:
+   - **Jest / Vitest `testMatch` / `include`** — exclude `.canary.`, `.smoke.`, `.integration.` files from the unit runner
+   - **Playwright `testMatch`** — scope to `.canary.spec.ts` or the canary project directory only; exclude all `.unit.`, `.integration.` files
+   - **Coverage config `exclude`** — exclude test helpers, fixtures, and non-source files from coverage reports
+   - **bun test `--filter`** — use path-based filters that respect the naming convention
+3. **Verification** — run each entry point in isolation and confirm it picks up only its layer's files (e.g., `bun test --filter integration` finds zero unit files).
+
+**Mandatory M1 task — carried-forward measurement-only items:** if Phase 3's `test-migration.md` flags a measurement-only item (not a test file) as carried forward unactioned, gate the mandatory-M1 trigger on the same Tier-1-breach gate `test-migration/SKILL.md` uses — a Tier 1 budget breach, not a bare cycle count. Only when the aggregate wall-clock has tripped `speed-budgets/SKILL.md`'s escalation formula (aggregate exceeds 50% of the <15 min budget, sustained across 2 consecutive measurements) and the resulting item remains carried forward unactioned does Milestone 1 need to include it as the first task, by construction — do not rely on noticing the streak in prose when assembling the task list. A carried-forward item that exists only because Tier 2 infra was never exercised on an otherwise-in-budget suite is not, by itself, grounds for mandatory M1 escalation.
+
+#### Milestone 2: Critical-path coverage
+Write or rebuild every `critical` tier test across all layers.
+- DOD: 100% of inventory items tagged `critical` have a passing test at the prescribed layer. `delete (redundant)` tests in this tier are gone.
+
+#### Milestone 3: Canary suite live
+Smoke + E2E canary-eligible tests run green against a freshly deployed environment.
+Gated on `deploy_model` (determined in Process step 1): this milestone only applies
+when `deploy_model == 'staged'`.
+- DOD (when `deploy_model == 'staged'`): CI job runs the canary suite against a staging URL post-deploy. Suite completes in <60s. All canary tests pass.
+- When `deploy_model != 'staged'` (i.e. declared `direct`, declared `none`, or
+  undeclared): there is no staging/canary pipeline to gate on. Replace this milestone's
+  entire content with a single note line — `canary not applicable -- deploy_model={value}`,
+  where `{value}` is `direct`, `none`, or `undeclared` — and skip the milestone entirely:
+  no DOD, no tasks. Do not fabricate canary-plumbing work for a pipeline that doesn't exist.
+
+#### Milestone 4: High-tier coverage
+Fill `high` tier gaps.
+- DOD: 100% of `high` tier inventory items have coverage at the prescribed layer.
+
+#### Milestone 5: Cleanup
+Delete or refactor remaining `rebuild` and `delete (redundant)` tests; remove false-confidence coverage. This milestone comes LAST because deletions are safer once new coverage is in place.
+- DOD: zero tests in `rebuild` bucket remain. Zero tests in `delete (redundant)` bucket remain. CI passes.
+
+### 5. Task list
+
+Flat, ordered. Each task has:
+- **ID** (sequential, e.g., `T-001`)
+- **Milestone** (1–5)
+- **Files to touch** (paths)
+- **Layer** (unit / integration / smoke / E2E / infra)
+- **Bucket origin** (reuse / promote / rebuild / delete / net-new)
+- **Expected outcome** (one line)
+- **Verification command** (the exact CLI invocation that proves it's done)
+
+This format is designed to be consumed by `shipwright /dev-task` as a queue.
+
+**Task sizing for agent execution:** a task is agent-executable as written iff all three of:
+1. **Independently deployable** — the PR for this task can merge without the next task. No "part 1 of 2" that leaves the system in a broken intermediate state.
+2. **Single concern** — one functional unit per task. A task touching auth middleware AND a user factory AND two smoke tests is three tasks. **Single concern ≠ one operation repeated across N services.** Applying the same change to N services is N tasks — each service has its own files, its own verification command, and its own PR surface area.
+3. **Hard cap: ~1000 lines changed.** Larger PRs slow review, increase merge conflict risk, and reduce the agent's confidence in its own output. If a task exceeds this, break it at a natural seam — usually by layer (infra task, then unit task, then integration task) or by feature area.
+
+**N-service refactors are N flat tasks, wired with real dependencies (non-negotiable):**
+Building on rule 2 above — one operation repeated across N services is N tasks, not one — each
+of those N tasks is emitted as its own independently-titled row in the task list (section 5),
+with its own files, its own verification command, and its own PR surface area. There is no
+parent/summary task and no synthetic "closes when its children close" row: task-store has no
+structural parent/child field, only `dependencies`, and encoding "parent closes when children
+close" as free text has broken in production. Wire the N tasks together with real
+`dependencies` entries only where genuine technical ordering exists between them (e.g. one
+task's output is literally imported by another) — never merely because they touch "the same"
+logical refactor. If no such ordering exists, the tasks are fully independent and each carries
+an empty `dependencies` array; do not invent a dependency just to show the field is used.
+
+**Example — 6-service auth middleware refactor:**
+
+Instead of one oversized task:
+```
+T-042 | M2 | services/*/src/middleware/auth.ts (6 files) | infra | rebuild
+      | Migrate auth middleware to new token format
+      | bun test --filter auth
+```
+
+Emit 6 flat, independently-titled tasks — one per service, no parent/P-NNN row:
+```
+T-042a | M2 | services/payments/src/middleware/auth.ts      | infra | rebuild
+       | Migrate auth middleware — payments (introduces shared validateToken() helper)
+       | bun test --filter payments/auth
+
+T-042b | M2 | services/users/src/middleware/auth.ts         | infra | rebuild
+       | Migrate auth middleware — users (imports validateToken() from payments)
+       | bun test --filter users/auth
+       | depends_on: T-042a
+
+T-042c | M2 | services/notifications/src/middleware/auth.ts | infra | rebuild
+       | Migrate auth middleware — notifications
+       | bun test --filter notifications/auth
+
+T-042d | M2 | services/billing/src/middleware/auth.ts       | infra | rebuild
+       | Migrate auth middleware — billing
+       | bun test --filter billing/auth
+
+T-042e | M2 | services/catalog/src/middleware/auth.ts       | infra | rebuild
+       | Migrate auth middleware — catalog
+       | bun test --filter catalog/auth
+
+T-042f | M2 | services/search/src/middleware/auth.ts        | infra | rebuild
+       | Migrate auth middleware — search
+       | bun test --filter search/auth
+```
+
+Here, `payments` is the first service migrated and introduces a shared `validateToken()`
+helper that `users`' middleware genuinely imports — so `T-042b`'s row carries a
+`depends_on: T-042a` annotation (test-fix's Step 2.3 parses this and Step 5.4 computes the
+task-store `dependencies` array from it). The remaining four services (`notifications`,
+`billing`, `catalog`, `search`) have no real ordering dependency on any other service's
+migration, so their rows carry no `depends_on:` annotation and they end up with an empty
+`dependencies` array, running in parallel. This is not advisory — do not emit the oversized
+task and place it in Open risks. Apply the split during task generation. Open risks is for
+genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
+
+### 6. Open risks
+
+Anything the audit couldn't determine without a human call. Common entries:
+- Tests in the `delete (redundant)` bucket where the canonical owner is itself untested (don't delete until owner exists)
+- External dep with no clean local substitute (does the team accept a recorded-fixture-only approach?)
+- Tests at the wrong layer that may be doing important work the inventory didn't capture (human verification needed)
+
+## Process
+
+1. Read all three prior artifacts. Abort if any missing. Also determine `deploy_model`
+   using the same read-with-fallback mechanism `skills/test-inventory/SKILL.md` Step 1
+   uses ("CLAUDE.md deploy-model declaration"): check the target repo's root `CLAUDE.md`
+   for a `## Deploy model` section with value `staged`, `direct`, or `none`; if the
+   section is absent, treat it as **undeclared** and default to NOT staged. Store this
+   value — Step 5 gates Milestone 3 canary-task generation on it.
+
+   Using the same read mechanism, also determine `recorded_fixture_automation`: check the
+   target repo's root `CLAUDE.md` for a `## Recorded-fixture automation` section with value
+   `planned` or `not planned`; if the section is absent, treat it as **undeclared** and
+   default to `planned` (preserves existing behavior for repos that haven't opted out).
+   Store this value — Step 5 gates recorded-fixture-refresh task generation on it.
+2. Extract metrics: layer counts, speed numbers, bucket counts.
+3. Compute the gap (section 3 math).
+4. **Determine the starting T-NNN offset (task-store query — run before any ID is
+   assigned).** T-NNN numbering must continue across cycles, not restart at `T-001` every
+   time `/test-roadmap` runs — a restart collides with `test-fix`'s task-store IDs from a
+   prior cycle (`test-fix` maps `T-NNN` → `test-t-{nnn}-{repo-slug}`), which is how a
+   second cycle's roadmap has duplicated a first cycle's already-shipped work under fresh
+   numbering.
+
+   Derive `repo` (`org/repo`, e.g. `app-vitals/shipwright`) from
+   `git remote get-url origin` — strip the `https://github.com/` (or `git@github.com:`)
+   prefix and the `.git` suffix. Derive `repo-slug` as the last path segment, lowercased
+   (e.g. `shipwright`).
+
+   Query task-store for every existing task in this repo, regardless of status — a task
+   from a prior cycle that has since merged still reserved its ID and must not be reused.
+   Pass an explicit high `limit` (task-store defaults to 50 per page, which silently
+   truncates the scan on a repo with a longer test-readiness history):
+   ```bash
+   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={url-encoded-repo}&limit=500" | jq '.tasks'
+   ```
+   If the response's `.nextCursor` is a string, repeat with
+   `&cursor=<nextCursor>` until it is `null` and every task has been scanned.
+
+   From the combined results, filter to task `id` values matching `test-t-<NNN>-{repo-slug}`
+   (the ID shape `test-fix` writes — see `skills/test-fix/SKILL.md` Step 5). Extract the
+   numeric `<NNN>` from each match and take the max: `max_existing`. Set
+   `starting_offset = max_existing + 1` — or `1` (i.e. `T-001`) if no matching tasks exist,
+   which is the correct behavior for a repo's first test-readiness cycle.
+5. Generate the task list by walking the migration buckets in this order, assigning
+   sequential `T-NNN` IDs starting from `starting_offset` (step 4) rather than always
+   restarting at `T-001`:
+   - Milestone 1: all `infra` items + **paired repo-config tasks** (see pairing rule below).
+     **Exception:** when `recorded_fixture_automation == 'not planned'` (Process step 1),
+     omit every recorded-fixture-refresh-loop item — the `.github/workflows/recorded-fixture-refresh.yml`
+     workflow task, its paired GitHub-Environment/secrets task, and any per-service
+     "record fixtures for `<service>`" / "wire recorded-fixture-refresh cron for `<service>`"
+     tasks from `repo-config/SKILL.md`'s deferred pattern — regardless of what test-migration's
+     bucket table flags as a gap. Replace them with a single note in the roadmap's Milestone 1
+     section: `recorded-fixture automation not applicable -- recorded_fixture_automation=not planned`.
+   - Milestone 2: all `critical` tier items (net-new + rebuild + promote)
+   - Milestone 3: **only when `deploy_model == 'staged'`** (Process step 1) — all
+     canary-eligible items needing canary plumbing. When `deploy_model != 'staged'`
+     (declared `direct`, declared `none`, or undeclared), emit **zero** Milestone 3 tasks
+     here — the section 4 note (`canary not applicable -- deploy_model={value}`) is the
+     only artifact of this milestone; do not generate canary-plumbing tasks for a
+     pipeline that doesn't exist.
+   - Milestone 4: all `high` tier items (net-new + rebuild + promote)
+   - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
+
+   **Sequencing rule — feature-coverage gaps ahead of line-coverage filler (within the same
+   milestone).** A milestone can contain two distinct gap types: **feature-coverage-closing**
+   tasks (a task whose outcome closes an actual untested feature/critical-path item — e.g. a
+   `critical`/`high` tier row from the inventory buckets, or any row whose outcome closes a
+   named feature/error-path gap) and **line-coverage filler** tasks (a task whose only
+   justification is raising the aggregate `line_coverage_pct`, with no feature/error-path gap
+   behind it). Whenever both types are being generated for the same milestone, order every
+   feature-coverage-closing task ahead of every line-coverage filler task in that milestone's
+   emitted `T-NNN` sequence — line-coverage filler never precedes a feature-coverage-closing
+   task within the same milestone. This is a no-op when a milestone contains only one gap type
+   (all feature-coverage-closing, or all line-coverage filler): there is nothing to reorder.
+
+   **Note on line-coverage filler provenance:** the five migration buckets this walk pulls
+   from (reuse/promote/rebuild/delete/net-new) are all inventory-derived — every row this walk
+   emits traces to a concrete `test-inventory.md`/`test-migration.md` item, so this walk itself
+   has no path that emits a line-coverage-filler row. Line-coverage filler rows are the kind a
+   human or an agent adds by hand to a milestone outside this walk (e.g. padding a milestone to
+   hit a line-coverage target before merge). This sequencing rule — and the matching
+   `test-fix/SKILL.md` anti-gaming check — exists to catch that ad-hoc row if and when one is
+   added, not to reorder anything this walk generates on its own.
+6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
+
+   **Note — the coverage-check pairing has a 3rd, auto-emitted stage.** The general
+   2-stage pairing pattern above (workflow task → paired branch-protection task) has a
+   third stage specific to the coverage-required-check: `test-roadmap` itself
+   auto-emits a stage-3 promotion task on a later re-run once the coverage gate closes.
+   See `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)" section for
+   the full 3-stage table; Process step 9 below is where this repo implements stage 3.
+7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
+8. **Compute the coverage_gate block by invoking `${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts` — never
+   hand-compute the verdict.** Source the four required inputs the same way Step 4c of
+   `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
+   mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
+   - `linePct` / `lineSource`: run
+     `bun run "${CLAUDE_PLUGIN_ROOT}/scripts/coverage-summary.ts" --repo {org}/{repo}` and take the
+     most recent result (contract in `references/coverage-output.md`). `linePct` is
+     `lines.covered / lines.total` as a percentage; `lineSource` cites the result's `runUrl`
+     and `commitSha`. A `not_reporting` result is
+     **not** an abort: pass `linePct: null` with `lineSource` set to the reader's reason (e.g.
+     "no shipwright-coverage artifact: <reason>"). Unmeasured is `null`, never `0`.
+   - `branchPct` / `branchSource`: from that **same** reader result — no second call. When
+     the result carries `branches`, `branchPct` is `branches.covered / branches.total` as a
+     percentage and `branchSource` cites the same `runUrl` and `commitSha`. When the result
+     has no `branches` (the toolchain does not emit branch data — `branches` is optional in
+     the contract) or the reader returned `not_reporting`, pass `branchPct: null`.
+     Unmeasured branch coverage is reported as `not measured` and **does not block** the
+     gate; a measured value below `targets.branch` (default 80) does. Never derive a branch
+     figure from the line figure, and never pass `0` for unmeasured.
+   - `featurePct` / `featureSource`: read `feature_coverage_pct` from
+     `docs/test-readiness/test-inventory.md` (already a Process step 1 prerequisite
+     artifact for this run). `featureSource` cites that file.
+   - **Never guess.** If `test-inventory.md` is missing or lacks `feature_coverage_pct`,
+     that input is unavailable — do not substitute an estimated value; proceed to the
+     refusal rule below instead. (A `not_reporting` line-coverage reader result is the
+     exception: it is a gate outcome, passed as `linePct: null` — see above.)
+
+   Run the script via Bash with the sourced inputs as a JSON blob (argv or stdin) —
+   the script computes `verdict` itself; the agent does not compose "READY"/"BLOCKED"
+   text by hand:
+   ```bash
+   echo '{"featurePct": 92, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 87, "lineSource": "CI run <url> @ <sha>", "branchPct": 81, "branchSource": "CI run <url> @ <sha>"}' \
+     | bun run "${CLAUDE_PLUGIN_ROOT}/scripts/check-coverage-gate.ts"
+   ```
+   (the script ships in the plugin and resolves via `${CLAUDE_PLUGIN_ROOT}`, so this works
+   from any target repo)
+   Take the script's JSON stdout output verbatim — `feature_coverage_pct`,
+   `feature_coverage_source`, `line_coverage_pct`, `line_coverage_source`,
+   `branch_coverage_pct`, `branch_coverage_source`, `verdict`,
+   `targets.feature`, `targets.line`, `targets.branch` — into the `{{FEATURE_COVERAGE_PCT}}` /
+   `{{FEATURE_COVERAGE_SOURCE}}` / `{{LINE_COVERAGE_PCT}}` / `{{LINE_COVERAGE_SOURCE}}` /
+   `{{BRANCH_COVERAGE_PCT}}` / `{{BRANCH_COVERAGE_SOURCE}}` /
+   `{{COVERAGE_VERDICT}}` / `{{FEATURE_TARGET}}` / `{{LINE_TARGET}}` / `{{BRANCH_TARGET}}`
+   template placeholders.
+   Do not paraphrase the `READY` / `BLOCKED: ...` verdict text — render it verbatim.
+   `line_coverage_pct` may be `null` (verdict `BLOCKED: line coverage not reporting`,
+   combined with the feature-gap clause when feature coverage is also short): render it as
+   `not reporting` in `{{LINE_COVERAGE_PCT}}` and a numeric value as `<n>%`.
+   `branch_coverage_pct` may also be `null` (branch coverage unmeasured — this never
+   changes the verdict): render it as `not measured` in `{{BRANCH_COVERAGE_PCT}}` and a
+   numeric value as `<n>%`. Then continue
+   to step 9 and step 9b — a `null` result is a normal outcome, not a failure.
+
+   **Abort if the script call fails — do not write `test-readiness-plan.md`.** This is the
+   correctness backstop the script enforces: if the script exits nonzero (missing required
+   input field, or a self-consistency check failure), if its stdout is not valid JSON
+   matching the eight-field `coverage_gate` shape, or if any of the eight fields ends up
+   missing/null (other than `line_coverage_pct` and `branch_coverage_pct`, which
+   may legitimately be `null` per above) in a way that makes the block inconsistent, stop here. Do not proceed to
+   step 9 and do not write a partial or fabricated `test-readiness-plan.md` — mirrors
+   Process step 1's "Abort if any missing" failure mode, applied to the coverage_gate
+   computation instead of the three prior-artifact reads.
+9. **Auto-emit the stage-3 coverage-promotion task when the gate closes.** Using step 8's
+   just-computed `line_coverage_pct`, this is the auto-pairing mechanism firing for the
+   coverage-check's 3rd stage (see the step-6 note above and `repo-config/SKILL.md`'s
+   "Coverage-check pairing (3-stage lifecycle)" section) — it follows the existing
+   auto-pairing emission mechanism, no manual trigger step:
+   - **If `line_coverage_pct` is `null` (not reporting):** no promotion task — the line
+     gate cannot be judged closed without a measurement. Proceed to step 9b.
+   - **If `line_coverage_pct < 90`:** no promotion task. The never-decrease check (stage 2)
+     is still the active gate. Nothing to do — proceed to step 10.
+   - **If `line_coverage_pct >= 90`:** before emitting, check whether a stage-3 promotion
+     task has already been filed for this repo, so a later re-run doesn't refile it every
+     cycle once the gate has closed — idempotency matters here (see
+     `plugins/shipwright/CLAUDE.md`'s "6. Skills Are Idempotent" principle). Reuse step 4's
+     existing task-store query result set (it already fetches every task for this repo,
+     paginated past the 500-row default) — scan that same result set for a task whose
+     title/outcome matches the stage-3 promotion pattern (e.g. "Promote coverage required
+     check from never-decrease to hard ≥90% gate").
+     - **If found:** skip — no duplicate row.
+     - **If not found:** emit exactly one new `T-NNN` row into the Section 5 task list
+       (Milestone 1, `bucket: infra`) with:
+       - Outcome: "Promote coverage required check from never-decrease to hard ≥90% gate"
+       - `depends_on` the stage-2 never-decrease task's `T-NNN` (found via the same scan,
+         matching its title pattern) — mirrors exactly how step 6's pairing rule already
+         wires `depends_on` for workflow-task → branch-protection-task pairs, so
+         `test-fix`'s existing `depends_on:` parsing (Step 2.3 / Step 5.4) requires zero
+         changes to pick up this new row.
+       - **Onboarding-skip fallback:** if no stage-2 task is found in the scan, this
+         means the onboarding-skip rule applied — the repo was already at ≥90% line
+         coverage at onboarding time and never had a stage-2 never-decrease task filed
+         (see `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)"
+         section, "Onboarding skip rule"). In that case, emit the stage-3 row with no
+         `depends_on` — there is no stage-2 predecessor task to wire it to.
+   This preserves the existing division of responsibility: `test-roadmap` stays
+   markdown-only (no new task-store write path, no new skill) — it just adds one more row
+   to the same Section 5 walk that step 6 already populates, and `test-fix` files it
+   exactly like any other paired row.
+9b. **Auto-emit the publish-coverage-artifact task when the repo is not reporting.** Using
+    the reader result from step 8 (contract in `${CLAUDE_PLUGIN_ROOT}/references/coverage-output.md`):
+    - **If the reader returned `not_reporting`:** emit exactly one new `T-NNN` row into the
+      Section 5 task list (Milestone 1, `bucket: infra`) with the outcome "Publish the
+      shipwright-coverage artifact from CI". Skip it if step 4's task-store result set
+      already holds a task with that title (idempotent on re-run). The task body carries:
+      - the artifact upload step, copied from the contract's example upload step;
+      - the native reporter command and report path for the toolchain recorded in
+        `test-system.md`'s **Coverage toolchain:** and **Coverage report path:** fields,
+        taken from the contract's per-language recipe table;
+      - a check that the CI workflow running the upload also runs on pushes to the default
+        branch, since the reader ignores artifacts from any other branch;
+      - a starter `.shipwright/coverage.json` to create, per the contract's "Path exclusions"
+        section: `maxExcludedPct` set to a conservative `5`, empty `excludePrefixes` and
+        `excludeSubstrings` arrays (no exclusions at the start), and an instruction that the
+        repo's own coverage gate must read this file rather than hardcode its own exclusion
+        list, so the gate and the reader report the same post-exclusion figure.
+    - **If the reader returned a result (the repo is reporting):** emit nothing.
+    Name no specific repo, workflow, job or step in the task — it is derived from the
+    recorded toolchain and the contract alone.
+10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
+    Write to `docs/test-readiness/test-readiness-plan.md`.
+    - Fill the `## Coverage Gate` section's ten placeholders
+     (`{{FEATURE_COVERAGE_PCT}}`, `{{FEATURE_COVERAGE_SOURCE}}`, `{{LINE_COVERAGE_PCT}}`,
+     `{{LINE_COVERAGE_SOURCE}}`, `{{BRANCH_COVERAGE_PCT}}`, `{{BRANCH_COVERAGE_SOURCE}}`,
+     `{{COVERAGE_VERDICT}}`, `{{FEATURE_TARGET}}`, `{{LINE_TARGET}}`,
+     `{{BRANCH_TARGET}}`) verbatim from step 8's script output.
+    - **`{{M3_HEADING_AND_DOD}}` is gated on `deploy_model`** (Process step 1) — the
+      template has no static text for this milestone precisely because it must reflect
+      the gate:
+      - When `deploy_model == 'staged'`: fill with
+        `### Milestone 3 — Canary suite live\n**DOD:** Smoke + E2E canary-eligible tests run green against the deployed env in <60s wall time.`
+      - When `deploy_model != 'staged'` (declared `direct`, declared `none`, or
+        undeclared): fill with the single note line —
+        `### Milestone 3 — Canary suite live\n**DOD:** canary not applicable -- deploy_model={value}`
+        (no task list, no DOD beyond the note) — where `{value}` is `direct`, `none`, or
+        `undeclared`.
+
+## Failure modes to avoid
+
+- **Don't sequence Milestone 5 (cleanup) before Milestone 2 (critical-path).** Deleting a "redundant" test before its canonical owner exists creates a coverage hole. Always build before deleting.
+- **Don't skip the speed delta.** It's the most actionable single number for "are we converging."
+- **Don't write a roadmap that's a copy of the migration table.** The roadmap is sequenced and milestone-gated; the migration is unsorted bucketing. The synthesis is the value.
+- **The plugin feedback collector task must not create a per-repo log inside the plugin.** `plugins/shipwright/` is repo-agnostic and ships publicly (see root `CLAUDE.md`) — a file that names the target repo and accumulates dated, repo-specific entries (e.g. `references/pipeline-learnings.md`) bakes private/internal repo names into the OSS package as soon as a second repo runs the pipeline. Route real feedback through `learning-capture`'s existing mechanism instead: a generalized, repo-agnostic instruction edited directly into the relevant skill/doc, or — for autonomous agents, which don't use `learning-capture` interactively — a `# Harness TODO` entry for the dream job to fold in per its normal routing. Never a new narrative file under the plugin's own `references/`.
+- **Don't restart T-NNN numbering at T-001 on a repo with a prior cycle.** Always run the
+  step 4 task-store query first. Skipping it silently collides with `test-fix`'s
+  `test-t-{nnn}-{repo-slug}` IDs from an earlier cycle and produces a roadmap that
+  duplicates already-shipped work under fresh numbering.
+- **Don't generate Milestone 3 canary-plumbing tasks when `deploy_model != 'staged'`.**
+  Check the value determined in Process step 1 before emitting any Milestone 3 task.
+  Getting this wrong is not hypothetical: on 2026-07-14 this happened to shipwright's own
+  repo (`deploy_model: direct` — no staging environment) and produced a pile of
+  canary-plumbing tasks for a pipeline that doesn't exist, requiring 8 tasks to be
+  manually cancelled. When not staged, emit the `canary not applicable -- deploy_model={value}`
+  note in section 4 and skip the milestone — zero tasks, not a smaller pile of tasks.
+- **Don't sequence a line-coverage filler task ahead of a feature-coverage-closing task within
+  the same milestone.** When both gap types are present in a milestone, the feature-coverage
+  gap is the real gap; a line-coverage filler task only moves the aggregate percentage. Order
+  feature-coverage-closing tasks first.
+- **Don't bundle "build a never-proven capability" and "automate it on a schedule" into one
+  task.** This is not hypothetical either: one target repo's cycle-3 roadmap asked for the
+  whole recorded-fixture-refresh loop (~15 services, ~8 net-new production credentials) in a
+  single task, which sat `pending`/HITL for multiple cycles with no path forward — the repo had
+  never actually exercised a live `RECORD=1`-style capture against a real third-party API;
+  fixtures were all hand-authored. Wiring real credentials into CI to automate a process
+  that has never once been proven manually is exactly the failure mode `repo-config/SKILL.md`'s
+  "deferred — not implemented" note is meant to block. Check `recorded_fixture_automation`
+  (Process step 1) before emitting any recorded-fixture-refresh task; when it's `not planned`,
+  emit zero tasks per the Milestone 1 exception above rather than one monolithic task.
+- **Don't refile the stage-3 coverage-promotion task on every re-run once it's already been
+  emitted.** Process step 9's dedup scan (reusing step 4's task-store query result set) exists
+  precisely to make this idempotent — a re-run that finds a matching promotion task already
+  filed must skip emission, not add a duplicate `T-NNN` row each cycle.
+- **Don't emit the stage-3 coverage-promotion task before the gate has actually closed.**
+  Process step 9 is gated on `coverage_gate.line_coverage_pct >= 90` (step 8's freshly
+  computed value; `null` never promotes) — a repo still below 90% keeps the never-decrease check (stage 2) as its
+  active gate; do not promote to the hard ≥90% gate early.

@@ -1,0 +1,169 @@
+---
+name: flow-comet-open
+description: "Use only when explicitly invoked as /flow-comet-open or routed by the flow-comet entry/runtime to the open Node; complete Open for flow-comet. Do not use for ordinary standalone tasks or as the workflow entry."
+---
+
+<!-- 手写区详细协议见 GUIDANCE.md（可选阅读） -->
+
+# Open
+
+## Node Goal
+
+Complete the `open` Node for `flow-comet`.
+
+Responsibility: CHANGE 反问 + REQUIREMENT 需求分析。生成 CHANGE.md 和 REQUIREMENT.md。
+
+## Guidance
+
+### 必填段清单（结构+存在级）
+
+| 文件（模板 = `flow-kit/templates/<DOC>.md`） | 左栏 · 无条件段（模板 H2，缺席 / 空正文 = BLOCKED） | 右栏 · 条件段（**标题必须在场**，正文可写 `N/A`）/ 增量段（按登记位置） |
+|------|------|------|
+| `CHANGE.md` | `## Why（为什么做）` / `## What（做什么）` / `## 影响面` / `## 范围排除（这次不做）` / `## 验收线（粗粒度，不是 AC）` / `## 风险与未知`；首部 `Change ID` 必填 | **条件段**：`## 视觉调性（前端项目必填，由 0-change 步骤 0.6 预选填入）`——标题必须在场，非前端以结构形态标注「不适用」；**增量段**：`## 架构层影响声明`（可选，位置 = 文末 / `## 风险与未知` 之后） |
+| `REQUIREMENT.md` | `## 用户故事` / `## 验收准则（AC）` / `## 范围切分` / `## 非功能性需求` / `## 依赖与假设`；`## 范围切分` 的结构子段 `### v1（本次必做）` / `### v2（下一轮考虑，不本次）` / `### out（永远不做）` 在父段适用时必在场；首部 `Change ID` 必填 | 无模板条件段、无增量段——`## 范围切分` 整段写 `N/A` 时其结构子段随之豁免 |
+
+模板缺席（`flow-kit/templates/` 不在场）时骨架无从派生：该工件**不校验**并输出「未校验（模板缺失）」，不拿内置骨架顶替。guard 校验见 workflow-guard.mjs 的出口门禁与模板骨架派生（条件段 / 结构子段 / 增量段的位置与必填性来自 `../flow-comet/reference/artifact-templates.json` 登记）；「填得好不好」由 review 把关。
+
+> **模板权威**：本节点产出工件的段形 = **上游模板 + 本仓登记的增量段**——唯一权威 = `flow-kit/templates/**`（段与正文），条件段 / 结构子段 / 增量段与指纹由 `../flow-comet/reference/artifact-templates.json` 登记；`.specs/archive/**` 是历史证据、**不是模板来源**——不得以「上一轮就是这么写的」对齐段形。
+
+加载顺序：先读 `READ PROMPT:`（`0-change`、`1-requirement`），再读 `READ TEMPLATE:`（`CHANGE`、`REQUIREMENT`）。
+
+# Open
+
+## Node Goal
+
+This node transforms a vague user intent into a concrete change proposal (CHANGE.md) and verifiable requirements (REQUIREMENT.md). It is the entry point of the flow-comet workflow, combining the CHANGE and REQUIREMENT phases into a single node. The output artifacts serve as the foundation for all downstream design, planning, and implementation work.
+
+## Guidance
+
+### Prerequisites
+
+- No upstream artifacts required — this is the first node in the flow.
+- If `.specs/<change-id>/` already exists for the proposed id, the agent must auto-increment (`<id>-2`, `<id>-3`) to avoid collision.
+- If `.specs/ARCHITECTURE.md` exists, it should be read for context but is not a blocking prerequisite.
+
+### Steps
+
+1. **Auto-generate change-id**: Extract 2-4 kebab-case keywords from user description. Check `.specs/<id>/` does not exist. Declare the id to the user in the first message. User does not need to confirm unless they want to change it.
+
+2. **Architecture change detection (0.4)**: Evaluate against 5 criteria (module structure impact, ADR conflict, public contract change, capacity boundary, cross-service orchestration). If hit: present 3 options (run A-architect first / continue with architecture impact statement / re-classify). If ARCHITECTURE.md missing + hit: warn user. If not hit (90% of cases): skip silently.
+
+3. **Frontend project identification (0.5)**: Check if description contains frontend keywords (website/web/page/UI/app/dashboard etc.). If yes: mark as frontend project and proceed to 0.6. If not: skip to step 4.
+
+4. **Visual tone preselection (0.6, frontend only)**: Present 9 style cards (from ui-ux-pro-max if installed, else from `flow-kit/reference/ui-aesthetics.md`). Give 1 preferred + 1 backup recommendation. Exclude 1-3 unsuitable styles with reasons. Wait for user selection before proceeding.
+
+5. **Structured questioning (step 1)**: Ask "why / who / what problem / when is done" in max 3 questions per round. Never skip this — do not assume requirements. Do not mix with tone cards in the same message.
+
+6. **Impact assessment (step 2)**: Determine if new/modified REQUIREMENT.md needed, if architecture touched, if existing ACs affected.
+
+7. **Scope exclusion (step 3)**: Explicitly write what this change will NOT do. At least 1 item required.
+
+8. **Generate CHANGE.md (step 4)**: Use `flow-kit/templates/CHANGE.md` template. Save to `.specs/<change-id>/CHANGE.md`. Must contain: Why / What / Impact / Scope exclusion / Acceptance line. No implementation details allowed.
+
+9. **Path recommendation (step 5)**: Based on impact, recommend full / medium / shortest path with reasoning.
+
+10. **REQUIREMENT phase**: After user confirms CHANGE.md:
+    - Write ACs in Given/When/Then format — each must be verifiable by one command or one manual operation.
+    - Scope split: v1 (must do) / v2 (next time) / out (never). At least 1 item in v2 and 1 in out.
+    - Extract terminology to `.specs/CONTEXT.md` (glossary + locked decisions + defaults).
+    - List non-functional requirements explicitly (write "none" if none).
+    - Stop and ask if any AC cannot be verified in one sentence.
+
+11. **LESSONS scan**: Grep `.specs/LESSONS.md` for keywords related to this change. If active lessons hit, declare "difference is X" or "still applies, will not retry".
+
+The full questioning protocol, anti-patterns, and templates are in:
+- `flow-kit/prompts/0-change.md` (CHANGE phase)
+- `flow-kit/prompts/1-requirement.md` (REQUIREMENT phase)
+
+### Completion reasoning
+
+This node is truly done when:
+- `.specs/<change-id>/CHANGE.md` exists and user has confirmed it.
+- `.specs/<change-id>/REQUIREMENT.md` exists with all ACs in Given/When/Then format.
+- `.specs/CONTEXT.md` has been updated with at least 1 new term or decision.
+- v1/v2/out scope split is populated in REQUIREMENT.md.
+- At least 1 "out of scope" item exists in CHANGE.md.
+- User has confirmed both artifacts.
+
+### Red flags
+
+- **Agent thought**: "User said enough, I can infer the rest." **Actual risk**: Skipping structured questioning leads to wrong requirements. Always ask, never assume.
+- **Agent thought**: "CHANGE.md should describe how to implement." **Actual risk**: CHANGE.md is a proposal, not a design doc. Implementation details belong in DESIGN.md. Violates R3 role boundary.
+- **Agent thought**: "No need for out-of-scope items, the scope is obvious." **Actual risk**: Without explicit scope exclusion, downstream phases will expand scope unchecked. At least 1 "out of scope" item is mandatory.
+- **Agent thought**: "Architecture change detection is optional." **Actual risk**: Skipping 0.4 means a service-split or DB-migration-level change enters the flow without ADR alignment, causing DESIGN.md section 0.5 to be self-contradictory.
+- **Agent thought**: "AC '界面要好看' is good enough." **Actual risk**: Non-verifiable ACs cannot be tested. Must stop and ask for measurable criteria.
+
+## Entry Check
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-guard.mjs entry open
+```
+
+## Skill Implementation
+
+The open node loads `flow-comet-change` for the CHANGE phase (structured questioning, change-id generation, architecture detection, visual tone preselection) and `flow-comet-requirement` for the REQUIREMENT phase (AC derivation, scope split, terminology extraction). It produces two artifacts in `.specs/<change-id>/` and updates the project-level `.specs/CONTEXT.md`.
+
+## Required Skill Calls
+
+| Skill | Enforcement | Reason |
+|-------|-------------|--------|
+| `flow-comet-change` | Required before CHANGE.md generation | Provides structured questioning protocol, architecture detection, and tone preselection |
+| `flow-comet-requirement` | Required before REQUIREMENT.md generation | Provides AC format (Given/When/Then), scope split, and terminology extraction rules |
+
+**加载声明（阶段层 · 双步硬规则）**：本节点技能已由入口路由经 Skill 工具加载（你正在阅读的就是它）；本节点 Required Skill Calls 的加载与声明同样不可跳过：
+
+1. **用 Skill 工具加载** `flow-comet-change` 与 `flow-comet-requirement`（本节点 Required Skill Calls）。**不得跳过**——只读取 SKILL.md 文件不叫加载；真正让这两个 skill 的指令生效的是 Skill 工具把它们注入本次会话。
+2. 加载完成后**立即**运行声明命令，每个协议文件对应一条（节点退出与证据记录会核对声明标记；声明如实记录加载动作，不等于产出证明）。`--templates` 声明本节点该读的产出物模板，**每条命令都写全清单**（两个标记各一份，节点级取并集）：
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-state.mjs skill-load open flow-comet-change --prompt flow-kit/prompts/0-change.md --templates CHANGE.md,REQUIREMENT.md
+node .claude/skills/flow-comet/scripts/workflow-state.mjs skill-load open flow-comet-requirement --prompt flow-kit/prompts/1-requirement.md --templates CHANGE.md,REQUIREMENT.md
+```
+
+> **跑 skill-load 声明命令 ≠ 加载**：声明只把“哪次会话加载了哪个 skill、按哪份协议工作”写进状态供 exit/record 核对；真正加载只有第 1 步的 Skill 工具能做到。
+
+## Output Schemas
+
+Schema: `flowkit.intake.v1`
+
+| Schema ID | Artifact Kind | Required | Path |
+|-----------|--------------|----------|------|
+| `change-doc` | file | yes | `.specs/<change-id>/CHANGE.md` |
+| `requirement-doc` | file | yes | `.specs/<change-id>/REQUIREMENT.md` |
+| `context-update` | file | yes | `.specs/CONTEXT.md` (append/update) |
+
+Evidence: `intake-summary` (required)
+
+## Evidence Record
+
+Record the node after the artifacts exist and before running the exit (the exit validates the evidence is present). Ask the engine for this node's commands — the printed `record` command carries the platform-correct script path, so there is no copy here to drift:
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-state.mjs explain open
+```
+
+A good `summary` names what was produced, for example `CHANGE.md + REQUIREMENT.md generated, user confirmed`.
+
+## Guardrails
+
+| Guardrail ID | Label | Validation Type |
+|--------------|-------|-----------------|
+| `intake-artifacts` | CHANGE.md + REQUIREMENT.md exist | artifact-exists |
+| `context-updated` | CONTEXT.md has new terms/decisions | 执行纪律（review 把关），guard 不校验 |
+| `scope-exclusion` | At least 1 out-of-scope item in CHANGE.md | 执行纪律（review 把关），guard 不校验 |
+
+## Exit Check
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-guard.mjs exit open --apply
+```
+
+If the script prints `SKILL: flow-comet-design`, load that Skill next.
+
+## Recovery
+
+1. Re-run entry check to confirm workflow state.
+2. Read `.specs/<change-id>/CHANGE.md` — if exists and confirmed, skip CHANGE phase.
+3. Read `.specs/<change-id>/REQUIREMENT.md` — if exists and confirmed, skip REQUIREMENT phase.
+4. Resume from the first incomplete artifact. Do not repeat confirmed phases.
+5. If CHANGE.md exists but REQUIREMENT.md does not, continue from REQUIREMENT phase only.

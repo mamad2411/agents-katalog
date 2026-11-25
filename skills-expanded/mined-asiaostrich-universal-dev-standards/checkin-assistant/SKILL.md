@@ -1,0 +1,78 @@
+---
+source: ../../../../skills/checkin-assistant/SKILL.md
+source_version: 1.0.0
+translation_version: 1.1.0
+last_synced: 2026-10-11
+source_hash: f2ee56f211d6
+status: current
+description: |
+  [UDS] 提交前质量关卡的参考资料：关卡定义、检查清单项目，以及绝不可提交的规则。
+  Use when: 决定 commit 前必须通过哪些检查、审计项目实际强制了哪些质量关卡、确认是否已可签入。
+  Not for: 执行关卡流程或中止 commit——该部分已移至采用层（XSPEC-095）；找出并清除调试残留——请用 /sweep。
+  Keywords: check-in, pre-commit, quality gate, commit readiness, never commit, 签入, 提交前检查, 质量关卡, 检查清单.
+---
+
+# 签入助手
+
+> **语言**: [English](../../../../skills/checkin-assistant/SKILL.md) | 简体中文
+
+> ⚠️ **状态：参考（仅供参考，非可执行流程）** — 签入流程协调（关卡执行序列、abort 逻辑）已于 2026-04-28 移至 **采用层（adoption layer，XSPEC-095）**。此处保留品质关卡定义、检查清单项、never-commit 规则供参考。
+> 如需强制执行，请使用你的采用层工具链。
+
+在提交代码前验证品质关卡，确保代码库的稳定性。
+
+## 工作流程
+
+> 📖 以下为流程的**参考结构**，非可执行步骤；自动化／强制执行请用采用层工具链（XSPEC-095）。
+
+1. **检查 git 状态** - 执行 `git status` 和 `git diff` 了解待提交的变更
+2. **执行测试** - 执行 `npm test`（或项目测试指令）验证所有测试通过
+3. **执行代码检查** - 执行 `npm run lint` 检查代码风格合规
+4. **验证品质关卡** - 根据以下清单逐项检查
+5. **报告结果** - 呈现通过/失败摘要并建议后续步骤
+
+## 品质关卡
+
+| 关卡 | 检查项目 | Check |
+|------|---------|-------|
+| **构建** | 编译零错误 | Code compiles with zero errors |
+| **测试** | 所有测试通过（100%） | All existing tests pass |
+| **覆盖率** | 覆盖率未下降 | Test coverage not decreased |
+| **代码品质** | 符合编码规范、无代码异味 | Follows coding standards |
+| **安全性** | 无硬编码密钥或漏洞 | No hardcoded secrets |
+| **文档** | API 文档和 CHANGELOG 已更新 | Documentation updated |
+| **工作流程** | 分支命名和提交消息格式正确 | Branch naming and commit correct |
+| **上游文件** | `.standards/` 或 `.claude/skills/` 无修改（建议性） | No UDS upstream file modifications (advisory) |
+
+## 禁止提交的情况
+
+- 构建有错误 | Build has errors
+- 测试失败 | Tests are failing
+- 功能不完整会破坏现有功能 | Feature is incomplete and would break functionality
+- 关键逻辑中有 WIP/TODO | Contains WIP/TODO in critical logic
+- 包含调试代码（console.log、print） | Contains debugging code
+- 包含被注释的代码块 | Contains commented-out code blocks
+
+## 使用方式
+
+- `/checkin` - 对目前变更执行完整品质关卡验证
+- 验证通过后，使用 `/commit` 建立 commit message
+
+## 下一步引导
+
+`/checkin` 完成后，AI 助手应建议：
+
+> **品质关卡验证完成。建议下一步：**
+> - 全部通过 ✅ → 执行 `/commit` 提交变更 ⭐ **推荐**
+> - 有失败项目 ❌ → 修复问题后重新执行 `/checkin`
+> - 需要代码审查 → 执行 `/code-review` 进行自我审查
+> - UDS 安装有异常 → 执行 `/audit` 诊断问题
+
+## 参考
+
+- 详细指南：[guide.md](./guide.md)
+- 核心规范：[checkin-standards.md](../../../../core/checkin-standards.md)
+
+## AI 代理行为
+
+> 完整的 AI 行为定义请参阅对应的命令文件：[`/checkin`](../../../../skills/commands/checkin.md#ai-agent-behavior--ai-代理行為)

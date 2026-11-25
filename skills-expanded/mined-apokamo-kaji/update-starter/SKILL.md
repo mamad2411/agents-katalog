@@ -1,0 +1,67 @@
+---
+name: update-starter
+description: "公開済み kaji Release に managed starter を追随させ、独立 review 用の未 push candidate を作成する。"
+---
+
+# Update Starter
+
+kaji 側の starter-sync tracking Issue を正本として、対象 release 間の変更を全件 3 区分し、
+managed starter の local main に review 前の candidate を作る maintainer 専用 skill。
+
+## 入力
+
+`/update-starter <tracking_issue_id>`。Issue 本文（v1 schema）から `starter_repo`、
+任意の `starter_path` を読む。今回追随する target は Issue 本文を直接読まず、
+`kaji starter task-plan` の `active_target`（batch 内 target の最大値）から決定的に求める
+（[starter sync runbook](../../../docs/operations/release/starter-sync-runbook.md)）。
+通常 path は kaji main worktree の sibling `../<repo-name>`。remote identity が
+`starter_repo` と一致しなければ ABORT。
+
+## 実行順
+
+1. runbook の前提と managed starters 表を確認する。tracking Issue 本文が v1 schema
+   （`<!-- kaji-starter-sync: v1 -->`）であること、対象 starter checkout と remote identity を
+   検証する。
+2. `kaji starter task-plan` を実行し、Issue 番号・状態・本文（`completion` は渡さない）を
+   観測として渡す。`decision: SYNC` の `active_target` を今回の target、`covered_targets` を
+   今回束ねて追随する対象集合とする。
+   - route 2（新しい batch を開始）の場合、`next_body`（対象行を `syncing` + 新 batch id にした
+     本文）を **candidate 作成より前に** Issue 本文へ適用する（本文更新 → candidate 作成 →
+     marker 付き報告、の順序を守る。部分失敗時に同じ batch を安全に再開できるようにするため）。
+   - route 1（既存 batch を継続）の場合、Issue 本文は変更しない（進行中の証跡を保護する）。
+   - `decision: ABORT` は fallback せず停止する（自動選択・自動統合をしない）。
+   最新の公開済み starter GitHub Release tag を開始点にする。開始点の Release 不在、
+   tag / Release / dependency pin の矛盾があれば ABORT。
+3. この時点で初めて [classification guide](references/classification-guide.md) を読み、開始点から
+   `active_target` までの CHANGELOG、commit、changed assets と、starter-fix Issue を全件 3 区分する。
+   starter-fix Issue は `kaji issue list --label starter-fix --state open --limit 1000 --json number,body`
+   で列挙し、本文の `starter_repo: owner/repo` 行が tracking Issue の `starter_repo` と完全一致する
+   ものに限る（title の文字列検索はしない）。dependency / lockfile 更新だけで完了と判定しない。
+4. starter の remote main と同期した local main に区分 (1) だけを直接 commit する。
+   feature branch / worktree / PR / merge は使わず、review 前に push しない。
+5. repository 実体から manifest、lockfile、quality gate を解決して実行する。Python 固有名を
+   前提にしない。`update-starter` / `review-starter-update` / `release-starter` 自身は starter に
+   コピーしない。
+6. 3 区分表、根拠、target（= `active_target`）、base SHA、candidate SHA、quality gate を同じ
+   tracking Issue に報告する。区分 (1) が空なら commit を作らず `base == candidate` と N/A
+   根拠を報告する。
+
+## Guardrails
+
+- starter 内 `AGENTS.md` は consumer payload。品質 gate は読むが maintainer の Git 運用には使わない。
+- local main が remote main へ fast-forward 同期不能なら ABORT。force push、tag、Release 作成は禁止。
+- 全件 3 区分が埋まるまで PASS にしない。review 前 push 禁止。
+
+## Verdict
+
+`PASS | ABORT`。報告コメント投稿時は status に関係なく次を付ける。
+
+```text
+--verdict-step update-starter --verdict-status <STATUS> \
+--verdict-meta target=<tag> --verdict-meta base=<SHA> --verdict-meta candidate=<SHA>
+```
+
+コメント末尾と stdout に共通 `---VERDICT---` block を出し、`verdict_path` が注入されている場合は
+外部副作用完了後に、最後に prompt の `kaji verdict publish` で同内容を公開する（直接書かない）。ABORT の suggestion は必須。
+
+次は update と別 session で `/review-starter-update <tracking_issue_id>` を実行する。

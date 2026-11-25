@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aniket2348823/vigilagent (path: .agents/skills/analyzing-slack-space-and-file-system-artifacts/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Examine file system slack space, MFT entries, USN journal, and alternate data streams to recover hidden data

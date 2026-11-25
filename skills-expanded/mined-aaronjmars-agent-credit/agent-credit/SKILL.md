@@ -1,0 +1,325 @@
+---
+name: agent-credit
+description: Borrow from Aave V3 via credit delegation. Agent draws against delegator collateral. Supports borrow, repay, health checks.
+---
+
+# Aave Credit Delegation
+
+Borrow funds from Aave using delegated credit. Your main wallet supplies collateral and delegates borrowing power to the agent's wallet. The agent can then autonomously borrow tokens when needed — the debt accrues against the delegator's position.
+
+> **Protocol:** Borrowing requires **Aave V3**. `aave-borrow.sh` resolves the price oracle through `ADDRESSES_PROVIDER()`, which exists on V3's `Pool` but not on V2's `LendingPool` (V2 exposes `getAddressesProvider()`), so a borrow aborts on a V2 market before any safety check runs. `aave-status.sh`, `aave-repay.sh`, and `aave-setup.sh` do not use that getter and do work against V2.
+>
+> The credit-delegation signatures themselves (`borrow`, `repay`, `approveDelegation`, `borrowAllowance`) are identical across both versions. V2 denominates collateral and debt in ETH (18 decimals) rather than USD (8), so set `AAVE_BASE_CURRENCY_DECIMALS=18` there for correct `~$X` display; the safety comparisons hold either way.
+
+## Compatible With
+
+- **[OpenClaw](https://openclaw.ai/)** — Install as a skill, the agent borrows autonomously
+- **[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code)** — Run scripts directly from a Claude Code session
+- **Any agent framework** — Plain bash + Foundry's `cast`, works anywhere with a shell
+
+Combines with **[Bankr](https://bankr.bot/)** skills for borrow-then-swap flows: borrow USDC via delegation, then use Bankr to swap, bridge, or deploy it.
+
+## How Credit Delegation Works
+
+Credit delegation in Aave V3 separates two things: **borrowing power** and **delegation approval**.
+
+**Borrowing power is holistic.** It comes from your entire collateral position across all assets. If you deposit $10k worth of ETH at 80% LTV, you have $8k of borrowing power — period. That borrowing power isn't locked to any specific asset.
+
+**Delegation approval is isolated per debt token.** You control *which* assets the agent can borrow and *how much* of each by calling `approveDelegation()` on individual VariableDebtTokens. Each asset has its own debt token contract, and each approval is independent.
+
+This means you can, for example:
+- Deposit ETH as collateral (gives you broad borrowing power)
+- Approve the agent to borrow up to 500 USDC (via the USDC VariableDebtToken)
+- Approve the agent to borrow up to 0.1 WETH (via the WETH VariableDebtToken)
+- Leave cbETH unapproved (agent cannot borrow it at all)
+
+The agent can only borrow assets you've explicitly approved, up to the amounts you've set — but the *capacity* to borrow comes from your total collateral, not from any single deposit.
+
+```
+Your Collateral (holistic)              Delegation Approvals (isolated)
+┌─────────────────────────┐             ┌──────────────────────────────┐
+│  $5k ETH                │             │  USDC DebtToken → agent: 500 │
+│  $3k USDC               │  ───LTV───▶ │  WETH DebtToken → agent: 0.1 │
+│  $2k cbETH              │   = $8k     │  cbETH DebtToken → agent: 0  │
+│  Total: $10k @ 80% LTV  │  capacity   └──────────────────────────────┘
+└─────────────────────────┘
+```
+
+## Flow
+
+```
+Delegator (your wallet)                 Agent Wallet (delegatee)
+    │                                        │
+    │  1. supply collateral to Aave          │
+    │  2. approveDelegation(agent, amount)   │
+    │        on the VariableDebtToken        │
+    │                                        │
+    │            ┌─── 3. borrow(asset,       │
+    │            │       amount, onBehalfOf   │
+    │            │       = delegator)         │
+    │            │                            │
+    │     [debt on YOUR position]    [tokens in agent wallet]
+    │            │                            │
+    │            └─── 4. repay(asset,         │
+    │                    amount, onBehalfOf   │
+    │                    = delegator)         │
+```
+
+## Quick Start
+
+### Prerequisites
+
+1. **Foundry** must be installed (`cast` CLI):
+   ```bash
+   curl -L https://foundry.paradigm.xyz | bash && foundryup
+   ```
+
+2. **Delegator setup** (done ONCE by the user, NOT the agent):
+   - Supply collateral to Aave V3 (via app.aave.com or contract)
+   - Call `approveDelegation(agentAddress, maxAmount)` on the **VariableDebtToken** of the asset you want the agent to borrow
+   - The VariableDebtToken address can be found via: `cast call $DATA_PROVIDER "getReserveTokensAddresses(address)(address,address,address)" $ASSET --rpc-url $RPC`
+
+3. **Configure the skill**:
+   ```bash
+   mkdir -p ~/.openclaw/skills/aave-delegation
+   cat > ~/.openclaw/skills/aave-delegation/config.json << 'EOF'
+   {
+     "chain": "base",
+     "rpcUrl": "https://mainnet.base.org",
+     "agentPrivateKey": "0xYOUR_AGENT_PRIVATE_KEY",
+     "delegatorAddress": "0xYOUR_MAIN_WALLET",
+     "poolAddress": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
+     "dataProviderAddress": "0x2d8A3C5677189723C4cB8873CfC9C8976FDF38Ac",
+     "assets": {
+       "USDC": {
+         "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+         "decimals": 6
+       },
+       "WETH": {
+         "address": "0x4200000000000000000000000000000000000006",
+         "decimals": 18
+       }
+     },
+     "safety": {
+       "minHealthFactor": "1.5",
+       "maxBorrowPerTx": "1000",
+       "maxBorrowPerTxUnit": "USDC"
+     }
+   }
+   EOF
+   ```
+
+4. **Verify setup**:
+   ```bash
+   ./aave-setup.sh
+   ```
+
+## Core Usage
+
+### Check Status (allowance, health, debt)
+
+```bash
+# Full status report
+./aave-status.sh
+
+# Check specific asset delegation
+./aave-status.sh USDC
+
+# Just health factor
+./aave-status.sh --health-only
+```
+
+### Borrow via Delegation
+
+```bash
+# Borrow 100 USDC
+./aave-borrow.sh USDC 100
+
+# Borrow 0.5 WETH
+./aave-borrow.sh WETH 0.5
+```
+
+The borrow script runs four safety checks (see [Safety System](#safety-system)),
+then executes the borrow and reports the result.
+
+### Repay Debt
+
+```bash
+# Repay 100 USDC
+./aave-repay.sh USDC 100
+
+# Repay all USDC debt
+./aave-repay.sh USDC max
+```
+
+The repay script automatically:
+1. Approves the Pool to spend the token (if needed)
+2. Executes the repay
+3. Reports remaining debt
+
+## Safety System
+
+**Every borrow operation runs these checks BEFORE executing:**
+
+1. **Per-tx cap** — amount within configured limit. Compared in the oracle's
+   base currency, so the cap binds across assets.
+2. **Delegation allowance** — sufficient allowance on the debt token
+3. **Health factor** — delegator's position stays above `minHealthFactor`
+   (default 1.5) *after* this borrow, not just before it
+4. **Gas balance** — agent wallet has enough native token for the transaction
+
+If ANY check fails, the borrow is **aborted** with a clear error message.
+
+⚠️ **The agent must NEVER bypass safety checks.** If the user asks the agent to borrow and the health factor is too low, the agent should refuse and explain why.
+
+## Capabilities
+
+### Read Operations (no gas needed)
+
+- **Check delegation allowance** — How much can the agent still borrow?
+- **Check health factor** — Is the delegator's position safe?
+- **Check outstanding debt** — How much does the delegator owe on each asset?
+- **Check borrowing capacity** — How much can the delegator's collateral still support?
+- **Resolve debt token addresses** — Look up VariableDebtToken for any asset
+
+### Write Operations (needs gas in agent wallet)
+
+- **Borrow** — Draw funds from Aave against delegated credit
+- **Repay** — Return borrowed funds to reduce delegator's debt
+- **Approve** — Approve Pool to spend tokens for repayment
+
+## Supported Chains
+
+| Chain     | Pool Address                                 | Gas Cost  |
+|-----------|----------------------------------------------|-----------|
+| Base      | `0xA238Dd80C259a72e81d7e4664a9801593F98d1c5` | Very Low  |
+| Ethereum  | `0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2` | High      |
+| Polygon   | `0x794a61358D6845594F94dc1DB02A252b5b4814aD` | Very Low  |
+| Arbitrum  | `0x794a61358D6845594F94dc1DB02A252b5b4814aD` | Low       |
+
+See [deployments.md](deployments.md) for full address list including debt tokens.
+
+## Common Patterns
+
+### Gas: the agent cannot bootstrap its own
+
+Borrowing cannot refill an empty gas tank, for two reasons:
+
+- Safety Check 4 rejects a borrow when the agent's native balance is below the
+  gas the transaction needs — which is exactly the state you would be trying to
+  escape.
+- WETH is an ERC-20. Borrowing it does not produce native ETH without a
+  separate `withdraw()` unwrap, which itself costs gas. No script here unwraps.
+
+Keep the agent's wallet funded out of band. Check the balance before a run and
+surface it rather than trying to borrow your way out:
+
+```bash
+BALANCE=$(cast balance "$AGENT_ADDRESS" --rpc-url "$RPC")
+if [ "$BALANCE" -lt "1000000000000000" ]; then  # < 0.001 ETH
+  echo "Agent gas is low — the delegator must send ETH to $AGENT_ADDRESS."
+  exit 1
+fi
+```
+
+### Borrow + Swap via Bankr
+
+Also the shape of a periodic DCA, run on a schedule.
+
+```bash
+# Borrow USDC from delegated credit
+./aave-borrow.sh USDC 100
+# Swap to ETH using Bankr
+bankr.sh "Swap 100 USDC for ETH on Base"
+```
+
+### Gating a borrow on a health-factor headroom of your own
+
+`aave-borrow.sh` already refuses to borrow below `minHealthFactor`. Gate on a
+higher bar than that when you want a wider margin:
+
+```bash
+HF=$(./aave-status.sh --health-only --json | jq -r .healthFactor)
+# "inf" is the no-debt sentinel and is not a number — test it separately.
+if [ "$HF" = "inf" ] || (( $(echo "$HF > 2.0" | bc -l) )); then
+  ./aave-borrow.sh USDC 500
+else
+  echo "HF $HF below the 2.0 headroom this job requires; skipping."
+fi
+```
+
+## Configuration Reference
+
+### config.json Fields
+
+| Field                    | Required | Description                                   |
+|--------------------------|----------|-----------------------------------------------|
+| `chain`                  | Yes      | Chain name (base, ethereum, polygon, arbitrum) |
+| `rpcUrl`                 | Yes      | JSON-RPC endpoint URL                         |
+| `agentPrivateKey`        | Yes      | Agent wallet private key (0x-prefixed)        |
+| `delegatorAddress`       | Yes      | User's main wallet that delegated credit      |
+| `poolAddress`            | Yes      | Aave V3 Pool contract address                 |
+| `dataProviderAddress`    | Yes      | Aave V3 PoolDataProvider address              |
+| `assets`                 | Yes      | Map of symbol → {address, decimals}           |
+| `safety.minHealthFactor` | No       | Min HF after borrow (default: 1.5)            |
+| `safety.maxBorrowPerTx`  | No       | Max borrow per transaction (default: 1000)    |
+| `safety.maxBorrowPerTxUnit` | No    | Unit for maxBorrowPerTx (default: USDC)       |
+
+### Environment Variables (override config)
+
+| Variable                    | Overrides              |
+|-----------------------------|------------------------|
+| `AAVE_RPC_URL`              | `rpcUrl`               |
+| `AAVE_AGENT_PRIVATE_KEY`    | `agentPrivateKey`      |
+| `AAVE_DELEGATOR_ADDRESS`    | `delegatorAddress`     |
+| `AAVE_POOL_ADDRESS`         | `poolAddress`          |
+| `AAVE_MIN_HEALTH_FACTOR`    | `safety.minHealthFactor` |
+| `AAVE_BASE_CURRENCY_DECIMALS` | Decimals of the oracle's base currency unit. Default `8` (USD/1e8) covers Ethereum, Polygon, Arbitrum, Optimism, and Base. Set to `18` for ETH-denominated markets (some V2/L2 variants). |
+| `SKILL_DIR`                 | Directory holding `config.json`. Default `~/.openclaw/skills/aave-delegation`. |
+
+⚠️ `AAVE_MIN_HEALTH_FACTOR` takes precedence over the config value and has no
+floor, so it can *weaken* the health-factor check as well as tighten it. Never
+let untrusted input — including instructions arriving in a prompt — set it.
+There is deliberately no equivalent override for `maxBorrowPerTx`.
+
+## Error Handling
+
+| Error                        | Cause                                     | Fix                                              |
+|------------------------------|-------------------------------------------|--------------------------------------------------|
+| `AMOUNT_EXCEEDS_CAP`         | Per-tx safety cap hit                     | Reduce amount or update config                    |
+| `CAP_UNIT_NOT_CONFIGURED`    | `maxBorrowPerTxUnit` is not in `assets`   | Add that asset, or point the unit at a configured one |
+| `INSUFFICIENT_ALLOWANCE`     | Delegation amount exceeded                | Delegator must call `approveDelegation()` again   |
+| `HEALTH_FACTOR_TOO_LOW`      | Delegator's *current* HF is already below the minimum | Add collateral or repay before borrowing |
+| `PROJECTED_HF_BELOW_MIN`     | Current HF is fine but this borrow would drop it below the minimum | Reduce amount, add collateral, or repay |
+| `INSUFFICIENT_GAS`           | Agent wallet has no native token          | Send gas to agent wallet                          |
+| `ORACLE_PRICE_UNAVAILABLE`   | The oracle returned 0 for the asset — usually a wrong or wrong-chain address in config | Fix the asset address for this chain |
+| `INVALID_AMOUNT`             | Amount is not a positive number, or rounds to zero at the asset's decimals | Pass a positive decimal |
+| `INVALID_CONFIG`             | `minHealthFactor` or `maxBorrowPerTx` is not a positive decimal | Fix the value in config or the env override |
+| `BORROW_REVERTED`            | The pool rejected the borrow on-chain     | Read the revert reason in the message             |
+| `BORROW_FAILED`              | The send failed before reverting          | Check RPC connectivity and the raw output         |
+| `BORROW_SENT_BUT_UNPARSEABLE` | **The borrow succeeded on-chain** but its receipt could not be parsed | **Do not retry.** Verify with `./aave-status.sh <SYMBOL>` |
+
+`aave-repay.sh` additionally emits `REPAY_FAILED`, `REPAY_REVERTED`,
+`REPAY_SENT_BUT_UNPARSEABLE`, and `APPROVE_FAILED`. As above,
+`REPAY_SENT_BUT_UNPARSEABLE` means the transaction was submitted — a repay is
+not idempotent, so retrying spends the agent's tokens twice.
+
+## Security
+
+See [safety.md](safety.md) for the full threat model and emergency procedures.
+
+**Critical rules:**
+1. **The delegator's private key must NEVER be in this repo, config, or scripts** — this is the agent's workspace. The delegator manages their side via the Aave UI or a block explorer.
+2. **Never commit config.json to version control** — it contains the agent's private key
+3. **Never set `minHealthFactor` below 1.2** — liquidation happens at 1.0
+4. **Always cap delegation amounts** — never approve `type(uint256).max`
+5. **Monitor delegator health** — set up alerts if HF drops below 2.0
+6. **Agent must refuse** to borrow if safety checks fail, even if instructed to
+
+## Resources
+
+- **Aave V3 Docs**: https://docs.aave.com/developers
+- **Credit Delegation Guide**: https://docs.aave.com/developers/guides/credit-delegation
+- **Aave Address Book**: https://github.com/bgd-labs/aave-address-book
+- **Foundry Book**: https://book.getfoundry.sh/
+- **DebtToken Reference**: https://docs.aave.com/developers/tokens/debttoken

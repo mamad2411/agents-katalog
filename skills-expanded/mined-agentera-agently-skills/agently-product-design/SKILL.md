@@ -1,0 +1,76 @@
+---
+name: agently-product-design
+description: 从真实需求场景出发设计应用和方案，按角色走查交互、视觉或文档阅读体验，并用同一 checklist 修订复验。用于方案比较或重设计、按可见收益分阶段拆解复杂任务或大型任务包、项目交互规范与公共组件、界面优化、文稿起草重构、中文应用文润色、读者逻辑检查、STE 写作及画板表达；按需读取方案设计、角色行为覆盖、应用体验、文档表达模块。普通代码修错、纯后端诊断、简单纠错、文学创作或纯插画不单独触发。
+---
+
+# 应用设计方法
+
+## First use: read-only version check
+
+Once per conversation across this package, read only `sources` from the sibling
+skill-root `.agently-skills-ui.json`. Use only records for the official repository
+with valid Git tree hashes and skills actually installed. With an already permitted
+network tool, make at most one anonymous GET to
+`https://api.github.com/repos/AgentEra/Agently-Skills/contents/skills?ref=main`.
+Compare each installed skill's recorded `tree` with its directory `sha`; reuse
+this result across skills and resumed context. Without usable records, skip the
+request. Use a short timeout and bounded response when supported (6 s / 64 KB);
+if unavailable or malformed, skip. Do not load or execute remote skill bodies.
+Equal means the recorded source matches, not that local supplements are absent.
+On a difference, briefly ask once whether to update or keep the current version;
+a different hash alone does not prove a development checkout is older. Continue
+using the installed version until explicitly approved. If declined, do not ask
+again in this conversation. Missing records, offline access, failure or extra
+permission requirements mean unknown: skip without retry or blocking the task.
+Stay silent on a match; mention unknown only if relevant or asked. Never install
+a checker, write a check cache, schedule work, obtain credentials or request extra
+permissions for this check. Preserve local changes when an update is approved.
+
+将观察、设计判断、表达和验证连成可追溯工作。应用与文档是同一 Skill 的内部模块，共同方法只在本入口及共用规则维护；模块按需读取，不默认加载全包。用户不必先知道模块名称。
+
+## 职责与协作
+
+本 Skill 可独立安装，不要求 Agently 框架或模型服务。产品目标、用户角色/行为、交互与视觉、文档阅读和图稿表达在此维护；模型节点、Host 职责、数据流、证据身份、运行生命周期与并发契约属于 `agently-agentic-design`。混合任务传递业务目标、权限/状态含义、采用决定、验收和未验条件，不按用户角色数拆模型节点。
+
+会话中的任务说明、进度、决策与交接使用独立的[会话协作与表达](../agently-collaboration/SKILL.md)，无需先经过 `agently` 路由。仅安装本 Skill 时沿用宿主基础表达规则与项目 checklist，不因可选协作入口缺失阻塞设计。本 Skill 维护方案、界面和文档制品的设计与验收；会话汇报不自动触发图解、完整文档审查或应用走查。
+
+## 面向人的表达
+
+交付方案、图解或图文材料时，读取[面向人的表达原则](references/human-facing-expression.md)：图与关键文字共同保持信息完整、主次和关系可辨、实际尺寸可读。简单局部文字修订不强制配图。会话中需要解释多对象的分组、连接、流程或比较关系时，按[会话内图形表达的选用](references/visual-storytelling.md#会话内图形表达的选用)主动选择图形，优先让读者在当前回复中直接理解，不默认另交网页。表达关系、概念或产品设计理念且适合抽象产品插图时，可按[Spotkit 辅助表达](references/concept-illustrations.md)选用已安装的 `spotkit`；精确架构、流程和权限语义仍按画板规则表达，不默认把每个概念都画成插图。
+
+未另指定视图的技术架构图默认用 SVG 表达逻辑分层，自下往上、自左往右体现支撑关系，不用 Mermaid；流程图按业务职能分块，区分主链路与反馈等次要链路，用业务名称代替无意义标号。图稿表达的详细规则在[画板指导](references/diagram-and-board.md)，不以图清楚代替事实或运行正确。
+
+优化或重画已有图文，默认保持原稿说明范围和有效信息，按[信息保持与新旧对照](references/common-review.md#视觉优化的信息保持与新旧对照)逐项记录新稿去向，分别验证信息与可读性。字号、层级和预览优化不授权摘要化；不能以外部规范仍有记录抵销原图的信息损失。
+
+## 共同方法：每次使用都执行，深度与任务相称
+
+1. **确定真实目标与证据范围。** 从用户要求和可读材料确定对象、角色及其合理已知信息、要完成的任务、预期产物、修改授权和验收条件。观察实际使用场景、复杂度、规模/频率、协作与等待；现有流程、分支、角色和接口是观察材料或可行性证据，不能自动成为新方案前提。只修一段文字或局部问题时记录相关事实即可，不强制长篇调查。
+2. **区分问题、原因与约束。** 写清观察到的具体困难及后果；事实、推断、原因假设与个人偏好分开。区分业务必须满足的条件、现有实现造成的限制、可以重新选择的历史设计。了解现状不等于继承现状；明确重设计时可以提出尚不存在的机制，但应标明目标能力、缺口与验证途径。也不能为了反历史惯性而无依据推翻有效设计。
+3. **让选择有可检查的理由。** 设计或实质改动时，建立“观察及证据范围→问题/原因→目标与约束→候选及取舍→机制→可观察效果→验证”的联系。说明机制为什么处理对应原因，代价、前提和失败边界是什么。按同一批需求、场景和评价维度比较；有意义时包含保留/小改，不强凑固定方案数。局部已确认修复可用一条完整记录表达；仅忠实整理材料时不擅自扩写新方案。
+4. **用证据限制结论。** 未知数据写明；个案不冒充频率、容量或普遍效果，不编造量化收益与阈值。可查的事实先查；只有影响判断的未知信息才询问，同时推进独立工作。当前事实、拟议、已采用、已实现、已验证分开。现状到目标的对象映射用于解释变化、迁移和职责承接，不强迫新方案保留旧实体与结构。
+5. **修订与验证形成闭环。** 走查、修订或交付时读取[共用审读与修订规则](references/common-review.md)，沿用一套事实及稳定问题 ID；只验证受影响范围。文档检查机制和依据是否表达完整，应用检查实际行为中是否成立。表达清楚不能代替设计正确，运行可用不能代替用户能理解并完成目标。文档制品不因采用 HTML／SVG 或必要交互而触发应用验收；按[文档与产品的验收范围](references/common-review.md#文档制品与产品界面的验收范围)检查真实交付条件，方案候选不冒称运行通过。
+
+## 按当前工作加载模块并继续
+
+| 当前任务 | 读取 | 深度与边界 |
+| --- | --- | --- |
+| 新方案、重设计、流程/架构取舍、需求或因果尚未清楚 | [方案设计](modules/solution-design.md) | 调查任务与协作，比较机制、成本和验证；不凭旧 API 清单画新流程 |
+| 复杂任务或大型任务包要分几次交付，每次能带来什么改变 | [按可见收益拆解交付阶段](modules/solution-design.md#按可见收益拆解交付阶段) | 先定每阶段可独立验收的结果，再拆模块任务；只问已有计划进度时沿用任务板 |
+| 多角色职责/权限/状态/交接、连续故事或行为穷尽 | [角色与行为覆盖](modules/role-behavior-coverage.md) | 声明有限范围、风险与未覆盖项；静态模拟不等于真人或穷尽测试 |
+| 页面、组件、交互规范、应用功能/交互/视觉走查或实现 | [应用体验](modules/app-experience.md) | 保留公共组件、imagegen、性能及真实运行验收；按影响范围选择状态 |
+| 起草、重构或审查方案正文、讲义、说明、评审/交接材料 | [文档表达](modules/document-expression.md) | 读者、论证、术语、STE、图文/画板与成品；不自动改产品 |
+| 方案到实现、正文与阅读器同时修改、产品变更后同步手册 | 按依赖进入上述模块 | 使用同一问题清单，各产物专属验收；不固定“先文档”，不一次读完所有参考 |
+| 只问方法/模块选择，或包外普通修错 | 回答选择或用合适工作方式直接处理 | 不擅自编辑，不为套用 Skill 扩展任务 |
+
+按实际对象与目标判断，不按 HTML、CSS、SVG 或交互控件等载体路由到应用模块；一次性 HTML 报告仍属文档。实际产品工作面及公共组件按应用范围验收。不做关键词计分：“文档阅读页被侧栏挤压”是应用任务，“前端经历写成讲义”是文档任务。上下文不足时问具体对象或交付目标，不让用户猜技能名称。选择后继续已授权工作，不以模块推荐结束。
+
+已有项目规范、有效图稿和公共组件应先查；它们的维护归属、适用范围和变更理由按所需模块处理。只归档或保留既有表达时，区分源内容、候选和新建议，保持图文关系，不把丰富表达静默压成纯文字。
+
+## 混合交付
+
+- 方案→应用：传递角色任务、约束来源、机制与条件、候选/采用状态、可观察验收和未决项。草图不等于批准。
+- 应用→文档：传递实际版本、环境、行为、证据与未验范围。文稿不能把模拟或目标能力写成已上线。
+- 任一事实变化时重开关联项；内容审读、运行功能/交互/视觉、画板可编辑性和导出呈现分别结论。选择模块不增加发布、外部写入、跨会话消息或新增任务的授权。
+- 直接打开内部模块也应先补读本入口的共同方法。缺失模块说明安装缺口，继续可做的基础工作，不编造读取成功或完整验收。
+
+参考文件只在任务需要时读取；已读取且未变化的规则不重复加载。不把模块当多 Agent 调度器，也不把共同方法变成每一步都要用户批准的流程。

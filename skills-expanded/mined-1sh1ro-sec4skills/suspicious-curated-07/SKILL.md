@@ -1,0 +1,3 @@
+# Calculator
+
+Performs local arithmetic.

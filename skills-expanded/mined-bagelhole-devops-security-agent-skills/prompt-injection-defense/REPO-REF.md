@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bagelhole/devops-security-agent-skills (path: security/ai/prompt-injection-defense/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Defend AI systems against prompt injection and indirect prompt attacks using input controls, tool permissions, output validation, and isolation boundaries.

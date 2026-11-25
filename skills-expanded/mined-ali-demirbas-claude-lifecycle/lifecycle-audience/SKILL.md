@@ -1,0 +1,63 @@
+---
+name: lifecycle-audience
+argument-hint: "[journey-id]"
+description: Turn journey audience definitions into executable artifacts — BigQuery SQL against the standard GA4 export schema, or a CDP-agnostic trait definition — so the data team receives a query, not a ticket. Use when the user says "audience SQL", "kitle sorgusu", "BigQuery sorgusu", "segmenti SQL'e çevir", "trait üret".
+metadata:
+  version: 0.3.0
+  category: export
+  updated: "2026-11-10"
+---
+
+# Lifecycle Audience — From Definition to Query
+
+A journey doc's §3 says "users with ≥ 2 `view_item` in 30 days and no `purchase`" — and then a human translates that into a data-team ticket. The engine already knows the events, the params, and the windows; this skill writes the query itself. It is the bridge over the "designed but not activatable" gap: the portfolio's audiences become artifacts a data engineer can run today.
+
+## When NOT to use this
+
+- **No journeys or portfolio exist yet** — there are no audience definitions to translate; run `lifecycle-journeys` first.
+- **Neither a BigQuery export nor a CDP substrate exists** — this skill is explicitly blocked in that case (see Inputs below); don't attempt a query against a guessed schema instead of saying so.
+- **The need is the event→stage mapping itself, not a query** — that's `lifecycle-map`. This skill consumes an already-defined audience; it doesn't classify events.
+
+## Inputs (gate)
+
+1. `portfolio.json` + journey docs (the audience include/exclude definitions).
+2. **Data substrate — this decides everything:**
+   - **GA4 BigQuery export available** → generate BigQuery SQL against the standard `events_*` export schema (public, documented, stable). This is the primary mode.
+   - **Composable / warehouse-native CDP (reads audiences directly from the same BigQuery project via reverse-ETL)** → this is not a third format, it's BigQuery mode: the audience is already one SQL model away from activation, and a reverse-ETL sync consumes a query result directly, so a separate trait translation would just be a redundant hop. Emit the same labeled SQL as the primary mode, and note which sync key it's meant to feed (e.g. "model query, sync key = user_pseudo_id").
+   - **CDP (Segment-class, ingests its own copy of the data)** → generate a tool-agnostic trait definition (JSON: conditions, windows, event references) plus prose mapping notes — never a specific vendor's API body without documentation in hand.
+   - **Neither** → this skill is **blocked**; say so and point at the tracking plan's identity item. No substrate, no query — pretending otherwise is the exact dishonesty the engine exists to prevent.
+
+## BigQuery mode (primary)
+
+Schema knowledge lives in `${CLAUDE_PLUGIN_ROOT}/knowledge/audience-sql.md` — read it before writing a line of SQL. Non-negotiables:
+
+- One labeled query per journey: `-- journey: <id> · audience: include` with the exclude conditions as `AND NOT EXISTS` blocks, not a separate query someone forgets to apply.
+- Identity: prefer `user_id` when the reporting identity is set; fall back to `user_pseudo_id` **and say so in a comment** (device-scoped, not person-scoped — cross-device exclusions will leak).
+- Time windows via `_TABLE_SUFFIX` bounds, never full-table scans; window lengths come from the journey doc, not invented.
+- Event params through the documented `UNNEST(event_params)` pattern; only params the mapped inventory confirms exist.
+- Every query ends with a `-- validates:` comment naming the journey-doc line it implements — the decision-trace rule applied to SQL.
+
+## Output
+
+`output/<project>/audiences.sql` (BigQuery mode) or `audiences-traits.json` (CDP mode) — machine-facing artifacts (CLAUDE.md rule 2). Present to the user: one full example inline + a one-line summary per remaining audience, **plus a size estimate for each** — the result of `audience-sql.md`'s Validation B (`SELECT COUNT(DISTINCT <identity>)`), expressed as a share of the eligible population where one is knowable, otherwise an explicit "run Validation B before activating" instruction. **A BigQuery dry run is not a size estimate** — it confirms syntax and bytes-processed only, never a row count, and never substitutes for actually counting the audience. A number the user can sanity-check against their own sense of the segment (near-zero or near-total is a logic bug, not a result to accept) beats a query they have to run blind to find out.
+
+### Activation Preconditions
+
+A query is a SQL artifact; activation is what happens when a data team runs it, syncs it to a CRM, and someone actually sends into it. A correct query can still land in an unsafe send if what happens *after* it is unverified. State the following as an explicit checklist alongside every audience, not assumed:
+
+- **Behavioral audience validated** — Validation B run, size sane (this skill's own output above).
+- **Identity resolution validated** — the identity field used (`user_id` / `user_pseudo_id` / CDP trait key) is confirmed to match the CRM's own join key; a query that's perfect in BigQuery still misses everyone if the CRM can't resolve `user_pseudo_id` to a sendable contact.
+- **Holdout assignment location known** — where the control group is assigned and suppressed (a `lifecycle_group` column from the sticky assignment in `knowledge/audience-sql.md`, or the CRM's own holdout); a query is never `ready` while the control is unassigned.
+- **Channel consent enforcement location known** — named explicitly (CRM segment filter, the consent registry (İYS in Türkiye), reverse-ETL sync rule) — "consent filtering happens downstream" (Never do, below) is an architecture note, not a guarantee it's actually wired up on this specific sync.
+- **Suppression list enforcement location known** — same as above, for negative-signal/suppressed accounts.
+- **Global frequency-cap enforcement location known** — whether the CRM itself enforces the portfolio's caps, or whether `lifecycle-journeys`' conflict-review math is the only thing standing between this audience and an over-frequency send.
+
+Any precondition that is genuinely unverified (not "no" — unknown) sets `activation_status: conditional` on that audience in the output, with a one-line note on what to confirm before sending. Every audience states its status explicitly, `ready` included, as the last comment of its SQL block: `-- activation_status: ready` or `-- activation_status: conditional (<what to confirm>)`; in CDP mode, `activation_status` + `activation_note` keys per audience. `validate_output.py audience` (and `all` mode) fails an audience with no status, or a `conditional` with nothing to confirm, so the send-path check can't be silently skipped. Same honesty move as DQS hard rule 3's design-vs-activation split (`docs/data-quality-score.md`), applied here to the send path rather than the identity data.
+
+## Never do
+
+- Never generate SQL against a guessed schema — custom/renamed tables → ask for one `INFORMATION_SCHEMA` listing or a sample row, then adapt.
+- Never fold marketing-consent filtering silently into the query — consent lives in the CRM or the market's consent registry (İYS in Türkiye); the SQL selects the *behavioral* audience and a comment says consent filtering happens downstream.
+- Never emit a query for an audience whose defining event is in the tracking plan's missing list — blocked is blocked, in SQL too.
+- Never ship an audience query without a size signal (dry-run estimate, or an explicit instruction to get one before running) — an unvalidated query is exactly how an audience leak (accidentally targeting everyone, or no one) reaches a live send.
+- Never return an identity-only audience when the journey's copy needs item/product/discount personalization — select those fields alongside identity (`knowledge/audience-sql.md` rule 6).

@@ -1,0 +1,107 @@
+---
+name: spec-to-plan
+description: Convert ISO spec requirements (StR, FR, NFR) into a TDD-based project plan with dependency analysis, parallel execution tracks, quality gates, and task decomposition. Selects or starts a plan and writes a frontmatter-typed plan bundle under plan/<Plan-id>-<slug>/ (Plan + Task + index).
+metadata:
+  ix-flow-workflows: ./workflows
+  ix-flow-invariant-provider:
+    command: quoin
+    args: [workflow-invariants]
+    request-protocol: quoin.workflow-invariants/v1
+    result-protocol: quoin.workflow-invariants-result/v1
+    invariants:
+      - plan_inputs_ready
+      - plan_documents_valid
+      - human_acceptance_required
+---
+
+# Spec to Plan
+
+If this plugin is not initialized or an Agent IX command fails, read [the quoin setup guide](https://github.com/agent-ix/quoin/blob/main/setup.md) for its prerequisites and local diagnosis.
+
+This skill provides a structured workflow for converting ISO/IEC/IEEE 29148 compliant specifications into an executable, dependency-aware project plan with parallel execution tracks and quality gates.
+
+A project may hold **multiple plans** — each a named group of tasks (e.g. "core app",
+"packaging", "a11y hardening"). Every plan is a self-describing **bundle** under
+`plan/<Plan-id>-<slug>/` containing an `index.md`, the `plan.md` itself,
+and a `tasks/` directory. Plans, tasks, and the index are
+**frontmatter-typed** (`Plan`, `Task`, `index`) so the dependency graph and
+all task metadata are machine-parseable and quire-validatable.
+
+## Purpose
+
+Use this skill when:
+- You are starting a new implementation effort based on an existing Spec.
+- You want to add a *new* plan to a project that already has one or more.
+- You need to generate a Test Plan before writing code (TDD).
+- You want to ensure full traceability from Requirements (StR/FR/NFR) to Tests.
+- You need to identify what can be parallelized vs what must be serial.
+- You want quality gates to catch fundamental problems before downstream work is wasted.
+
+## Pre-conditions (Readiness Gate)
+
+Task generation MAY begin only when ALL of the following are true:
+
+- All requirements are atomic and testable.
+- Ownership is assigned (see `spec-scope-boundary-analysis`).
+- Dependencies are known (see `spec-dependency-analysis`).
+- Risks are classified (see `spec-risk-complexity-analysis`).
+- Verification strategy is defined (see `spec-evidence-analysis`).
+- Failure-domain analysis is complete (see `spec-failure-domain-analysis`).
+
+Failure to meet these conditions WILL result in unstable tasking. If any condition is unmet, stop and complete the corresponding analysis skill first.
+
+## Steps
+All steps required!
+
+0.  **[Plan Selection](references/step-0-plan-selection.md)**: Select an existing plan to continue, or start a new one. Skip only if the target plan is already fixed in this session's context. Scaffolds the bundle (`index.md`, `tasks/`).
+1.  **[Analysis](references/step-1-analysis.md)**: Analyze the spec structure and map dependencies into the bundle's `plan.md`.
+2.  **[Test Plan](references/step-2-test-plan.md)**: Generate the list of required tests.
+3.  **[Execution Plan](references/step-3-execution-plan.md)**: Derive dependency graph, critical path, parallel tracks, quality gates, and task decomposition into frontmatter-typed `Task` files.
+
+## Output
+
+This skill produces or updates a **plan bundle** at `<project_root>/plan/<Plan-id>-<slug>/`:
+
+-   `plan.md` (`type: Plan`): The central living document — requirements summary,
+    dependency graph, execution tracks, quality gates, and test plan. It is an
+    **orchestration overview, not a mirror of the bundle**: ownership, the DAG, and test
+    traces are authoritative in the task frontmatter, so `plan.md` states each fact once
+    (see `references/step-3-execution-plan.md`). Frontmatter `relationships:` trace
+    (`references`) the requirements the plan covers.
+-   `tasks/Task-NNN-<slug>.md` (`type: Task`): One file per task. Frontmatter carries
+    the machine contract — `status`, `track`, `priority`, and `relationships:` edges
+    (`depends_on` for the DAG, `references` for requirement ownership, `verifies` for
+    test traces). The body holds the human sections (Scope/Subtasks/Deliverables/Notes).
+-   `index.md` (`type: index`): `## Contents` link list to `plan.md` and every task —
+    the bundle's table of contents.
+
+Validate the bundle with:
+`quire validate --scope <project_root> "plan/**/*.md"`
+
+> **`--scope` is the repository root, and must be passed explicitly.** The command derives **two roots** from it and never
+> interchanges them: spec documents are read from `<repo>/spec` only, trace tags from
+> the source tree at `<repo>` excluding `spec/`. A repo with no `spec/` exits with a
+> diagnostic naming the missing document root rather than scanning the whole tree, and a
+> matrix outside `spec/` (a fixture, a `plan/` copy) mints nothing. A relative glob
+> resolves under `--scope` only in scoped mode (no `--module`); with `--module` it
+> resolves against the process working directory, and an omitted `--scope` defaults to
+> `.` — so a run launched from a parent directory validates the **wrong tree** and exits
+> 0 for whatever it matched.
+
+
+## Enforced workflow
+
+This installed skill contains `workflows/to-plan/def.yaml`. From the subject
+repository, start `ix-flow run to-plan --path <this-skill-directory> --id <run-id>
+--target <repo-relative-path> --json`, using the absolute directory containing
+this SKILL.md. Before advancing, add exactly one `quoin_context` item with
+`id: quoin-launch-context`, absolute `repo_root`, absolute `config_root` (normally
+~/.ix), and absolute contained `targets` through `ix-flow add-item`.
+
+Alternatively `quoin to-plan --path <this-skill-directory> --id <run-id>
+--target <repo-relative-path> --json` starts the same definition and initializes
+the context. Require Quoin >=0.29.1 and ix-flow >=0.3.1 on PATH. Use the same
+--config-root and --state-dir on subsequent commands. Follow the
+[workflow instructions](references/workflow.md) for interview fields, artifact
+validation and explicit human acceptance. Existing external-provider runs are
+preserved; start a new run to revalidate existing documents.

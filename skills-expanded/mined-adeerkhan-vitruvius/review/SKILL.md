@@ -1,0 +1,78 @@
+---
+name: review
+description: >
+  Run a tough but constructive internal critique of an engineering artifact —
+  a design, draft report, calculation set, specification, or research brief.
+  Use when the user asks for a review, critique, feedback, or wants weaknesses
+  found before something is finalized or submitted. Severity-graded findings
+  with a concrete revision plan.
+argument-hint: "<artifact to review>"
+allowed-tools: Write Edit Bash Read
+license: MIT
+metadata:
+  version: "0.1.4"
+
+---
+<!-- VITRUVIUS-COMPILED-SKILL:BEGIN v1 sha256=b1e41d2a4017dc0788831c4d53f45f9cf5cc024dade131d9cf0c13f8928c6ae6 -->
+
+# Engineering Artifact Review
+
+Run an adversarial review of an engineering artifact. This reuses the
+`engineering-research` evidence discipline but the artifact is the subject,
+not a question to research.
+
+## Input Gate
+
+Before searching, name the question, the artifact/scope (or say it is a
+literature review), the jurisdiction/edition, and the effort budget (user-set or
+thorough). Ask ONE clarifying question if the ask is too vague, then proceed.
+See `references/input-gate.md`.
+
+## Workflow
+
+Follow the artifact contract: save findings to `outputs/<slug>-review.md`.
+
+1. **Identify the artifact and its claims** — what is it (design, calc set,
+   spec, brief, report), what does it claim, and what standard/code governs it?
+2. **Verify the load-bearing items** — for a design: loads, factors, material
+   properties, code sections, sign conventions. For a report: every number,
+   figure, and citation. Check each against the primary source.
+3. **Read the source itself, not a summary of it** — a criticism of a claim you
+   did not open is not a finding; it is `blocked`. Name the source and location
+   you actually read beside every criticism, so the reader can re-check it
+   rather than take your word for it. Report a problem you inferred only when it
+   is labelled `inferred`, and never smooth a missing read into a pass.
+4. **Produce a severity-graded review**:
+   - **FATAL** — unsafe, non-compliant, or unsupported; must fix before use
+   - **MAJOR** — likely wrong or a real gap; fix before finalizing
+   - **MINOR** — clarity, consistency, polish
+   Each finding cites the specific section/line/claim it targets. Every
+   finding must be fully substantiated — a location you read plus evidence
+   that supports it. An empty tier is a valid result: write `none` rather
+   than padding to a count. Ground severity in the artifact's own claims
+   and stated limitations: a step it never claimed to take is a scope note,
+   not a FATAL. For a FATAL, state the strongest defense and the evidence
+   that rules it out — a FATAL without a refuted defense is a suspicion,
+   not a FATAL.
+5. **Check what was NOT verified** — mark `blocked` where the source could not
+   be read; never let a missing check read as a pass.
+6. **Write a revision plan** — prioritized, concrete steps per finding.
+
+## Output
+
+Save exactly one review to `outputs/<slug>-review.md`:
+
+- Summary assessment
+- Strengths (tied to specific evidence)
+- Findings (FATAL / MAJOR / MINOR, each anchored to a section/claim)
+- Verification status (`verified` / `inferred` / `blocked` per load-bearing item,
+  each naming the source and location that was actually read)
+- Revision plan
+
+Do not praise vaguely. Do not predict "approval" — assess revision risk and
+evidence quality.
+
+## Scope and Boundaries
+
+- This skill produces research — it does NOT produce final designs or construction documents.
+- **Research-only, not for final engineering sign-off.** Licensed engineers must review and approve any design based on this research.

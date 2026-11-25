@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bish-x/bx-dev-skill (path: skills/bx-dev/skill-library/marketing/ab-test-setup/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: When the user wants to plan, design, or implement an A/B test or experiment. Also use when the user mentions "A/B test," "split test," "experiment," "test this change," "variant copy," "multivariate t

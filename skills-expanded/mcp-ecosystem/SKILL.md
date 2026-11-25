@@ -1,0 +1,451 @@
+---
+name: mcp-ecosystem
+license: MIT
+description: Use when Copilot CLI's built-in tools do not cover a service you need — for example PostgreSQL, Redis, Jira, Slack, or an internal API — and you need to add an MCP server beyond the default GitHub MCP. NOT when the built-in tools already cover the task.
+metadata:
+  category: copilot-exclusive
+  copilot_feature: "Built-in GitHub MCP, copilot mcp commands, workspace .mcp.json, plugin MCP servers"
+---
+
+# MCP Server Ecosystem
+
+## Why This is Copilot-Exclusive
+
+Copilot CLI ships with a **built-in GitHub MCP server** providing 20+ tools for Issues, PRs,
+Actions, code search, and repository management — zero configuration required (with `gh` on PATH,
+only a small default subset is exposed and the model is expected to use `gh` for the rest). Beyond that, it
+has a practical MCP management flow through `copilot mcp add`, `copilot mcp list`,
+`copilot mcp get`, user config at `~/.copilot/mcp-config.json`, workspace config in `.mcp.json`,
+and plugin-provided MCP servers. Claude Code supports MCP but has no built-in GitHub server and a
+different configuration workflow.
+
+## When to Use
+
+- Adding domain-specific tools that the built-in GitHub MCP does not cover, such as PostgreSQL, Redis, Jira, Slack, or an internal feature-flag API
+- Creating MCP bridges to internal systems or external SaaS tools outside the default GitHub workflow
+- Sharing custom MCP configurations across Copilot CLI and VS Code
+- Building specialized AI workflows that need custom tools beyond the built-in GitHub MCP
+
+## When NOT to Use
+
+| Instead of mcp-ecosystem | Use |
+|--------------------------|-----|
+| Reading GitHub issues, PRs, Actions, or repository metadata already covered by the built-in MCP | Use the built-in GitHub MCP tools (or `gh`, when it is on PATH) directly |
+| Reviewing PRs, checking CI failures, or searching repository code | Use the built-in GitHub MCP (or `gh` when it is on PATH) and normal repo tools directly |
+| Pure code search, code review, or coding tasks with no external service dependency | Use the normal repo tools or the most relevant skill for that task |
+| Adding an untrusted third-party server without validating permissions and secret handling | Review the server first and prefer least-privilege configuration |
+
+## Common MCP Candidates
+
+These are the kinds of services that usually justify this skill:
+
+- PostgreSQL or MySQL databases
+- Redis or other cache/data stores
+- Internal REST or GraphQL APIs
+- Jira, Slack, Notion, or other external SaaS tools
+
+## Workflow
+
+### 1. Built-In GitHub MCP (Zero Config)
+
+These tools need no MCP setup, but which of them are exposed depends on whether `gh` is installed
+(see the note below). Check this built-in coverage first before adding a custom MCP server:
+
+> **`gh` on PATH shrinks this list.** Copilot CLI changelog: "When gh CLI is on PATH, GitHub MCP server now omits redundant
+> gh-replaceable tools by default, reducing token usage." Only `get_file_contents`, `search_code`, `get_copilot_space`,
+> `list_copilot_spaces`, `web_search`, and `search_users` stay exposed; the issue, PR, Actions, commit, branch, and
+> repository-search tools below are omitted and the model is expected to use `gh` instead (e.g. `gh pr view <n>`, `gh issue view <n>`, `gh run view <id> --log-failed`).
+> To restore them, start the session with `--add-github-mcp-tool=<name>` (repeatable) — it **replaces** the default subset, so
+> name every tool you need, including defaults such as `get_file_contents`; no write tools are enabled this way — or with
+> `--enable-all-github-mcp-tools` (same as `--add-github-mcp-tool=*`), which restores everything **including write tools**
+> (`add_issue_comment`, `actions_run_trigger`, …). Prefer named tools for read-only sessions. (Measured on Copilot CLI 1.0.103.)
+
+**Repository & Code:**
+
+- `get_file_contents` — Read files from any GitHub repo
+- `search_code` — Search code across all of GitHub
+- `search_repositories` — Find repos by topic, language, etc.
+- `list_branches`, `list_commits`, `get_commit` — Git history
+
+**Issues:**
+
+- `list_issues`, `search_issues` — Find and filter issues
+- `issue_read` — Get details, comments, sub-issues, labels
+
+**Pull Requests:**
+
+- `list_pull_requests`, `search_pull_requests` — Find PRs
+- `pull_request_read` — Diffs, reviews, check runs, files
+
+**Actions:**
+
+- `actions_list`, `actions_get` — Workflow and run details
+- `get_job_logs` — CI/CD log analysis
+
+**Users:**
+
+- `search_users` — Find GitHub users
+
+When GitHub MCP tools overlap with `gh`, the CLI omits them by default and steers toward `gh`. The
+v1.0.78 release notes document that an explicit GitHub MCP toolset or tool configuration preserves
+the overlapping MCP tools and honors that opt-in; with `--add-github-mcp-tool=<name>` exactly the named
+tools are kept (they replace the default subset, as measured above).
+
+With multiple MCP servers, use per-server prefixes to make tool names readable and collision-free,
+but route calls by the source server's identity rather than by parsing the displayed prefix. A
+prefix is a human-facing label and can be renamed; it is not a stable routing key. Copilot's
+`github-mcp-server-<tool>` naming is one concrete example—do not substitute another runtime's
+prefix convention.
+
+### 1-A. Check for a GitHub-verified connector first
+
+Before installing a custom MCP server for a SaaS service, run `/mcp` and open the **Connectors**
+tab. GitHub-verified MCP servers (connectors) need no local install and no credentials to manage:
+you sign in once and the connection works across Copilot CLI, the Copilot app, VS Code, Copilot
+cloud agent, and GitHub Mobile. About 26 services were available at launch, including Slack,
+Figma, Notion, Sentry, Linear, Atlassian Rovo, Cloudflare, and Vercel.
+
+Connectors are in public preview. On Copilot Business or Enterprise an admin must enable the Editor
+preview features policy first. If managed settings use an MCP allowlist, an admin must also add
+GitHub-verified MCP servers to it, and some services, such as Slack, need an admin to allow MCP
+access on their side. Use a custom server (below) for services without a connector, internal
+APIs, and servers whose deployment and credentials you need to control yourself.
+
+### 2. Add Custom MCP Servers
+
+#### Global Configuration
+
+Use `copilot mcp add` for user-level installs, or edit `~/.copilot/mcp-config.json` directly.
+Prefer environment variables for secrets rather than embedding tokens or connection strings in
+committed config:
+
+```text
+copilot mcp add --transport http context7 https://mcp.context7.com/mcp
+copilot mcp add --transport http notion https://mcp.notion.com/mcp
+```
+
+Equivalent JSON:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "tools": ["*"],
+      "env": {
+        "DATABASE_URL": "${DATABASE_URL}"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/docs"],
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+To browse instead of typing a config, run `/mcp search` in an interactive session. It searches the
+[GitHub MCP Registry](https://github.com/mcp) (or your organization's custom registry, when one is
+configured) and saves the server you pick to `mcp-config.json`. It no longer needs `--experimental`.
+Review what you install there the same way as any other server (see 2-A below).
+
+#### Project-Level Configuration
+
+Create `.mcp.json` in your repo:
+
+```json
+{
+  "mcpServers": {
+    "my-api": {
+      "command": "node",
+      "args": ["./tools/mcp-server.js"],
+      "tools": ["*"],
+      "env": {
+        "API_KEY": "${MY_API_KEY}"
+      }
+    }
+  }
+}
+```
+
+### 2-A. Review server dependencies before trusting them
+
+Treat an MCP server like any other runtime dependency:
+
+1. identify the package or image version actually deployed
+2. check recent advisories before standardizing it
+3. prefer pinned versions over floating `latest`
+
+For Node-based MCP servers or companion dashboards that depend on transport
+libraries such as `ws`, verify the effective version is patched and confirm the
+reason in upstream release notes or your advisory feed before standardizing it.
+
+```text
+npm ls ws
+npm audit --omit=dev
+pip show <package-name>
+```
+
+### 3. Inspect Configured Servers
+
+Use the CLI to inspect what Copilot currently sees:
+
+```text
+copilot mcp list
+copilot mcp get my-api
+```
+
+### 4. Load Servers into a Session
+
+Besides the built-in servers, Copilot merges MCP servers from these sources (highest priority first; on a name clash the higher one wins):
+
+- `--additional-mcp-config` (this session only)
+- installed plugins that expose MCP servers
+- workspace config: `.mcp.json` and `.github/mcp.json`, read from the working directory up to the Git root (when a directory has a `.mcp.json`, that directory's `.github/mcp.json` is ignored rather than merged) — only in a trusted folder, and not in `-p` unless `GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP=true`
+- user config: `~/.copilot/mcp-config.json`
+
+A local server that needs the session's working directory — for example a filesystem or code
+index server started from a user-level config — can reference `${COPILOT_SESSION_CWD}` in its
+configuration (CLI 1.0.106 and later) instead of a hard-coded absolute path.
+
+Not every built-in server is on by default (command reference, re-checked 2026-11-09). `github-mcp-server` is
+configured automatically when you are signed in, unless you disable it or supply your own
+configuration. `WorkIQ` (after a Microsoft Entra sign-in), `browser-use`, and `computer-use` (local
+sessions on macOS and Windows) depend on your account, platform, and CLI version, and start
+disabled. `--disable-builtin-mcps` turns off `github-mcp-server`, `WorkIQ`, `browser-use`, and the
+legacy `github-copilot-browser` for one run but **not** `computer-use`; use `--disable-mcp-server computer-use` for one run, or
+`/computer off` to save the preference. Managed settings can block enabling a server.
+
+Inside a running session, use `/env` to inspect which MCP servers were loaded for that session.
+
+### 5. Verify Available Tools
+
+Once the session has loaded your config, new tools appear alongside the built-in ones.
+Copilot automatically discovers and can use all registered MCP tools.
+
+If a configured server is missing, check `copilot mcp list`, then inspect the specific entry with
+`copilot mcp get <name>`.
+
+Disable or disconnect unused MCP servers and providers. A larger tool surface simultaneously
+reduces tool-selection accuracy and consumes more context tokens; keep only resources needed by
+the current workflow.
+
+### 5-A. Transport-specific cautions
+
+Not every transport should reuse sessions the same way:
+
+| Transport | Default stance | What to watch |
+|-----------|----------------|---------------|
+| stdio | reuse cautiously | command path, env injection, process lifetime |
+| HTTP / SSE | isolation first | some backends intentionally skip session pooling for these transports; confirm auth, state, and retry behavior per request |
+| WebSocket | persistent but patched | heartbeat, timeout, reconnect behavior, and vulnerable `ws` versions |
+
+If you standardize an HTTP or SSE server, document whether it is safe to pool
+sessions or whether each request should create fresh state.
+
+### 5-B. Heavy-analysis MCP servers
+
+Some MCP servers can shift from lightweight indexing to heavier background
+analysis as they evolve. If you use a codebase-memory or indexing server,
+verify whether LSP-backed analysis is opt-in or effectively always on in the
+version you deploy.
+
+Verify:
+
+- startup CPU and memory impact
+- whether the repo actually benefits from live indexing
+- whether the team wants that server enabled everywhere or only on demand
+- whether the server still stays localhost-bound or now exposes a broader HTTP surface
+- whether cross-repo graph or intelligence features widen the default data boundary more than the team wants
+
+Treat upgrades in this class as scope changes, not only performance changes.
+When a codebase-memory server adds its own HTTP listener or cross-repo
+intelligence, re-check binding, authentication assumptions, and whether those
+features belong in the default deployment.
+
+### 6. Use Context7 for Live Documentation
+
+When you need current, version-aware framework or library docs, Context7 is one of the
+highest-value MCP servers to add.
+
+#### Setup (recommended)
+
+Run the guided setup to authenticate via OAuth and install the MCP server:
+
+```text
+npx ctx7 setup
+```
+
+This generates an API key and registers the server automatically. To configure manually,
+add the HTTP MCP server and pass your key as a header:
+
+```text
+copilot mcp add --transport http context7 https://mcp.context7.com/mcp
+```
+
+Then set `CONTEXT7_API_KEY` in your environment (or via `${CONTEXT7_API_KEY}` in
+`.mcp.json`) so the server can authenticate.
+
+#### MCP tools (called automatically by the agent)
+
+| Tool | Purpose |
+|------|---------|
+| `resolve-library-id` | Map a library name to a Context7 ID (e.g. `/vercel/next.js`) |
+| `query-docs` | Fetch version-specific docs for a given library ID and question |
+
+A requested version is a lookup target, not a strict pin. If that release is not indexed, the
+Context7 API still answers with the closest documentation it has — a matching tag, a newer release
+of the same line, or the library's current docs. Check the version note at the top of a text
+response (or the `version` object in JSON) before relying on an API signature. An unindexed branch
+or channel name, such as `/vercel/next.js/canary`, still returns `404 version_not_found`.
+
+#### Prompt patterns
+
+Single-prompt (agent resolves and fetches in one turn):
+
+```text
+How do I configure middleware in Next.js 15 App Router? use context7
+```
+
+Targeting a specific version:
+
+```text
+How do I set up Next.js 14 middleware? use context7
+```
+
+When you already know the library ID, skip resolution and load docs directly:
+
+```text
+Implement basic authentication with Supabase.
+use library /supabase/supabase for API and docs. use context7
+```
+
+#### CLI commands (no MCP required)
+
+If you prefer not to run the MCP server, use the `ctx7` CLI directly:
+
+```text
+ctx7 library next.js "App Router middleware"
+ctx7 docs /vercel/next.js "route handlers"
+```
+
+This pattern is especially useful when:
+
+- the installed library version may differ from model training data
+- a framework recently changed APIs
+- you need official docs instead of secondary tutorials
+
+When you do not know which library holds the answer, `ctx7 search` (ctx7 0.9.0+) searches
+documentation across all libraries in one step, without a library ID. `--library` (repeat it for
+up to four libraries) and `--library-version` narrow the search, `--language` prefers results in
+the language you write in, and `--json` returns structured output:
+
+```text
+ctx7 search "how do I stream a response?" --library Next.js
+```
+
+## Examples
+
+### Database-Aware Development
+
+```json
+// .mcp.json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "tools": ["*"],
+      "env": { "DATABASE_URL": "${DATABASE_URL}" }
+    }
+  }
+}
+```
+
+Now Copilot can query your database directly:
+
+> "Show me the schema for the users table and write a migration to add
+> an email_verified column"
+
+### Multi-Service Architecture
+
+```json
+{
+  "mcpServers": {
+    "postgres": { "command": "npx", "args": ["-y", "@mcp/server-postgres"], "tools": ["*"] },
+    "redis": { "command": "npx", "args": ["-y", "@mcp/server-redis"], "tools": ["*"] },
+    "slack": { "command": "npx", "args": ["-y", "@mcp/server-slack"], "tools": ["*"] }
+  }
+}
+```
+
+You do not declare the built-in `github-mcp-server` in `mcpServers`; it is configured
+automatically when you are signed in.
+
+Copilot can now coordinate across GitHub, your database, cache, and
+communication channels — all through native tool calls.
+
+### Building a Custom MCP Server
+
+Create a project-specific MCP server for your domain:
+
+```javascript
+// tools/mcp-server.js
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
+const server = new McpServer({ name: "my-project-tools" });
+
+server.tool("get_feature_flags", { env: z.string() }, async ({ env }) => {
+  const flags = await fetchFeatureFlags(env);
+  return { content: [{ type: "text", text: JSON.stringify(flags) }] };
+});
+
+server.run();
+```
+
+Register it in `.mcp.json` and Copilot can query feature flags natively.
+
+## Troubleshooting
+
+### Inspect the active configuration
+
+```text
+copilot mcp list
+copilot mcp get <name>
+/env
+```
+
+| Symptom | Likely cause | What to check |
+|---------|--------------|---------------|
+| Server missing from `copilot mcp list` | Wrong config path or invalid JSON | Confirm the file is `.mcp.json` or `.github/mcp.json` between the working directory and the Git root (folder trusted), or `~/.copilot/mcp-config.json` for user config |
+| Server is listed but tools are unavailable in-session | Session loaded a different config state | Use `/env` to inspect loaded MCP servers for the current session |
+| Remote server fails to respond | URL, auth header, or timeout issue | Re-check the remote endpoint and any `--header` values |
+| Local stdio server fails | Command path or dependencies are missing | Run the command manually and inspect its stderr outside Copilot |
+| HTTP or SSE server behaves inconsistently between requests | Unsafe session reuse assumption | Confirm whether the backend supports pooling for that transport or expects fresh state per request |
+| Server installs cleanly but acts unstable after upgrade | Dependency advisory or runtime-mode change | Re-check package versions, advisories, and whether heavy features such as always-on LSP changed defaults |
+
+## Tips
+
+- **Start with built-in GitHub MCP**: It covers 90% of GitHub workflows. Only
+  add custom servers when you need tools beyond GitHub.
+- **Use `.mcp.json` for team tools**: Project-level configs live at the workspace root
+  and can be committed to the repo for team use.
+- **Use `~/.copilot/mcp-config.json` for personal tools**: Global configs for
+  tools only you use (personal databases, API keys).
+- **Environment variables**: Use `${VAR_NAME}` (or `${VAR_NAME:-default}`) syntax to keep secrets out
+  of config files.
+- **Inspect before you trust**: `copilot mcp list` and `copilot mcp get` are the
+  fastest way to verify that Copilot is seeing the server definition you expect.
+- **Audit MCP dependencies explicitly**: treat the server package, transport library,
+  and companion UI as part of the security surface before rollout.
+- **Treat HTTP/SSE as isolation-first**: confirm whether the backend intentionally
+  avoids pooling before you optimize for reuse.
+- **Re-check fast-moving MCP tools**: Context7 evolves quickly — run `npx ctx7 setup` to
+  get the latest version and confirm its MCP tool names (`resolve-library-id`, `query-docs`)
+  match what your agent expects before standardizing new team workflows.
+
+## See Also
+
+- [`github-code-search`](../github-code-search/SKILL.md) — use the built-in GitHub code index as grounded implementation context

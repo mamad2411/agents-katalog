@@ -1,0 +1,283 @@
+---
+description: 設計書（draft/design/）に基づき、TDD（テスト駆動開発）アプローチを用いて機能を実装する。
+name: issue-implement
+---
+
+# Issue Implement
+
+承認された設計書を契約として、Red → Green → Refactor で実装する。
+
+## いつ使うか
+
+| タイミング | このスキルを使用 |
+|-----------|-----------------|
+| 設計レビュー完了・承認後 | ✅ 必須 |
+| 設計レビュー未完了 | ❌ 待機 |
+
+**ワークフロー内の位置**: design → review-design → **implement** → review-code → i-dev-final-check → i-pr → close
+
+## 入力
+
+### ハーネス経由（コンテキスト変数）
+
+| 変数 | 型 | 説明 |
+|------|-----|------|
+| `issue_id` | str | 正規化済み Issue ID（GitHub 数値） |
+| `issue_ref` | str | 人間可読の Issue 参照（GitHub では `#<issue_id>`） |
+| `step_id` | str | 現在のステップ ID |
+
+### 手動実行（スラッシュコマンド）
+
+```
+$ARGUMENTS = <issue_id>
+```
+
+### 解決ルール
+
+コンテキスト変数 `issue_id` が存在すればそちらを使用し、なければ `$ARGUMENTS` の第1引数を使う。
+手動実行時の `issue_ref` は `#<issue_id>` とする。
+
+## 読み込み方針（段階的開示）
+
+開始時に [implement-quickref.md](../../../docs/dev/implement-quickref.md) **だけ**を Read する。
+正本 docs・reference・template は quickref の対応表と各 Step の指示に従い、必要になった時点で読む。
+
+- 既読ファイルの全文再 Read はしない。必要箇所を `rg -n '^##? '` 等で特定し、対象セクションだけを読む。
+- 全文再 Read を許すのは、(a) 現セッションに本文がない、(b) 前回 Read 後にファイルが変更された、(c) 対象範囲だけでは判断不能、のいずれかに限る。理由を作業メモに残す。
+- 同じ内容を shell の `cat` と Read ツールの両方で取得しない。
+- 規則本文は正本 docs を優先する。quickref と本 skill は規則の要約・読込タイミング・手順だけを持つ。
+
+## 前提条件
+
+- `/issue-start` 実行済み
+- `/issue-design` で設計書作成済み
+- 設計レビュー承認済み
+
+## 共通ルール
+
+- [_shared/report-unrelated-issues.md](../_shared/report-unrelated-issues.md) — 無関係な問題の報告ルール
+
+## 実行手順
+
+### Step 1: Worktree 情報の取得
+
+[_shared/worktree-resolve.md](../_shared/worktree-resolve.md) に従って絶対パスを解決し、以降はそのパスを使う。
+
+### Step 1.5: 実行期限の確認
+
+agent step の hard deadline は延長されず、到達時点で `verdict_path` が未公開なら harness が session を
+強制終了する（正本: [workflow-authoring.md](../../../docs/dev/workflow-authoring.md) § timeout と attempt deadline）。
+正常に前進していても期限切れで進捗が失われないよう、次の規則で残時間を管理する。
+
+1. **開始時**: コンテキスト変数 `attempt_deadline_utc` / `step_timeout_seconds` を記録する。
+   変数がない（手動実行等）場合は本 Step の規則を適用しない。
+2. **前 attempt の checkpoint の引継ぎ**: 次の条件をすべて満たす直近コメントを checkpoint コメントとして扱い、
+   その「残作業」から再開する（implement の self-RETRY は `resume:` を持たず fresh session のため、引継ぎ情報は
+   Issue コメントと worktree が唯一の経路）。
+   - body 1 行目が `<!-- kaji-verdict: step=implement status=(RETRY|ABORT) -->`
+   - 2 行目以降に見出し `## 期限前 checkpoint（implement）` を持つ（手順 7 で付与。期限と無関係な ABORT
+     コメントを引継ぎ元と誤認しないための識別子）
+   - それより後に `step=implement` の `PASS` / `BACK` marker コメントがない
+
+   ABORT で終わった checkpoint を人間が `kaji run … --from implement` で再開した場合も、同じ規則で引き継がれる。
+3. **予備時間 R**（commit・Issue コメント・verdict 保存に充てる）:
+   `R = min(max(300 秒, 0.1 × T), 0.25 × T)`（T = `step_timeout_seconds`）。R は常に T の 25% 以下で、
+   短い timeout でも作業時間が残る。例: T=120 → R=30 秒、T=300 → R=75 秒、T=1800 → R=300 秒、
+   T=3600 → R=360 秒、T=6000 → R=600 秒。
+4. **確認点**: (i) 全 pytest / `make check` / nested workflow / 外部 agent 呼出しなど長時間処理の開始前、
+   (ii) Step 3〜8.5 の各境界。`date -u +%Y-%m-%dT%H:%M:%SZ` で残時間（`attempt_deadline_utc` − 現在時刻）を
+   算出し、「見積所要時間 + R > 残時間」なら新たな長時間処理を開始せず手順 7 の checkpoint へ移る。
+   見積は同 session / Issue コメント上の実測を優先し、なければ保守的に見積もる。境界で既に残時間 < R の場合は、
+   新たな commit・検証を行わず直ちに最小内容の checkpoint へ移る。表示 deadline は開始時の wall clock
+   基準の推定値で、実行中に wall clock が monotonic より速く進むと実残時間より短く見え（保守側）、
+   遅く進むと長く見える。遅れ側の誤差は R で吸収する想定だが、任意の時計補正までは保証しない。
+   そのため R を食い込む前に切り上げる。
+5. **完了不能・無進捗の停止**（同じ checkpoint の繰り返しで cycle を消費しない）:
+   - 必須処理 1 件の見積 + R が **T 全体** を超える（どの attempt でも収まらない）場合、checkpoint を繰り返さず、
+     手順 6 の status 決定で RETRY を選ばない。設計起因なら BACK、そうでなければ ABORT とし、suggestion に
+     「step timeout の見直し、または acceptance の分離」を人間判断事項として記載する。
+   - 引継いだ checkpoint（手順 2）から本 attempt で進捗（新規 commit、完了した検証、残作業の減少のいずれか）が
+     ないまま再び checkpoint に至る場合も、RETRY を選ばず ABORT とする（同上の suggestion）。
+   - 設計書が長時間 acceptance を implement に置きながら bounded 根拠を持たない場合は設計起因として BACK。
+6. **status の決定（コメント投稿前）**: 状況から希望 status を決め、prompt の status 候補（`step.on` のキー）に
+   含まれるかを確認して **実際の status S** を確定する。
+   - 期限前 checkpoint（進捗あり）: RETRY が候補にあれば `S = RETRY`、なければ `S = ABORT`
+   - 手順 5 の完了不能・無進捗: `S = ABORT`
+   - 設計起因: BACK が候補にあれば `S = BACK`、なければ `S = ABORT`
+   - ABORT も候補にない場合は checkpoint を行わず作業を継続する（存在しない status は出力しない）
+7. **checkpoint 手順**（verdict-last を維持する。S を marker・コメント末尾 block・stdout・`verdict_path` の
+   4 箇所で一致させる）:
+   - `make check` が通る単位の変更は通常どおり commit する。通らない WIP は commit せず worktree に残す
+     （AGENTS.md の「コード変更 commit 前に `make check` 必須」を破らない）。
+   - checkpoint コメントを `kaji issue comment [issue_id] --commit --verdict-step implement --verdict-status S`
+     で投稿する。本文は見出し `## 期限前 checkpoint（implement）` で始め、完了済み作業（commit SHA）、
+     未 commit 差分の概要、実行中だった検証と結果、残作業と次 attempt の開始手順、確認時の残時間を記載し、
+     末尾に `status: S` の `---VERDICT---` block を付ける。
+   - その後に同じ `status: S` の verdict を stdout に出し、最後に prompt の `kaji verdict publish` で
+     `verdict_path` へ公開する（`verdict_path` を直接書かない。artifact 公開前に停止して comment fallback が
+     読まれても許可 status S が解決される）。
+   - `S = ABORT` の場合、suggestion に `kaji run <workflow> [issue_id] --from implement` での再開（必要なら
+     `--reset-cycle`）と手順 5 の人間判断事項を記載する。
+8. **cycle 上限**: checkpoint の `RETRY` も `implementation` cycle のカウント対象であり、上限到達時は runner が
+   `on_exhaust: ABORT` で停止する。上限回避のために `PASS` 等へ status を偽らない。`cycle_count` ==
+   `max_iterations` の attempt でも同手順で `RETRY` を返す（再開は人間が `--reset-cycle` で判断する）。
+
+### Step 2: 設計書を解決して1回だけ読む
+
+1. コンテキストに `design_path` があれば `[worktree_dir]/[design_path]` を採用する。
+2. なければ `draft/design/issue-[issue_id]-*.md` をファイル名だけ列挙し、候補を解決する。本文を `cat` しない。
+3. 候補が0件または複数で一意に決められなければ、実装を開始せず設計フェーズへ戻す。
+4. 解決した設計書を Read で **1回だけ**読み、「インターフェース」「テスト戦略」「影響ドキュメント」を作業契約とする。
+
+BACK 等で再入し、設計書が前回 Read 後に変わっている場合は、まず diff と変更セクションだけを読む。全文再 Read は変更範囲から判断できない場合だけ行う。
+
+### Step 2.5: Baseline Check
+
+この時点で初めて [docs/dev/baseline-check.md](../../../docs/dev/baseline-check.md) の
+「implement 開始時」と artifact schema を Read し、
+`[worktree_dir]/.kaji-artifacts/baseline/baseline.json` を確認する。コメントを正本として検索しない。
+
+- artifact 不在・Pydantic 検証失敗・`measured_commit` が HEAD の ancestor でない場合は停止し、
+  baseline step の再実行を案内する
+- `clean`: 継続
+- `known_failures`: 設計書「変更スコープ」の path を `--evaluate --scope <path>` へ渡す。
+  `stop: true` または意味的に同一機能へ影響する場合は停止する
+- `blocked` / `invalid`: implement へ到達してはならない前提違反として停止する
+
+### Step 2.6: type 判定と type 別ガイド
+
+```bash
+kaji issue view [issue_id] --json labels --jq '[.labels[].name] | map(select(startswith("type:")))'
+```
+
+| 判定 | 処理 |
+|------|------|
+| type ラベルが0件または複数 | 実装せず `/issue-review-ready` へ差し戻して `ABORT` |
+| `type:docs` | `/i-doc-update` へ誘導して `ABORT` |
+| `type:feature` | `_shared/implement-by-type/feat.md` をこの時点で Read |
+| `type:bug` | `_shared/implement-by-type/bug.md` をこの時点で Read |
+| `type:refactor` | `_shared/implement-by-type/refactor.md` をこの時点で Read |
+| その他の `type:*` | feat のガイドをフォールバックとして Read |
+
+type 別ガイドが Step 3〜5 の具体化を担い、本 skill の記述は共通の枠組みとする。
+
+### Step 2.7: 実装直前に必要な正本を読む
+
+quickref の「状況 → 正本」表に従い、まず必要なセクションを特定して部分 Read する。
+
+- テスト実装前: `docs/dev/testing-convention.md` の「テストサイズ定義」「テスト戦略の原則」と設計で該当する節
+- **Python コードを書く前**: AGENTS.md の契約に従い、`docs/reference/python/*.md` をすべてロードする。既に同一内容を読んだファイルは再 Read しない
+- docs 更新判断時: `docs/dev/documentation_update_criteria.md` の該当節
+- 完了条件確認時: `docs/dev/workflow_completion_criteria.md` の該当節
+- workflow 全体や戻り先が不明な場合だけ: `docs/dev/development_workflow.md` の該当節
+
+### Step 3: テスト実装（Red）
+
+> Step 3〜8.5 の各境界で Step 1.5 の残時間確認を行う（`attempt_deadline_utc` がある場合）。
+
+設計書「テスト戦略」と type 別ガイドに従う。
+
+- 実行時コード変更は、設計されたテストを先に書き、期待どおり失敗することを確認する。
+- docs-only / metadata-only / packaging-only は、設計された変更固有検証で十分なら恒久テストを機械的に追加しない。
+- テストサイズはリソース制約で決め、`small` / `medium` / `large` marker を付ける。
+- 設計で必要としたテストの省略、設計で不要としたテストの独自追加、環境不備を理由とする skip は禁止する。
+
+```bash
+cd [worktree_dir] && source .venv/bin/activate && pytest
+```
+
+### Step 4: 機能実装（Green）
+
+設計書のインターフェースに従い、最小実装でテストを通す。
+
+```bash
+cd [worktree_dir] && source .venv/bin/activate && pytest
+```
+
+baseline が `known_failures` の場合は、Green 確認時も最終的に `--compare` の
+`regressions` が空になるまで修正する。
+
+### Step 5: Refactor
+
+可読性と構造を改善し、テストが引き続き通ることを確認する。type 別ガイドの追加測定・safety net 契約を維持する。
+
+### Step 6: docs 更新
+
+設計書「影響ドキュメント」で「あり」の文書を更新する。判断境界が必要な時だけ `documentation_update_criteria.md` の該当節を読む。
+
+### Step 7: 品質チェック（コミット前必須）
+
+AGENTS.md の pre-commit 契約を通し、出力を Step 8.5（Pre-Handoff Review の入力）と Step 9（証跡）の両方で使えるよう保持する。
+
+baseline artifact が `clean` なら `source .venv/bin/activate && make check` を実行し、exit 0 と全出力を記録する。以下の 7a / 7b はその内訳であり、同じコマンドを重複実行しない。Step 8.5 / Step 9 が要求する pytest 出力と ruff / format / mypy 出力は、この `make check` の出力から該当部分を切り出して使う（証跡取得のための再実行はしない）。
+
+artifact が `known_failures` の場合だけ 7a / 7b に分離する。この例外でも `make check` の全対象（`kaji_harness/ tests/ experiments/` の ruff / format、`kaji_harness/` の mypy、全 pytest）を省略しない。
+
+#### 7a. Lint / Format / 型チェック（exit 0 必須）
+
+```bash
+cd [worktree_dir] && source .venv/bin/activate && ruff check kaji_harness/ tests/ experiments/ && ruff format --check kaji_harness/ tests/ experiments/ && mypy kaji_harness/
+```
+
+全項目必須。`ruff format --check` は非破壊 gate とし、修正には `make fmt` を使って再実行する。
+
+#### 7b. pytest regression 比較
+
+```bash
+cd [worktree_dir] && source .venv/bin/activate && python -m kaji_harness.scripts.baseline_precheck --worktree [worktree_dir] --compare
+```
+
+`--compare` が pytest を実行し、artifact の3タプルと機械比較する。
+`verdict: ok`、`regressions: []` が必須。`stale_baseline` / `missing_baseline` は比較不能として停止する。
+
+上記 7a / 7b は baseline failure がある場合に限り、`make check` の ruff / format / mypy / pytest 契約を同じ対象へ分離実行したもの。いずれかが基準を満たさなければコミットしない。
+
+### Step 7.5: 完了条件の段階確認
+
+Issue 本文 `## 完了条件` のうち、実装・テスト・docs で確認できる条件を照合する。判断に必要な場合だけ `workflow_completion_criteria.md` の「各ステップの証跡責務」周辺を部分 Read し、結果を Step 9 に含める。
+
+### Step 8: コミット
+
+```bash
+cd [worktree_dir] && git add <issue-scope-files> && git commit -m "<type-prefix>: implement <feature> for [issue_ref]"
+```
+
+prefix は Issue type に合わせ、無関係な変更を stage しない。
+
+### Step 8.5: Pre-Handoff Review（MANDATORY）
+
+コミット後、この時点で初めて [references/pre-handoff-review.md](references/pre-handoff-review.md) を Read し、capability 分岐、入力、rubric、verdict loop、Issue コメント投稿、回数制限を記載どおり実行する。
+
+この自己評価は `Yes` / `No` / `With fixes` だけを返し、workflow の正式 verdict は発行しない。責務の削除・省略、Issue コメント証跡の省略は禁止する。
+
+### Step 9: 実装完了報告
+
+Pre-Handoff Review が完了した後、この時点で初めて [templates/implement-report.md](templates/implement-report.md) を Read する。保持した pytest / ruff / format / mypy の出力、変更ファイル、Pre-Handoff Review、完了条件を埋めて投稿する。
+
+実装完了報告には `--verdict-step implement --verdict-status <STATUS>` を **常に**付ける。Baseline / Pre-Handoff の証跡コメントには付けない。
+
+### Step 10: 完了報告
+
+Issue、テスト件数、品質チェック結果、次の `/issue-review-code [issue_id]` を簡潔に報告する。
+
+## Verdict 出力
+
+作業報告 Issue コメント末尾、stdout に同じ内容を残し、最後に prompt の `kaji verdict publish` で `verdict_path` へ公開する（`verdict_path` を直接書かない）。
+
+```text
+---VERDICT---
+status: PASS
+reason: |
+  実装・テスト・品質チェック全パス
+evidence: |
+  pytest 全テストパス、ruff/format/mypy エラーなし、Pre-Handoff Review 完了
+suggestion: |
+---END_VERDICT---
+```
+
+| status | 条件 |
+|--------|------|
+| PASS | 実装・テスト・品質チェック全パス |
+| RETRY | テスト失敗等、または期限前 checkpoint（Step 1.5。`RETRY` が status 候補にあり、進捗がある場合のみ） |
+| BACK | 設計に問題 |
+| ABORT | type ラベル不正、`type:docs` 等の重大な前提違反 |

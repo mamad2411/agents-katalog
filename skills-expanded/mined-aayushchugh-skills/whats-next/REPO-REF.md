@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aayushchugh/skills (path: skills/whats-next/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: What's next

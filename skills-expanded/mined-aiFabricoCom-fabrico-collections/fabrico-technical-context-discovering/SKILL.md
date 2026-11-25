@@ -1,0 +1,98 @@
+---
+name: fabrico-technical-context-discovering
+description: Discover and establish technical context before implementing any feature. Prioritize project instructions, existing codebase patterns, and external documentation in that order. Use for any task requiring understanding of project conventions, coding standards, architecture patterns, and established practices before writing code.
+---
+
+# Technical Context Discovery
+
+This skill provides a systematic approach for understanding a project's technical context before making any code changes. It ensures consistency with existing patterns and prevents introducing conflicting conventions.
+
+## When to Use
+
+- Before implementing any feature or fix
+- Before writing tests (unit, integration, E2E)
+- Before making architectural decisions that affect existing code
+- When onboarding to a new area of the codebase
+
+## Technical Context Discovery Process
+
+Use the checklist below and track your progress:
+
+```
+Discovery progress:
+- [ ] Step 0: Check plan file for persisted context
+- [ ] Step 1: Check Claude Code memory files
+- [ ] Step 2: Analyze existing codebase patterns
+- [ ] Step 3: Consult external documentation (if needed)
+- [ ] Step 4: Apply the implementation rule
+```
+
+**Step 0: Check Plan File for Persisted Context**
+
+**ALWAYS check first** whether a plan file (`*.plan.md`) exists for the current task and contains a **"Technical Context"** section.
+
+If a "Technical Context" section exists and is populated:
+- **Use it as-is** — do not re-discover conventions, patterns, or standards that are already documented there.
+- Skip Steps 1-2 entirely. Proceed directly to Step 4 (Apply the implementation rule) using the persisted context.
+- Only perform targeted discovery (Steps 1-2) for aspects **not covered** by the persisted context.
+
+If no plan file exists, or the "Technical Context" section is missing/empty:
+- Proceed with Steps 1-4 as normal.
+
+**Step 1: Check Claude Code Memory Files**
+
+**ALWAYS check first** for existing Claude Code memory in the project:
+
+- Search for the root `CLAUDE.md` at the repository root.
+- Search for nested `CLAUDE.md` files in relevant directories (e.g., `src/`, `tests/`, `e2e/`, `backend/`, feature-specific folders) — a `CLAUDE.md` in a subdirectory applies to that subtree.
+- Check for any `@import` references that pull in additional memory or guidance files.
+
+If memory files exist, they are the **primary source of truth** for:
+
+- Coding standards and conventions
+- Architecture patterns and project structure
+- Technology stack specifics and version requirements
+- Testing strategies and patterns
+- Naming conventions and file organization
+- Locator strategies (for E2E tests)
+- Test data management approaches
+- Environment configuration
+
+**Step 2: Analyze Existing Codebase Patterns**
+
+If no Claude Code memory is found, or if it doesn't cover specific aspects, **analyze the existing codebase** to understand and replicate established patterns:
+
+- **Architecture patterns**: Examine folder structure, layering (controllers, services, repositories), and module organization.
+- **Code style**: Analyze existing files for naming conventions, formatting, and idioms used.
+- **Error handling**: Look at how exceptions are caught, logged, and returned to clients.
+- **Validation patterns**: Check how input validation is implemented (decorators, middleware, manual checks).
+- **Testing patterns**: Review existing tests to understand structure, mocking strategies, assertion styles, fixtures, and test data management.
+- **Database patterns**: Examine existing migrations, entities/models, and query patterns.
+- **API patterns**: Analyze existing endpoints for response formats, status codes, and documentation style.
+- **Configuration**: Check how environment variables, feature flags, and configuration are managed.
+
+**Use the Grep/Glob tools** to find similar implementations in the codebase and follow the same approach.
+
+**Step 3: Consult External Documentation**
+
+If neither Claude Code memory nor sufficient existing codebase patterns are available (e.g., new project, greenfield feature, or first implementation of a specific pattern), **use external documentation and industry best practices**:
+
+- **Use the context7 MCP server** (tools `mcp__context7__*`) to search for official documentation of the framework/library being used (check project config for exact versions first).
+- Apply **industry-standard best practices** for the technology stack.
+- Follow **OWASP security guidelines** for secure coding practices.
+- Apply **SOLID principles** and clean architecture patterns.
+- Use **well-established design patterns** appropriate for the use case.
+
+**IMPORTANT**: When using best practices in a greenfield scenario, document your decisions in code comments or README to establish patterns for future development.
+
+**Step 4: Apply the Implementation Rule**
+
+Based on what you discovered, apply this decision hierarchy:
+
+| Context Available | Action |
+|---|---|
+| Memory files exist | Follow them strictly. Memory files take precedence over general best practices. |
+| No memory files, but codebase has patterns | Mirror existing patterns exactly. Consistency with existing code > theoretical best practices. |
+| No memory files, no existing patterns | Apply documentation-based best practices and industry standards. Document decisions for future reference. |
+
+**Critical rule**: Never introduce new patterns unless explicitly requested by the user or specified in the implementation plan.

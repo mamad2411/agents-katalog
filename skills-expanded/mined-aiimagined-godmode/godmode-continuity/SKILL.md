@@ -1,0 +1,74 @@
+---
+name: godmode-continuity
+description: Reconstruct and preserve private project continuity from local evidence. Use when resuming work, changing branches or worktrees, detecting drift, recording handoffs, or explaining why context is missing or stale. Not for code investigation or release steps.
+---
+
+# Godmode Continuity
+
+## Outcome
+
+Produce a bounded context brief whose claims can be traced to current inspection or a
+validated local record, then preserve the next recovery point outside the working tree.
+
+## Reconstruct current reality
+
+1. Resolve project, Git-common-directory, worktree, branch, HEAD, and hashed-remote
+   identity before trusting prior state.
+2. Run `context status`; add `--scan` when filesystem drift matters.
+3. Run `inventory diff` to distinguish added, changed, and removed paths from the last
+   baseline. Do not infer file content from hashes.
+4. Run `resume` after a valid baseline or `resume --refresh` when evidence is stale.
+5. Classify each brief item as observed fact, declared intent, assumption, conflict,
+   invariant, decision, incident, open check, or obligation.
+
+Treat identity drift, contradictory invariants, phantom file references, undocumented
+changes, unproven completion, and capacity overflow as findings—not as facts to hide.
+
+## Preserve continuity
+
+Use the narrow record type:
+
+- `remember --kind decision|invariant|lesson|obligation` for durable knowledge.
+- `remember --kind lesson --enforce 'kind=<kind>;predicate=<field op value>'` (needs `--guard`).
+- Enforce makes a guard executable: a matching write of that kind is refused, guard as remedy.
+- Forbids `refusal`/`action`/`checkpoint` kinds as enforce targets; literals cap at 256 characters.
+- `matches` allows at most one quantifier on an atom or class, never a group, at parse time.
+- A `matches` field over 4096 characters refuses the write outright - never truncated or silent.
+- A later lesson must reaffirm `--enforce` or set status `superseded`, `retired`, or `candidate`.
+- `checklist update` for cumulative checks.
+- `checkpoint` for a recoverable state, next actions, active hypothesis, and evidence;
+  `--owes "<restore>"` for a temporary change left behind (a role bump, a throwaway
+  spec) that the scope gate names until it is closed.
+- `branches --record`, `version`, `db`, `sprint`, or `docs` for domain state.
+
+Record relative paths, statuses, hashes, and evidence references. Never record raw
+prompts, conversations, tool transcripts, source bodies, secrets, or environment dumps.
+A lesson may describe a failure and generalized guard, but should not preserve sensitive
+failure payloads.
+
+## Completion gate
+
+Before ending or compacting a session, record what changed, what was verified, what is
+still uncertain, and the next executable action. A `complete`, `fixed`, or `done` status
+requires fresh evidence. Run `doctor` after a material continuity change.
+
+Godmode cannot guarantee perfect memory. If no valid baseline or adapter exists, say so
+and give the exact rebuild action.
+
+Status truth lives in one writable store: `status set|survey|remaining|render|handover`
+(pending items are existence-checked; phantoms close with evidence). `context why
+--about X` answers with the recorded decisions, fixes, dependencies, and
+invariants touching a surface; `slice` reads bounded file ranges that declare
+their own truncation; `absorb --path X` proves a synced file is truly absorbed.
+
+Read [godmode-continuity-schema.md](references/godmode-continuity-schema.md) when choosing
+record types or interpreting detector output.
+
+## Verbs at the moment of demand
+
+- Opening and closing: `godmode session open` states identity, dirty files, plan, obligations and the host's enforcement table; `godmode session close` refuses an unattested rule or an uncited claim; `godmode brief` prints the continuity brief on demand.
+- Memory hygiene: `godmode hygiene` lists near-duplicate and contradicting lessons and decisions among the newest active records per kind; supersede the loser with `remember --status superseded`.
+- Forgetting: `godmode forget` expires old episodes into a cold, still-chained segment (action and refusal after 30 days, attestation after 90), reports supersession chains and flags contradictions as `review` records that `status` and `hygiene` surface until they are acknowledged or dismissed (`remember --kind review --review seq:<n>` names which one a closure closes). A record cited by a live claim, a checkpoint, a law guard or a pin never expires; `--now` previews another clock and is accepted with `--dry-run` only; `history --seq` still reaches a cold record, re-hashing it before it serves it.
+- What happened: `godmode history` walks the record, `godmode actions` lists tool actions the gate saw, `godmode inventory` snapshots the tree, `godmode drift` names what moved since, `godmode report` and `godmode export` render the record for a reader or another tool, `godmode index` rebuilds the lookup index.
+- When the anchor is wrong: `godmode reanchor` re-binds the archive to the repository, `godmode rewind` returns to a recorded state, `godmode replay` re-reads a recorded run.
+- Work in flight: `godmode planmode check` holds an edit to the approved plan, `godmode build` records a build outcome, `godmode fleet` lists the sessions on this machine, `godmode examples` and `godmode guide` show the recorded rules in use, `godmode selftest` proves the install itself, and `godmode claim --stale` names claims whose cited evidence moved.

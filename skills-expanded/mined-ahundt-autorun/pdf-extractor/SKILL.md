@@ -1,0 +1,387 @@
+---
+name: pdf-extractor
+description: This skill should be used when the user asks to "extract text from PDF", "convert PDF to text", "parse PDF", "read PDF contents", "extract data from documents", "batch PDF extraction", "PDF to markdown", "OCR PDF", "get text from PDF files", "I have a PDF", "can you read this PDF", "what's in this PDF", "summarize this PDF", "open PDF file", "extract from [filename].pdf", or needs to process PDF documents for data extraction. Handles single-file extraction, batch processing, and OCR for scanned documents with automatic backend selection.
+metadata:
+  version: 1.0.0rc5
+  example-prompt: "Extract text from document.pdf"
+---
+
+# PDF Data Extraction
+
+<purpose>
+
+Extract text and structured data from PDF documents using a multi-backend approach with automatic fallback.
+
+## Overview
+
+This skill provides PDF text extraction with 9 different backends, automatic GPU detection, and intelligent backend selection. The extraction system tries backends in order until one succeeds, producing markdown output optimized for further processing.
+
+</purpose>
+
+<workflow>
+
+## Quick Start Workflow
+
+To extract text from PDFs:
+
+1. **Single file extraction (installed CLI - recommended):**
+   ```bash
+   extract-pdfs /path/to/document.pdf
+   ```
+   Output: Creates `document.md` in the same directory.
+
+2. **Batch extraction (directory):**
+   ```bash
+   extract-pdfs /path/to/pdfs/ /path/to/output/
+   ```
+   Output: Creates `.md` files for all PDFs in output directory.
+
+3. **Custom output file:**
+   ```bash
+   extract-pdfs document.pdf output.md
+   ```
+
+4. **Specific backends:**
+   ```bash
+   extract-pdfs document.pdf --backends markitdown pdfplumber
+   ```
+
+5. **List available backends:**
+   ```bash
+   extract-pdfs --list-backends
+   ```
+   Output: Shows available backends and GPU status.
+
+### Alternative Execution Methods
+
+If the `extract-pdfs` CLI isn't installed, install it first (recommended):
+
+```bash
+# Install as global UV tool (from repo root); the code ships in the autorun-ai distribution:
+cd "${CLAUDE_PLUGIN_ROOT}/../.." && uv tool install --force --editable "./plugins/autorun[pdf]"
+extract-pdfs --list-backends  # verify
+```
+
+Or use these fallback methods without installing:
+
+```bash
+# From a source checkout, without installing (the package lives in plugins/autorun):
+uv run --project plugins/autorun --extra pdf python -m pdf_extraction document.pdf
+
+# Module execution, if the console script is not on PATH
+python -m pdf_extraction document.pdf
+```
+
+## Backend Selection Guide
+
+### Custom Backend Ordering
+
+Specify backends in any order with `--backends`. The system tries each in order, stopping on first success:
+
+```bash
+# Tables first, then general extraction
+extract-pdfs document.pdf --backends pdfplumber markitdown pdfminer
+
+# Scanned documents: vision-based first
+extract-pdfs scanned.pdf --backends docling markitdown
+
+# Most permissive fallback order (handles problematic PDFs)
+extract-pdfs document.pdf --backends pdfminer pypdf2 markitdown
+
+# Single backend only (no fallback)
+extract-pdfs document.pdf --backends markitdown
+```
+
+### CPU-Only Systems (Default)
+
+For systems without GPU, the recommended backend order:
+- `markitdown` - Microsoft's lightweight converter (MIT, fast, no models)
+- `pdfplumber` - Excellent for tables (MIT)
+- `pdfminer` - Pure Python, reliable (MIT)
+- `pypdf2` - Basic extraction through maintained `pypdf` (BSD-3; `pdf` extra)
+
+### GPU Systems
+
+For systems with CUDA-enabled GPU:
+- `docling` - IBM layout analysis (MIT, downloads models on first use)
+- Plus all CPU backends as fallback
+
+The `marker` backend is recognized only for separately managed installations;
+it is not selected by a published extra because its dependency graph pins an
+unpatched Pillow release.
+
+### Backend Comparison
+
+| Backend | License | Models | Best For | Speed |
+|---------|---------|--------|----------|-------|
+| markitdown | MIT | None | General text, forms | Fast |
+| pdfplumber | MIT | None | Tables, structured data | Fast |
+| pdfminer | MIT | None | Simple text documents | Fast |
+| pypdf2 | BSD-3 | None | Basic extraction | Fast |
+| docling | MIT | ~500MB | Layout analysis | Medium |
+| marker | GPL-3.0 | ~1GB | Scanned documents | Slow |
+| pymupdf4llm | AGPL-3.0 | None | LLM-optimized output | Fast |
+| pdfbox | Apache-2.0 | None | Tables (Java-based) | Medium |
+| pdftotext | System | None | Simple text (CLI) | Fast |
+
+### Backend Decision Matrix
+
+| Document Type | Recommended Backend(s) | Why |
+|---------------|------------------------|-----|
+| Digital text PDF (default) | markitdown, pdfplumber | Fast, accurate |
+| PDF with tables/invoices | pdfplumber, pdfbox | Best table structure |
+| Complex layouts/columns | docling (GPU) | Layout analysis |
+| Scanned documents/images | marker, docling (GPU) | OCR/vision required |
+| Insurance policies/forms | markitdown, pdfplumber | Handles form fields |
+| Academic papers | docling | Equations, figures |
+| Maximum compatibility | pdfminer, pypdf2 | Fewest dependencies |
+| Commercial use required | markitdown, pdfplumber | MIT license |
+
+## Programmatic Usage
+
+To use the extraction library directly in Python code:
+
+```python
+from pdf_extraction import extract_single_pdf, pdf_to_txt, detect_gpu_availability
+
+# Check available backends
+gpu_info = detect_gpu_availability()
+print(f"Recommended backends: {gpu_info['recommended_backends']}")
+
+# Extract single file
+result = extract_single_pdf(
+    input_file='/path/to/document.pdf',
+    output_file='/path/to/output.md',
+    backends=['markitdown', 'pdfplumber']
+)
+
+if result['success']:
+    print(f"Extracted with {result['backend_used']}")
+    print(f"Quality metrics: {result['quality_metrics']}")
+
+# Batch extract directory
+output_files, metadata = pdf_to_txt(
+    input_dir='/path/to/pdfs/',
+    output_dir='/path/to/output/',
+    resume=True,  # Skip already-extracted files
+    return_metadata=True
+)
+```
+
+</workflow>
+
+<reference>
+
+## Extraction Metadata
+
+Every extraction returns metadata for quality assessment:
+
+```python
+{
+    'success': True,
+    'backend_used': 'markitdown',
+    'extraction_time_seconds': 2.5,
+    'output_size_bytes': 15234,
+    'quality_metrics': {
+        'char_count': 15234,
+        'line_count': 450,
+        'word_count': 2800,
+        'table_markers': 12,      # Count of | (tables)
+        'has_structure': True     # Has markdown structure
+    },
+    'encrypted': False,
+    'error': None
+}
+```
+
+## Handling Common Scenarios
+
+### Encrypted PDFs
+
+The system detects encrypted PDFs and reports them:
+```python
+if result['encrypted']:
+    print("PDF is password-protected")
+```
+
+Encrypted PDFs cannot be extracted without the password.
+
+### Empty or Failed Extractions
+
+When all backends fail:
+1. Check if PDF is encrypted
+2. Try with `--backends pdfminer pypdf2` (most permissive)
+3. Check PDF isn't corrupted
+4. Consider OCR-based backends for scanned documents
+
+### Resume Batch Processing
+
+To continue interrupted batch extraction:
+```bash
+extract-pdfs /path/to/pdfs/ /path/to/output/
+```
+The `resume=True` default skips already-extracted files.
+
+To force re-extraction:
+```bash
+extract-pdfs /path/to/pdfs/ --no-resume
+```
+
+### Tables and Structured Data
+
+For PDFs with tables, prioritize:
+```bash
+extract-pdfs document.pdf --backends pdfplumber markitdown
+```
+
+The output will contain markdown tables when detected:
+```markdown
+| Column1 | Column2 | Column3 |
+|---------|---------|---------|
+| Data    | Data    | Data    |
+```
+
+## Module Structure Reference
+
+### Source Code Layout
+
+**Location:** `plugins/pdf-extractor/src/pdf_extraction/` in a source checkout, and the
+importable `pdf_extraction` package once `autorun` is installed. This plugin
+directory holds the manifest, command, and this skill; the code ships inside the
+`autorun-ai` distribution behind its `pdf` extra.
+
+| File | Purpose |
+|------|---------|
+| `__init__.py` | Package exports (extract_single_pdf, pdf_to_txt, etc.) |
+| `__main__.py` | Support for `python -m pdf_extraction` |
+| `cli.py` | CLI entry point with argparse |
+| `backends.py` | BackendExtractor base class + 9 backend implementations |
+| `extractors.py` | extract_single_pdf(), pdf_to_txt() functions |
+| `utils.py` | GPU detection, quality metrics, encryption check |
+
+### Key Classes and Functions
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| `BackendExtractor` | backends.py | Base class with Template Method pattern |
+| `DoclingExtractor` | backends.py | IBM Docling backend (MIT, GPU) |
+| `MarkerExtractor` | backends.py | Vision-based marker backend (GPL-3.0, GPU) |
+| `MarkItDownExtractor` | backends.py | Microsoft MarkItDown (MIT, CPU) |
+| `PdfplumberExtractor` | backends.py | Table-focused extraction (MIT) |
+| `PdfminerExtractor` | backends.py | Pure Python fallback (MIT) |
+| `Pypdf2Extractor` | backends.py | Basic extraction through optional `pypdf` (BSD-3) |
+| `BACKEND_REGISTRY` | backends.py | Dict mapping backend names to factories |
+| `detect_gpu_availability()` | utils.py | Auto-detect GPU and recommend backends |
+| `extract_single_pdf()` | extractors.py | Extract one PDF with backend fallback |
+| `pdf_to_txt()` | extractors.py | Batch extract directory with resume |
+
+**Key implementation details:**
+- Backend fallback loop: `extractors.py` - Tries each backend in order, stops on first success
+- Lazy initialization: `backends.py` - Converters created only when first used
+- Quality metrics: `utils.py` - Calculates char/word/table counts
+
+## Additional Resources
+
+### Reference Files
+
+For detailed backend documentation and advanced patterns:
+- **`references/backends.md`** - Detailed backend comparison and selection guide
+
+### Example Usage
+
+Working examples in the insurance analysis that prompted this skill:
+- Extracted 21 PDFs from mortgage statements and insurance policies
+- Used markitdown backend for fast extraction
+- Parsed structured data (dates, amounts, policy numbers)
+
+</reference>
+
+<troubleshooting>
+
+## Error Handling
+
+The extraction system handles errors gracefully:
+
+1. **Backend failures**: Automatically tries next backend
+2. **Import errors**: Skips unavailable backends
+3. **File errors**: Reports specific error message
+4. **Partial success**: Continues with remaining files in batch
+
+All errors are captured in metadata rather than raising exceptions.
+
+## Dependencies
+
+The base package has no required Python dependencies. Select extras for the
+backends you need:
+
+- `pdf`: markitdown, pdfplumber, pdfminer.six, and maintained `pypdf` (the CLI
+  backend id stays `pypdf2`)
+- `pdf-gpu`: docling on Linux/Windows; empty on macOS while docling's model stack
+  selects an advisory-affected transformers 4.x release
+- `pdf-llm`: pymupdf4llm
+- `pdf-progress`: tqdm
+- `pdf-all`: every extra above
+
+Install CPU dependencies:
+```bash
+uv pip install "markitdown>=0.1.0" "pdfplumber>=0.10.0" "pdfminer.six>=20221105" "pypdf>=6.0.0" tqdm
+```
+
+For the supported GPU extra on Linux or Windows:
+```bash
+uv pip install "docling>=2.94.0"
+```
+
+The `marker` backend remains discoverable for separately managed installs, but
+marker-pdf is excluded from published extras because its supported-platform
+dependency graph pins Pillow below the first fully patched release.
+
+## Troubleshooting
+
+### `extract-pdfs: command not found`
+```bash
+# Install as global UV tool from repo root:
+uv tool install --force --editable "./plugins/autorun[pdf]"
+extract-pdfs --list-backends  # verify
+```
+
+### `ModuleNotFoundError: No module named 'pdf_extraction'` (or 'markitdown', 'pdfplumber')
+```bash
+# Re-install with all base dependencies:
+uv tool install --force --editable "./plugins/autorun[pdf]"
+# Or install explicitly:
+uv pip install "markitdown>=0.1.0" "pdfplumber>=0.10.0" "pdfminer.six>=20221105" "pypdf>=6.0.0" tqdm
+```
+
+### GPU backend (docling) not available
+```bash
+# Requires PyTorch; install the GPU extra:
+uv tool install --force --editable "./plugins/autorun[pdf,pdf-gpu]"
+extract-pdfs --list-backends  # verify docling appears
+# Note: docling downloads models on first use.
+```
+
+### Empty output from scanned PDF (image-only document)
+```bash
+# Scanned PDFs require OCR; docling is in the supported GPU extra:
+extract-pdfs scanned.pdf --backends docling
+# If GPU unavailable, try pdftotext (system tool):
+brew install poppler        # macOS
+# apt install poppler-utils  # Ubuntu/Debian
+extract-pdfs scanned.pdf --backends pdftotext
+```
+
+### pdfminer import error (package name confusion)
+```bash
+# Install correct package (name has .six suffix):
+uv pip install "pdfminer.six>=20221105"
+# Import is still: from pdfminer.high_level import extract_text  (no .six)
+```
+
+### markitdown version conflict
+```bash
+# API changed significantly in 0.1.0; ensure correct version:
+uv pip install "markitdown>=0.1.0"
+```
+
+</troubleshooting>

@@ -1,0 +1,84 @@
+---
+name: kambiyo-senetlerine-ozgu-takip
+description: "Çek, bono veya poliçeye dayalı haciz/iflas yoluyla takip kurmak, ödeme emrine 5 gün içinde itiraz veya şikâyet etmek ve kambiyo vasfı denetimini yapmak gerektiğinde kullanılır."
+---
+
+# Kambiyo Senetlerine Özgü Takip
+
+## Görev
+Çek/bono/poliçeye dayanarak kambiyo senetlerine özgü haciz yolu (m.167 vd.) ile takip yapmak; senedin kambiyo vasfını ve takip yetkisini denetlemek; borçlu tarafında borca/imzaya itiraz ve şikâyet yollarını kullanmak.
+
+## Soğuk başlangıç (intake)
+- Senet çek mi, bono mu, poliçe mi; TTK'daki zorunlu unsurları (TTK m.671, m.776, m.692; çek için 5941 s.K. ve TTK m.780) taşıyor mu?
+- Alacaklı meşru hamil mi; ciro silsilesi düzgün mü?
+- Ödeme emri tebliğ tarihi nedir (itiraz/şikâyet 5 gün)?
+- Çek için ibraz süresi/karşılıksız işlemi yapıldı mı?
+
+## Denetim şeması
+1. **Kambiyo vasfı (m.170/a)**: Senedin kambiyo senedi sayılması için zorunlu şekil şartları aranır; eksikse senet kambiyo vasfını taşımaz, takip iptal edilir. Bu husus süresiz şikâyet kapsamında değerlendirilir.
+2. **Takip talebi ve ödeme emri (m.168)**: Borçluya 5 gün içinde borca/imzaya itiraz, 10 gün içinde ödeme veya mal beyanı bildirilir; itiraz icra mahkemesine yapılır ve kural olarak **takibi durdurmaz** (m.169, m.169/a — ancak teminatla durdurma mümkündür).
+3. **İmzaya itiraz (m.170)**: 5 gün içinde icra mahkemesine; mahkeme inceleme yapar, haksız çıkan taraf aleyhine tazminat ve para cezası gündeme gelir.
+4. **Borca itiraz (m.169, m.169/a)**: İtirazın esası icra mahkemesinde incelenir; itiraz yerinde görülürse takip durur.
+5. **Yetki ve hamillik**: Senet bedeli, vade, faiz başlangıcı (TTK) ve hamilin müracaat hakkı (protesto/ibraz şartları) denetlenir.
+6. **Ara sonuç**: Senedin geçerliliği, takibin durup durmayacağı ve teminat/tazminat riski belirlenir.
+
+## Çıktı modülleri
+- Senet vasfı kontrol listesi (zorunlu unsurlar + ciro).
+- Kambiyo takip talebi taslağı / itiraz dilekçesi.
+- Teminatla durdurma ve tazminat risk notu.
+
+## Plugin bağlamı
+
+Bu beceri `icra-iflas-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

@@ -1,0 +1,139 @@
+---
+name: ctx
+description: Codebase intelligence and evidence-driven governance with the indexed ctx CLI. Use when exploring an unfamiliar repository, locating symbols or callers, checking for existing implementations, estimating change impact, enforcing architecture rules, scoring a branch, finding hotspots or duplication, or analyzing codebase-health trends across commits and releases.
+---
+
+# ctx — code intelligence and governance
+
+Use ctx's indexed symbol and relationship model before text-only search. Treat its quality metrics as
+evidence to investigate, not automatic proof that code is wrong.
+
+Exit codes are `0` clean, `1` findings, `2` operational error, and `3` only for an unmet
+`ctx harness compat` version requirement. Never report a gate as passed after an operational error.
+
+## Keep the index fresh
+
+```bash
+ctx index            # incremental; run after pulling or material edits
+ctx index --force    # full rebuild after schema changes or corruption
+```
+
+## Route the question
+
+| Question | Start with |
+|---|---|
+| How is this repository organized? | `ctx map --budget 2000` |
+| Where is a symbol or concept? | `ctx query find`, `ctx search`, `ctx source` |
+| What depends on this code? | `ctx query callers`, `ctx query impact` |
+| Does an implementation already exist? | `ctx similar`, then `ctx duplicates` |
+| Did this branch make quality worse? | `ctx score --against <base>` |
+| Does this change violate policy? | `ctx check --against <base>` |
+| Where is current maintenance pressure? | `ctx hotspots` |
+| Is health changing across commits? | `ctx sql --snapshots=<dir>` |
+
+## Load the verified recipe for the problem
+
+The cookbook pages are executable workflows with observed limitations, not command advertisements.
+Open the matching page when the task needs more than the routing command:
+
+| Symptom | Recipe |
+|---|---|
+| Unfamiliar repository | [Orientation](https://docs.agentis.tools/docs/cookbook/unfamiliar-codebase) |
+| Context is too large or incomplete | [Smallest useful context](https://docs.agentis.tools/docs/cookbook/smallest-useful-context) |
+| Behavior may already exist | [Existing implementations](https://docs.agentis.tools/docs/cookbook/find-existing-implementations) |
+| A small edit may have hidden consumers | [Blast radius](https://docs.agentis.tools/docs/cookbook/blast-radius) |
+| Implementing with an uncertain working set | [Evidence-backed implementation](https://docs.agentis.tools/docs/cookbook/evidence-backed-implementation) |
+| Failing test in a large subsystem | [Focused debugging](https://docs.agentis.tools/docs/cookbook/debug-failing-test) |
+| Large branch review | [Risk-routed review](https://docs.agentis.tools/docs/cookbook/review-large-branch) |
+| PR gate inherits old debt | [PR governance](https://docs.agentis.tools/docs/cookbook/pr-governance) |
+| Gate blocks a legitimate change | [Gate recovery](https://docs.agentis.tools/docs/cookbook/gate-recovery) |
+| Fork PR needs a published report | [Untrusted CI](https://docs.agentis.tools/docs/cookbook/untrusted-ci) |
+| Boundaries are eroding | [Architecture drift](https://docs.agentis.tools/docs/cookbook/architecture-drift) |
+| The same code keeps changing | [Chronic hotspots](https://docs.agentis.tools/docs/cookbook/chronic-hotspots) |
+| High complexity may be intentional | [Intentional complexity](https://docs.agentis.tools/docs/cookbook/intentional-complexity) |
+| Duplication is growing | [Duplication trajectories](https://docs.agentis.tools/docs/cookbook/duplication-trajectories) |
+| Health direction or release decision | [Continuous health](https://docs.agentis.tools/docs/cookbook/continuous-health) and [release health](https://docs.agentis.tools/docs/cookbook/release-health-report) |
+
+Use each page's **Quickest version** only when its assumptions are already satisfied. Otherwise
+follow the full evidence loop and retain the page's “What worked, and what did not” limitations.
+
+## Explore before editing
+
+```bash
+ctx map --focus <path-or-symbol> --budget 3000
+ctx query find <name>
+ctx query callers <symbol>
+ctx query deps <symbol>
+ctx query impact <symbol>
+ctx source <symbol>
+ctx explain <symbol>
+ctx similar "<intended behavior>"
+```
+
+Disambiguate common symbol names with `--file` or `--kind`. Verify security-sensitive conclusions
+against source.
+
+## Evaluate a change
+
+```bash
+ctx index
+ctx check --against HEAD --json
+ctx score --against main --fail-on "check_violations>0"
+ctx duplicates --against main
+```
+
+Use the repository's actual merge base instead of assuming `main` when it differs. Separate existing
+debt from findings introduced by the change. Do not edit `.ctx/rules.toml` to make a gate pass.
+If a gate is disputed, preserve its command, refs, JSON, stderr, and exit code; verify the finding
+against source and use the gate-recovery recipe instead of weakening policy.
+
+## Analyze health over time
+
+Longitudinal questions require snapshots captured with a DuckDB-enabled ctx build:
+
+```bash
+ctx sql --snapshots=../snapshots/snapshots "
+SELECT count(*) AS snapshots,
+       min(committed_at) AS first_commit,
+       max(committed_at) AS latest_commit
+FROM snap.meta;"
+```
+
+Then compare both totals and normalized metrics. Useful denominators include file count, symbol count,
+and duplicate pairs per 1,000 symbols. Record the commit range, ctx writer versions, snapshot count,
+and active architecture policy with the result.
+
+When a trend looks suspicious:
+
+1. Confirm it persists across more than one commit.
+2. Correlate it with repository size, churn, fan-out, duplication, and violations.
+3. Find the commit where it changed.
+4. Inspect the responsible files and symbols with `map`, `source`, `callers`, `deps`, and `impact`.
+5. Classify it as intentional, likely accidental, or insufficient evidence.
+6. Recommend action only after understanding ownership and behavior.
+7. Re-run the measurement after any change.
+
+Use the [continuous codebase health cookbook](https://docs.agentis.tools/docs/cookbook/continuous-health)
+for the CI data-branch workflow, normalized SQL series, and a real ctx-on-ctx case study.
+
+## Interpret metrics carefully
+
+- Rising total complexity can reflect repository growth; check averages and concentration.
+- A high-complexity parser, state machine, transaction boundary, or orchestrator may be appropriate.
+- Similar tests, platform adapters, enum renderers, or generated structures may be intentionally
+  explicit.
+- Complexity combined with sustained churn is stronger evidence than complexity alone.
+- A zero violation count is meaningful only when active rules cover the intended architecture.
+- Never refactor solely to lower a score.
+
+Report which evidence supports a recommendation and what uncertainty remains.
+
+## Recommended agent loop
+
+1. Orient with `ctx map`.
+2. Find existing code and inspect impact before writing.
+3. Reindex and check policy after edits.
+4. Score the complete change before finishing.
+5. Use snapshot history for trend questions, not for judging one pull request.
+
+Never edit generated ctx hooks or plugin files. Regenerate them with `ctx harness init`.

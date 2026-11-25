@@ -1,0 +1,81 @@
+---
+name: init-slack
+description: Configure or rotate the Slack bot integration for AI Workflow notifications (bot token, channel ID, signing secret). Use for "set up slack bot", "rotate slack token", "change slack channel", "configure ai-workflow slack".
+---
+
+# Initialize Slack
+
+Configures the Slack bot AI Workflow uses to post status updates (run started, PR opened, run failed, etc.) to a single channel.
+
+> **Canonical reference:** [SETUP.md section 2.3](../../../SETUP.md#23-slack) holds the facts and constraints for the Slack app, and section 9 covers the slash command. This skill is the procedure; when the two disagree, SETUP.md wins and this skill gets updated.
+>
+> If you want full project setup (Jira + VCS + Agent + Slack + Neon + deploy), invoke `init-env` instead. This skill only handles Slack.
+
+Slack is an integration (ADR-010). The variables below still configure it, and a deployment that already sets them needs nothing done. The alternative, which needs no redeploy, is the **Integrations** page in the dashboard: open the Slack card, paste the same values, press **Test**. Either way the card is where an admin sees whether it is connected, switches it off, and reads its two health checks.
+
+## Precondition
+
+`apps/worker/.vercel/project.json` must exist: the worker is linked from `apps/worker` (SETUP.md section 3), and this skill's commands run there. If missing:
+
+```
+ERROR: no Vercel project linked. Run `vercel link` first, or invoke `init-env`
+for the full first-time setup.
+```
+
+Halt.
+
+## Step 1: Bot app and token
+
+If an AI Workflow Slack app already exists in the workspace, the user just needs the bot token and a channel ID: skip to step 2.
+
+Otherwise, walk the user through `references/bot-app-setup.md` to create the Slack app with the right scopes.
+
+## Step 2: Collect values
+
+Ask:
+
+- `CHAT_SDK_SLACK_TOKEN`: bot token, starts with `xoxb-`
+- `CHAT_SDK_CHANNEL_ID`: channel ID like `C0123456789` (not `#channel-name`)
+- `SLACK_SIGNING_SECRET`: needed only for the `/ai-workflow` slash command. App settings → **Basic Information** → **App Credentials** → **Signing Secret**. Used to verify inbound `/ai-workflow` slash command requests. See `references/slash-commands.md` for the full slash-command setup.
+- `SLACK_ALLOWED_USER_IDS`: optional. Comma-separated Slack user IDs (`U…`) allowed to run `/ai-workflow`. Defaults to empty, which lets anyone in the workspace run the slash command. Only ask if the user wants to restrict access.
+
+### Finding the channel ID
+
+The user-friendly `#channel-name` doesn't work: AI Workflow needs the `C…` ID. Two ways to find it:
+
+- Open the channel in Slack web → URL ends in `/C0123456789`. That's the ID.
+- Right-click channel in Slack desktop → "View channel details" → bottom of the modal shows the ID.
+
+The bot must be invited to the channel: `/invite @ai-workflow` from inside the channel. Otherwise Slack answers `not_in_channel`.
+
+## Step 3: Emit paste-template
+
+```bash
+CHAT_SDK_SLACK_TOKEN=<value>
+CHAT_SDK_CHANNEL_ID=<value>
+SLACK_SIGNING_SECRET=<value>
+```
+
+If restricting slash commands to specific users:
+```bash
+SLACK_ALLOWED_USER_IDS=U0123,U4567
+```
+
+Tell the user to paste into Vercel → Project Settings → Environment Variables (all three environments), save, and reply when done. A variable takes effect on the next deployment; values saved on the Integrations page take effect at once.
+
+## Step 4: Register the slash command
+
+After the env vars are saved and the project has been deployed at least once, the operator must register the slash command in Slack:
+
+- Slash Commands → **Create New Command** → `/ai-workflow`
+- Request URL: `https://<your-vercel-domain>/webhooks/slack`
+- Reinstall the app so Slack picks up the new command
+
+Full walkthrough in `references/slash-commands.md`.
+
+## Don'ts
+
+- **Don't accept a `xoxp-` user token.** AI Workflow needs a bot token (`xoxb-`). User tokens have different permission semantics and will silently fail in some adapter paths.
+- **Don't accept a channel name (`#whatever`) as the channel ID.** The Slack API requires the ID. Save the user the silent-failure debug session.
+- **Don't print the token after collecting it.** Reference by name only.
+- **Don't leave the channel unset.** The token and the channel are required together: without the channel the integration reports what is missing and stays disconnected rather than accepting messages and dropping them.

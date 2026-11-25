@@ -1,0 +1,115 @@
+---
+name: bug-report
+description: Quick bug report in Jira. Invoke via /bug-report. Gathers data, shows a preview, creates the defect in Jira after confirmation.
+disable-model-invocation: true
+allowed-tools:
+  - AskUserQuestion
+  - mcp__atlassian__jira_create_issue
+  - mcp__atlassian__jira_update_issue
+  - mcp__atlassian__jira_search_fields
+  - mcp__atlassian__jira_get_field_options
+  - mcp__atlassian__jira_get_issue
+---
+
+You help file a bug in Jira quickly. Follow this algorithm:
+
+## 0. Project configuration (fill in for your Jira)
+
+The values below are an example; adapt them to your instance (right here or in the project's `CLAUDE.md`):
+
+- **Default project:** `PROJ`
+- **Issue type for a defect:** `Bug` (check the exact type name in your project - in localized instances the type may be named differently, e.g. "Defect"/«Дефект» in Russian ones)
+- **Priority values:** as in your Jira (e.g. Highest / High / Medium / Low - or localized)
+- **Required custom fields:** in many projects, issue creation fails without them. Example format:
+  - `customfield_XXXXX` (Team): `"..."`
+  - `customfield_XXXXX` (Detection environment): `{"value": "Test"}`; for a bug found in production - `{"value": "Prod"}`
+  Find your fields and their allowed values via `jira_search_fields` and `jira_get_field_options`, or inspect the filled fields of a colleague's recent defect via `jira_get_issue`.
+  Two common traps. First, the write format does not match the read format - some fields accept a plain string only and reject `{"value": ...}` with a "value not found" error, even though reading the very same field returns an object; do not copy what you read straight back into a write. Second, the security level field (`security`) is mandatory in restricted projects but is not always named in the error message. Once you have a working set, record it in your local skill or project memory - otherwise every defect starts with the same investigation.
+
+## 1. Data gathering
+
+If the user passed the bug description in the arguments - use it.
+If not - ask questions via AskUserQuestion:
+
+Required data:
+- What happened (actual result)
+- What was expected (expected result)
+- Steps to reproduce
+- Environment (environment name, browser, device)
+- Location: URL, block or element (by a visible attribute), where it reproduces and where it does not (other pages of the same type, browsers, viewports). A generalization like "everywhere" only after checking every place, otherwise "checked on A and B". In the description the location goes into the steps (URL) and the actual result (the block, where it happens and where not)
+
+Optional:
+- Project (default - from the configuration)
+- Priority (if not given, derived from impact, see section 2)
+- Assignee
+
+## 2. Ticket format
+
+Type and priority - per the configuration (section 0).
+
+**Priority comes from impact.** The agent tends to inflate a finding: the defect is real, so it must be "critical". So before the preview, answer with facts from the run:
+- who is affected right now: every user of the page / one viewport or browser / one state or scenario; production or only the test environment (if the feature is not yet released or is switched off in production, it is the test environment);
+- what the user loses: cannot complete an action (submit a request, pay, sign in) / completes it with a workaround / sees a visual mismatch that does not affect the action.
+
+Priority from the answers (levels from section 0): a key action fails in production or in a task headed for release - High; the action works with a workaround or a narrow slice is affected - Medium; a visual mismatch - Low. If you could not establish the impact (no production access, unclear who is affected), say so, state what is needed to establish it, and mark the priority "for the user to decide". If the user set the priority themselves, use it, but still show the impact.
+
+Summary: a brief description of the problem, no [BUG] prefixes or similar.
+
+Description structure - plain text with bold headers:
+
+```
+**Steps to reproduce:**
+
+1. Step 1
+2. Step 2
+
+**Actual result:**
+
+Description of what happens.
+
+**Expected result:**
+
+Description of what should happen.
+
+**Environment:**
+
+Environment/browser/device.
+```
+
+Add a **Preconditions:** block (before the steps) ONLY when the bug cannot be reproduced without it: a specific role or account, a data state (a filled cart, a placed order), an enabled feature flag, a completed previous step of the flow. Formal phrases like "the block is deployed to the test environment", "the page is available", "the browser is open" are noise, don't write them: if the precondition follows from the first step or from the very fact of testing, there should be no block.
+An **Additional info:** block (at the end) - only on the user's explicit request. Run-internal context (test cycle number, test case keys, finding numbers from the report) does not go into the ticket.
+
+## 3. Text rules
+
+- Do not use markdown headings (##), only **bold** - Jira does not render the description as markdown; check the rendering on your instance
+- Do not use tables in the description
+- Do not use backticks (inline code) in the description or comments: write API paths, endpoints, methods and field values as plain text. Depending on the tracker they render as monospace "code" chunks in the middle of a sentence or as literal backticks. Before the preview and before create/update, scan the text for backticks
+- Language - whatever is standard in your issue tracker
+- Write browser names the user-facing way: Chrome (not Chromium), Safari (not WebKit). This also applies to the test engine (run in Chromium → write "Chrome", in WebKit → "Safari")
+- Do not mention in the description file names that are not attached to the ticket: CMS image names, asset names, screenshots from the run's working folder, logs. The reader takes them for attachments and goes looking for something that does not exist. Identify the element by a visible attribute (caption, heading, position), not by the file name; if the developer really needs the file name - attach the file itself or give a link to it
+- Do not link the created bug to other tickets automatically - only on explicit user request
+
+## 4. Preview before creation
+
+ALWAYS show the user the full ticket text and wait for confirmation before calling mcp__atlassian__jira_create_issue. Preview format:
+
+```
+**Type:** Bug
+**Priority:** Medium
+**Impact:** <who is affected right now>; <what the user loses> → <why this priority>   (preview only, not sent to Jira)
+**Assignee:** (if specified)
+**Project:** PROJ
+
+**Summary:** ...
+
+**Description:**
+(full description text)
+```
+
+Only after explicit confirmation ("yes", "ok", "create it") - call the creation API.
+
+## 5. After creation
+
+Output the key and link of the created ticket. If the assignee was not set - warn the user.
+
+**Screenshots:** if the session has bug screenshots (file paths) - after creation, attach them via `mcp__atlassian__jira_update_issue` (the `attachments` parameter, comma-separated paths). The screenshot must be targeted (the problem element up close), not a fullPage shot of the whole page. If no suitable screenshot exists - suggest the user take one and attach it.

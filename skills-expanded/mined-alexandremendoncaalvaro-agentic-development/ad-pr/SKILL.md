@@ -1,0 +1,153 @@
+---
+name: ad-pr
+description: 'Open a pull request in the repo body shape once the owner approves the draft. Use on "open a PR".'
+summary: Open a GitHub pull request with a uniform body shape (Summary / Test plan / Links). Four phases — preflight (`gh` auth + branch pushed), scope assembly, draft body, open + report URL. Title format = Conventional Commits.
+allowed-tools: Read, Bash, Glob, Grep
+---
+
+# /ad-pr
+
+Implements ADR-0024 and ADR-0032. Opens a PR via `gh pr create` with a uniform body shape (Summary / Test plan / Links). Helper posture on scope, links, and body drafting — warnings surface without refusing. Hard gate on local quality: the skill refuses to open a PR when pre-push / CI-mirror gates exit non-zero (WORKFLOW §11 — CI failure is a local gate gap). No `--no-verify` symmetric bypass; users who need to open a red draft invoke `<github-command> pr create --draft` directly.
+
+## Phase 0 — Scope
+
+This skill is model-invocable (ADR-0084): the agent may run it when the work is ready, and the outward steps stay behind the owner's approval given in this session: the push in Phase 1 and the draft in Phase 3 are each confirmed once, recommended answer first, before the pull request is opened.
+
+Not for:
+
+- The branch has uncommitted or unsplit work → `/ad-commit` first.
+- The user wants to merge an already-open PR → `/ad-merge`.
+
+**Release-plan authorization.** When `/ad-release` delegates with a
+`release-plan` approval receipt, require its current `release-plan.mjs` output to
+carry the same digest and `planAuthorized: true`. This receipt
+satisfies this skill's outward-action approval only for the release target named
+by that plan. All preflight and local quality gates below still apply.
+
+## Phase 1 — Preflight
+
+Run the deterministic preflight from the consumer repository root:
+
+```bash
+node .claude/skills/ad-pr/scripts/gh-preflight.mjs pr
+```
+
+If this skill was loaded from another base directory, substitute that base. Execute the script; do not re-derive its probes in prose. Its JSON reports `github` (`command`, `installed`, `authenticated`), `git` (`branch`, `upstream`, `aheadOfUpstream`), `baseBranch`, and structured `errors`. It performs read-only `gh` / `git` probes; it never switches GitHub accounts. Before execution, consult the repository's binding docs: if they name an approved **executable** frontend wrapper, run `AGENTIC_GH=<wrapper> node .claude/skills/ad-pr/scripts/gh-preflight.mjs pr`; otherwise run the command above. Never use `gh auth switch`.
+
+Let `<github-command>` be the returned `github.command`. Use exactly `<github-command>` for every later GitHub read or write in this workflow; never substitute bare `gh`, which could select a different account than the preflight.
+
+If `github.installed` is false, distinguish the failure before offering recovery:
+
+- When `github.command` is not `gh`, surface: `The configured wrapper <github-command> is unavailable. Restore the approved executable wrapper, then rerun this skill.` Do not fall back to a different frontend.
+- Otherwise surface: `GitHub CLI not installed. Install: https://cli.github.com/, then rerun this skill.`
+
+If `github.authenticated` is false, surface: `Run <github-command> auth login, then rerun this skill.` **Soft-fail** — do not silently fall back to `git push` only. Surface every remaining `errors` entry as a partial-preflight fact; do not claim a failed probe passed.
+
+If `git.upstream` is null or `git.aheadOfUpstream` is greater than zero, prompt the user:
+
+> Branch not pushed to origin. Run `git push -u origin <branch>` first? (y/n)
+
+If they confirm, run the push and continue.
+
+Use `baseBranch` as the base. If it is null because the read-only GitHub probe failed, default to `main` and say that fallback explicitly.
+
+Run local gates before opening the PR (WORKFLOW §11 — CI failure is a local gate gap). The gate check runs **after** `git push` has landed the branch (so the pre-push hook has already fired once) and **before** `gh pr create` — the goal is to catch the case where a developer skipped the pre-push hook, ran on a different matrix leg than CI, or wired the runner incompletely, and to refuse to open the PR against a red tree:
+
+1. **Detect the pre-push tier.** Read `lefthook.yml`, `.husky/pre-push`, `.pre-commit-config.yaml` (pre-push stage), or `.git/hooks/pre-push` to extract the commands the pre-push hook runs.
+2. **Run them explicitly.** Do not rely on `git push` firing the hook — the hook already ran (or will run) on push. Running the same commands here catches gaps *before* the PR opens and burns CI minutes. If no hook runner is detected, fall back to reading `.github/workflows/*.yml` (or the detected CI surface) and run its test / lint / typecheck / build commands locally.
+
+   When `ad-hooks`' receipt gate is installed (`<ad-hooks-dir>/scripts/gate-run.mjs` exists), record the passing run so the gate sees it before `gh pr create`: `node <ad-hooks-dir>/scripts/gate-run.mjs record --command "<the commands run>" --exit 0`. Record only a run that passed.
+3. **Refuse on red.** If any gate command exits non-zero, refuse to open the PR. Surface: `Pre-push gate <name> failed: <exit-code output>. Fix locally before opening the PR — pushing red-CI diffs burns cloud minutes and normalizes broken main. Rerun /ad-pr after fixing.` Do not offer `--no-verify` or a bypass flag; WORKFLOW §11 is binding.
+4. **Warn on absent gates.** If neither a hook runner nor a CI surface exists, surface: `No pre-push or CI config detected — opening PR without a local gate check. Wire /ad-hooks so subsequent PRs get preflight coverage.` Continue.
+
+Matrix awareness: if CI runs a multi-version matrix (e.g., Node 20 + 22) and local runs one version, note the gap in the preflight report but do not refuse — matrix mirroring belongs to `/ad-hooks`, not to every PR open. Refuse only on outright red, not on matrix gaps.
+
+## Phase 2 — Scope assembly
+
+Gather context:
+
+```bash
+git log <base>..HEAD --pretty='%h %s'
+git diff --stat <base>...HEAD
+```
+
+Infer the PR title:
+
+- **Dominant Conventional Commits type** — most frequent type across `<base>..HEAD`. If one commit, use its type / scope / subject directly. If multiple commits and one type dominates, use that. If mixed, surface to the user: "Branch mixes `feat:` + `fix:`. Use which type for the PR title?"
+- **Scope** — most common scope across the commits (or empty if inconsistent).
+- **Subject** — synthesized from the changes, ≤70 chars, imperative.
+
+Detect back-links:
+
+- Scan commit message bodies for `task-NNNN`, `ADR-NNNN`, `spec-NNNN`, `#<issue>`, `Closes`, `Fixes`, `Per`, `See`.
+- Scan changed file paths for `doc/tasks/NNNN-*.md`, `doc/adr/NNNN-*.md`, `doc/specs/NNNN-*.md` — those are the artifacts this PR implements or updates.
+
+## Phase 3 — Draft body
+
+Apply this template:
+
+```
+## Summary
+- <1-3 bullets — the WHY, not the what>
+
+## Evidence
+- Before: <failing test run, output, or screenshot>
+- After: <passing test run, output, or screenshot>
+
+## Merge danger
+- <one-way or two-way door>; blast radius: <who or what this can break>
+
+## Test plan
+- [ ] <test 1>
+- [ ] <test 2>
+
+## Links
+- <task / spec / ADR / issue back-links>
+```
+
+Rules:
+
+- **Summary:** explain motivation. The commit list and diff already show the what. 1-3 bullets max.
+- **Evidence (optional):** a before and after a reviewer can trust without re-running — the failing then passing test, the command output, a screenshot for a visual change. Skip it — and omit the heading — when the test plan already shows the change working. **Never fabricate evidence.**
+- **Merge danger (optional, recommended for anything not trivially reversible):** say whether the change is a two-way door (cheap to roll back) or a one-way door (a migration, a published artifact, a deleted resource), and its blast radius — who or what it can break. A reviewer judges risk from this line without reading the diff. Omit the heading when you cannot state it from the diff; never guess a door.
+- **Diagram (optional):** one small diagram (a sequence, a call tree, a file-tree diff) in the summary when it explains the change better than prose; never more than the question needs.
+- **Test plan:** concrete steps a reviewer can run. `npm test`, manual smoke, integration check. Skip the section if there is genuinely nothing to test (a pure docs PR). **Never fabricate test items.**
+- **Links:** every detected back-link from Phase 2. Skip the section if there are none. **Never invent links.**
+
+Surface the draft to the user for approval before opening. The user may edit or
+accept. Under a valid release-plan receipt, surface the exact draft and continue
+without another question when it matches the approved release target; a material
+target or body change invalidates the receipt and returns to normal approval.
+
+## Phase 4 — Open + report
+
+Call `<github-command> pr create` with HEREDOC body:
+
+```bash
+<github-command> pr create --title "<type>(<scope>): <subject>" --body "$(cat <<'EOF'
+## Summary
+- ...
+
+## Test plan
+- [ ] ...
+
+## Links
+- task-NNNN, ADR-NNNN, #issue
+EOF
+)"
+```
+
+Capture the returned PR URL and report it to the user.
+
+If `gh pr create` fails (no GitHub remote, branch already has an open PR, etc.), surface the error verbatim and stop. Do not retry blindly.
+
+## Output contract
+
+The output is an opened PR on GitHub. The skill returns the PR URL.
+
+## Next
+
+- After PR opens and CI starts: monitor via `<github-command> pr checks`.
+- When CI is green: `/ad-merge` to evaluate and merge.
+- If a fresh-context review is wanted before merge: `/ad-review` (WORKFLOW §10) — the review artifact lands in `.agentic/reviews/` and `ad-merge` checks for it.
+- If preflight surfaced "no CI workflow file": `/ad-hooks` (when installed) covers local gates; remote CI is a separate concern outside this skill.

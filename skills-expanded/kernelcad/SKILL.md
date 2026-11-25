@@ -1,0 +1,72 @@
+---
+name: kernelcad
+description: kernelCAD entry decision tree — what skill to load when, universal conventions that apply everywhere. Load this FIRST; it points at the right specialty skill for your task.
+---
+
+# kernelCAD
+
+A two-tier skill system. **Load `kernelcad-authoring` to write or modify any `.kcad.ts` model.** Add specialty skills as the task demands.
+
+## Decision tree
+
+- Authoring or editing `.kcad.ts` geometry → load `kernelcad-authoring`.
+- Real / production / complex enclosure, gearbox, bearing housing, robot arm, NEMA plate, shaft/bearing → load `kernelcad-authoring` (+ `kernelcad-assemblies` / `kernelcad-features` / `kernelcad-parts` as needed); `lookup_cookbook` via the industry→cookbook table in `kernelcad-mcp` (housing / mechanism / scissor-lift / 4-DOF arm / NEMA / shaft-bearing / sheet-metal / enclosure lid); prefer `design_loop` until green (`docs/agent/adam-quality-bar.md`).
+- Building from a reference photo or visual brief → also load `kernelcad-from-reference`.
+- Building from an engineering drawing PDF → call `drawing_to_cad`, then load `kernelcad-from-reference` for its ledger and fidelity rules.
+- Adding fillets, chamfers, shells, holes, cutouts → also load `kernelcad-features`.
+- Editable parameters / set_param / live sliders → also load `kernelcad-params`.
+- Multi-part with joints / mates / connectors → also load `kernelcad-assemblies`.
+- Need an off-the-shelf fastener, bearing, motor, header, or connector → also load `kernelcad-parts`.
+- Checking FDM printability or print orientation (overhangs, bridges, nozzle-relative walls), slicing a model to G-code, or sending G-code to a real network printer (OctoPrint/Moonraker/Bambu) → also load `kernelcad-print`.
+- Freeform NURBS surfaces, NURBS curves, Coons patches, multi-section sweeps, G2 fillet continuity, or freeform 2D path outlines (`nurbsSurface`, `surfaceFromCurves`, `surfaceFromBoundary`, `nurbsCurve`, `spline3d`, `hermiteG2`, `variableSweep`, `fillet({ continuity: 'G2' })`, `path().spline(...)`, `path().nurbsSegment(...)`, `path().hermiteG2(...)`) → also load `kernelcad-nurbs`.
+- Mechanical patterns (linear / circular / grid replication of a sub-feature) → also load `kernelcad-patterns`.
+- Folded sheet-metal parts (brackets, channels, panels, bend tables, flat patterns) → also load `kernelcad-sheet-metal`.
+- Bent tubes and fluid lines between ports (hydraulic, fuel, oil, coolant; bend radius, clearance, tube bend tables) → also load `kernelcad-tubes`.
+- Signed-distance fields (smooth-blended primitives, organic shapes via `sdf.*` + `materialize`) → also load `kernelcad-fields`.
+- Lattice infill — gyroid / Schwarz-P / diamond TPMS cores inside a solid skin, graded by depth, hole walls or an FEA stress field (`body.lattice({...})`) → also load `kernelcad-fields`.
+- Exporting an assembly to URDF for a motion planner or simulator → also load `kernelcad-urdf`.
+- Exporting an assembly to a UsdPhysics stage for a GPU physics simulator (`format: 'usd-isaac'`) → also load `kernelcad-urdf` (USD section).
+- Adding planning groups / end-effectors / allowed-collision data on top of a URDF → also load `kernelcad-srdf`.
+- Exporting an assembly with closed kinematic loops or a native ball joint → also load `kernelcad-sdformat`.
+- Producing a 2D engineering-drawing sheet (third-angle views, hidden lines, dimensions, title block) → also load `kernelcad-drawings`.
+- Introspecting a running model via MCP (`inspect({ of: 'features' })`, edit ops, diagnostics) → load `kernelcad-mcp` instead of authoring.
+- Feasibility gates on moving assemblies — collision sweeps across joint ranges, IK reachability, mounting-hole consistency, static-load capacity, gravitational actuator-hold checks, tolerance-range sweeps (`checkSweptCollision`, `checkReachable`, `checkMountingHoleConsistency`, `checkLoadCapacity`, `checkStaticHold`, `sweepTolerance`) → also load `kernelcad-kinematic`.
+- An evaluation reported an error, a gate failed, or a feature came back degraded in `featureHealth` → load `kernelcad-repair` for the bounded repair loop (`why_did_this_fail` → `repair_script`).
+- Will this part hold this load? Structural evidence — peak von Mises stress, deflection, safety factor against yield, named hot-spot regions, stress heatmaps — and a gate that fails the build when the margin is not met (`shape.feaStudy({...})`, `run_fea`, `fea_summary`) → also load `kernelcad-fea`.
+- How much pressure does this duct, pipe or manifold cost, how does the flow split between outlets, or how much drag does this part see in a stream? Steady incompressible CFD evidence from OpenFOAM — pressure drop, per-outlet flow, Cd / Cl, Reynolds number and convergence verdict, mid-plane velocity PNG (`shape.cfdStudy({...})`, `run_cfd`, `cfd_summary`, `kernelcad cfd run`) → also load `kernelcad-cfd`.
+
+## Key globals available today
+
+- `referenceImage(path, opts)` — show a reference photo as a plane overlay in the Studio viewport. Display only; hidden during scoring. Supports `.png`, `.jpg`, `.jpeg`, `.webp`. See `kernelcad-authoring` for the full signature.
+- `Shape.finish(name, opts?)` — apply a NAMED material finish (brass, anodized-black, abs, glass-tinted, …), or an engineering material grade (`aluminum-6061`, `mild-steel`, `nylon`) for that grade's default finish. The primary way to make a part look like a real material: you name the material, not BRDF floats. Expands to the same PBR record `.material()` writes. `opts.color` overrides the hue; `opts.face` scopes to a labelled face. Must be called on leaf parts before they enter a boolean. See `kernelcad-authoring` Materials section for the full vocabulary.
+- `Shape.material(opts)` — ADVANCED escape hatch: raw PBR floats (baseColor, metalness, roughness, clearcoat, clearcoatRoughness, ior, transmission) for glass/anisotropy/textures no `.finish()` token covers. Prefer `.finish()` for a named material. Must be called on leaf parts before they enter a boolean.
+- `filletPolygon(points, radius, opts?)` — round every corner of a closed 2D polygon and return points for `extrudePolygon` / the prism helpers. Radius is clamped per corner; CW and CCW both work.
+- `prismSide(points, halfY?)` / `prismSideY(points, y0, y1)` / `prismFront(points, x0, x1)` / `prismPlan(points, z0, z1)` — mask prisms for side / front / plan polygons, replacing hand-written extrude→rotate→translate chains.
+- `extrudeRoundedRect(..., { axis: 'x' | 'y' | 'z' })` — pick the extrusion axis instead of rotating the result; `'x'` puts width on Y / height on Z, `'y'` puts width on X / height on Z.
+
+## Universal conventions
+
+- **Units**: millimetres, degrees, Z-up right-handed.
+- **Return rule**: every `.kcad.ts` script `return`s a single `Shape` (or `Scene` from `assembly().model()`); without a `return` the last created shape is used and evaluate warns `script.no-return`.
+- **Diagnostic-anchored hints**: when a kernelCAD tool throws, the error carries a `hint` field tied to a diagnostic code (`feature.*`, `assembly.*`, etc.). Read the hint — it carries the fix.
+- **Clarify load-bearing intent before generating**: when a generation request is ambiguous on parameters the design hangs on — overall dimensions, units, symmetry, part count, fit/clearance targets — ask 1–3 targeted clarifying questions BEFORE authoring geometry. Guessing a load-bearing number produces a confidently wrong model. If you proceed without answers, state each assumption explicitly and encode it as a named `param()` so it stays visible and editable.
+- **Words to CAD / Words to geometry**: preserve the prompt-to-geometry mapping. Important nouns and constraints from the user's words should become named source sections, parameters, parts, connectors, materials, tests, or visible artifacts; do not reduce the job to untraceable hand-tuned shapes.
+- **Source-first CAD**: the `.kcad.ts` file is the design source of truth. Generated screenshots, videos, STEP, STL, and score JSON are evidence/artifacts, not editable source. Change source, then regenerate explicit targets.
+- **Derived artifacts are not source-of-truth**: exported files (`.step`, `.stl`, `.dxf`, `.3mf`, `.glb`, `.obj`, `.usd`, `.svg` drawing sheets, `.urdf`, `.srdf`, `.sdf`) are evidence and deliverables, not editable targets. To change geometry, edit the `.kcad.ts` script and re-export. Do not hand-edit derived files.
+- **`@kc[...]` topology refs are the canonical handoff format**: faces, edges, vertices, and connectors are addressable as stable string refs of the form `@kc[<owner>/<kind>/<refName>]` (with optional `#modifier` for a sub-aspect of an entity, e.g. `#normal`, `#axis`, `#center`). Emit them from `inspect({ of: 'faces' })` / `inspect({ of: 'edges' })` / `inspect({ of: 'assembly' })` outputs; paste them into `hole`, `fillet`, `add_mate`, `add_connector`, or `query({ mode: 'resolve' })`. The structured forms still work as escape hatches. Full grammar and resolution semantics live in `kernelcad-mcp/SKILL.md`.
+- **Queries are first-class**: `q.face(...)`, `q.edge(...)`, `q.connector(...)`, etc. are lazy topology-selection values that compose via set algebra (`q.union` / `q.intersection` / `q.subtraction`) and chain via `.and(...)`, `.or(...)`, `.minus(...)`, `.nth(i)`, `.asLenient()`. Strings (`@kc[...]`) are sugar over the same internal Query value — emit either form and the kernel sees one type. Use strings for simple refs (`'@kc[base/face/top]'`); use Queries when geometric narrowing (`q.closestTo`) or composition (`q.union(a, b)`) matters. Full grammar + semantics in `kernelcad-mcp/SKILL.md`.
+- **No broad regeneration**: generate only the named output needed for the task (`kernelcad render`, `kernelcad export`, demo capture, portfolio capture). Do not run directory-wide artifact refreshes unless the user asked for a release/demo rebuild.
+- **Catalog parts over fake geometry**: for real hardware such as servos, motors, bearings, fasteners, connectors, sensors, and boards, prefer `lib.fromSTEP(...)` with a recorded source/provenance over hand-modeled placeholder boxes/cylinders. Use placeholders only for blockouts or when the real part is unavailable.
+- **Validation before screenshots**: use deterministic checks first (`kernelcad evaluate`, exports, `inspect({ of: 'assembly' })`, `review_cad`, interference checks, scorer gates). Visual review is required evidence for rendered artifacts, but it does not replace geometry checks.
+- **Deterministic visual evidence**: when visual evidence matters, run `kernelcad render inspect <file> <outDir>` to produce an inspection bundle with a manifest and canonical RGB views. Add `--channels rgb,mask,depth,normals` when machine-readable object masks, depth, or view-space normals are needed. Use `--focus <names>` or `--hide <names>` to isolate feature ids or assembly part names when clutter would obscure the check. Keep richer channels in the same manifest packet; do not replace the canonical RGB views. `--shading flat` shows face normals for tessellation checks; `--screenshot-timeout <ms>` raises the headless screenshot deadline.
+
+## Mandatory visual-critique step (applies to ALL agents, every skill)
+
+If your task produced or modified any rendered artifact (`.png`, `.mp4`, `hero-frame`, demo video, score render), you MUST visually inspect it before reporting done. This is non-negotiable:
+
+1. **Read the rendered artifact yourself.** Use the `Read` tool on the PNG (your vision sees it) or sample 1–3 representative frames of an MP4.
+2. **Compare against the reference**, if one exists (a `/tmp/*.png` the user shared, the photo path your task started with, the prior hero-frame, or the explicit visual spec).
+3. **Describe what you actually see** in your final report — composition, proportions, visible defects. Not "all gates pass". Not "render complete". A one-sentence honest description: "watch is jammed against right edge, bail reads as solid disc, ribbon is a tilted plank".
+4. **If the artifact has a visible defect, DO NOT report done.** Either fix it, or report honestly: "iteration N regressed, here is what's wrong, recommend rollback".
+
+**Why this is a hard rule, not a guideline**: gate counts measure presence-of-parts (does the bail exist? is the count 96? interferences zero?), not whether the composition reads correctly. Subagent gate-success is preliminary. The human reviewer's eyes are the real scorer; the agent's `Read` of its own render is the proxy. Skipping this step has burned multiple iterations (pocket-watch 2026-05-20 shipped two regressions because gate-only verification declared success on broken compositions). The canonical iteration loop lives in `kernelcad-from-reference/image-replicator`; the rule applies whether you loaded that skill or not.

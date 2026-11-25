@@ -1,0 +1,139 @@
+---
+name: bestax-theming
+description: Customize colors, branding, dark mode, and visual tokens of an app built with @allxsmith/bestax-bulma. Use when changing the primary/brand color, recoloring components, overriding Bulma --bulma-* CSS variables, setting fonts/radius/spacing tokens, adding light/dark mode, or configuring the app-wide icon library / class prefix via ConfigProvider.
+license: MIT
+---
+
+# Theming @allxsmith/bestax-bulma
+
+`@allxsmith/bestax-bulma` wraps Bulma 1.x, which is themed through `--bulma-*` CSS custom
+properties. Theme an app by overriding the right variables — no component re-styling required.
+
+## Approach
+
+Recolor a brand color by overriding its **hue/saturation/lightness trio**
+(`--bulma-<color>-h` / `-s` / `-l`). The color itself follows all three. Its shades and variants
+follow the hue and saturation, at lightnesses the trio doesn't set. Among those, the stylesheet's
+build picked the label on a solid color (`--bulma-<color>-invert-l`) and the color's text on the
+page (`--bulma-<color>-on-scheme-l`, which for `link` is every link) for contrast with the color
+it was built with, so when the new color reads lighter or darker than the built one, set them as
+well, or labels and text lose their contrast. `Theme`'s `bulmaVars` takes both, and on an
+`isRoot` `Theme` the on-scheme one takes a value per scheme, `{ light, dark }`
+(`references/css-variables.md`, "Colors").
+
+Choose an override path:
+
+- **`Theme` component (runtime, preferred).** Exported from the package. Pass named HSL props
+  (`primaryH`, `primaryS`, `primaryL`, …) and/or `bulmaVars={{ '--bulma-*': '…' }}` for everything
+  else. Add `isRoot` to inject the variables globally at `:root` (once, at the app root); omit it to
+  scope the variables to the wrapped subtree. A `Theme` only reaches variables the component
+  inherits: Bulma declares component variables such as `--bulma-card-radius` on the component's
+  own element, so a `Theme` value for one never applies (it warns in development). Set those on
+  the component with `className` or `style` instead (see `references/css-variables.md`).
+- **Plain CSS.** Set `:root { --bulma-primary-h: …; }` (or any selector) directly.
+- **Build-time Sass.** `@use 'bulma/sass' with ($primary: #1e6b99)` when compiling Bulma's Sass.
+
+For **dark mode**, pass `colorMode` to `Theme` (`'light' | 'dark' | 'system'`). It writes Bulma's
+`data-theme` attribute on `<html>` (plus `data-<prefix>theme` inside a `ConfigProvider` with a
+`classPrefix`, which the prefixed flavors read), flipping the light/dark scheme — global, even on a scoped
+`Theme`; `'system'` follows the OS `prefers-color-scheme`. Drive it from state on the app-root
+`Theme`: `<Theme isRoot colorMode={mode}>`. `Theme` writes the attribute, and an `isRoot` Theme's
+variables, before the browser paints what it rendered, but the page can paint before the app's
+script runs at all, so the scheme of that first frame comes from `index.html`: `data-theme` on
+the `<html>` for a scheme that never changes, or an inline `<head>` script that writes the
+visitor's saved choice for a toggle (`examples/dark-mode.tsx`). A server render includes neither,
+so a server-rendered page sets what it needs from its first paint in `index.html` and CSS.
+
+## Contrast rules (dark mode is on by default)
+
+When nothing sets a `data-theme` attribute (omitting `colorMode` preserves an existing one, but
+apps that never configured it have none), Bulma follows the visitor's OS: `--bulma-text`,
+`--bulma-scheme-main`, etc. flip on a dark-mode machine even if the design never intended a dark
+theme. Custom fixed tokens (`--my-canvas: #f6f4ec`) do **not** flip — producing near-white Bulma
+text on the author's fixed light background. Apply exactly one of these rules whenever custom
+color tokens or fixed-color surfaces exist:
+
+- **Single-mode design → pin the scheme on `<html>`.** `<html lang="en" data-theme="light">` (or
+  `"dark"`) in `index.html`, so the first paint has it and an OS preference can never invert text
+  out from under the fixed palette. `<Theme isRoot colorMode="light">` alone sets it only once
+  the app's script runs, and the page can show the OS scheme before that.
+- **Both modes → no exposed fixed tokens.** Derive custom tokens from scheme variables
+  (`--my-canvas: var(--bulma-scheme-main)`) — or flip them yourself under **both** dark-mode
+  paths: `[data-theme='dark']` **and** `@media (prefers-color-scheme: dark)` scoped to
+  `:root:not([data-theme])`, since `colorMode="system"` removes the attribute (snippets in
+  `references/css-variables.md`). Alternating/tinted section bands are first-class props:
+  `bgColor="scheme-main-bis"` (then `"scheme-main-ter"`) on `Section` (also `Hero`, `Footer`,
+  `Container`, `Box`, `Card`) renders a scheme-tracking inline background — never
+  `bgColor="light"`: `light`/`white`/grey helper backgrounds are fixed colors that fight
+  dark mode. Keep the derive-from-scheme-vars CSS for other custom surfaces. `Theme
+bulmaVars` now accepts `--bulma-scheme-main`/`-bis`/`-ter` (and the `-invert` trio)
+  overrides, so one Theme re-tints every band at once.
+- **Fixed-color surface → fixed-color content.** On a surface that never changes (a dark hero,
+  a brand banner), pin the content's colors too: solid/filled buttons and explicit text colors,
+  never scheme-derived defaults or thin outlines that depend on the flipping scheme.
+
+Reach for the helper props (`color` / `textColor` / `bgColor` / `colorShade`, `textSize`,
+`textWeight`, `fontFamily`) to apply themed colors and type to individual components.
+Variant flags and value unions are component-specific — never carry one over by analogy:
+`isLight` exists on `Button`, `IconButton`, `CopyButton`, `Popover.Close`, `Notification` and
+`Tag`, but `LinkButton`, `ToggleButton` and `SegmentedControl` leave it out;
+`Tag size` is `normal | medium | large` (no `small`, unlike `Button`); `Buttons` has
+`isCentered`, `Tags` does not (center tags with `justifyContent="center"`); the verbatim
+truth table is `references/themeable-components.md`.
+
+## Quick start
+
+```tsx
+import { Theme, Button } from '@allxsmith/bestax-bulma';
+
+// Global brand theme at the app root.
+<Theme isRoot primaryH="265" primaryS="65%" primaryL="55%">
+  <App />
+</Theme>;
+
+// Themed components recolor automatically.
+<Button color="primary">Save</Button>;
+```
+
+## App-wide config (icons & class prefix)
+
+`ConfigProvider` sets app-wide options once at the root, separate from `Theme`. Wrap the app so
+you don't repeat the same prop on every component:
+
+```tsx
+import { ConfigProvider } from '@allxsmith/bestax-bulma';
+
+// Set the icon library once — <Icon> no longer needs a `library` prop.
+<ConfigProvider iconLibrary="fa">
+  <App />
+</ConfigProvider>;
+// now <Icon name="check" /> resolves as Font Awesome; no per-icon library="fa".
+```
+
+- `iconLibrary` — `'fa' | 'mdi' | 'ion' | 'material-icons' | 'material-symbols'`. `Icon` reads it
+  (`library || iconLibrary || 'fa'`), so set it here instead of on each `<Icon>`.
+- `classPrefix` — namespaces every Bulma class (e.g. `bulma-`) to avoid collisions with other CSS.
+
+Nest `Theme` and `ConfigProvider` together at the root (order doesn't matter).
+
+## References
+
+- `references/css-variables.md` — the `--bulma-*` variable map (colors, scheme/text/border, radius,
+  fonts, sizes, weights, dark mode) and all three override mechanisms.
+- `references/themeable-components.md` — which components take `color`/`size` props, the real
+  accepted values, and the shared helper props.
+
+## Examples
+
+- `examples/theme-config.tsx` — a custom brand theme at the app root, plus a scoped override.
+- `examples/dark-mode.tsx` — a light/dark toggle that keeps the visitor's choice, with the `index.html` script that writes Bulma's `data-theme` from it before the first paint.
+
+## Checklist
+
+- [ ] Recolor brand colors via the HSL trio (`*-h` / `*-s` / `*-l`), not by hard-coding hex on components. A color that reads lighter or darker than the built one also sets `*-invert-l` and `*-on-scheme-l`, through `Theme bulmaVars` (the on-scheme one per scheme, on an `isRoot` Theme) or CSS.
+- [ ] Apply a global theme once with `<Theme isRoot>` (or `:root`); use scoped `<Theme>` for one-off sections.
+- [ ] Set non-color tokens (radius, fonts, sizes) through `bulmaVars` or `:root`; a custom `--bulma-family-*` needs its font actually loaded (`index.html` `<link>` or an `@fontsource` import).
+- [ ] Implement dark mode with `data-theme` on `<html>` (plus `data-<prefix>theme` inside a `ConfigProvider` with a `classPrefix`, which the prefixed flavors read); do not expect a shipped dark-mode component.
+- [ ] Set the first paint's scheme in `index.html`: on `<html>` for a fixed scheme, from an inline `<head>` script for a saved choice.
+- [ ] Pass `color`/`textColor`/`bgColor` (not custom CSS) to color individual components.
+- [ ] Set the icon library once with `<ConfigProvider iconLibrary="…">` at the root, not `library` on every `<Icon>`.

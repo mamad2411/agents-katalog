@@ -1,0 +1,93 @@
+---
+name: vitruvius-help
+description: >
+  Quick-reference card for all Vitruvius commands, disciplines, and the shared
+  research method. One-shot display, not a persistent mode. Use when the user
+  asks for Vitruvius commands, disciplines, or the shared research method.
+  Trigger: /vitruvius-help, "vitruvius help", "what vitruvius commands", "how
+  do I use vitruvius".
+license: MIT
+metadata:
+  version: "0.1.9"
+---
+<!-- VITRUVIUS-COMPILED-SKILL:BEGIN v1 sha256=10aef9f57b1874050c1f090650753bdfcabad69d56cf10069e7da7b827d4b980 -->
+
+# Vitruvius Help
+
+Display this reference card when invoked. One-shot; do not persist anything.
+
+## What Vitruvius is
+
+An engineering research agent: discover → read → synthesize → verify → review,
+with auditable provenance.
+
+## Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/vitruvius <discipline or question>` | Smart dispatcher — routes to discipline or skill automatically. |
+| `/vitruvius:civil <question>` | Civil / structural engineering research (buildings, bridges, steel, concrete, geotech). |
+| `/vitruvius:mechanical <question>` | Mechanical engineering research (design, thermal, fluids, materials). |
+| `/vitruvius:software <question>` | Software engineering research (architecture, frameworks, security). |
+| `/vitruvius:electrical <question>` | Electrical / electronics research (power, controls, EMC). |
+| `/vitruvius:architectural <question>` | Architectural research (building science, facades, codes). |
+| `/vitruvius:verifier <claim>` | Blind Verifier — independent subagent checks claim vs evidence. |
+| `/vitruvius:compare <items>` | Source/standard/design comparison matrix. |
+| `/vitruvius:review <artifact>` | Severity-graded artifact review. |
+| `/vitruvius:audit <target>` | Claim-vs-implementation mismatch audit. |
+| `/vitruvius:summarize <doc>` | Faithful structured document digest. |
+| `/vitruvius:research-to-post <pdf-or-repo>` | Draft 2–3 catchy hooks and a copy-first card with the best source image. |
+| `/vitruvius:eli5 <topic>` | Plain-language engineering explanation. |
+| `/vitruvius:simplified-technical-english <text>` | Rewrite technical text in Simplified Technical English (ASD-STE100). |
+| `/vitruvius:artifact-reading <doc>` | Anchored document reading + extraction. |
+| `/vitruvius:scholarly-research <topic>` | Academic literature discovery (OpenAlex, arXiv, etc.). |
+| `/vitruvius:standards-lookup <standard>` | Engineering standards (AISC, ACI, ASCE, IEEE, Eurocode). |
+| `/vitruvius:gap-analysis <discipline> <topic>` | Systematic literature gap identification via triangulation. |
+| `/vitruvius:evidence-ranking <question>` | Rank and score evidence by quality tier. |
+| `/vitruvius:design-alternatives <problem>` | Compare 3+ engineering approaches with scored trade-offs. |
+| `/vitruvius:fmea-brainstorm <system>` | Failure-mode brainstorming with S/O/D ratings and RPN. |
+| `/vitruvius:proposal --posting X --cv Y` | Targeted Ph.D./Masters proposal workflow. |
+| `/vitruvius:habit` | Extract research preferences for validation and approval. |
+| `/vitruvius:engineering-research <question>` | Shared research method (discover → read → verify → review). |
+| `/vitruvius:hypothesis-generation <observation>` | Freeze rival hypotheses with dated evidence boundaries. |
+| `/vitruvius:peer-review <artifact>` | Adversarial peer review with severity-graded findings. |
+| `/vitruvius-help` | This reference card. |
+
+## The shared research method
+
+Every discipline skill runs the same loop (`/skill:engineering-research`):
+
+1. **Plan** — write `outputs/.plans/<slug>.md`, get user confirmation.
+2. **Scale** — direct search for narrow questions; researcher subagents only
+   when decomposition clearly helps.
+3. **Gather evidence** — multiple query angles, primary sources first, an
+   evidence table with stable numeric IDs.
+4. **Draft** — synthesize yourself, no invented sources or numbers.
+5. **Cite** — inline citations; verify every reference means what it claims.
+6. **Review** — adversarial verification pass; fix FATAL issues.
+7. **Deliver** — final file plus `.provenance.md` sidecar.
+
+Seven canonical roles: `researcher` (gather), `writer` (synthesize),
+`verifier` (cite + verify), `reviewer` (critique), `arbiter` (adjudicates
+verifier disagreement), `goal-checker` (independent completion check), and
+`habit` (read-only preference extraction). Subagents when the host supports
+them, otherwise the lead agent performs the applicable role work.
+
+## Non-negotiables
+
+- Never fabricate a source. A reference or it didn't happen.
+- Every output has a `.provenance.md` sidecar recording sources and
+  verification status.
+- Mark status honestly: `verified`, `inferred`, `blocked`, `unverified`.
+- A numeric claim without a unit, sign convention, and source is noise — flag
+  it.
+
+## Deactivate / stop
+
+Say "stop vitruvius" or "normal mode" to stop an active research run. The
+skills remain available to invoke on demand.
+
+## Scope and Boundaries
+
+- Vitruvius produces research — it does NOT produce final designs, construction documents, or implementation guidance.
+- **Research-only, not for final engineering sign-off.** Licensed engineers must review and approve any design based on this research.

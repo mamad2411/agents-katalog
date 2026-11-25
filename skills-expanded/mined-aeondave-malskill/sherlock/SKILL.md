@@ -1,0 +1,89 @@
+---
+name: sherlock
+description: "Auth/lab ref: Hunt username presence across 400+ social networks and output found profile URLs."
+license: MIT
+compatibility: "Python 3; Linux/macOS/Windows."
+metadata:
+  author: AeonDave
+  version: "1.1"
+---
+
+# Sherlock
+
+Username hunter across 400+ social platforms.
+
+## Quick Start
+
+```bash
+pip install sherlock-project
+
+# Search single username
+sherlock username
+
+# Search multiple usernames
+sherlock user1 user2 user3
+
+# Output to file
+sherlock username --output results.txt
+
+# CSV output
+sherlock username --csv
+```
+
+## Core Flags
+
+| Flag | Purpose |
+|------|---------|
+| `--timeout N` | Per-site timeout (default: 60s) |
+| `--print-found` | Only show found accounts |
+| `--print-all` | Show all (including not found) |
+| `--output FILE` | Save results |
+| `--json FILE` | Load a site database, not JSON results |
+| `--site NAME` | Search specific site only |
+| `--csv` | CSV output |
+| `--xlsx` | Excel output |
+
+## Common Workflows
+
+**Hunt username from breach data:**
+```bash
+sherlock johndoe_83 --print-found --output johndoe_found.txt
+```
+
+**Multiple username variants:**
+```bash
+sherlock "john.doe" johndoe john_doe jdoe --print-found
+```
+
+**Targeted site lookup:**
+```bash
+sherlock johndoe --site twitter --site github --site linkedin
+```
+
+**From breach data — test common variations at once:**
+```bash
+sherlock john.doe johndoe john_doe j.doe jdoe83 --print-found --timeout 10
+```
+
+## Username Variation Strategy
+
+Given a real name "John Doe" or email `johndoe83@gmail.com`:
+
+```
+johndoe, john.doe, john_doe, jdoe, j.doe, johndoe83, jdoe83
+firstname+lastname, firstnamelastname, last.first
+Add: year of birth, numbers 1/2/_, common suffixes (_real, _official)
+```
+
+## vs maigret
+
+| | sherlock | maigret |
+|--|---------|---------|
+| Sites | ~400 | 5,900 (default top-500) |
+| Output | URL list | Full dossier (scraped data) |
+| Speed | Fast | Slower |
+| Best for | Quick platform sweep | Deep profile building |
+
+Use sherlock for fast sweep, maigret for deep investigation.
+
+Matches are candidates, not identity proof. Inspect each profile and corroborate attribution independently. See [upstream](https://github.com/sherlock-project/sherlock) for current options.

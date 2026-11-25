@@ -1,0 +1,164 @@
+---
+name: ad-report
+description: 'Draft, render or verify a standalone analytical report from findings and evidence. Use on "write a report", "turn this analysis into a report", "PDF report", "slides".'
+summary: Draft or review standalone analytical reports from approved templates, then compose the available renderer and its visual and accessibility verification workflow.
+allowed-tools: Read, Write, Bash
+---
+
+# /ad-report
+
+Codex and Claude Code apply this editorial workflow inline. The bundled script
+resolves and validates templates. Format-specific rendering remains with the
+available artifact capability rather than this skill.
+
+Create or review one standalone analytical report from findings, evidence, and an
+audience. Normal use may write to an agreed local target but never mutates the
+template store or exports elsewhere without approval.
+
+## Prime directive
+
+Return a self-contained decision artifact. Preserve every claim, name, number,
+date, citation, URL, identifier, commitment, uncertainty, exclusion, and requested
+action. Own the editorial plan, then compose the requested renderer and its normal
+verification contract. Never implement a parallel renderer or claim verification
+that did not run.
+
+## Step 1: Frame the report
+
+Accept findings and evidence, a brief, or an existing report. Resolve question or
+objective, audience, purpose, language, requested format, agreed local target,
+requested action, and hard constraints. Ask only for an ungroundable value that
+would materially change the report.
+
+Resolve optional language preferences through `ad-voice`. The conversation language
+controls direct owner communication and the first approval preview. The publication
+language is the default for outward text. An explicit language in the current request
+overrides the corresponding preference for that request only. When no language
+preferences exist, preserve the existing contextual inference.
+
+Build a silent invariant ledger. Read
+[references/source-policy.md](references/source-policy.md) before accessing any
+evidence beyond pasted text, an artifact attached for this report, a supplied
+public URL, and the resolved template.
+
+## Step 2: Resolve the durable template
+
+Run from the consumer repository:
+
+```bash
+node <skill-base-dir>/scripts/template-store.mjs resolve \
+  --bundled <skill-base-dir>/references/templates
+```
+
+Read [references/template-contract.md](references/template-contract.md). Select
+the most specific approved template matching the report type, destination,
+audience, purpose, and use conditions. Facts, safety, evidence limits, and format
+hard constraints outrank every template. Record the selected layer and shadowing;
+disclose a conflict only when it materially affects the report.
+
+When no approved owner or project report template exists, use the official-method
+bundled baseline and state outside the report, when material, that no private owner
+or team report corpus was authorized.
+
+## Step 3: Build the editorial plan
+
+When the conversation language and publication language differ, build the complete
+initial report in the conversation language. Do not adapt it to the publication
+language before passing it through `ad-voice` in Step 4.
+
+Own the information hierarchy: self-contained executive conclusion, question or
+objective, method and evidence provenance, material findings, conclusions,
+recommendations or next actions, limitations, and optional depth or appendices.
+Keep findings distinct from interpretation. State uncertainty and evidence gaps
+where the reader uses them.
+
+Use a table, diagram, chart, or visualization only when it clarifies comparison,
+sequence, magnitude, or relationships. Do not add media as decoration or make a
+claim depend on color alone.
+
+## Step 4: Compose owned capabilities
+
+Read [references/composition.md](references/composition.md). Invoke another skill
+only through its public contract:
+
+- `ad-ground` for a bounded method or implementation gap;
+- `ad-research` for an open question needing a durable study;
+- `ad-prism` when evaluation methodology, interpretation, or fit-for-purpose
+  assurance is not already settled in the supplied findings;
+- `ad-voice` for the mandatory personal-voice and naturalization pass after facts,
+  evidence limits, and structure are settled and before rendering;
+- `ad-template-tune` only on an explicit curation request;
+- the available DOCX, PDF, presentation, visualization, site, HTML, Markdown, or
+  other artifact capability for the requested format.
+
+Every final editorial report must pass through `ad-voice`, even when no confirmed
+profile or external `humanizer` is available. Its public contract owns both the
+confirmed profile and the bundled naturalization fallback. Render only after this
+pass; a later textual correction must repeat it before re-rendering.
+
+For differing languages, `ad-voice` owns the two-stage language approval flow,
+including the first conversation-language preview, contextual adaptation, and final
+publication-language approval. Resume the same composed flow after the first approval;
+do not start a second voice pass or render the report between its two gates.
+
+Pass the settled editorial plan and content to the renderer. Respect every callee
+authorization, limitation, output, and gate; the stricter gate wins. Require its
+normal render, visual inspection, and accessibility verification. Return here for
+end-to-end factual and template coverage verification.
+
+If no renderer exists, return the editorial report in the safest usable available
+format and disclose the missing requested capability. Never fabricate a rendered
+file, screenshot, visual check, or accessibility result.
+
+## Step 5: Verify privately
+
+After `ad-voice` returns the publication-language adaptation, independently run a
+meaning-preservation check against the approved conversation-language draft. List
+every changed, omitted, or added claim in the conversation language, then return the
+exact final publication-language text for approval before any outward export or
+publication.
+
+Read [references/evaluation.md](references/evaluation.md). Check the invariant
+ledger. Assign every applicable template rule and selected exemplar strength one
+internal verdict: `satisfied`, `improved`, `not applicable`, or `higher-priority
+override`. Revise unmet material items and re-run the composed renderer's checks
+after any content change that affects layout.
+
+After any textual revision in this step, repeat `ad-voice`, then render and repeat
+the invariant, template, visual, and accessibility checks before return. Any later
+text change invalidates both the voice pass and the rendered verification.
+
+An unresolved material gap is disclosed outside the usable report. "Same or
+better" is allowed only as traceable coverage plus a named target-specific
+improvement, never as a score based on length, recency, or visual polish.
+
+Do not return an artifact whose text changed after the most recent `ad-voice` output.
+
+## Step 6: Return or export
+
+Return one usable report or the requested verified local artifact. Hide source
+selection, composition trace, and internal ledgers unless requested or needed for
+a material limitation.
+
+Writing to the agreed local target is part of the framed request. When that
+target is outside the repository or already exists, confirm the exact path with
+the owner before writing, and never overwrite an existing file without explicit
+approval. Before publishing
+or exporting beyond that agreed local target, show a receipt with the final
+artifact, exact destination, selected template ID and layer, format, completed and
+missing verification, material limitations, and exact action. Wait for explicit
+approval. Any content, format, or destination change invalidates the receipt.
+Report the resulting location or exact failure without retrying blindly.
+
+## Output contract
+
+- One usable report or verified local artifact with material limitations disclosed.
+- A meaning-preservation check when conversation and publication languages differ.
+- An exact-artifact and exact-destination approval receipt before any export beyond
+  the agreed local target.
+
+## Next
+
+- Return the report for approval, revision, or local use.
+- After exact-artifact and exact-destination approval, perform only the authorized
+  export and report its location or exact failure.

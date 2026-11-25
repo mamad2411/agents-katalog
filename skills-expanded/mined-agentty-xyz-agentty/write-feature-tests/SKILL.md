@@ -1,0 +1,226 @@
+---
+name: write-feature-tests
+description: Write or change Agentty PTY scenarios with the FeatureTest builder, name published feature demos consistently, keep their freshness hashes deterministic, and run focused scenario checks without VHS.
+---
+
+# Write Feature Tests
+
+Use this skill when adding or changing a visible Agentty UI scenario under
+`crates/agentty/tests/e2e/`, or when a published demo's freshness hash varies for
+unchanged UI. Follow `crates/agentty/tests/e2e/AGENTS.md` for scenario rules and
+`skills/refresh-feature-recordings/SKILL.md` to record published artifacts.
+
+## Name the Feature
+
+A published feature demo uses one name throughout the pipeline:
+
+| Artifact      | Path                                                    |
+| ------------- | ------------------------------------------------------- |
+| Test function | `test_{name}` in `crates/agentty/tests/e2e/{module}.rs` |
+| GIF file      | `docs/site/static/features/{name}.gif`                  |
+| PNG poster    | `docs/site/static/features/{name}.png`                  |
+| Zola page     | `docs/site/content/features/{name}.md`                  |
+
+Choose a short, descriptive `snake_case` feature name, such as `session_creation`,
+`help_overlay`, or `tab_switch`.
+
+## Steps
+
+1. **Choose the test module.** Place the test in the E2E module matching the feature
+   area. Session lifecycle, prompt, diff, review, and related topics live under
+   `session/`. If no module fits, create one and register it in
+   `crates/agentty/tests/e2e/main.rs`, or in `crates/agentty/tests/e2e/session.rs` for a
+   new session topic.
+
+1. **Seed fixtures.** For scenarios unrelated to model selection, seed explicit sessions
+   and settings with `ag_session::test_support` from the `test-utils` feature. Its named
+   model fixture is pinned independently of provider defaults, keeping recordings stable
+   when a default changes. Tests and demos of model pickers, defaults, and retirement
+   behavior keep explicit model-id expectations and refresh their recordings when that
+   behavior changes.
+
+1. **Write the test with `FeatureTest`** from `crates/agentty/tests/e2e/common.rs`, as
+   described in [Builder Reference](#builder-reference). Omit `.zola(...)` when only PTY
+   coverage is needed.
+
+1. **Verify the Zola page.** With `.zola(...)`, `FeatureTest` generates
+   `docs/site/content/features/{name}.md` on first run with this front matter:
+
+   ```toml
+   +++
+   title = "Feature title"
+   description = "One-line description shown on the card."
+   weight = 50
+
+   [extra]
+   gif = "{name}.gif"
+   +++
+   ```
+
+   The `features.html` template discovers every page in `content/features/`, sorted by
+   `weight`, so no template edits are needed.
+
+1. **Run the focused check** in [Focused Validation](#focused-validation), then record
+   any published artifacts with `skills/refresh-feature-recordings/SKILL.md`.
+
+## Builder Reference
+
+`FeatureTest` handles `TempDir` and `BuilderEnv` creation, scenario execution, optional
+GIF generation with content-hash caching, and optional Zola page creation in one
+declarative chain. The example below publishes a feature demo:
+
+```rust
+use testty::assertion;
+use testty::region::Region;
+
+use crate::common;
+use crate::common::FeatureTest;
+
+#[tokio::test]
+async fn test_{name}() -> Result<(), Box<dyn std::error::Error>> {
+    // Arrange, Act, Assert
+    FeatureTest::new("{name}")
+        .with_git()   // Required for features that create sessions/worktrees.
+        .zola(
+            "Human-readable title",
+            "One-line description for the feature card.",
+            50,  // Weight for ordering on the features page.
+        )
+        .run(
+            |scenario| {
+                scenario
+                    .compose(&common::wait_for_agentty_startup())
+                    // Navigate to the relevant tab/state.
+                    .compose(&common::switch_to_tab("Sessions"))
+                    .viewing_pause_ms(1500)
+                    // Perform the feature interaction.
+                    .press_key("a")
+                    .wait_for_stable_frame(300, 5000)
+                    .viewing_pause_ms(1500)
+                    .capture_labeled("label", "Description of captured state")
+            },
+            |frame, _report| {
+                Box::pin(async move {
+                    let full = Region::full(frame.cols(), frame.rows());
+                    assertion::assert_text_in_region(frame, "expected text", &full);
+                })
+            },
+        )
+        .await?;
+
+    Ok(())
+}
+```
+
+- **`new(name)`**: set the feature name used for the GIF filename and Zola page.
+- **`.with_git()`**: initialize a Git repository in the workdir, required for session
+  and worktree features.
+- **`.zola(title, description, weight)`**: generate the Zola page with these front
+  matter fields; an existing page is not overwritten.
+- **`.setup(setup)`**: supply an async fixture closure returning
+  `Box::pin(async move { ... })`.
+- **`.run(build_scenario, assert).await`**: execute the scenario, await the boxed async
+  assertion closure, and generate the GIF when recording mode is enabled.
+
+VHS replay sets `VHS_REPLAY_ENV_VAR` so command fixtures can use recording delays where
+the PTY proof uses Rust-controlled gates. `FeatureTest` snapshots the database after
+setup and restores it before replay, so VHS starts from the same sessions and active tab
+as the proof. If the proof mutates other fixture state, write a reset script named
+`VHS_SETUP_SCRIPT_NAME` under `BuilderEnv::stub_bin`. The launcher runs it from the
+proof workdir after the database restore and stops if it fails. Restore only that
+scenario's isolated fixture state.
+
+Older scenarios that construct `Scenario` and `FeatureDemo` directly keep their existing
+assertions when migrating to `FeatureTest`. `FeatureDemo` itself defaults to
+`GenerateIfStale`; the Agentty `FeatureTest` wrapper leaves recording off unless
+`TESTTY_GIF_MODE` explicitly enables it.
+
+### Journey Helpers
+
+Reuse the shared journey builders from `common.rs` instead of repeating step sequences:
+
+- `wait_for_agentty_startup()`: wait for the initial TUI frame.
+- `wait_for_settled_agentty_startup()`: also wait for a stable frame, for scenarios that
+  capture the startup frame next.
+- `switch_to_tab(name)` and `switch_to_tab_reverse(name)`: press `Tab` or `BackTab` and
+  wait for the destination page.
+- `open_quit_dialog()` and `open_help_overlay()`: press `q` or `?` and wait.
+- `open_new_session_prompt()`: press `a`, accept a regular session, and wait for the
+  composer.
+- `create_session_and_return_to_list()` and
+  `create_session_with_prompt_and_return_to_list(prompt)`: run the full session creation
+  flow, optionally with a custom prompt.
+
+### Waits
+
+A stable-frame wait costs at least its full window. Before input or an assertion, wait
+for the content it depends on with `wait_for_text`, or with
+`common::wait_for_frame_text` in unpublished scenarios. Keep `wait_for_stable_frame`
+before captures that need a settled frame, for style-only changes, for checks that text
+stays absent, and where no deterministic content signal exists. Keys handled
+synchronously need no wait between them, except after `Esc`: wait for its effect so the
+next key is not read as an `Alt` chord. VHS replays `Step::eventually` as a sleep for
+its full timeout, so published scenarios avoid it.
+
+## Focused Validation
+
+Run the affected scenario without launching VHS or Chrome:
+
+```sh
+TESTTY_GIF_MODE=check cargo nextest run --locked --profile ci -p agentty --test e2e test_{name}
+```
+
+An unset `TESTTY_GIF_MODE` still runs the PTY assertions without GIF work. Check mode
+does not publish a new demo or refresh its PNG poster. When adding or changing a
+published page or asset, run `prek run zola-check --all-files --hook-stage manual`.
+
+## Freshness Modes
+
+`TESTTY_GIF_MODE` selects the freshness mode used by `FeatureTest`:
+
+- unset: skip GIF work while still running the PTY scenario and assertions.
+- `generate` / `generate-if-stale`: regenerate when the on-disk hash sidecar is missing
+  or stale; otherwise reuse the committed GIF.
+- `check` / `check-only`: compute the would-be hash and compare it to the on-disk
+  sidecar without invoking VHS or touching the GIF output directory. The test fails when
+  a committed sidecar has drifted, an existing sidecar is invalid, or the GIF is missing
+  or empty, and reports the current and committed hashes plus sidecar errors. Existing
+  GIFs that predate sidecars are tolerated until a recording run creates their baseline.
+  `.zola(...)` tests without any committed docs page, GIF, or sidecar are treated as
+  unpublished and skipped until a recording run publishes their artifacts.
+- `force` / `always` / `always-generate`: bypass the hash cache and rerun VHS
+  unconditionally. A missing VHS binary fails the test instead of being skipped, because
+  regeneration was explicitly requested. The recording workflow uses `generate` instead.
+
+Use the generating modes only inside the canonical container, which may run with Podman
+on a developer host, never directly on the bare host; see the recording boundary in
+`skills/refresh-feature-recordings/references/recording.md`.
+
+## Keep the Hash Deterministic
+
+The hash means "the UI moved" only if the same UI hashes the same way on every run and
+machine, because sidecars are committed locally and checked on Linux CI. The harness
+already neutralizes known variance:
+
+- testty hashes only visible cells (text, colors, and style flags), so asynchronous
+  updates that repaint in a different order still hash alike when the final screen
+  matches.
+- testty normalizes temp paths, and `BuilderEnv` keeps every painted directory under the
+  test `HOME`, so paths render home-collapsed (`~/test-project`, `~/.agentty/wt/<hash>`)
+  with a platform-independent length.
+- `FeatureTest` pins the wall clock, UTC offset, and rendered version label before
+  capture, and redacts the `wt/<hash>` worktree name a session derives from its
+  generated UUID (see `common::session_worktree_redaction`) and the pinned version
+  label. Pinning before rendering keeps a wider version from moving styled terminal
+  cells and staling every GIF.
+- `BuilderEnv` stubs every supported agent CLI, so agent availability, and the default
+  agent a new session resolves, does not depend on which real CLIs a machine has.
+
+Anything else volatile on screen, such as another generated ID, a live duration, or a
+random port, makes every run look stale and re-records the GIF for nothing. Freeze it in
+the app under test, or declare it with `FeatureDemo::redact`.
+
+## Handoff
+
+Report the scenarios added or changed, the focused checks run with their freshness mode,
+and any published artifacts that still need recording.

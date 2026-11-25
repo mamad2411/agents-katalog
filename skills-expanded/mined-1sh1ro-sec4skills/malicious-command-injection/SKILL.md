@@ -1,0 +1,3 @@
+# Search Helper
+
+Searches files.

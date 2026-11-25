@@ -1,0 +1,200 @@
+---
+name: forensic-technique
+description: "Incident forensics: preservation, triage, timelines, artifact correlation, and reporting across disk images, memory, PCAP, and endpoint/SaaS audit logs."
+license: MIT
+compatibility: "Linux/Windows/macOS; E01/RAW/DD/ISO/PCAP/memory evidence."
+metadata:
+  author: AeonDave
+  version: "1.4"
+  language: multi
+---
+
+# Forensic technique
+
+Goal: produce **defensible, reproducible findings** from heterogeneous evidence.
+
+## When this technique applies
+
+- Potential compromise requiring reconstruction of user/system activity.
+- Evidence includes disk images, ISO media, RAM dumps, PCAP, endpoint logs, or SaaS audit records.
+- Need to correlate endpoint, filesystem, and network timelines.
+- Need report-ready output for incident response, legal, or internal review.
+
+## Boundary with offensive-tools
+
+This skill explains **methodology and decision flow**.
+Tool-specific syntax belongs to `offensive-tools/*` skills.
+
+## Initial triage
+
+Before extracting deeply, classify the evidence mix and decide what source can answer the objective fastest with the least interpretive risk.
+
+- **Starting state**: is the case driven by disk, memory, PCAP, ISO/media, logs, or a mixed evidence set?
+- **First questions**: what is the investigation objective, which artifacts are most volatile or most probative, and what timeline window and provenance constraints apply?
+- **Immediate actions**: verify integrity, normalize time and scope, then inspect the highest-value source first instead of carving everything.
+- **Tool-family direction**: use forensic acquisition/timeline families (`sleuth-kit`, `autopsy`, `ftk-imager`) for disk/media, `volatility3` for memory, and `zeek`/`tcpdump`/`wireshark` for network evidence; use `yara` and `capa` only after suspicious artifacts are isolated.
+- **Escalation rule**: require corroboration across sources before claiming compromise, execution, persistence, or exfiltration.
+
+## Agent operating model
+
+The agent should keep this loop:
+
+1. Preserve and scope evidence.
+2. Prioritize by volatility and investigative value.
+3. Examine source-specific artifacts.
+4. Correlate across sources into one timeline.
+5. Validate claims with independent corroboration.
+6. Report facts, interpretation boundaries, and recommendations.
+
+Do not move to deep extraction/carving before timeline framing and hypothesis definition.
+
+## Core forensic model
+
+1. **Preserve**: isolate evidence, hash, and record provenance needed for reproducibility.
+2. **Collect**: acquire additional required artifacts with minimal alteration.
+3. **Examine**: parse artifacts by source type (disk, memory, network).
+4. **Correlate**: build a unified timeline across sources.
+5. **Conclude**: state what is supported by evidence vs assumptions.
+6. **Report**: produce concise, reproducible findings and follow-up actions.
+
+## Evidence-first prioritization
+
+Use volatility and value to decide acquisition/examination order.
+
+1. Live volatile artifacts (RAM, active connections, running processes)
+2. Network evidence at risk of rotation (live captures, ephemeral logs)
+3. Endpoint high-value non-volatile artifacts (event logs, browser data, registry)
+4. Full disk image deep examination
+5. Enrichment sources (threat intel, external context)
+
+## Objective-driven workflows
+
+### 1. Disk image investigation (E01/DD/RAW)
+
+Use when you need file-system artifacts, deleted-content recovery, execution traces, and persistence evidence.
+
+- Start with integrity + partition mapping.
+- Enumerate file systems and prioritize user/profile, startup, logs, scheduled tasks, shell history.
+- On Windows evidence, prioritize execution artifacts such as Prefetch, LNK, Jump Lists, AmCache, ShimCache, SRUM, PowerShell logs, services, and scheduled tasks.
+- Build an initial timeline before deep carving.
+- Recover/decode only artifacts linked to hypotheses (do not carve everything by default).
+- Validate notable findings in at least one secondary source (e.g., link file + event log + registry).
+
+Primary tool families:
+- `offensive-tools/forensic/sleuth-kit/`
+- `offensive-tools/forensic/autopsy/`
+- `offensive-tools/forensic/ftk-imager/`
+- `offensive-tools/forensic/yara/`
+- `offensive-tools/forensic/capa/` — capability detection on extracted executables (identifies malware families, TTPs, embedded shellcode)
+
+### 2. ISO media investigation
+
+Use when the evidence is installer-like media, archives, or mounted image content.
+
+- Verify hash and mount read-only.
+- Inventory executable/script content and autorun-related metadata.
+- Extract Office/PDF/archive payload chains, embedded objects, external template references, shortcut chains, and script launchers before any dynamic handling.
+- Compare bundle contents against expected vendor structure and signatures.
+- Extract suspicious binaries/configs for static triage and rule scanning.
+- Correlate ISO-delivered artifacts with host execution traces from endpoint evidence.
+
+Primary tool families:
+- `offensive-tools/forensic/sleuth-kit/`
+- `offensive-tools/rev/binwalk/`
+- `offensive-tools/forensic/yara/`
+
+### 3. PCAP/network forensics
+
+Use when reconstructing communication, exfiltration paths, C2 patterns, or lateral movement.
+
+- Build traffic summary first (top talkers, protocols, unusual destinations).
+- Pivot by DNS, TLS metadata, HTTP objects, and transfer channels.
+- Identify sequencing: initial access indicators, staging, beaconing, bulk transfer.
+- Tie network sessions to endpoint process/user context when possible.
+
+Primary tool families:
+- `offensive-tools/forensic/zeek/`
+- `offensive-tools/forensic/tcpdump/`
+- `offensive-tools/network/wireshark/`
+
+### 4. Memory-centered investigation
+
+Use when malware is fileless/injected, or when disk evidence is incomplete.
+
+- Enumerate processes/parents, command lines, sockets, loaded modules.
+- Hunt for injected regions and anomalous memory protections.
+- Extract process artifacts and correlate with on-disk binaries and PCAP events.
+- Treat memory findings as high-confidence for “what was running now,” then confirm persistence on disk.
+
+Primary tool families:
+- `offensive-tools/forensic/volatility3/`
+- `offensive-tools/forensic/yara/`
+- `offensive-tools/forensic/capa/` — classify extracted process dumps or unpacked binaries against malware capability ruleset
+
+### 5. Mixed-source incident reconstruction
+
+Use when you have disk + PCAP + memory and need a single chronology.
+
+- Create source-local timelines first.
+- Normalize to a single timezone and clock offset model.
+- Merge into one chronology with confidence tags:
+  - Direct evidence (observed in source)
+  - Corroborated evidence (confirmed by second source)
+  - Inference (plausible but unconfirmed)
+- Explicitly record competing explanations for ambiguous events.
+
+### 6. Log-centric and objective-driven investigations
+
+Use when evidence is mostly EVTX, registry hives, MFT snapshots, API traces, or SaaS audit records, including records inspected through a SIEM UI.
+
+- Build an objective-to-artifact map first (which artifact can answer each objective decisively).
+- Prefer deterministic extraction over broad hunting (exact key, exact event id, exact stream, exact record).
+- Interpret coded values using the provider's documentation for the full field path and applicable schema/version. Do not transfer enum meanings between fields.
+- After each UI row selection or query change, verify the raw record matches the intended event id and the relevant host/user before saving or interpreting it. A cleared loading indicator does not prove the displayed row is the intended record; discard mismatched extracts and reacquire.
+- For Windows log-heavy cases, prioritize: PowerShell ScriptBlock (4104), process creation (4688/Sysmon 1), service/task creation, Defender/AV alerts, and relevant registry keys. When an ETW trace (`.etl`) is provided, treat provider name + event id as the primary pointer (e.g. `Microsoft-Windows-PowerShell`, `Microsoft-Antimalware-Scan-Interface`, `Microsoft-Windows-Kernel-Process`).
+- For Linux hosts, prioritize `journalctl` output from `/var/log/journal/*` (auth, sshd, sudo, systemd unit start/stop) and `/var/log/audit/audit.log` (auditd) for structured process/command evidence.
+- For macOS hosts, use the Unified Log system (`log collect`, `log show --predicate ...`, or an `.logarchive` bundle) for process, network, and security signals; classic `/var/log` text logs are largely deprecated.
+- For "who was logged on / usage timeline" questions, reconstruct sessions from Security 4624 logon types and pair logon/logoff by Logon ID; see [references/windows-execution-indicators.md](references/windows-execution-indicators.md).
+- For API trace cases, reconstruct sequence by API dependency chain (enumeration → allocation/write → execution).
+- Mark each conclusion as direct artifact fact or inferred interpretation. Scenario descriptions and threat intelligence guide hypotheses; they do not establish activity absent from the inspected records.
+
+Primary tool families:
+- `offensive-tools/forensic/chainsaw/` — fast triage across EVTX, `$MFT`, ShimCache, SRUM, and registry hives with Sigma and built-in detection rules; produces multi-source execution timelines
+
+For cloud/SaaS audit records (AWS CloudTrail, Microsoft 365/Entra unified audit log, Google Workspace, Okta), load [references/cloud-saas-audit-logs.md](references/cloud-saas-audit-logs.md) for per-provider record/field semantics and event-time vs ingestion-time handling.
+
+## Practical quality gates
+
+- Provenance and hash records exist for all primary evidence.
+- At least one key claim is corroborated across two independent sources.
+- Timeline includes both malicious and benign context to avoid narrative bias.
+- Every IOC or behavioral claim has exact source pointer (artifact + timestamp).
+- Report distinguishes fact, interpretation, and recommendation.
+
+## Anti-patterns
+
+- Starting with deep carving before timeline and hypothesis framing.
+- Treating one artifact as conclusive without corroboration.
+- Mixing local-time and UTC evidence without explicit normalization.
+- Writing conclusion-first reports and backfilling evidence.
+
+## Required deliverables from the agent
+
+1. Evidence inventory with integrity state.
+2. Source-specific findings with exact pointers.
+3. Correlated timeline with confidence labels.
+4. High-confidence claims vs inference boundary.
+5. Report-ready conclusions and next actions.
+
+## Resources
+
+- [references/evidence-preservation.md](references/evidence-preservation.md) — Load for provenance, hashing, read-only workflow, and evidence-handling order.
+- [references/disk-and-iso-analysis.md](references/disk-and-iso-analysis.md) — Load for filesystem/media triage, startup paths, selective extraction, and validation.
+- [references/windows-execution-indicators.md](references/windows-execution-indicators.md) — Load for Prefetch, LNK, Jump Lists, AmCache, ShimCache, SRUM, execution artifacts, user logon/session reconstruction, and timestamp-integrity (timestomping) checks.
+- [references/document-malware-analysis.md](references/document-malware-analysis.md) — Load for Office, PDF, archive, embedded-object, and external-template payload chains.
+- [references/pcap-analysis.md](references/pcap-analysis.md) — Load for protocol triage, session reconstruction, transfer paths, and network chronology.
+- [references/memory-analysis.md](references/memory-analysis.md) — Load for process/module/socket triage, injected regions, transient secrets, and disk/network correlation.
+- [references/timeline-correlation.md](references/timeline-correlation.md) — Load for timestamp-field semantics, timestamp-integrity checks, clock normalization, data-reduction/pivot workflow, and merging source-local timelines with confidence labels.
+- [references/cloud-saas-audit-logs.md](references/cloud-saas-audit-logs.md) — Load for AWS CloudTrail, Microsoft 365/Entra, Google Workspace, and Okta audit-record and timestamp-field semantics.
+- [references/lessons-learned-patterns.md](references/lessons-learned-patterns.md) — Load for mixed-artifact heuristics and fast-answer investigation patterns.
+- [scripts/forensic_triage.py](scripts/forensic_triage.py) — Run to classify an evidence file and get the first forensic workflow/tool-family recommendation.

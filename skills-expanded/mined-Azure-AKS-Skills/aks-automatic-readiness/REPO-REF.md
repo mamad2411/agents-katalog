@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Azure/AKS-Skills (path: skills/aks-automatic-readiness/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Assess Kubernetes workloads and cluster configuration for AKS Automatic compatibility. Identifies incompatibilities, generates fixes, and guides migration from AKS Standard to AKS Automatic. WHEN: mig

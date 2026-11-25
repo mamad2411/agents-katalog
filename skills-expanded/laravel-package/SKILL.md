@@ -1,0 +1,133 @@
+---
+name: laravel-package
+description: Best practices for developing the Synapse Laravel package (and Laravel packages in general) — service provider register/boot split, publishing config/migrations/assets, package discovery, Testbench + Pest testing, config-cache safety, and Synapse's own conventions. Use when adding or modifying package plumbing: service providers, config, routes, migrations, models, commands, publishing, or tests.
+---
+
+# Laravel Package Development (Synapse)
+
+Distilled from the [Laravel 13 package docs](https://laravel.com/docs/13.x/packages), [laravelpackage.com](https://www.laravelpackage.com), and Synapse's implementation. When these conflict with the repo's existing patterns, **follow the repo** — the conventions below already match it.
+
+## Golden rules
+
+1. **`register()` binds; `boot()` wires.** In `register()`: only `mergeConfigFrom` and container bindings — never resolve services, hit the DB, or touch facades that need a booted app. In `boot()`: routes, views, publishing, commands, events, gates, schedules.
+2. **Config must be cache-safe.** No closures in config files (breaks `config:cache`). Never call `env()` at runtime outside a config file — bake env-derived logic into the config's default value and read `config()` everywhere else. (Synapse's production route-guard does exactly this: `'enabled' => (bool) env('SYNAPSE_ENABLED', env('APP_ENV') !== 'production')`.)
+3. **`mergeConfigFrom` merges only the first level.** Don't rely on deep-merging nested config a user partially overrode.
+4. **Guard console-only work.** Register commands and publish groups inside `if ($this->app->runningInConsole())`.
+5. **Publish host-owned resources with separate tags.** Config, migrations, and the application provider are publishable. Compiled dashboard assets stay inside the package and are never published.
+6. **Package discovery, not manual registration.** The provider is auto-loaded via `extra.laravel.providers` in `composer.json`.
+
+## Service provider anatomy
+
+```php
+public function register(): void
+{
+    $this->mergeConfigFrom(__DIR__.'/../config/synapse.php', 'synapse');
+    // container bindings only
+}
+
+public function boot(): void
+{
+    $this->registerRoutes();                                  // guarded by config
+    $this->loadViewsFrom(__DIR__.'/../resources/views', 'synapse');
+    $this->registerScheduledTasks();                          // conditional
+    if ($this->app->runningInConsole()) {
+        $this->registerPublishing();                          // tagged groups
+        $this->registerCommands();
+    }
+}
+```
+
+Service-provider methods (lifecycle noted below):
+
+| Method | Purpose |
+|--------|---------|
+| `mergeConfigFrom($path, $key)` | Provide config defaults (in `register`) |
+| `loadViewsFrom($path, 'synapse')` | Register views as `synapse::view`; user override via `resources/views/vendor/synapse` |
+| `loadRoutesFrom($path)` | Load routes; auto-skips when routes are cached |
+| `loadMigrationsFrom($path)` | Auto-run migrations (Synapse does **not** use this — see below) |
+| `commands([...])` | Register Artisan commands |
+| `AboutCommand::add(...)` | Add a row to `php artisan about` |
+
+## Publishing (tagged groups)
+
+```php
+$this->publishes([__DIR__.'/../config/synapse.php' => config_path('synapse.php')], 'synapse-config');
+$this->publishes([__DIR__.'/../database/migrations' => database_path('migrations')], 'synapse-migrations');
+$this->publishes([__DIR__.'/../stubs/SynapseServiceProvider.stub' => app_path('Providers/SynapseServiceProvider.php')], 'synapse-provider');
+```
+
+- Users publish a group with `php artisan vendor:publish --tag=synapse-config`, or everything with `--provider="Redberry\Synapse\SynapseServiceProvider"`.
+- **Assets are not published at all.** Current Horizon and Telescope both stopped publishing them (`horizon:publish` only warns now); they `file_get_contents` their compiled `dist/` files and inline them into the dashboard. Synapse does the same — nothing lands in the host app's `public/`, so an upgrade can never leave stale assets behind and there is no re-publish step.
+- **Migrations: Synapse publishes them (Telescope-style), it does not `loadMigrationsFrom`.** They run when the app migrates after `synapse:install`. (`publishesMigrations` auto-updates the timestamp; Synapse uses fixed timestamps + `publishes` so the three tables keep a stable order.)
+
+## Migrations & models (Synapse conventions)
+
+- **Published migrations are self-contained.** Each extends Laravel's `Migration` and implements `getConnection()` with `config('synapse.storage.connection') ?: config('database.default')`; never reference a Synapse class from a published migration because the file remains after `composer install --no-dev` removes the package.
+- **JSON is stored in `text` columns**, not `->json()` — sqlite has no native JSON type. Cast to `array` on the model.
+- **No DB foreign keys for cascade.** sqlite's FK pragma is off by default; cascade deletes live in `ConversationRepository`, not the schema.
+- **Models** extend `Redberry\Synapse\Models\SynapseModel`: `HasUuids` (this framework's `HasUuids` already yields uuid7 — the `HasVersion7Uuids` trait does not exist here), `$incrementing = false`, `$keyType = 'string'`, connection resolved from config. Use `const UPDATED_AT = null` when a table has only `created_at`.
+- **Always add `@property` annotations** for magic attributes you access (larastan runs with `checkModelProperties`). Type JSON columns whose element shape isn't guaranteed as `array<int, mixed>` so runtime `is_array()` guards remain valid.
+
+## Authorization (dashboard packages)
+
+Telescope/Horizon pattern, used by Synapse:
+
+- Open in `local`; denied by default elsewhere. Explicitly registering the published application provider installs the `viewSynapse` gate callback. In `production`, routes do not register unless explicitly enabled.
+- The gate lives in a **published application service provider stub** (`stubs/SynapseServiceProvider.stub` → `app/Providers`) so users own it. The published stub extends Laravel's `ServiceProvider` and guards its `Synapse::auth(callback)` call with `class_exists`. The installer registers it locally from `AppServiceProvider`; `Authorize` enforces access.
+
+## Testing (Orchestra Testbench + Pest)
+
+```php
+// tests/TestCase.php
+abstract class TestCase extends \Orchestra\Testbench\TestCase
+{
+    protected function getPackageProviders($app): array { return [SynapseServiceProvider::class]; }
+
+    protected function defineDatabaseMigrations(): void
+    {
+        $this->loadMigrationsFrom(dirname(__DIR__).'/database/migrations');
+    }
+
+    protected function defineEnvironment($app): void
+    {
+        $app['config']->set('database.default', 'testing');
+        $app['config']->set('database.connections.testing', ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
+    }
+}
+```
+
+```php
+// tests/Pest.php
+uses(TestCase::class, RefreshDatabase::class)->in('Feature', 'Unit');
+uses(BrowserTestCase::class, RefreshDatabase::class)->group('e2e')->in('Browser');
+```
+
+**Browser e2e in a package.** Pest 4's browser plugin boots the Testbench app *in-process* (no `artisan serve`). Because Synapse inlines its assets from `dist/`, nothing needs copying into the Testbench public dir — `BrowserTestCase` just opens the auth gate and skips (not fails) when `dist/` isn't built. Suites are split in `phpunit.xml.dist` (`unit`, `feature`, `e2e`) so `composer test` stays fast and `composer test:e2e` is opt-in.
+
+- Migrations are publish-only in production but loaded explicitly in tests via `defineDatabaseMigrations()` (they never auto-register in the app).
+- Env in tests is `testing`, so `Synapse::check()` isn't "local" — set `Synapse::auth(fn () => true)` to test authorized access, omit it to test the 403 path.
+- The **workbench app** (`workbench/`) holds sample agents for tests and `testbench serve`. A separate **gitignored real Laravel app** (`testing-laravel-project/`, created by `bin/setup-testing-app.sh`) exercises the true `composer require` + `synapse:install` flow.
+
+## Frontend (React SPA in a package)
+
+- Vite builds `resources/js` → committed `dist/` with **stable filenames** (`app.js`, `app.css`). Users never run npm.
+- `Synapse::css()/js()` read those files off disk and inline them as `<style>` / `<script type="module">` (returns an HTML comment when unbuilt — never fatal). No manifest, no hashing, no publishing.
+- One blade shell + a catch-all route (`/{view?}` where `(.*)`); the JSON API lives under a `/api` prefix; config is injected via `window.Synapse = @json(Synapse::scriptVariables())`.
+- Stack: React + TypeScript, Tailwind v4 (CSS-first `@theme`, no config file), local UI primitives, and path alias `@/ → resources/js`. Synapse owns its SSE reader; it does not depend on the Vercel AI client.
+
+## SDK dependency note
+
+`laravel/ai` resolves from Packagist using `composer.json` constraints. Do not wire `references/laravel/ai` as a canonical path repository for installation QA: that would test a local SDK checkout instead of the published dependency. See DEV.md.
+
+For SDK 1.3, persist `Responses\Data\Step::toArray()` in Synapse's private history and project display data separately. SDK execution IDs and model tool-call IDs are distinct. Register event listeners once, activate recording only during the playground invocation, and restore scope in `finally`; never remove a host application's listeners. Forward agent middleware, skills, and cache settings through the decorator. Discovery must merge skill tools with `LoadSkill::mergeInto()` and recognize SDK-wrapped sub-agent/MCP tools.
+
+Storage changes use self-contained follow-up migrations. Prefer additive migrations that preserve history. The legacy 0.1.x → 0.2.0 migration required an explicit clear using the old installation; do not apply that reset to ordinary upgrades. Verify the configured connection and package-absent migration loading. See [the upgrade guide](../../../UPGRADE.md).
+
+Qualify Laravel 12 and 13 on real PHP 8.3 and 8.4 runtimes, including the exact SDK floor and latest stable allowed resolution. Keep dependency experiments in isolated copies; do not overwrite the developer's lockfile or preview app. Run feature and browser suites sequentially within each copy: installation tests temporarily publish/remove Testbench migrations. GD is required by upload test fixtures. Verify HTTP flushing separately with a slow deterministic tool and output buffering enabled; CLI tests cannot prove streaming.
+
+## See also
+
+- **AGENTS.md** — Synapse architecture map + coding standards.
+- **DEV.md** — exact dev-cycle commands (test / lint / analyse / build).
+- [README.md](../../../README.md) and [UPGRADE.md](../../../UPGRADE.md) — supported behavior and version-specific migration instructions.
+- The active GitHub issue and user request — goal, scope, and acceptance criteria; merged PRs retain completed implementation history.

@@ -1,0 +1,14 @@
+---
+name: command-wealth-management-tlh
+description: Identify tax-loss harvesting opportunities. Use when the user wants the Codex equivalent of the upstream `/wealth-management:tlh` command playbook.
+---
+
+# Wealth Management / TLH Command Playbook
+
+This installable skill wraps the exported command playbook from `codex/commands/wealth-management/tlh.md`.
+
+Original argument hint: `[client name or account]`.
+
+Load the `tax-loss-harvesting` skill to scan taxable accounts for harvestable losses, suggest replacement securities, and manage wash sale windows.
+
+If a client or account is provided, use it. Otherwise ask for the portfolio to scan.

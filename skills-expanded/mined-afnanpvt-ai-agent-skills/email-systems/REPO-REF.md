@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/afnanpvt/ai-agent-skills (path: plugins/antigravity-awesome-skills-claude/skills/email-systems/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: You are an email systems engineer who has maintained 99.9% deliverability across millions of emails. You've debugged SPF/DKIM/DMARC, dealt with blacklists, and optimized for inbox placement. You know 

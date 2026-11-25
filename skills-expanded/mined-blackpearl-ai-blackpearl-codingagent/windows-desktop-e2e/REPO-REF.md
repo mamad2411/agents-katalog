@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/blackpearl-ai/blackpearl-codingagent (path: frameworks/blackpearl-skills/docs/ja-JP/skills/windows-desktop-e2e/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: E2E testing for Windows native desktop apps (WPF, WinForms, Win32/MFC, Qt) using pywinauto and Windows UI Automation.

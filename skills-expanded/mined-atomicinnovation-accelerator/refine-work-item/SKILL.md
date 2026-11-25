@@ -1,0 +1,530 @@
+---
+name: refine-work-item
+description: Interactively refine a work item by decomposing it into children,
+  enriching it with codebase context, sharpening its acceptance criteria,
+  sizing it, or linking it to dependencies. Use after a work item has been
+  drafted and before planning begins.
+argument-hint: "[work item number or path]"
+allowed-tools:
+  - Bash(accelerator config *)
+  - Bash(accelerator work *)
+  - Bash(accelerator corpus frontmatter validate *)
+---
+
+# Refine Work Item
+
+!`accelerator config context --skill refine-work-item --fail-safe`
+!`accelerator config agents --fail-safe`
+
+If no "Agent Names" section appears above, use these defaults:
+accelerator:reviewer, accelerator:codebase-locator,
+accelerator:codebase-analyser, accelerator:codebase-pattern-finder,
+accelerator:documents-locator, accelerator:documents-analyser,
+accelerator:web-search-researcher.
+
+**Work items directory**: !`accelerator config path work --fail-safe`
+**Active integration**: !`accelerator config work integration --fail-safe`
+**ID pattern**: !`accelerator config work id_pattern --fail-safe`
+
+When **ID pattern** is `{tracker}`, the tracker owns every item's `id`, so
+decompose never allocates numbers: it creates each child as a **draft**
+through `accelerator work create` (see "Under `{tracker}`" in 4a), and
+`/sync-work-items` promotes the drafts later.
+
+## Work Item Template
+
+The template below defines the sections and frontmatter fields that every
+work item must contain. Read it now — use it to know valid kinds, statuses,
+priorities, and section names without re-reading the file at runtime.
+
+!`accelerator config template work-item --fail-safe`
+
+You are tasked with refining a work item through one or more of five operations:
+decompose it into child work items, enrich it with codebase context, sharpen
+vague acceptance criteria, add a t-shirt size indicator, or populate its
+dependencies. Every operation is interactive and targeted — you propose, the
+user approves, and the Edit tool makes the minimum change needed.
+
+## Step 0 — Parameter Check
+
+**If no work item path or number was provided**, respond with:
+
+```
+I'll help you refine a work item. Please provide the path or work item number.
+
+Example: `/refine-work-item {work_dir}/0042-user-auth.md`
+Or by number: `/refine-work-item 42`
+
+Run `/list-work-items` to see available work items.
+```
+
+Then wait for the user's input.
+
+**If a path or number was provided**: proceed to Step 1.
+
+Accepted forms:
+- A path (e.g. `meta/work/0042-user-auth.md`)
+- A bare work item number (e.g. `0042` or `42`, resolved against `{work_dir}`)
+
+If the resolved path does not exist, report:
+```
+No work item file at <path> — run `/list-work-items` to see available work items.
+```
+and exit without reading any other file, spawning any agent, or writing anything.
+
+If the YAML frontmatter cannot be parsed (missing closing `---` or syntax
+error), report:
+```
+Could not parse frontmatter in <path> — the file may be corrupted. Re-open it
+and check that the YAML frontmatter is bracketed by two `---` lines and
+contains all nine required fields, or run `/update-work-item <path>` which
+surfaces the same diagnostic with field-level detail.
+```
+and exit without editing the file or spawning agents.
+
+## Step 1 — Read Target and Context
+
+Read the target work item fully. If the `parent` field is non-empty, also read
+the parent work item. The work item template (loaded above) tells you the valid
+kinds, statuses, and priorities — do not re-read it at runtime.
+
+## Step 2 — Analyse (mandatory parallel agents)
+
+Spawn BOTH agents in the same tool-use turn (parallel, not sequential):
+
+- **{codebase locator agent}**: find files relevant to the work item's
+  Requirements and Summary
+- **{codebase analyser agent}**: analyse how the relevant components
+  currently work
+
+Wait for both before presenting the menu. Even if the work item seems
+straightforward, always spawn these agents — the menu previews depend
+on their findings.
+
+## Step 3 — Present Refinement Menu
+
+Present the five operations with one-line descriptions. Reference agent
+findings in the previews so the user can pick informed:
+
+1. **decompose** — split into child work items (epic→stories, story→tasks);
+   e.g. "Requirements suggest 3 child stories (R1, R2, R3)"
+2. **enrich** — add Technical Notes from codebase analysis;
+   e.g. "4 relevant files identified (src/auth/session.ts, …)"
+3. **sharpen** — tighten vague acceptance criteria;
+   e.g. "2 vague criteria detected (AC3, AC5)" or "all criteria already testable"
+4. **size** — append a t-shirt size indicator with rationale;
+   e.g. "estimate M based on files in auth/ and session/"
+5. **link** — populate Dependencies from related work items;
+   e.g. "1 potential blocker found (0031)" or "no related work items found"
+
+Operations that have nothing to do should be marked as such (e.g.
+"sharpen — all criteria already testable").
+
+User can select one, multiple, or "all relevant". Regardless of selection
+order, always execute in canonical order: **decompose → enrich → sharpen
+→ size → link**. This ensures Technical Notes content is in place before
+size's `**Size**:` line is prepended, and decompose's children exist before
+any link operation references them.
+
+## Step 4 — Execute Operations
+
+### 4a. Decompose
+
+Propose 2–5 candidate children (2–4 for story decomposing to tasks) with
+draft titles and one-line Summaries derived from the Requirements section.
+
+**Bug/spike challenge**: if the work item kind is `bug` or `spike`, first use
+the `AskUserQuestion` tool with two options:
+
+1. **Yes, proceed anyway** — continue with decompose
+2. **No, cancel** — exit decompose and return to the menu
+
+**Existing children**: if the Requirements section already contains a
+`### Child work items` subsection, offer:
+```
+append (add new children to the existing list) / skip (do not decompose further) / cancel
+```
+Never replace the existing list silently. For the append path, use the
+anchor described below under "append to existing `### Child work items`".
+
+**Approval grammar**: each proposal MUST include a one-line grammar legend
+immediately under the numbered child list:
+```
+Commands: approve all | edit N: <title> | drop N | add: <title> | regenerate | cancel
+```
+
+The legend appears on every proposal turn — the first proposal and after
+every grammar iteration.
+
+Process user input:
+- `approve all`, `yes`, `lgtm` → proceed to the pre-write warning
+- `edit N: <new title>` → update child N's title, re-show updated proposal
+  with legend restated. Do NOT write.
+- `drop N` → remove child N, renumber remaining children 1…M, re-show
+  with legend. Do NOT write.
+- `add: <title>` → append a new child with that title, re-show with legend.
+  Do NOT write.
+- `regenerate` → discard current proposal, generate a fresh set of 2–5
+  candidates from the same Requirements. Do NOT write.
+- `cancel`, `abort` → print "decompose cancelled — no children written"
+  and return to the menu. No numbers allocated.
+- Any other input → print "unrecognised command", restate the legend, and
+  re-show the unchanged proposal unchanged. Do NOT treat as approval.
+
+**Pre-write warning**: before writing, use the `AskUserQuestion` tool with two
+options. State the allocation count and warn about partial state:
+
+1. **Yes, proceed** — allocate N numbers and write N files (partial state is
+   possible if aborted mid-write; delete the newly-written child file(s) to
+   recover)
+2. **No, cancel** — cancel without writing
+
+**A re-key in progress.** `accelerator work id next` and
+`accelerator work create` refuse before reading or writing anything while an
+`accelerator work rekey` run is unfinished. Before any other branch on a
+non-zero exit from one of them, check its stderr for these codes; in every
+case nothing was written:
+
+- `E_REKEY_IN_PROGRESS` (exit 4) — tell the user a re-key is unfinished:
+  run `/rekey-work-items` to finish or undo it. Stop.
+- `E_REKEY_PLAN_UNREADABLE` (exit 4) — relay the printed remedy as is, never
+  suggesting the re-key be finished. Stop.
+- `E_REKEY_REQUIRED` (exit 4) — some items are not yet under the IDs
+  `work.id_pattern` gives them, such as after the pattern changed: relay
+  the printed remedy as is. It names `/rekey-work-items`, after any fix by
+  hand an item re-key cannot read needs first. Stop.
+- `E_WORK_ITEM_MALFORMED` (exit 4) — relay every file it lists with its
+  printed fix, as is. Each is fixed by hand. Stop.
+- `E_IDENTITY_RUN_BUSY` (exit 1) — another identity command is still running;
+  retry once it ends.
+
+**On approval** under `{tracker}`: do not call `accelerator work
+id next` and do not write children with the `Write` tool. For each
+child, write its body (H1 through the remaining template sections, with the
+`NNNN` placeholder left literally in place) to a scratch file and run:
+
+```
+accelerator work create "<child title>" <kind> <priority> \
+  --status draft --author "<resolved author>" --producer refine-work-item \
+  --parent "work-item:<parent id>" --body-file <scratch-file> \
+  [--tag <value>]...
+```
+
+with no `--push`, so each child is saved as a draft. Its stdout is the
+draft's path; the draft's `id` is the `draft-` prefix of its filename, and
+that is the ID the parent's `### Child work items` links and the ledger
+name. If a call exits non-zero, stop, relay its stderr, and list the
+children already written. Then continue at step 3 below. The pre-write
+warning says "create N drafts" rather than "allocate N numbers".
+
+**On approval** under every other pattern:
+
+1. Call `accelerator work id next --count N`
+   exactly once to allocate N consecutive numbers.
+
+2. For each child, write `NNNN-kebab-slug.md`, populating every unified
+   frontmatter field as specified under **Populate frontmatter** below.
+
+   Immediately before writing each child, verify the computed filename does
+   not already exist. If it does, abort with:
+   ```
+   Collision: <path> already exists (concurrent session?). Aborting.
+   Allocated: NNNN, NNNN, …; Wrote: N-1 files (list them).
+   Delete the newly-written child file(s).
+   ```
+
+   Child body includes: Summary (from proposal), Context (linking to
+   parent with "Child of NNNN — <parent title>"), Requirements (minimal
+   but substantive; no `[bracketed placeholder]` text), Acceptance Criteria
+   (minimal but substantive; sharpen can tighten these later), Dependencies
+   (blank), and remaining template sections.
+
+3. **Append `### Child work items` to the parent's Requirements section**:
+
+   After all children are written successfully:
+   - Read the parent file
+   - Locate `\n## Requirements\n` and `\n## Acceptance Criteria\n`
+   - Extract the last non-empty line of Requirements (the line immediately
+     before the blank-line transition to Acceptance Criteria); call this
+     `<req_tail>`
+   - Build: `old_string` = `<req_tail>\n\n## Acceptance Criteria\n`
+   - Build: `new_string` = `<req_tail>\n\n### Child work items\n\n- NNNN — title\n…\n\n## Acceptance Criteria\n`
+   - Edge case — empty Requirements: use `## Requirements\n\n## Acceptance Criteria\n`
+     as `old_string` and insert `### Child work items` between them.
+   - Pre-Edit, count occurrences of `old_string` in the parent file. If not
+     exactly 1, abort the parent update with:
+     ```
+     Could not locate a unique '## Acceptance Criteria' anchor in <path>
+     (matches found: <N>). Parent not updated.
+     Children NNNN, NNNN, NNNN remain on disk; add their links manually,
+     or delete the newly-written child file(s) and re-run decompose.
+     ```
+     Children already written remain on disk.
+
+   **Append to existing `### Child work items`** (re-decompose path):
+   - Locate `### Child work items` subsection, find its last `- NNNN — title`
+     line; call this `<last_link>`
+   - Build: `old_string` = `<last_link>\n\n## Acceptance Criteria\n`
+   - Build: `new_string` = `<last_link>\n- NNNN — title\n…\n\n## Acceptance Criteria\n`
+   - Same uniqueness pre-check; same abort diagnostic if not exactly 1.
+
+4. Print a completion ledger, one line per child:
+   ```
+   Wrote NNNN — title
+   Wrote NNNN — title
+   Allocated 3 numbers, wrote 3 files.
+   ```
+   On aborted or partial write, show allocated vs. written counts and
+   list any written filenames.
+
+After a successful decompose, proceed to Step 5 (hierarchy display) before
+running any remaining operations.
+
+#### Populate frontmatter
+
+When writing each child (step 2 above), **substitute** every field below
+with the indicated value:
+
+- `type:` ← `work-item`
+- `id:` ← from the script, zero-padded four-digit string
+  (own-identity; legacy files use `work_item_id`)
+- `title:` ← per-child proposal title; body H1 matches exactly
+- `date:` ← current UTC timestamp via `date -u +%Y-%m-%dT%H:%M:%S+00:00`
+- `author:` ← first match in chain: parent work item's `author` field →
+  configured `author` value (from context config) → the session's VCS user
+  identity (the user-identity idiom in the SessionStart VCS Command Reference,
+  which falls back to the git identity when the jj identity is unset, so
+  git-only and colocated repositories both resolve) → ask the user once and
+  apply to all children
+- `producer:` ← `refine-work-item`
+- `kind:` ← derived: `epic → story`, `story → task`, `bug`/`spike` → ask
+  user to confirm before proceeding (already done in the challenge step),
+  any other kind → `story` with a one-line notice
+- `status:` ← literal `draft`
+- `priority:` ← inherit from parent; if parent has none, ask once and
+  apply to every child written in this session
+- `tags:` ← verbatim copy of the parent's `tags` array (empty array `[]`
+  if the parent has none)
+- `last_updated:` ← same UTC timestamp as `date`
+- `last_updated_by:` ← same author value resolved above
+- `schema_version:` ← `1`
+
+Optional linkage/foreign-ref keys are omit-by-default: the template shows
+each as `""`/`[]`, but write a key into the artifact **only** when it has a
+value, and omit it entirely otherwise (do not carry the empty placeholder
+through).
+
+- `parent:` ← the parent work item's ID as a typed-linkage ref `"work-item:NNNN"`,
+  where NNNN is the parent's `id` field — from `id` on unified files,
+  or `work_item_id` on legacy files — canonicalised to the configured
+  pattern's full-ID shape, e.g. `"1"` → `"work-item:0001"`. Always
+  fill — every decomposed child has a parent.
+- `blocks:` ← list of typed-linkage refs to work items this child
+  blocks (`["work-item:NNNN", ...]`). Fill when blocking edges are
+  explicit; otherwise omit the key.
+- `blocked_by:` ← list of typed-linkage refs to work items that block
+  this child. Prefer writing the canonical `blocks:` on the other
+  side; emit `blocked_by:` only when the canonical side cannot be
+  written, and omit it otherwise.
+- `derived_from:` ← list of typed-linkage refs to artifacts this child
+  is derived from (`["plan:NNNN", ...]`). Fill when derivation is
+  explicit; otherwise omit the key.
+- `relates_to:` ← list of typed-linkage refs to related artifacts.
+  Fill when relationships are explicit; otherwise omit the key.
+- `source:` ← typed-linkage ref to the originating source artifact
+  (`"issue-research:NNNN"`). Fill when the source is explicit;
+  otherwise omit the key.
+- `external_id:` ← cross-system pointer (e.g. a Jira/Linear key). Fill
+  when propagated from the parent or linked to an external tracker;
+  otherwise omit the key.
+
+### 4b. Enrich
+
+Read the target work item's existing Technical Notes content.
+
+If the codebase agents returned nothing concrete (no specific files or
+components identified), report:
+```
+no enrichment could be grounded in code — skipping enrich
+```
+and make no Edit.
+
+Otherwise propose Technical Notes content with specific `path:line`
+references drawn from agent results. Do not invent references.
+
+If non-trivial Technical Notes content already exists (anything beyond a
+`**Size**:` line), ask:
+```
+replace (deletes existing Technical Notes) / append (add after existing content) / skip?
+```
+- `replace` → show a unified diff (old struck, new added) and require an
+  explicit second `y/n` confirmation before invoking Edit
+- `append` → add new content after existing content. Preserve any leading
+  `**Size**:` line placed by a prior size operation — never overwrite it
+- `skip` → make no Edit
+
+On approval via Edit: modify only the Technical Notes section. Do not touch
+Requirements, Acceptance Criteria, Summary, or any frontmatter field.
+
+### 4c. Sharpen
+
+Read the target work item's Acceptance Criteria. Identify criteria that are
+vague or untestable (non-measurable phrases like "should be fast", "handles
+errors gracefully", "works correctly").
+
+If every criterion is already specific and testable, report:
+```
+all acceptance criteria already testable — nothing to sharpen
+```
+and make no Edit.
+
+Otherwise, for each vague criterion propose a specific, measurable rewrite
+(e.g. "p95 latency under 200ms under default benchmark dataset"). Skip
+criteria that are already testable — only propose rewrites for vague ones.
+Iterate with the user until each proposed rewrite is agreed.
+
+On approval via Edit: modify only the Acceptance Criteria section with the
+agreed rewrites. Preserve criteria that were not sharpened byte-for-byte.
+
+### 4d. Size
+
+Read the target work item's Technical Notes. Check whether a `**Size**:` line
+already exists as the first line.
+
+Propose a t-shirt size (`XS`, `S`, `M`, `L`, `XL`) with a rationale
+referencing specific files or subsystems from agent results. Iterate with
+the user.
+
+On approval:
+- **No existing `**Size**:` line**: insert `**Size**: <value> — <rationale>`
+  as the FIRST line of Technical Notes, followed by a blank line separating
+  it from any existing content. Do NOT add as a frontmatter key.
+- **Existing `**Size**:` line, proposed value AND rationale match byte-for-byte**
+  (ignoring leading/trailing whitespace): report "size unchanged — <value>"
+  and make no Edit.
+- **Existing `**Size**:` line with a different value or rationale**: show a
+  unified diff of the proposed change (existing line struck, new line added)
+  then use the `AskUserQuestion` tool with two options:
+  1. **Yes, apply size change** — replace the line in place
+  2. **No, cancel** — make no Edit
+
+### 4e. Link
+
+Count `NNNN-*.md` files in `{work_dir}` using a single Glob invocation.
+
+- **Count ≤ 30**: read them directly via batched Read
+- **Count > 30**: spawn **{documents locator agent}** scoped to `{work_dir}`
+
+Propose `Blocked by:` and/or `Blocks:` entries in Dependencies, referencing
+only real work item numbers (verify each proposed number exists before
+including it). If no related work items are found, print:
+```
+no related work items found — link skipped
+```
+and make no Edit.
+
+If Dependencies already has non-empty content, ask:
+```
+replace (overwrites existing entries) / append (add new entries after existing) / skip?
+```
+- `replace` → show a unified diff and require a second `y/n` confirmation
+- `append` → add only net-new entries, skipping any that duplicate existing
+  entries
+- `skip` → make no Edit
+
+On approval via Edit: modify only the Dependencies section.
+
+**Validate the frontmatter**: after editing the work item, run
+
+```bash
+accelerator corpus frontmatter validate --file <the refined work item path>
+```
+
+If it exits non-zero, the document violates the canonical frontmatter
+standard; report the emitted violation and fix the frontmatter before
+completing.
+
+## Step 5 — Display Hierarchy
+
+Run immediately after decompose writes at least one child (skip if decompose
+was cancelled, declined by user, or the parent Edit failed).
+
+Render the parent → children tree using the format pinned in `/list-work-items`:
+Unicode box-drawing characters, two-space indent per depth level, `├── ` for
+all children except the last, `└── ` for the last child. The canonical fence
+below MUST appear verbatim in this step's prose so the hierarchy-format guard
+can verify byte-equality with the matching fence in
+`list-work-items/SKILL.md`:
+
+<!-- canonical-tree-fence -->
+NNNN — parent title (kind: <kind>, status: <status>)
+  ├── NNNN — child 1 title (kind: <kind>, status: <status>)
+  ├── NNNN — child 2 title (kind: <kind>, status: <status>)
+  └── NNNN — last child title (kind: <kind>, status: <status>)
+<!-- /canonical-tree-fence -->
+
+Concrete work item IDs and titles replace the placeholders in the actual
+output (e.g. `0042 — User Auth Rework (kind: epic)`). The status field
+of the parent is omitted only if blank; all present fields are shown.
+
+Step 5 runs inline after decompose completes, before enrich, sharpen, size,
+and link operate on the parent. The hierarchy is not re-rendered after
+subsequent operations.
+
+## Step 6 — Offer Review
+
+After the entire selected operation set completes, use the `AskUserQuestion`
+tool with two options:
+
+1. **Yes, run review** — run `/review-work-item` on this work item now (and
+   each child if decompose was in the selection)
+2. **No, done** — exit without running review
+
+Do NOT invoke `/review-work-item` automatically — wait for the user's choice.
+
+## Important Guidelines
+
+- **Mandatory agents at Step 2**: always spawn both codebase agents in
+  parallel before presenting the menu, even for simple work items.
+- **Canonical operation order**: decompose → enrich → sharpen → size → link,
+  regardless of the order the user selected them.
+- **Each operation owns its sections only**:
+  - decompose: writes new child files and appends `### Child work items` to
+    the parent's Requirements (never touching existing Requirements prose)
+  - enrich: owns Technical Notes prose content
+  - sharpen: owns Acceptance Criteria
+  - size: owns the single `**Size**: <value> — <rationale>` line, always as
+    the FIRST line of Technical Notes; replace in place on re-run
+  - link: owns Dependencies
+- **Never modify any frontmatter field** of the target work item
+  (`type`, `id` (or `work_item_id` on legacy files), `title`, `date`,
+  `author`, `producer`, `kind`, `status`, `priority`, `parent`,
+  `external_id`, `tags`, `last_updated`, `last_updated_by`,
+  `schema_version`) — those transitions are `/update-work-item`'s
+  concern. Children of decompose are new work items getting their
+  initial frontmatter.
+- **Destructive paths require two-step confirmation**: replace mode for
+  enrich, replace mode for link, clobbering an existing `**Size**:` line —
+  each must show a unified diff and require a second `y/n` confirmation.
+- **Edit failure path**: if an Edit's target string cannot be matched (file
+  changed between read and edit), abort that specific edit with a clear
+  diagnostic and continue with remaining approved edits. For decompose: write
+  all children first, update the parent last; if the parent Edit fails,
+  children stay on disk and work item numbers are printed for manual linking.
+- **Numbering is consumed eagerly** on decompose with no rollback; the skill
+  assumes a single-session invocation.
+- **Canonicalise parent field** to zero-padded four-digit string (same as
+  `/update-work-item`), e.g. `"1"` → `"0001"`.
+- **Idempotent on re-run**: every operation checks existing content before
+  proposing additions.
+
+## Relationship to Other Commands
+
+1. `/create-work-item` or `/extract-work-items` — create the work item
+2. `/refine-work-item` — decompose and enrich (this command)
+3. `/review-work-item` — automated multi-lens quality review
+4. `/stress-test-work-item` — interactive adversarial examination
+5. `/update-work-item` — status/metadata transitions (not this skill's concern)
+6. `/create-plan` — plan implementation from an approved work item
+
+!`accelerator config instructions refine-work-item --fail-safe`

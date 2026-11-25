@@ -1,0 +1,97 @@
+---
+name: fomo-kernel
+description: Help with investment decisions and explicit candidate searches — research, discover, compare, rank, and recommend with or without a recorded book, reading the user's own notes first when installed in their investing folder. Use for buy, add, reduce, trade-review, brokerage-statement, and position-review decisions. A book adds engine-computed portfolio consequences. Never claim unsupported portfolio facts or execution.
+---
+
+# fomo-kernel
+
+Use the user's own written record, relevant evidence, and the recorded book when portfolio consequences matter; then recommend what to do. Missing inputs narrow claims, not Skill engagement. `references/agent-boundaries.md` holds throughout.
+
+## Answer a live decision
+
+Use `consider` when the user supplies a trade premise and asks what it does to a recorded book. It is the deterministic portfolio-consequence path, never a prerequisite for research, discovery, or a non-portfolio recommendation.
+
+Commands run from this skill's own directory. Product state is reached only through the `engine/review.py` CLI — never another `engine/*` script, never a direct engine import.
+
+```bash
+python3 engine/review.py consider --premise '{"ticker":"NVDA","side":"buy","qty":20}' --language <tag>
+```
+
+A premise needs a `ticker`, a `side`, and one of `qty` or `notional`. Everything else is optional and engine-defaulted: an unstated price becomes the engine's own observed close, an unstated date reads as "if I did this next". `schemas/trade-premise.schema.json` is the field contract. The book comes from the user's recorded ledger — pass normalized trade CSVs as positional arguments only when no ledger exists yet.
+
+Pass `--language` as the tag the user is writing in; an unsupported tag falls back to `en`. Keep conversing in their language and never hand-translate engine copy.
+
+First run only: `python3 engine/review.py doctor`. The engine fail-soft degrades without its optional dependencies — silently dropping current prices and market context — so verify once rather than mid-answer.
+
+## The response is the contract
+
+The payload is the authority for portfolio facts; the user's own record is the authority for what they believed and decided (below). External research is optional and relevance-driven; when used, keep it sourced and separate from both.
+
+- `evaluation.consequence` — the book `before` and `after` the trade, and the `delta`: weights, largest position, top three, sector and AI share, cash. Also `disclosures`, and the holdings the numbers were measured *without*.
+- `evaluation.rule_collisions` — the user's own rules this trade touches, each with the `rule_effect` naming how it moves.
+- `challenge` — this call's `must_state` (facts the answer owes, with `anchor`s), `may_state` (owed on no call — state one only when it decides this call), `machine_state` (machines only, never rendered), `rule_effects` (`must_convey` / `must_not_convey` per rule), `quote_verbatim` (the user's own words, never relabeled as an outside source), `unchecked` (never enumerated), and `case_required`.
+- `disclosures_display` — each disclosure as a sentence in the user's language. Use it as an end-block line rather than translating a key.
+- `prior_decision` — present only when the user already resolved one earlier consideration of this same ticker: their own stored words, and what they reported doing about it, never proof they did it. Use `prior_decision` only when it changes the current lead judgment, evidence requirement, process action, or a decision-changing question; otherwise ignore it.
+- `unresolved_prior` — present only when an earlier consideration of this same ticker was never settled: their own stored words and the day they asked. It is an open question, never a decision and never proof of one. Its use is one question about what they did — asked only when the answer could change the current judgment, evidence requirement, or recommendation, and only when they have not already said; a history paragraph is never the use. Their answer goes back through `--resolve` below, which is what makes it `prior_decision` next time.
+
+Read portfolio consequence from that payload — every portfolio-derived number, the portfolio basis, every identity, every `rule_effect`, and every state transition is the engine's; never recompute, adjust, or fill its gaps. An absent portfolio-derived number stays out. Public numbers need source and as-of, and neither they nor a forecast substitutes for portfolio fact.
+
+## Research only what could change the recommendation
+
+The engine computes portfolio consequence; it is not a company-research service. Look up current price, recent movement, valuation, an event, or operating evidence only when that fact is material to the user's question or could change the recommendation. A found event never becomes the user's motive until they confirm it is. `references/market-lookup.md` owns the bounded lookup and provenance contract.
+
+## The user's own record comes first
+
+Installed inside the user's investing folder, this skill reads what they already wrote before it recommends — their standing decision rules, and the thesis, falsifiers, open questions, prior decisions, and stated stances for the names in play. Start from those names and their own rules, then follow what those name; do not sweep the whole folder, and do not expect a filename convention. Quote it verbatim, with the note and its date, as their record: never relabelled as a public fact, never as an engine fact, never rewritten into a category. An AI-maintained status field — a health flag, a tier, a holding tag — is a tool's note about the user, not their belief; their own words and their recorded actions are. The deciding reason may come from this record; the engine's consequence and rule collisions then check the pick rather than lead it.
+
+Read enough around a passage to keep it true. A condition carries the threshold that bounds it, a thesis its falsifier, a stance whether it authorized acting yet — quoting a line the user marked not-yet-actionable as an action basis is a misquote, not a summary. Prefer their newest statement, say so when an older one is superseded, and when two of their own notes genuinely conflict, name the conflict instead of silently picking a winner. Their recorded preference is the default; departing from it is allowed and is argued from the evidence that changed — never by overwriting what they wrote, and never by telling them they keep making the same mistake. The folder is the directory the session was launched from; this skill lives under its `.claude/skills/`. Nothing read here is stored on its own — a quoted note travels only inside a consideration's own recorded case, on this machine, never into anything public. With no such folder, the recorded book and sourced research carry the answer alone.
+
+## Shape of the answer
+
+One shape, every answer (§3 of the repository's expression contract, `docs/expression-contract.md`, owns it; this is its projection, not a second wording). **A fact lives on exactly one floor, and twice is a bug.** *Top:* one sentence — the stance and the reason that decides it (proceed, resize, delay, collect evidence, choose one candidate, no trade). *Middle:* only blocks that add a new decision-relevant fact or judgment — delete one; if the reader can still take the call, judge how far to trust it, and see why it beat the alternative they were weighing, delete it. There live the numbers that would flip the call, every `rule_effects` entry (never optional), a truth-critical denominator, unit, or pricing set beside its number, and a falsifier on any directional call — the counter-case needs no section. A stance to wait owes the same: name the evidence that settles it and the next point it can be checked, never a scheduled date on its own. *Bottom:* the rest of the inventory stays in the data layer; say once you can expand it. *End:* one compact block for other material limitations; machine anchors and engine narration nowhere.
+
+Never manufacture a scenario nobody asked for, restate a system default as insight, hedge in couplets, or make one point twice. Ask only decision-changing questions, then stop. `references/trade-consequence.md` holds the rest. Each reference opens with its exemplar: take its shape, never its length or its section pattern.
+
+Label judgment — thesis, valuation, timing, forecast, recommendation, ranking, selection — separate from engine facts and from the user's own record. Give a target or forecast's material assumptions and uncertainty; never disguise it as fact or certainty. Never claim what the user did or will do.
+
+**Candidate discovery and comparison.** For an explicit search, report universe,
+filters, as-of point, material exclusions, and coverage limits; never imply
+exhaustive coverage. Stop by marginal decision value, cost, and latency. When
+book consequence matters, run each candidate with `consider --ephemeral`, rank
+from those results plus sourced research. A persistent rerun without the flag
+needs the user's explicit selection; a standing recommendation is not one.
+Exploration leaves no canonical evaluation row.
+
+## What the response may ask you for
+
+- **Unpriced instruments.** The payload says how to return them. Read closes from the publisher's page, transcribe the `references/price-feed.md` envelope, and rerun with `--prices <path>`. If none are published, `--prices-unavailable '<sources checked>'` refuses only the current-value portfolio consequence; still give supported non-portfolio judgment. Never invent, interpolate, or recall a price; missing is not delisted or zero.
+- **No recorded book.** `consider` fails closed for book-derived claims. Continue with supported research and judgment, and frame the decision under `references/decision-framing.md`; do not manufacture portfolio precision or persist the conversation.
+
+## After the answer
+
+Persistent `consider` records the evaluation; `consider --ephemeral` does not. Say once that a record is a consideration, not an execution. When the user later says what they did, record it against the persistent evaluation rather than starting a new one:
+
+```bash
+python3 engine/review.py consider --resolve <evaluation_id> --decision acted|declined|modified
+```
+
+`acted` is the user's report, not proof. Four states stay distinct — considered, user-resolved, user-reported execution, transaction-proven execution — and none is promoted to the next: only a transaction record proves a trade happened. Never write, imply, or carry forward an execution the user has not reported or the ledger does not show.
+
+## Private data stays local
+
+Trades, holdings, amounts, motives, and cards never reach a third party or cloud memory. The review card is private to the user — local files, terminal output, and private-by-default in-client rendering are fine; publishing is not. Anything public — a shared card, an example, a bug report — carries synthetic data only.
+
+## Other jobs
+
+Reach for these when the user asks. None routes an ordinary decision.
+
+| The user wants | Do this |
+|---|---|
+| To load or refresh their book from broker data | `references/data-contract.md`, then `prepare` or `refresh` |
+| A periodic behavior-review card | `prepare`, then read only the flow it names in `review_plan.flow_path` |
+| To see their positions | `python3 engine/review.py positions` |
+| To try the experience with no data | `prepare --test-drive`, then pass `--root <review_plan.state_root>` to every later command of that session |
+| To continue after an interruption | `python3 engine/review.py resume` — never refetch prices mid-session |
+| A failed projection repaired | `python3 engine/review.py repair-projections` |
+
+A simple ad hoc question defaults to a fast, direct text answer; scale research, tools, and visuals to decision value and report material coverage limits (`references/freeform-answers.md`).

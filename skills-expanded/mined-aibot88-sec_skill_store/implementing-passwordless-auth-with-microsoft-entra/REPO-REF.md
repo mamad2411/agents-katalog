@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/implementing-passwordless-auth-with-microsoft-entra/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Implements passwordless authentication using Microsoft Entra ID with FIDO2 security keys, Windows Hello for

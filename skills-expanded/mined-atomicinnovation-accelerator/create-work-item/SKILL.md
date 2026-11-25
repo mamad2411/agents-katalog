@@ -1,0 +1,989 @@
+---
+name: create-work-item
+description: Interactively create a well-formed work item. Use when capturing a
+  feature, bug, task, spike, or epic as a structured work item in meta/work/.
+argument-hint: "[topic] [--id <ID>] | [existing work item path/number]"
+allowed-tools:
+  - Bash(accelerator config *)
+  - Bash(accelerator work *)
+  - Bash(accelerator corpus metadata derive)
+  - Bash(accelerator corpus frontmatter validate *)
+---
+
+# Create Work Item
+
+!`accelerator config context --skill create-work-item --fail-safe`
+!`accelerator config agents --fail-safe`
+
+If no "Agent Names" section appears above, use these defaults:
+accelerator:reviewer, accelerator:codebase-locator,
+accelerator:codebase-analyser, accelerator:codebase-pattern-finder,
+accelerator:documents-locator, accelerator:documents-analyser,
+accelerator:web-search-researcher.
+
+**Work items directory**: !`accelerator config path work --fail-safe`
+**Active integration**: !`accelerator config work integration --fail-safe`
+**ID pattern**: !`accelerator config work id_pattern --fail-safe`
+
+The **Active integration** line gates the post-draft push offer (Step 5). The
+`accelerator config work integration` command above prints an **empty line**
+when no integration is configured, so branch on the **string**: a non-empty value means
+*integration configured* (offer the push); an empty value means *not configured*
+(no push offer — behave exactly as today). This is the single resolution of the
+active tracker for this invocation; the push dispatcher is told which tracker to
+use from **this** value, so the gate and the route cannot diverge.
+
+When **ID pattern** is `{tracker}`, the tracker owns every item's `id`: a
+pushed item takes the issue's key as its `id`, and an item no tracker has
+confirmed is saved as a **draft** in `drafts/` under a provisional `draft-`
+ID, which `/sync-work-items` promotes later.
+
+## Work Item Template
+
+The template below defines the sections and frontmatter fields that every
+work item must contain. Read it now — use it to guide what information you gather
+in Step 1 and what structure you produce in Steps 3–4.
+
+!`accelerator config template work-item --fail-safe`
+
+You are tasked with guiding the user through creating a well-formed work item —
+a structured document capturing a feature, bug, task, spike, or epic for
+tracking and implementation. This is a collaborative, challenging conversation:
+the model contributes its own knowledge and research alongside the user's input
+rather than simply transcribing what the user says. The goal is a work item that
+is well-reasoned and well-specified — one that would stand on its own without
+needing the author present to explain it.
+
+The work item template has three sections that look similar but capture
+different things — populate each deliberately:
+
+- **Assumptions** are interpretations you made that affect what gets built.
+  Flag one only when using the wrong interpretation would lead someone to
+  build something different. Example: *"Treating 'users' as end users
+  rather than internal staff — if wrong, scope changes."*
+- **Open Questions** are genuine unknowns a reader or implementer needs
+  resolved before work can proceed. Example: *"What does 'better results'
+  mean — improved relevance, faster delivery, or both?"*
+- **Drafting Notes** capture interpretations you made while filling out the
+  work item — business-context calls, scope decisions, or technical choices
+  that someone should review if they turn out to be wrong. Actively
+  populate this section. If you inferred who the stakeholders are, what a
+  vague term means, where the scope boundary sits, or which technical
+  approach is implied, write it down. Routine field selections (kind,
+  priority, tags) don't need an entry unless the choice reflects a
+  substantive scope or meaning interpretation a reviewer should be aware
+  of.
+
+## Refusals before anything is read
+
+`accelerator work resolve`, `accelerator work id check`,
+`accelerator work id next` and `accelerator work create` (with or without
+`--push`) refuse before reading or writing anything over a corpus whose
+IDs cannot be trusted (`E_REKEY_REQUIRED`, `E_WORK_ITEM_MALFORMED`). All
+but `resolve` also refuse while an `accelerator work rekey` run is
+unfinished or another identity command is running. Before any other branch
+on a non-zero exit from one of them, check its stderr for these codes; in
+every case nothing was written:
+
+- `E_REKEY_IN_PROGRESS` (exit 4) — tell the user a re-key is unfinished:
+  run `/rekey-work-items` to finish or undo it. Stop.
+- `E_REKEY_PLAN_UNREADABLE` (exit 4) — relay the printed remedy as is, never
+  suggesting the re-key be finished. Stop.
+- `E_REKEY_REQUIRED` (exit 4) — some items are not yet under the IDs
+  `work.id_pattern` gives them, such as after the pattern changed: relay
+  the printed remedy as is. It names `/rekey-work-items`, after any fix by
+  hand an item re-key cannot read needs first. Stop.
+- `E_WORK_ITEM_MALFORMED` (exit 4) — relay every file it lists with its
+  printed fix, as is. Each is fixed by hand. Stop.
+- `E_IDENTITY_RUN_BUSY` (exit 1) — another identity command is still running;
+  retry once it ends. A `work create --push` in another session holds the
+  lock while it waits on the tracker, so the refusal can follow a wait of up
+  to 60 s.
+
+## Step 0: Parameter Check
+
+When this command is invoked:
+
+1. **Requested ID**. Recognise `--id <ID>` or `--id=<ID>` as the
+   argument's leading or trailing tokens (`--id 0400 dark mode` or
+   `dark mode --id 0400`), and take them out before anything else. When
+   `--id` appears anywhere else (`add --id <ID> to accelerator work
+   create`), run nothing yet: ask once whether `--id <token>` names the new
+   item's ID or is part of the topic. Lift it as a requested ID only if the
+   user says it names the ID; otherwise the whole argument is the topic.
+
+   When an ID was requested, the remainder is the topic. Never pass it to
+   `accelerator work resolve`; enrich-existing mode is unavailable. With no
+   remainder, ask the user what the work item is about.
+
+   Before any command carries an ID, whether from the argument or from
+   *Requested ID recovery*, check it for a `'`. Every command passes the ID
+   single-quoted, so an ID holding one can never be passed: say an ID cannot
+   contain a single quote and go to *Requested ID recovery* without running a
+   command.
+
+   Settle the ID, with `--` so a request starting with `-` is read as the ID:
+
+   ```
+   accelerator work id check -- '<ID>'
+   ```
+
+   Apply *Refusals before anything is read* first, then branch on its
+   result:
+
+   - **Exit 0, `exact\t<id>`** — use `<id>` with no question, saying which ID
+     will be used ("Using 0400").
+   - **Exit 0, `other-key\t<id>\t<key>`** — propose `<id>` exactly as
+     printed, saying that its key differs from the configured `<key>` ("Use
+     PO-0400? Its key PO differs from the configured PP."). A key typo would
+     start a new sequence, so continue only on confirmation; a declined
+     proposal goes to *Requested ID recovery*.
+   - **Exit 0, `corrected\t<id>` or `corrected\t<id>\t<key>`** — propose
+     `<id>` exactly as printed, saying that its key differs from the
+     configured `<key>` when the line names one ("Use PO-0400? Its key PO
+     differs from the configured PP."). Continue only on confirmation; a
+     declined proposal goes to *Requested ID recovery*.
+   - With each of these three, add that automatic numbering continues above
+     the highest number already used (per key under a key pattern), so an ID
+     above it moves the sequence there.
+   - **Exit 1, `E_ID_TRACKER_OWNED`** — relay stderr verbatim, then offer only
+     automatic allocation, through the normal `{tracker}` flow, or
+     cancelling, and wait.
+   - **Exit 1, `E_ID_DRAFT_RESERVED` or `E_ID_PATTERN_MISMATCH`, or exit
+     4, `E_ID_TAKEN`** — relay stderr verbatim and go to *Requested ID
+     recovery*.
+   - **Any other non-zero exit** — relay stderr verbatim and abort.
+
+   Never decide an ID's shape or read its key yourself; `work id check` does.
+   The settled ID is the item's ID from here on. Continue to topic-string
+   handling below with the remainder as the topic.
+
+2. **If an argument without a requested ID was provided**:
+
+   First, **try to resolve the argument as a reference to an existing
+   work item** by invoking the resolver:
+
+   ```
+   accelerator work resolve <argument>
+   ```
+
+   The resolver respects `work.id_pattern` and accepts paths, full IDs
+   (`PROJ-0042`), legacy bare numbers (`0042`), and short numbers (`42`,
+   resolved against `work.key` when set).
+
+   - **Exit 0** (single match): the resolver echoes the absolute path on
+     stdout. Continue to frontmatter validation below.
+   - **Exit 1** with a stderr line starting `E_RESOLVE_INVALID:` (neither
+     path, full ID, nor bare number; a deprecation warning may precede it):
+     proceed to topic-string handling below; treat the argument as a
+     topic. Any other exit 1, such as `E_WORK_ID_PATTERN_INVALID`, is a
+     configuration error: relay stderr verbatim and stop.
+   - **Exit 2** (ambiguous match): the resolver lists every candidate
+     with a source-category tag (`legacy`, `project-prepended`,
+     `pattern-shape`, or a project code). Present the list to the user
+     and ask them to disambiguate by re-running with a full ID (e.g.
+     `PROJ-0042`) or a path.
+   - **Exit 3** (no match): print
+     `"No work item matching <argument> — interpreting as topic string.
+     If that's wrong, abort and re-run with a different argument (or
+     /list-work-items to find a valid reference)."` and proceed to
+     topic-string handling below.
+   - **Exit 6** (path outside the work directory): the argument names a
+     real file that lies outside the managed work directory, so it is not
+     a topic string. Stop, print the resolver's error, and offer to run
+     `/list-work-items`.
+   - **Exit 4**: apply *Refusals before anything is read* above
+     (`E_REKEY_REQUIRED`, `E_WORK_ITEM_MALFORMED`) before treating the
+     argument as anything. Stop.
+
+   **Frontmatter validation** (only reached after a file was successfully
+   resolved). Run:
+
+   ```
+   accelerator work show <path> --field id
+   ```
+
+   The own-identity field is `id` on unified-shape files and
+   `work_item_id` on legacy files; `work show` resolves both
+   transparently, so either key name passed here would return the
+   same value.
+
+   If it exits non-zero (frontmatter missing or unclosed), print:
+
+   ```
+   Could not parse frontmatter in <path> — the file may be corrupted.
+   Re-open it and check that the YAML frontmatter is bracketed by two
+   `---` lines and contains all nine required fields.
+   ```
+
+   and exit without spawning agents or writing any file. (The file clearly
+   resolved, so the user intended a path — no fallback applies.)
+
+   If validation passes, read the file fully (frontmatter and body) and
+   cache the identity fields in conversation state:
+   `id` (or `work_item_id` on legacy files), `date`, `author`, `status`,
+   `title`, `kind`, `priority`, `parent`, `tags`. For any missing
+   optional field, use the template default — do not abort. Set the conversation into
+   **enrich-existing mode** with `existing_work_item_path` cached, and
+   skip directly to Step 1 in that mode — do not run the vagueness check.
+
+   **Topic-string handling**: if no resolution succeeded (discriminators
+   did not trigger, or they triggered with a fallback warning), check
+   whether the argument is too vague (no clear deliverable or subject).
+   - Vague examples: "improve things", "fix the API", "add more features"
+   - Clear examples: "add full-text search to the docs index page",
+     "fix login timeout after password reset"
+   - If vague, ask at least one clarifying question and wait for a more
+     specific description before proceeding to Step 1.
+   - If clear, proceed directly to Step 1.
+
+3. **If no argument was provided**, respond with:
+
+```
+I'll help you create a well-specified work item through a collaborative conversation.
+
+To get started, describe what you want to achieve — what's the problem or goal?
+For example: "add full-text search to the docs index page", or "users can't log in after resetting their password"
+
+I'll ask a few questions to understand the problem space, do some research, then
+work with you to shape a thoroughly reasoned work item.
+```
+
+Unless **ID pattern** is `{tracker}`, add: "Start your reply with
+`--id <ID>`, shaped like `<ID pattern>`, to choose the ID yourself, for
+example when other branches have unmerged items; a short number is proposed
+in full." Substitute the **ID pattern** value, since the user never sees the
+injected line.
+
+Then wait for the user's input. Run *Requested ID* recognition on that first
+reply. Apply the same vagueness check to the topic — if still vague, ask a
+clarifying question before proceeding to Step 1.
+
+### Requested ID recovery
+
+This applies after a declined proposal or an `E_ID_*` refusal from the CLI,
+in Step 0 before drafting or in Step 5 after it.
+
+Use the `AskUserQuestion` tool with three options:
+
+1. **Name another ID** — ask for the ID in plain text.
+2. **Allocate automatically** — let the CLI number the item.
+3. **Cancel** — after drafting, print the approved draft.
+
+After an `E_ID_TRACKER_OWNED` refusal, offer only **Allocate automatically**
+and **Cancel**. Never choose for the user; wait for their answer.
+
+A new ID is checked for a `'`, then settled through `work id check` exactly
+as in *Requested ID*. **Allocate automatically** after drafting calls
+`accelerator work id next` (none under `{tracker}`) and states the new
+projected ID. Either way, resume where the skill stopped, with the approved
+draft unchanged and no question asked again:
+
+- from Step 0, continue to drafting;
+- from Step 5 step 6.3, re-run the step 6 create, with the new `--id` or none;
+- from Step 5 step 7.1, re-run the push-gate dry-run;
+- from Step 5 step 7.3, re-run the dry-run, then the `--push` create.
+
+## Step 1: Gather Business Context
+
+Once the topic is clear, ask 3–5 open questions to understand the business
+context before investigating. Consult the work item template sections above to
+understand what the work item will need — use them to guide which questions are
+worth asking. Tailor the questions to the topic, but cover:
+
+- What pain point or problem does this address, and who experiences it?
+- What is the desired outcome — what changes for people once this is done?
+- Does the user have a solution or approach in mind? If so, surface it and
+  ask whether it's a constraint or a preference to be explored further.
+- Are there any constraints, deadlines, or dependencies worth knowing?
+- For bug topics: what is the impact, and is it a blocker?
+- Is there anything you are uncertain about, or that I should research?
+
+Ask all relevant questions at once rather than one at a time. Wait for the
+user's answers before proceeding to Step 2.
+
+### In enrich-existing mode
+
+Do not ask the broad discovery questions above. Instead:
+
+1. Identify which body sections of the existing file are **substantive** (real
+   content beyond `[bracketed placeholder]` text) and which are **gaps** (empty,
+   placeholder-only, or missing entirely). Tag each gap with **exactly one** of
+   the literal tokens:
+   - `empty` — section is absent or contains no content
+   - `placeholder-only` — section contains only template `[...]` blocks
+   - `instructional-prose` — section contains the template's instructional
+     prose carried over verbatim (e.g. "Describe the business value of this
+     work item here…")
+   - `partial` — section contains one or more substantive sentences alongside
+     residual placeholders
+
+   Use the literal token; do not paraphrase. The eval grader pattern-matches
+   on these exact strings.
+
+2. Present the gap analysis briefly:
+
+   ```
+   I've read the existing work item (<resolved path>). Here's what looks
+   complete and what still needs work:
+
+   Complete: [section list, or "none"]
+   Gaps:
+     - <Section> (<tag>)
+     - ...
+
+   I'll ask targeted questions about the gaps.
+   ```
+
+3. Ask only questions that address the identified gaps. Do not re-ask
+   questions whose answers are already substantively present in the file.
+
+4. If the existing content is rich enough that no obvious gaps remain,
+   briefly confirm this and ask what the user wants to add or improve, then
+   proceed to Step 2.
+
+## Step 2: Investigate
+
+Using the topic and business context from Step 1, run investigation agents
+in parallel:
+
+1. **Spawn {documents locator agent}** to search `{work_dir}` only —
+   look for existing work items with similar titles, descriptions, or scope.
+   Do not search research documents, plans, or other directories — work items
+   capture business requirements, not implementation details.
+
+2. **Spawn {web-search-researcher agent}** when there is uncertainty or a need
+   for richer context about any aspect of the topic — business rules, domain
+   concepts, competitive landscape, industry standards, external technology, or
+   anything the model lacks confidence on. Skip this agent only when the topic
+   is entirely self-contained and well-understood from the user's description.
+   When in doubt, prefer to spawn research — over-asking is cheaper than
+   producing a vague or poorly-grounded proposal.
+
+Run both agents in parallel where both are warranted.
+
+Once agents complete, synthesise findings — what the model knows from training,
+what research turned up, what prior work items exist — as the foundation for Step 3.
+
+**If a similar existing work item is found**: Check its status.
+- If the status is `done`, `abandoned`, or `superseded` — mention the work item
+  briefly and note it is already closed, then continue creating the new one.
+- Otherwise — surface the work item and offer the user numbered options, for
+  example:
+  1. Proceed with a new work item (if the scope genuinely differs)
+  2. Exit and update the existing work item instead (use `/update-work-item` once
+     available; for now, update it manually)
+  3. Continue creating a new work item linked to the existing one as a parent
+
+  Adapt the options to what makes sense given the work item's kind and status.
+  Do not silently continue or modify the existing work item inline. Wait for
+  the user's choice before proceeding.
+
+**In enrich-existing mode**: exclude the resolved input file from the
+similarity scan. The {documents locator agent} search of `{work_dir}` will
+find the file being enriched; do not surface it as a "potential duplicate" of
+itself. Other near-duplicates discovered are handled per the unchanged rules
+above.
+
+## Step 3: Propose and Refine
+
+Using the business context and investigation synthesis, the model leads with
+a structured proposal. Do not ask the user to generate requirements or
+acceptance criteria from scratch — propose them and invite challenge.
+
+1. **Recommend a work item kind** with a brief rationale. Valid kinds come from
+   the work item template's `kind` field (loaded at the top of this skill) — do
+   not hardcode the list. Default to `story` when the kind is genuinely
+   ambiguous.
+2. **Draft requirements** drawn from the business context and research.
+3. **Draft acceptance criteria** — specific and testable; prefer Given/When/Then
+   format for story/task. Draw on domain knowledge and research to make these
+   thorough, not just what the user explicitly mentioned.
+4. **Surface interpretations and gaps** using the right section:
+   - Put scope-changing interpretations you made in `Assumptions` and invite
+     the user to confirm or correct them.
+   - Put genuine unknowns that block progress in `Open Questions`.
+   - Put every meaningful drafting-time interpretation (who stakeholders are,
+     what vague terms mean, scope boundaries, implied technical approach) in
+     `Drafting Notes` so a reviewer can challenge them.
+
+Present as a structured proposal:
+
+```
+Based on what you've told me and my research, here's what I think this work item needs:
+
+**Suggested kind**: [kind]
+**Rationale**: [one sentence]
+
+**Requirements I'd suggest**:
+- [requirement]
+
+**Out of scope** (explicitly not captured here):
+- [item]
+
+**Acceptance criteria I'd suggest**:
+- Given/When/Then...
+
+**Assumptions I've made** (scope-changing calls — confirm or correct):
+- [assumption]
+
+**Drafting Notes** (interpretations a reviewer should see):
+- [interpretation — e.g. who stakeholders are, what a vague term means,
+  scope boundary, implied technical approach]
+
+**Open questions** (unknowns to resolve before work begins):
+- [anything the user should clarify before drafting]
+```
+
+Wait for the user to validate, push back, or refine. Challenge vague or
+untestable responses — if an acceptance criterion is not measurable (e.g.,
+"it works correctly"), first ask a clarifying question to understand the
+intent ("what would a passing test actually look like here?"). Only after
+understanding the intent should you help reformulate it into something
+testable. Do not accept vague criteria into the draft. Iterate until the
+proposal is well-specified and agreed.
+
+### In enrich-existing mode
+
+Do not lead with a from-scratch proposal. Instead present a section-by-section
+review and augmentation:
+
+```
+Here's how the existing work item reads against my research, with proposed
+additions for the gaps:
+
+**[Section name]** — [complete | needs improvement: <reason> | missing]
+[existing content excerpt or note that it is missing]
+[proposed addition or replacement, when applicable]
+
+[repeat per section]
+
+**Title**: [keep / propose new title with rationale]
+**Kind**: [keep existing <kind> / propose change to <kind> with rationale]
+**Priority**: [keep / propose change with rationale]
+**Parent**: [keep / propose change]
+**Tags**: [keep / propose additions]
+**Status**: [keep <cached> — say so if you'd like to transition it]
+```
+
+Apply the canonical Identity Field Rules (see Quality Guidelines): propose
+only the fields marked Proposable; never propose changes to immutable fields;
+surface a status transition only if the user makes a direct explicit request
+for one (the listing offers the affordance but never proposes a change
+unsolicited).
+
+The refinement loop in this step (challenging untestable criteria, vague
+requirements, etc.) applies equally to existing and proposed content.
+
+## Step 4: Draft Work Item
+
+1. **Draft a complete work item** from the agreed proposal using the template
+   structure loaded at the top of this skill. Use `NNNN` as the placeholder
+   work item number throughout. Do NOT call `accelerator work id next` at this step.
+
+2. **Kind-specific content placement**:
+   - story/epic: open the `Summary` section with a user story statement —
+     "As a [role], I want [goal], so that [benefit]." — before the
+     descriptive sentences
+   - bug reproduction steps, expected/actual behaviour → `Requirements` section
+   - spike research questions, time-box, exit criteria → `Requirements` section
+   - epic initial stories → `Requirements` section as a list
+   - Do not rename or add sections beyond those defined in the work item template
+
+3. **Populate the `References` section** with any external material that
+   informed the work item — research artefacts surfaced by the web researcher,
+   related work items found in Step 2, design docs, or source specs. Leave it
+   empty if nothing external was consulted; do not invent references.
+
+4. **Populate the `Drafting Notes` section** with the interpretations
+   carried over from the agreed proposal. If there were none (the user
+   confirmed every call), the section may be omitted or left as an empty
+   list — but do not leave placeholder bracketed text in it.
+
+5. **Present the full draft** to the user:
+
+```
+Here's my draft work item. Please review and let me know if you'd like any
+changes before I write it to disk:
+
+[draft content]
+```
+
+6. **Continue to challenge** during the review loop — flag untestable criteria,
+   vague requirements, or gaps surfaced by research that remain unaddressed.
+   Iterate until the user explicitly approves. **`accelerator work
+   id next` is never called during this loop.**
+
+### In enrich-existing mode
+
+1. Produce a complete updated draft incorporating the existing content plus the
+   additions approved in Step 3.
+2. Apply the canonical Identity Field Rules (see Quality Guidelines) when
+   filling frontmatter — the rules are the single source of truth for which
+   fields are immutable, preserved, or proposable.
+3. Apply the H1 sync rule (see Quality Guidelines).
+4. Apply the Script avoidance rule (see Quality Guidelines).
+5. Present the full updated draft, framed as an update preview:
+
+   ```
+   Here's the updated work item. The Step 5 confirmation will name the file
+   path and ask for explicit approval before any write:
+
+   [draft content]
+   ```
+
+6. Continue to challenge during review — apply the same rules as the
+   normal-path Step 4. Iterate the draft until the user is happy with it. Do
+   **not** treat a "looks good" mid-iteration as approval to write — that
+   approval is gated by Step 5's single confirmation.
+
+## Step 5: Write Work Item
+
+Apply *Refusals before anything is read* to every
+`accelerator work id next` and `accelerator work create` call below.
+
+Under `{tracker}`, skip steps 1–3: there is no projected ID. The tracker
+assigns the key on a push, and `accelerator work create` mints the draft ID
+itself, so its first stdout line is the only path to report.
+
+**For a requested ID** settled in Step 0:
+
+- Skip steps 1–3: never call `accelerator work id next`, and skip the
+  path-existence check, which the CLI's collision check supersedes. The
+  projected ID is the settled ID.
+- Every create in steps 6, 7.1 and 7.3 carries `--id='<id>'`, single-quoted,
+  and never `--project`.
+- In 6.3, 7.1 and 7.3, exit 1 with `E_ID_TRACKER_OWNED`,
+  `E_ID_DRAFT_RESERVED` or `E_ID_PATTERN_MISMATCH`, or exit 4 with
+  `E_ID_TAKEN`, means: relay
+  stderr verbatim, write nothing, and go to *Requested ID recovery*. Never
+  save locally instead.
+- In 7.1 and 7.3, exit 1 with `E_PUSH_PENDING` or
+  `E_PUSH_MARKER_UNREADABLE`, and in 7.3 also `E_PUSH_FINGERPRINT_MISMATCH`
+  or `E_PUSH_ALREADY_WRITTEN`, means: relay stderr verbatim, since it names
+  the marker file and its remedy, and print the approved draft. Offer no
+  recovery choice and suggest no re-run.
+- Any other exit 1 from 6.3, 7.1 or 7.3 means: relay stderr verbatim and
+  abort. "Save locally" stays for the tracker-selection exits of 7.1
+  (exit 0 with an `unresolvable` project, exit 70, and the non-1 exits).
+- Every abort after Step 4 prints the approved draft, with a line saying the
+  user can re-run `/create-work-item`, as **Cancel** does.
+
+Creates without a requested ID are unchanged.
+
+1. **Call `accelerator work id next`** to get the next full ID under the
+   configured pattern:
+
+```
+accelerator work id next
+```
+
+The output is the full ID (`0001` under default `{number:04d}`,
+`PROJ-0001` under `{key}-{number:04d}` with
+`work.key: "PROJ"`). The allocator reads the pattern and local ID prefix
+from configuration; pass `--project CODE` if the user explicitly wants a
+non-default prefix for this one call.
+
+If the command exits non-zero (e.g., overflow, missing project value),
+abort immediately and surface the error message verbatim — do not
+proceed.
+
+2. **Resolve the target path**: `{work_dir}/<full-id>-kebab-slug.md`
+   where `<full-id>` is the allocator's output and the slug is a
+   meaningful kebab-case summary of the title (not raw input text).
+
+3. **Check that the target path does not already exist**. If it does, abort:
+
+```
+Path {path} already exists — another session may have written a work item
+concurrently. Please re-run /create-work-item.
+```
+
+4. **Create the work items directory** if it does not exist.
+
+5. **Resolve `author`**: configuration if present, then the current git/jj
+   user identity, then — only if both fail — ask the user once. Never pass
+   a placeholder. This value feeds both branches below.
+
+6. **No integration configured — write via `accelerator work create`.**
+   Skip this step (go to step 7) when an integration *is* configured; the
+   push state machine in step 8 governs that case's single write instead.
+
+   1. Write the drafted body (H1 through References, everything approved
+      across Steps 1–4) to a scratch file, with the `NNNN` placeholder
+      still literally present everywhere it appears (the H1 line and
+      anywhere else) — do **not** substitute it yourself. `work create`
+      performs the one real `NNNN` → allocated-ID substitution as part of
+      the same atomic write that decides the ID, so the approved content
+      can never end up with an id/H1 mismatch.
+   2. Call the dispatcher directly:
+
+   ```
+   accelerator work create "<title>" <kind> <priority> \
+     --status draft \
+     --author "<resolved author>" \
+     --producer create-work-item \
+     --body-file <scratch-file> \
+     [--parent "work-item:NNNN"] \
+     [--tag <value>]... [--block "work-item:NNNN"]... \
+     [--blocked-by "work-item:NNNN"]... \
+     [--derived-from "plan:NNNN"]... [--relates-to <ref>]... \
+     [--source "issue-research:NNNN"] [--project <code>] [--id='<id>']
+   ```
+
+      Include each bracketed flag only when that field has a value —
+      `work create` itself omits the corresponding frontmatter key when
+      the flag is absent, matching the template's own omit-when-empty
+      convention, so no separate omission logic is needed here. `--tag`/
+      `--block`/`--blocked-by`/`--derived-from`/`--relates-to` are each
+      repeatable for multiple values. `external_id` has no flag — `work
+      create` never writes it (nothing to sync yet); this matches today's
+      behaviour of omitting it from a fresh draft.
+   3. If the command exits non-zero, surface its stderr message verbatim
+      and abort — do not retry and do not attempt a manual `Write`. For a
+      requested ID, the branches under **For a requested ID** above come
+      first.
+      Otherwise its stdout is the path of the written file. Skip to
+      step 8.
+
+7. **Push state machine** (only when **Active integration** is non-empty;
+   otherwise this whole step is skipped and the file was already written in
+   step 6). The drafted frontmatter is held **in memory** — no file exists yet.
+
+   1. **Offer the push** using the fail-safe gate. Preview the fields the push
+      would resolve **through the dispatcher's own dry-run** so the single
+      keystroke maps to an understood, non-destructive result. Write the
+      drafted body to a temp file and run:
+
+      ```
+      accelerator work create "<title>" <kind> <priority> \
+        --push --dry-run --body-file <body-tmp> [--id='<id>']
+      ```
+
+      It resolves the tracker from **Active integration**, contacts it to
+      resolve the fields, writes **nothing**, and creates **no** remote issue.
+      For a requested ID, the branches under **For a requested ID** above
+      come first. Then branch on its exit and the line it prints on stdout:
+
+      - **Exit 0, jira** → `jira\t<issue type>\t<type source>\t<project>\t<project source>`.
+        Render the type and project with their sources. A `<project source>` of
+        `unresolvable` means the configured `jira.project_key` names a
+        project the tracker does not hold — surface that as a pre-create
+        failure **before** the gate (name `jira.project_key`) and do
+        **not** offer the push; save locally instead, through the step 6
+        call (no `--push`). A `default` source is a benign fallback, not a
+        failure.
+      - **Exit 0, linear** → `linear\t(no user-resolvable type/project fields)`
+        (the team and issue-type catalogue are fixed by `/init-linear`).
+        Offer the push.
+      - **Exit 70** → the tracker was **unreachable** (distinct from an
+        unresolvable value). Do **not** hard-block: tell the user the preview
+        could not be resolved and offer to save locally now, or retry the
+        preview. The push itself carries its own retry (below), so a transient
+        outage here must not strand the draft.
+      - **Any other non-zero exit** → the tracker is not usable for a push
+        (not available, unrecognised, or unconfigured). Relay the stderr
+        message and save locally.
+
+      Every "save locally" above is the step 6 `accelerator work create`
+      call with no `--push`, so under `{tracker}` it writes a draft that
+      `/sync-work-items` promotes later. Never write the file with the
+      `Write` tool, and never call `accelerator work id next` for it.
+
+      Then, when a push is still on the table:
+
+      Use the `AskUserQuestion` tool with two options:
+
+      1. **Yes, push to [tracker] now** — create the remote issue and save
+         locally
+      2. **No, save locally only** — save as unsynced; push it later with
+         `/sync-work-items` (it offers to create unsynced local drafts on the
+         remote), which shares this `external_id` contract.
+
+      Under `{tracker}` the second option reads **No, save as draft** —
+      save it as a draft in `drafts/`; `/sync-work-items` promotes it onto
+      a tracker key later.
+
+   2. **On decline** → write the file now with `external_id` omitted (unsynced)
+      via the `accelerator work create` call from step 6 (no `--push`), then go
+      to step 8. Under `{tracker}` that call writes a draft.
+
+   3. **On accept** → run the **same** `accelerator work create` call with
+      `--push` added (never a re-derived tracker — the CLI reads **Active
+      integration** itself):
+
+      ```
+      accelerator work create "<title>" <kind> <priority> \
+        --status draft --author "<resolved author>" --producer create-work-item \
+        --push --body-file <body-tmp> [--parent …] [--tag …]… [linkage flags…] \
+        [--id='<id>']
+      ```
+
+      For a requested ID, the branches under **For a requested ID** above
+      come before the outcome table.
+
+      This is **one** call that creates the remote issue and writes the local
+      file atomically — the retryable/terminal decision, the retry, and the
+      duplicate-create guard all live inside `work create --push`; do **not**
+      drive a retry loop yourself. On stdout it prints the written path on the
+      first line and `<keyword>\t<external_id>` on the second, where the keyword
+      is one of `write-once`, `local-save`, `loud-terminal`, `rejected`,
+      `created-blocked`, `created-unwritten` or `retirement-incomplete`. The
+      first line is empty only for a `created-unwritten` under a numeric ID
+      pattern, where no file exists. Render per the table below.
+
+      Under `{tracker}` the call first saves the item as a draft, then creates
+      the issue and promotes the draft onto its key, so the written path is
+      `<KEY>-<slug>.md` on success and the draft's path otherwise. If it exits
+      `4` with `E_PUSH_PENDING` or `E_DRAFT_EXISTS` on stderr, an earlier
+      create of the same content is still pending and nothing was sent: relay
+      the named draft and the recovery the message gives, and do **not**
+      re-run the create.
+
+   **Outcome table** (`work create --push` returns the keyword; you render the
+   message). The 70-retryable / 71-terminal / 75-rejected contract the keywords
+   derive from is documented in `exit_codes` and cross-referenced by
+   `work create --help`:
+
+   | Second-line keyword | Exit | Action |
+   |---|---|---|
+   | `write-once` | 0 | The remote issue was created and the file written with its `external_id`. Confirm success (step 8), echoing the returned identifier. |
+   | `local-save` | 0 | The push could not be sent (the tracker is unreachable, retryable and retried once, or not available/recognised/configured) and nothing left the machine — the file was written **unsynced**. Tell the user it saved unsynced and can be pushed later via `/sync-work-items`; but if stderr carries a `warning: -: configure failed:` line, relay its cause; the draft cannot be pushed or promoted until it is fixed, and sync will refuse until then. |
+   | `loud-terminal` | 71 | A terminal failure **at or after** the create — a remote issue **may already exist**. Print loud non-idempotent guidance naming the saved path: do **not** blindly re-run `/create-work-item`. Under a numeric ID pattern the file was saved unsynced: check the tracker, and if the issue exists reconcile via `/sync-work-items` **or** set `external_id: <KEY>` by hand. Under `{tracker}` the item is a draft whose ID is the `draft-` prefix of its filename: check the tracker, then run `accelerator work promote <draft-id> --adopt <KEY>` if the issue exists, otherwise `accelerator work promote <draft-id> --create`; never set `external_id` by hand on a draft. |
+| `rejected` | 75 | The client refused the request as invalid before sending it, so **no remote issue exists**, but re-sending the same request would be refused again. The file was saved unsynced (a draft under `{tracker}`). Relay the cause printed on stderr and tell the user the request must change (for example, the body) before it is pushed via `/sync-work-items`. |
+| `created-blocked` | 4 | The remote issue **exists**, but a local item already claims its key. The draft is kept. Relay the holder and the remedy printed on stderr; the user resolves the collision, then runs `accelerator work promote <draft>`. |
+| `created-unwritten` | 71 | The remote issue **exists** and no local item carries it yet. The next `/sync-work-items` links it (under `{tracker}`, by promoting the draft onto it). Do **not** re-run the create. |
+| `retirement-incomplete` | 71 | The remote issue **exists**, and moving the draft onto its key could not restore every file it had written. Relay the paths and the recovery directory printed on stderr; the user restores them, then runs `/sync-work-items`. |
+| `E_PUSH_PENDING` (stderr) | 4 | An earlier create of the same content is still pending. Relay the named draft and the stage-specific recovery the message gives. |
+| `E_DRAFT_EXISTS` (stderr) | 4 | The same draft already exists. Tell the user to run `accelerator work promote <draft>` or `/sync-work-items`. |
+
+   Under `{tracker}`, `local-save` and `rejected` leave the item as a draft,
+   and `loud-terminal` leaves the draft with a record that a create may have
+   reached the tracker.
+
+   Because the create and the local write are one atomic CLI operation, there
+   is no in-skill window where a remote issue exists but no file does — that
+   window, and its `pending_push` recovery marker, are handled inside the CLI.
+   The pre-create preview is a **live, credentialed** round-trip now, so a clean
+   preview does not guarantee the push succeeds; the authoritative outcome is
+   the keyword above.
+
+8. **Print a confirmation**:
+
+```
+Work item created: `<path>`
+```
+
+   `<path>` is always the first stdout line of the `accelerator work create`
+   call that wrote the file — whether step 6 (no integration) or step 7
+   (`--push`) — since its slugification is authoritative; do not re-derive it
+   or assume it matches step 2's preview path. When the item was saved unsynced
+   (decline, `local-save`, or `loud-terminal`), say so: `Work item created
+   (unsynced): … — push later with /sync-work-items`, or, when a
+   `warning: -: configure failed:` line came with a `local-save`, `Work item
+   created (unsynced): … — fix <cause> before syncing`. Under `{tracker}`,
+   report the tracker key on `write-once` (`Work item created: <KEY> at
+   <path>`), and otherwise the draft path and why it is still a draft (`Work
+   item saved as draft: <path> — <reason>; /sync-work-items promotes it`),
+   where the reason is "push declined", "tracker unreachable", or the outcome
+   table's cause; with that warning it ends `— fix <cause> before syncing`
+   instead.
+
+### In enrich-existing mode
+
+1. Do **not** call `accelerator work id next`. The target path is the
+   resolved `existing_work_item_path` cached in Step 0.
+
+2. **At-write identity-swap check** (best-effort guard): immediately before
+   the confirmation prompt, re-read the target file's own identity from
+   disk via:
+
+   ```
+   accelerator work show <existing_work_item_path> --field id
+   ```
+
+   (This returns the value of `id:` on unified-shape files and falls
+   back to `work_item_id:` on legacy files.)
+
+   - If the command exits non-zero (file gone or frontmatter unparseable since
+     Step 0), abort with:
+     `"Error: <path> is no longer present or its frontmatter is unparseable.
+     Your proposed draft is below — copy it before re-running
+     /create-work-item: <draft>"`
+   - If the on-disk identity differs from the value cached in Step 0,
+     abort with:
+     `"Error: <path> changed identity since Step 0 (was <cached>, now
+     <current>). Your proposed draft is below — copy it before re-running
+     /create-work-item to refresh: <draft>"`
+
+3. **Single confirmation gate**: present the path and a per-section change
+   summary, then require explicit y/n approval before any write:
+
+   ```
+   I'm about to overwrite <existing_work_item_path>.
+
+   Sections changed:
+     Added:    [...]
+     Modified: [...]
+
+   Frontmatter changed:
+     <field>: <cached> → <new>     # repeated per modified field
+     (status: <cached> unchanged)  # always show status explicitly
+
+   Sections preserved verbatim: <count> (<terse list or "none">)
+   Frontmatter fields preserved verbatim: id, date, author
+     [+ any unmodified proposable fields]
+
+   ```
+
+   Then use the `AskUserQuestion` tool with two options:
+
+   1. **Yes, proceed** — overwrite the work item with the changes shown
+   2. **No, cancel** — make no changes
+
+4. **Confirmation interpretation** (fail-safe):
+   - Exactly `y` or `Y` (after trimming whitespace): proceed to step 5.
+   - Exactly `n` or `N`: go to step 8.
+   - Anything else (empty input, "yes", "go ahead", "looks good but also...",
+     paragraph of feedback): treat as `n`. Print:
+     `"Did not recognise <response> as y/n — staying in review. What change
+     would you like before I overwrite?"` and go to step 8.
+
+5. **On `y` — substitute cached immutable fields, then write**: immediately
+   before invoking the Write tool, re-read the cached immutable identity fields
+   (`id`, `date`, `author`) from conversation state and overwrite the
+   corresponding frontmatter lines in the draft text with those exact values,
+   even if they appear unchanged. Also write `last_updated:` to the current
+   `Current Date/Time (UTC):` value and `last_updated_by:` to the resolved
+   author. This textual substitution defends against drift during Step 4
+   iteration.
+
+6. Write the file to `existing_work_item_path`. The path-existence guard from
+   the normal flow does not apply — overwrite is the intended behaviour.
+
+7. Print:
+
+   ```
+   Work item updated: <existing_work_item_path>
+   ```
+
+8. **On `n` or unrecognised**: stay in Step 4 / Step 5 review and iterate.
+   Do not re-run the identity-swap check until the next `y`; do not write.
+
+**Validate the frontmatter**: after the work item is written, run
+
+```bash
+accelerator corpus frontmatter validate --file <written work item path>
+```
+
+If it exits non-zero, the document violates the canonical frontmatter
+standard; report the emitted violation and fix the frontmatter before
+completing.
+
+## Quality Guidelines
+
+- Never write a file without explicit user approval.
+- Never call `accelerator work id next` before the user approves the draft.
+- Never call `accelerator work id next` for a requested ID unless the user
+  chooses automatic allocation.
+- Never decide an ID's shape or read its key yourself; `accelerator work id
+  check` does.
+- Never pass `--id` and `--project` together.
+- The slug must be a meaningful kebab-case title, not raw input text.
+- Work item kind must come from the work item template's `kind` field (loaded at
+  the top of this skill), not a hardcoded list. Default to `story` when the
+  kind is genuinely ambiguous.
+- All frontmatter fields defined in the work item template must be populated
+  in every written work item: `type` (`work-item`), `id` matching the
+  assigned full ID (a quoted YAML string — see contract below), `title`
+  matching the user-approved title, `date`, `author`, `producer`
+  (`create-work-item`), `status` (`draft`), `kind`, `priority` (medium
+  unless the user specified otherwise), `parent` (empty string unless a
+  parent was established), `external_id` (empty unless set), `tags` (a
+  YAML array, possibly empty), `last_updated`, `last_updated_by`, and
+  `schema_version: 1`. No field may contain unfilled placeholder text
+  like `[author]` or `NNNN`. The body H1 format is `# <full-id>: <title>`
+  where `<full-id>` is whatever the configured `work.id_pattern`
+  produces — kept in sync with the frontmatter `title:` field.
+
+- **`id` frontmatter type contract**: the own-identity field is
+  **always a quoted YAML string**, regardless of the configured
+  pattern. Files created under default `{number:04d}` write
+  `id: "0001"`; files created under `{project}-{number:04d}` write
+  `id: "PROJ-0001"`. This contract is uniform so consumers can read
+  the field as a string without coercion. See
+  `skills/config/configure/SKILL.md > work` for the full contract.
+  Legacy files carry the same value under `work_item_id:`; `work show`
+  returns either key transparently so consumers do not need to know
+  which shape is on disk.
+
+**Identity Field Rules** (apply in enrich-existing mode):
+
+- **Immutable** — `id` (or `work_item_id` on legacy files), `date`,
+  `author`. Cached from the source file in Step 0; never proposed for
+  change; the model substitutes the cached values back into the draft
+  frontmatter at write time (Step 5 step 5) as a defence against drift
+  during Step 4 iteration. This is a textual substitution the model
+  performs — the eval suite verifies the written file's values match
+  the cached values, which is the strongest guarantee the grader-
+  mediated harness can provide.
+- **Preserved unless explicitly changed** — `status`. Defaults to the cached
+  value. May only change if the user makes an explicit, direct request during
+  the conversation (e.g. "set status to in-progress"). The model must not
+  propose a status change unsolicited; if the user makes only an oblique
+  reference (e.g. "this is now in flight"), the model asks a clarifying
+  question rather than infer the transition. A proposed transition is shown
+  explicitly (e.g. "draft → in-progress") and requires confirmation in Step 3
+  before acceptance. The `status: draft` default applies only to
+  newly-created work items, not to enrichment.
+- **Proposable in Step 3** — `title`, `kind`, `priority`, `parent`, `tags`.
+  Default to the cached values; can be replaced after explicit user agreement
+  in Step 3's augmentation review.
+
+**H1 sync** (enrich-existing mode): the body H1 is `# <id>: <title>`,
+using the cached immutable `id` (the full ID produced by the configured
+pattern, never a placeholder; sourced from `work_item_id` on legacy
+files) and the title as confirmed or replaced in Step 3.
+
+**Script avoidance** (enrich-existing mode): `accelerator work id next` is
+never called. The number is already cached. The path-existence guard in Step
+5 does not apply — overwrite is the intended behaviour once the at-write
+identity-swap check passes.
+
+- `date` must use the work item template's `YYYY-MM-DDTHH:MM:SS+00:00` format
+  in UTC (e.g. obtained via `date -u +%Y-%m-%dT%H:%M:%S+00:00`).
+- `author` is sourced in this order: configuration if present, then the
+  current git/jj user identity, then — only if both fail — ask the user
+  once before writing the file. Never write `[author]` or any placeholder.
+- `Summary` and `Requirements` must have substantive content — no
+  `[bracketed placeholder text]` in the final written file. The same
+  applies to every other body section that is populated: if a section
+  would only contain a bracketed placeholder, remove the placeholder and
+  leave the section empty (or omit optional sections entirely).
+- Acceptance criteria must be specific and testable; prefer Given/When/Then
+  format. Challenge any criterion that is not measurable before accepting it.
+- Populate `Drafting Notes` with every meaningful interpretation made while
+  filling out the work item — who stakeholders are, what a vague term means,
+  where scope boundaries sit, which technical approach is implied. Use
+  `Assumptions` for scope-changing calls the user should confirm. Use
+  `Open Questions` for genuine unknowns that block progress. These three
+  sections serve different purposes; don't collapse them.
+- Populate `References` with any external material that informed the
+  work item — research artefacts, related work items, design docs, source specs.
+  Leave it empty if nothing external was consulted; do not invent
+  references.
+- The model must contribute its own knowledge and research to the proposal —
+  not simply transcribe the user's answers. Bring domain expertise, surfaced
+  research, and reasoned suggestions to every work item.
+- Restrict `{documents locator agent}` to `{work_dir}` only. Do not search
+  research documents, plans, or the codebase — work items are about business
+  requirements, not implementation details.
+- Spawn `{web-search-researcher agent}` whenever there is uncertainty about any
+  aspect of the topic — business rules, domain concepts, competitive landscape,
+  industry standards, external technology, or otherwise. When in doubt,
+  prefer to spawn research — over-asking is cheaper than producing a
+  vague or poorly-grounded proposal.
+- If `accelerator work id next` exits non-zero, abort and surface the
+  error message verbatim.
+
+!`accelerator config instructions create-work-item --fail-safe`

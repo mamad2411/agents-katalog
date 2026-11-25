@@ -1,0 +1,84 @@
+---
+name: infaz-ertelenmesi-saglik
+description: "Hapis cezası infazının hastalık, gebelik, yaşlılık veya başka zorunlu nedenlerle ertelenmesi ya da geri bırakılması taleplerini değerlendirmek gerektiğinde kullanılır."
+---
+
+# İnfazın Ertelenmesi ve Sağlık Nedeniyle Geri Bırakma
+
+## Görev
+Hapis cezasının infazının ertelenmesi (CMK m.16-17 ve 5275 m.16-17) için zorunlu nedenlerin varlığını, usulünü ve süre sınırlarını değerlendirmek.
+
+## Soğuk başlangıç (intake)
+- Erteleme talebinin sebebi nedir (hastalık, gebelik, yakının ağır hastalığı, eğitim, ekonomik)?
+- Hükümlü tutuklu/hükümlü hangi statüde; infaza başlandı mı?
+- Sağlık nedeniyse ATK/üniversite hastanesi raporu var mı?
+- Daha önce erteleme verildi mi (süre sınırı için)?
+
+## Denetim şeması
+1. Hastalık nedeniyle geri bırakma: akıl hastalığı veya kurumda hayatı için kesin tehlike oluşturan hastalık hâlinde infaz geri bırakılır (5275 m.16). Gebe veya doğum yapmış kadın için kanunda belirtilen süre kadar geri bırakma (m.16/4). İspat: Adli Tıp Kurumu veya tam teşekküllü hastane sağlık kurulu raporu.
+2. Zorunlu/olağan erteleme: hükümlünün istemiyle, belirli süreli hapiste ve belirli üst sınır altında, eğitim/aile/ekonomik gibi makul nedenlerle erteleme (5275 m.17); güvence istenebilir ve kaçma şüphesi yoksa uygulanır. Suç tipi ve mükerrirlik istisnaları kontrol edilir.
+3. Süre ve tekrar: erteleme süreleri ve toplam üst sınır; sürenin sonunda hükümlü teslim olmazsa erteleme hükümsüz kalır.
+4. Karar mercii: erteleme/geri bırakma kararı Cumhuriyet Başsavcılığınca verilir; reddine karşı infaz hâkimliği yolu (4675 sayılı Kanun) açıktır. Ara sonuç: yetkili makam ve başvuru yolu.
+5. İlkesel içtihat: hastalık nedeniyle geri bırakmada raporun yeterliliği ve insani infaz ölçütleri için karararama.yargitay.gov.tr ve AYM kararları (kararlarbilgibankasi.anayasa.gov.tr); künye `[doğrulanacak]`.
+6. Ara sonuç: erteleme uygunluğu + dayanak rapor/belge + süre.
+
+## Çıktı modülleri
+- Erteleme sebebi ve dayanak tablosu.
+- Rapor/güvence eksik listesi.
+- Erteleme talebi ve red kararına itiraz dilekçesi tetiği.
+
+## Plugin bağlamı
+
+Bu beceri `infaz-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

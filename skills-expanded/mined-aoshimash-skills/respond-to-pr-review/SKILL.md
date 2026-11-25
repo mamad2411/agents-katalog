@@ -1,0 +1,161 @@
+---
+name: respond-to-pr-review
+description: >
+  Process PR review comments one by one — explain each comment, confirm the
+  response with the user, implement changes, verify fixes match reviewer intent,
+  and post reply comments to close the loop. Groups similar/duplicate comments
+  from multiple reviewers or bots. GitHub only.
+  Use when the user says "PRコメントに対応して", "レビューコメントに返信して",
+  "respond to PR review", "handle PR comments", "PRレビュー対応",
+  "review comments に答えて", "PRのレビューに返答",
+  or wants to systematically work through review feedback on a pull request.
+  Invoke this skill even if the user just says "PRコメント対応"
+  without further detail.
+---
+
+# Respond to PR Review
+
+Process PR review comments interactively: explain each one, confirm what to do, implement changes, verify fixes match intent, and close the loop with reply comments.
+
+## Core Principles
+
+1. **One group at a time** — Explain and confirm each comment group before moving on.
+2. **Group by content** — Multiple reviewers or bots pointing out the same issue = one item.
+3. **No silent ignores** — Every comment that requests a change or asks a question must receive a reply.
+4. **Verify before reply** — Verify that implemented changes match the reviewer's intent before drafting replies.
+5. **Reply after all actions** — Draft all replies, get user approval as a batch, then post.
+6. **Scope guard** — Only implement what a specific comment requests.
+7. **Match the comment's language** — Reply in the same language as the comment. Japanese comment → Japanese reply. English comment → English reply. Mixed group → majority language.
+
+## Environment Adaptation
+
+This skill targets any agent implementing the Agent Skills spec. Instructions
+below use capability terms; map them to your environment as follows.
+
+| Capability | With native support (example) | Fallback |
+|---|---|---|
+| **User choice** — present numbered options, wait for an explicit selection | Structured question tool (e.g. Claude Code's `AskUserQuestion`) | Numbered options as plain text; wait for the user's reply |
+| **Platform access** — read PR comments and post replies on GitHub | A connector or MCP server for GitHub, preferred when it covers every operation this skill uses (see [Platform Access](#platform-access)) | The `gh` CLI; with neither, ask the user how to reach GitHub |
+| **Separate agent instance** — run a task in a fresh context that has not seen this conversation | Subagent dispatch (e.g. Claude Code's Task tool) | Run sequentially in the current context; for verification, mark the result `SELF-REVIEWED` in the artifact it lands in (here, the reply comment the step produces) |
+
+## Workflow
+
+### Phase 0: Identify the PR
+
+1. Load the platform guide: [references/platform-github.md](references/platform-github.md)
+2. Confirm the repository is hosted on GitHub, using the guide's detection order (a `## Code Hosting` section in the agent instructions, then a `github.com` remote in `git remote -v`). If it is not, say so and stop — this skill is GitHub-only.
+3. Resolve the platform access method — see [Platform Access](#platform-access)
+4. Get PR info for current branch
+5. If no PR found, ask user for number or URL
+6. **Hard Gate:** "Working on PR #N: [title] (platform access: [method])" → Confirm / Change
+
+### Platform Access
+
+The platform guide's commands specify each operation; they do not fix the tool that performs it. Resolve the method **once**, before the first GitHub operation, taking the first that applies:
+
+1. **Named by the user** in this conversation → use it.
+2. **Connector** — a connector or MCP server for GitHub is available in this session and covers every operation in the platform guide (coverage is defined in its Access Method section) → use it. A connector counts as available only when its tools can be called now; one listed as needing authentication is not, and the run does not ask the user to authenticate it.
+3. **CLI** — `gh` is installed and authenticated → use the guide's commands.
+4. **Neither** → ask the user how to reach GitHub.
+
+Keep the method for the whole run. The Phase 0 gate is the one point where it may still change: **Change** re-selects the PR and keeps the method, and a method the user names at that gate replaces it before any comment is fetched. If it fails or proves unable to perform an operation partway through, do not retry that operation through another method: stop, report which replies were already posted, and name the operation that failed.
+
+**Known limit.** The guide's CLI commands are the verified path. Whether a connector covers an operation is judged from that connector's own tool descriptions and schemas, and a connector path has not been exercised by this skill's evaluations.
+
+### Phase 1: Fetch and Classify Comments
+
+See [references/workflow.md](references/workflow.md) for detailed procedure.
+
+**Summary:** Fetch all comment types (inline, review body, general). Filter out outdated, replies, informational bots, and pure praise. Identify each comment as Human or Bot.
+
+### Phase 2: Group Similar Comments
+
+See [references/workflow.md](references/workflow.md) for detailed procedure.
+
+**Summary:** Group comments pointing out the same issue across reviewers/bots/lines. Record metadata (bodies, IDs, reviewers, files). Tag criticality: `critical` (REQUEST_CHANGES or 2+ reviewers) vs `normal`. Tag comment type: `rule-violation-instance` (pattern applies to multiple locations) vs `one-off-bug` (specific defect).
+
+### Phase 3: Interactive Decision Loop
+
+See [references/workflow.md](references/workflow.md) for detailed procedure.
+
+**Summary:** For each group: show comment, explain it, ask for a decision via a user choice (see Environment Adaptation).
+
+**Hard Gate** per group — options:
+- **Implement** — address the feedback
+- **Reject** — decline with explanation
+- **Create Issue** — valid but out of scope
+- **Skip reply** — no action expected
+
+### Phase 4: Implement Changes
+
+For each "Implement" decision:
+
+1. Make the code changes
+2. Run project checks (formatter, linter, tests) until clean
+3. Commit referencing the context (e.g., `fix: address review comment on foo.ts:42`)
+4. Record the commit SHA for use in replies
+
+### Phase 4.5: Pattern Broadening
+
+See [references/workflow.md](references/workflow.md) for detailed procedure.
+
+**Summary:** For each `rule-violation-instance` group just implemented, search the changed files for other instances of the same pattern. Present found instances to the user via a user choice (Apply all / Skip / Pick subset). Apply selected fixes in the same commit, or create a new commit if the previous commit is already pushed.
+
+### Phase 5: Verification Gate
+
+See [references/verification.md](references/verification.md) for detailed procedure.
+
+**Summary:** Verify that Phase 4 (and 4.5) changes match the reviewer's intent.
+
+- `critical` groups → verification by a **separate agent instance** with fresh context (3 criteria: Intent Match, Scope Guard, Side Effect). If the environment cannot provide one, self-review against the same criteria, mark the resulting verdict `SELF-REVIEWED`, and carry that flag into the reply (see Environment Adaptation).
+- `normal` groups → self-review using the same 3 criteria
+- For `rule-violation-instance` groups, same-pattern expansion from Phase 4.5 is considered in-scope for the Scope Guard criterion.
+- NEEDS_FIX → fix loop (max 2 rounds)
+- UNCERTAIN → present to user for decision
+- Still failing → DONE_WITH_CONCERNS (caveat added to reply)
+
+**Hard Gate (conditional):** If any DONE_WITH_CONCERNS → present to user: Proceed / Re-implement / Abort
+
+### Phase 6: Create Issues
+
+For each "Create Issue" decision:
+- Create issue with title derived from the comment
+- Body links back to the PR comment
+- Record issue URL for the reply
+
+### Phase 7: Draft and Post Replies
+
+Draft a reply for every group that requires a response.
+
+**Tone by reviewer type:**
+
+| | Human | Bot |
+|---|---|---|
+| Opening | Brief thanks | None |
+| Formality | Casual but professional | Factual only |
+
+**Reply content by decision:**
+
+| Decision | Human | Bot |
+|---|---|---|
+| Implement | "Thanks! Fixed in [SHA] — [description]." | "Fixed in [SHA]: [description]." |
+| Implement (broadened) | "Thanks! Fixed in [SHA] — applied to [original location] + [N] other instances of the same pattern." | "Fixed in [SHA]: applied to [original location] + [N] other instances of the same pattern." |
+| Implement (WITH_CONCERNS) | "Thanks! Fixed in [SHA] — [description]. Please verify this matches your intent." | "Fixed in [SHA]: [description]. Verification requested." |
+| Reject | "Thanks for the note. Keeping current approach because [reason]." | "Keeping current approach: [reason]." |
+| Create Issue | "Good point — outside scope. Created #N to track it." | "Out of scope. Tracked in #N." |
+
+**Hard Gate:** Show all drafts as batch → Approve all / Edit specific / Cancel. After approval, post via platform API.
+
+## Edge Cases
+
+- **No actionable comments**: Inform the user and exit gracefully.
+- **Dirty working tree**: Stash or commit existing changes before implementing.
+- **Ambiguous comment**: Show to user and ask whether to include.
+- **All verifications pass**: Skip the conditional Hard Gate in Phase 5.
+
+## References
+
+- [references/workflow.md](references/workflow.md) — Phase 1-3 detailed procedures
+- [references/verification.md](references/verification.md) — Phase 5 Verification Gate procedure
+- [references/platform-github.md](references/platform-github.md) — GitHub operations, with `gh` CLI/API reference commands
+- [references/eval-cases.md](references/eval-cases.md) — Evaluation test cases

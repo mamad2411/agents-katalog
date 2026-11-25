@@ -1,0 +1,84 @@
+---
+name: idari-para-cezasi-ve-mufettis-denetimi
+description: "İş müfettişi denetimi, çalışma ve sosyal güvenlik mevzuatı ihlali, idari para cezası tutanağı veya bu cezalara itiraz/dava gündeme geldiğinde kullanılır."
+---
+
+# İdari Para Cezası ve İş Müfettişi Denetimi
+
+## Görev
+İşvereni iş ve sosyal güvenlik mevzuatı idari para cezası riskine karşı hazırlamak; müfettiş denetimini yönetmek; kesilmiş idari para cezasına karşı başvuru/dava yolunu doğru kurmak.
+
+## Soğuk başlangıç (intake)
+1. Tespit konusu ne (kayıt dışı çalışma, fazla mesai sınırı, İSG eksiği, bildirim ihlali)?
+2. Tutanak/ceza kararı tebliğ edildi mi, tebliğ tarihi nedir?
+3. Tespit edilen ihlal maddi olarak doğru mu, savunma dayanağı var mı?
+4. Ceza İş Kanunu kapsamında mı (4857 m.99 vd.) yoksa SGK kaynaklı mı (5510)?
+
+## Denetim şeması
+1. **Hukuki dayanak**: İş Kanunu cezaları m.99-108'de düzenli (her ihlal türü ayrı madde ve tutar; tutarlar her yıl yeniden değerlemeyle artar — **rakam vermeden yürürlük yılını doğrula**). SGK kaynaklı cezalar 5510'a tabidir.
+2. **Tebliğ ve süre**: Ceza kararı tebliğden itibaren işleyen süre içinde başvuruya tabi. İş Kanunu idari para cezalarına karşı **idare mahkemesinde** dava açılır (4857 m.108 atfı ve idari yargı rejimi); SGK prim/idari para cezalarında ise süreç farklılaşır (itiraz komisyonu + iş mahkemesi/idare mahkemesi ayrımı) → **yol haritasını cezanın kaynağına göre belirle**.
+3. **Erken ödeme indirimi**: Kabahatler Kanunu (5326) genel rejimi uyarınca peşin ödemede indirim imkânı kontrol edilir.
+4. **Savunma stratejisi**: Tutanaktaki maddi tespitin gerçekliği, usul (yetki/şekil), zamanaşımı ve orantılılık denetlenir.
+5. **Önleyici uyum**: Bordro, puantaj, İSG eğitimi, işe giriş/çıkış bildirimi ve özlük dosyası eksiklerinin denetim öncesi giderilmesi.
+6. **Ara sonuç**: Maddi tespit doğru ve usul sağlamsa indirimden yararlanarak ödeme; sakatlık varsa süresinde iptal başvurusu.
+
+## Çıktı modülleri
+- Denetime hazırlık/özlük eksik kontrol listesi.
+- İdari para cezasına itiraz/iptal başvuru taslağı (doğru yargı yolu notlu).
+- Risk ve erken ödeme değerlendirme notu.
+
+## Plugin bağlamı
+
+Bu beceri `ik-insan-kaynaklari` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

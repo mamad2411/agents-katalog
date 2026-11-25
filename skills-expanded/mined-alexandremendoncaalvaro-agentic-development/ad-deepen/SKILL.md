@@ -1,0 +1,97 @@
+---
+name: ad-deepen
+description: 'Find shallow modules and propose deepening refactors (interface, depth, seam, deletion test). Use on "deepen", "refactor for depth", "shallow module".'
+summary: Surface deepening opportunities using WORKFLOW §8 vocabulary (Module / Interface / Depth / Seam / Adapter / Leverage / Locality). Three phases — explore, present numbered candidates with deletion-test framing, grill the chosen one. Pairs with `ad-drift`.
+allowed-tools: Read, Glob, Grep, Bash
+---
+
+# /ad-deepen
+
+Implements ADR-0020 — the operational counterpart to the WORKFLOW §8 architectural vocabulary. Surfaces deepening opportunities and walks the user through them. Process scaffold; no primary file output.
+
+Use this only when design friction is real: repeated behavior, callers that need a stable seam, or a module whose interface exposes too much. Architectural deepening is premature for a one-shot ≤200-line experiment. Per ADR-0020 §4.
+
+## Not for
+
+- The change is a one-line fix or mechanical refactor → no scaffold needed.
+- The codebase is a one-shot script (≤200 lines, no callers): deepening is premature; ship the experiment first.
+- The friction is a *bug*, not a *shape* — `/ad-diagnose` (WORKFLOW §15).
+- The friction is a *naming/vocabulary* drift — `/ad-domain`.
+- The friction is *missing context*, not module shape — `/ad-grill-me`.
+
+## Step 1 — Explore organically
+
+Before naming candidates, read.
+
+1. `Read CONTEXT.md` if it exists. Anchor domain vocabulary; the deepening proposals must use *Customer*, *Order*, *Triage role* — not *Service*, *Handler*, *Manager*.
+2. `Read ARCHITECTURE.md` if it exists. Read accepted ADRs in `doc/adr/` covering the surface you are about to walk.
+3. Walk the codebase noting *friction*:
+   - Concepts bouncing between modules (locality fault).
+   - Interfaces as wide as their implementations (shallow modules — apply the deletion test).
+   - Tests that mock four things to exercise one path (test-surface fault).
+   - Adapters with one concrete implementation (two-adapters-rule violation, if no second is planned).
+
+Read with eyes for *shape*, not bugs. The friction is in module geometry; the bug-finding skill is `/ad-diagnose`.
+
+## Step 2 — Present candidates numbered
+
+For each deepening opportunity, produce a short numbered entry:
+
+```markdown
+### Candidate N: <one-line title using domain + architectural vocabulary>
+
+**Files involved:** `src/foo.ts:42`, `src/bar.ts`.
+
+**Friction:** <one-paragraph plain English — what hurts today, who feels it, when>.
+
+**Proposal:** <one-paragraph plain English — what changes about the module shape>.
+
+**Vocabulary check:** <Module / Interface / Seam / Adapter / Depth / Leverage / Locality applied here, per WORKFLOW §8>.
+
+**Deletion test:** <if you imagine deleting the module today, what happens? If complexity vanishes → delete instead of refactoring. If complexity reappears across N callers → it earns its keep, deepen it>.
+
+**Two-adapters check:** <if introducing a seam: name the second concrete adapter that justifies it. If only one adapter exists or is planned, the seam is hypothetical — drop it from the proposal>.
+
+**Test surface impact:** <does the new shape make the right pattern testable at the call site? If not, the proposal is wrong-shaped>.
+
+**ADR conflicts:** <name any accepted ADR this proposal contradicts. Flag for reopening only if the friction warrants it; otherwise the candidate is rejected>.
+```
+
+Number candidates 1, 2, 3, ... Order by leverage × locality (largest impact first, lowest blast radius among ties). Cap at five — past five, the user has too many to weigh.
+
+## Step 3 — Grilling loop on the chosen candidate
+
+The user picks one candidate by number. Drop into a grilling loop on that one:
+
+1. Walk the decision tree of the proposal branch by branch (one question per turn, recommendation included). Reuse the [`ad-grill-me`](../ad-grill-me/SKILL.md) discipline — codebase-first, single question, captured inline.
+2. Add new domain terms to `CONTEXT.md` lazily via `/ad-domain` as the proposal surfaces them.
+3. Offer an ADR only when the three criteria pass (hard to reverse, surprising without context, real trade-off). If a deepening proposal does not need an ADR, it does not get one — most refactors do not.
+4. When the proposal stabilizes: route to `/ad-tdg` (WORKFLOW §9) for the implementation pass with ground-truth pair + TDM + criterion-based selection.
+
+Reject candidates the grilling loop reveals as wrong-shaped. Better to discard a candidate at this stage than to ship a deepening that doesn't deepen.
+
+## Vocabulary discipline (always on)
+
+Per ADR-0020, use the canonical vocabulary verbatim throughout the skill's output. The full glossary — the terms to use, the terms to avoid, and how to apply them to domain nouns — is in [references/vocabulary.md](references/vocabulary.md).
+
+## Output contract
+
+Structured conversation. No primary file written. Side-effects:
+
+- `CONTEXT.md` updates land via `/ad-domain` when the proposal surfaces new domain terms.
+- ADR drafts land via `/ad-adr` when the three-criteria test passes.
+- Implementation lands via `/ad-tdg` after the proposal stabilizes — that skill produces the verified code change.
+
+Each session produces:
+
+1. A numbered list of candidates (Step 2), capped at five.
+2. A picked candidate with the grilling loop transcript (Step 3).
+3. Routing to `/ad-tdg` with the ground-truth pair seeded from the proposal.
+
+## Next
+
+- After candidates surface but before picking: `/ad-drift` for a broader drift check; the audit may reorder priorities.
+- After picking and grilling stabilizes: `/ad-tdg` to implement under WORKFLOW §9 discipline.
+- If the proposal touches load-bearing architecture: `/ad-adr` to record the decision (only when the three-criteria test passes).
+- If the deepening exposed a domain-vocabulary drift: `/ad-domain` to update `CONTEXT.md`.
+- If the candidates all turned out to be bug-symptoms rather than shape-symptoms: `/ad-diagnose` (WORKFLOW §15).

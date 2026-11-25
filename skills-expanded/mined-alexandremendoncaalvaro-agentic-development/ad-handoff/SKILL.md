@@ -1,0 +1,180 @@
+---
+name: ad-handoff
+description: 'Compact the session into a handoff a fresh agent can resume from. Use when context runs low or on "handoff", "wrap up the session", "save context for next session".'
+summary: Compact the session into a temporary handoff. Preserves resumable state while the next session opens with a preparation receipt and canonical brief; retains roadmap, lost asks, hygiene, references, and redaction. `--auto` writes the compact rollover handoff. Never commits.
+allowed-tools: Read, Write, Glob, Grep, Bash
+---
+
+# /ad-handoff
+
+Process scaffold for compacting a long or near-exhausted session into a handoff document. Output is a single markdown file in the OS temp directory; the next session reads it and continues. Helper, not blocker — the senior engineer keeps decision authority over what survives the compaction.
+
+The skill exists because long sessions accumulate inherited bias (WORKFLOW §12 — "almost right" failures compound) and because session-window pressure forces ad-hoc summarisation that loses the parts the next agent actually needs. Handoffs replace ad-hoc summarisation with a structured artifact.
+
+## Not for
+
+- The work is finishable in the current turn → finish it; do not pre-emptively hand off.
+- The handoff target is a specific artifact (a PRD / spec / task / ADR) → write that artifact via the matching `/ad-*` skill instead. Handoffs do not replace persistent decision records.
+- The user wants to commit work-in-progress → `/ad-commit` (with `wip:` if your project allows it) or finish the change first.
+
+## Step 1 — Collect live state
+
+Read the session into a structured snapshot. Do not duplicate content that already lives in repo artifacts — reference those by path.
+
+Capture:
+
+- **Working tree** — `git status --short`, current branch (`git branch --show-current`), divergence (`git log --oneline @{upstream}..HEAD` if a remote is set).
+- **In-progress diff** — `git diff` + `git diff --staged`. If the combined diff is >300 lines, summarise per-file instead and tell the next agent to re-read it with `git diff`.
+- **Open artifacts** — list of files touched but not yet committed; the task file under `doc/tasks/` driving the work (if any); the spec under `doc/specs/` it implements (if any); any ADR being drafted under `doc/adr/`.
+- **Unresolved decisions** — questions the user posed that you have not answered; questions you posed that the user has not answered. One bullet per open question, with the recommended-answer line where you have one.
+- **Recent errors / hook failures** — verbatim, last error message + which command produced it.
+- **Repo hygiene** — `git worktree list`, `git branch --merged <default>`, `git branch --no-merged <default>`, stray untracked files at the repo root.
+
+  **Delete the merged branches.** `git branch -d <name>` refuses any branch not fully merged, so git itself is the guard, and a merged branch's commits survive on the default branch and in the reflog — the blast radius WORKFLOW §7 asks you to match is near zero. Run it, and report what was deleted.
+
+  **Everything else is reported with its command, never run.** Unmerged branches (including squash-merged ones, which git cannot tell from genuinely unmerged), worktrees, and stray files get `git branch -D <name>` / `git worktree remove <path>` written next to them for the user to run. Those are the destructive cases: `-D` discards commits, and a squash-merged branch looks identical to work nobody landed.
+
+  **Known limit, tested rather than assumed:** squash-merged branches cannot be detected. `git branch --merged` misses them, and so do `git cherry` and a three-dot diff — squashing rewrites the patch-id, so a branch that genuinely shipped is indistinguishable from one that never did. Report it as ambiguous and let the human decide; a heuristic that guesses here would authorise deleting real work.
+- **What the next agent should do first** — one sentence, imperative.
+
+References, not copies. `Spec: doc/specs/0007-foo.md` beats pasting the spec. `Task: doc/tasks/0042-bar.md` beats pasting the task. The next agent will read those files fresh.
+
+## Step 2 — Reconstruct the roadmap
+
+State is not a plan. A snapshot tells the next agent where the files are; it does not tell them what arc they are in the middle of, and an agent that cannot see the arc re-derives it — badly, and at cost.
+
+Walk the session start to finish and rebuild the work as a **checklist**, done and not-done in one list, in dependency order. Every line carries enough context to stand alone: a reader who has never seen this session must understand what the item is and why it exists without opening another file.
+
+- `- [x]` for landed work — name the artifact that proves it (a commit subject, a test name, a published version), not just the claim.
+- `- [ ]` for open work — name the blocking condition if there is one, and who owns it (you or the user).
+
+Then check the roadmap against the session's stated priorities. If the user corrected course, ranked items, or rejected an approach, the roadmap must reflect the *corrected* order — a handoff that replays the original plan re-introduces the mistake the correction fixed. State the alignment explicitly; if some open item no longer matches a stated priority, say so rather than carrying it silently.
+
+## Step 3 — Sweep for asks that never landed
+
+Re-read the session for requests the user made that did not turn into work, an artifact, or an explicit decision to skip. These are the highest-loss items in any handoff: they were important enough to say out loud and are invisible in `git status`.
+
+Look for asks that were deferred mid-turn ("park that", "later"), superseded by a more urgent thread, answered partially, or acknowledged and then buried under subsequent work. For each, record the ask in the user's own framing and its current disposition — not started, partially done and where it stopped, or dropped deliberately with the reason.
+
+An empty result is a real outcome; write "none" rather than manufacturing entries.
+
+## Step 4 — Redact
+
+Before writing, scrub anything that should not land in `$TMPDIR`:
+
+- API keys, tokens, JWTs, OAuth client secrets — replace with `<REDACTED:type>`.
+- Environment variable values (`.env`, `process.env.X` payloads, anything that looks like a credential).
+- Personally identifiable information beyond what is in the repo's git config.
+- Absolute paths containing user home directory **content** that is not part of this repo (the repo's own absolute path may stay).
+
+If a value is needed by the next session but is sensitive, write a placeholder + a one-line note on where to fetch it (`pull from 1Password vault "X"`, `re-export from env`).
+
+## Step 5 — Resolve handoff path
+
+Compute the target path:
+
+```bash
+TMP="${TMPDIR:-/tmp}"
+DIR="$TMP/agentic-handoffs"
+mkdir -p "$DIR"
+ISO=$(date -u +%Y%m%dT%H%M%SZ)
+SLUG=<from-arg-or-branch>
+PATH_OUT="$DIR/$ISO-$SLUG.md"
+```
+
+Slug derivation, in priority order:
+1. The argument the user passed (`/ad-handoff merge-cleanup` → `merge-cleanup`).
+2. Current branch name with non-alphanumeric chars replaced by `-`.
+3. `session` as the fallback.
+
+Never write inside the repo. Never add `.agentic/handoffs/` to the repo's `.gitignore`. Handoffs are per-session OS artifacts, not per-repo audit trail.
+
+## Step 6 — Write the handoff
+
+The handoff's file shape lives in [references/handoff-template.md](references/handoff-template.md) — fill each `<placeholder>` from the state you collected; omit any section that does not apply, except `Roadmap` and `Asks that never landed`, which are never omitted (an empty sweep is written as "none"). Keep the template's `At resume time, print the decision-maker brief...` runtime instruction verbatim. It is not a placeholder: do not replace it with a briefing during handoff creation, because the incoming agent must reconcile live state first.
+
+The template's `## Resume protocol` separates what the incoming agent must do from what the maintainer needs to see. The agent completes a **private preparation pass** over the handoff, global and repository rules, every referenced artifact, live repository state, all eight `ad-philosophy` behaviors, and the applicable method skills. It then emits only the template's four-line preparation receipt and the canonical decision-maker brief. Do not print the full applied-binding statement, rule excerpts, file inventory, or command log. This is the auto-load path with an explicit coverage receipt, not an explicit `/ad-philosophy` invocation; a rule-driven correction or unmet prerequisite remains visible under `Your attention`.
+
+After reconciling the live state, build a settled resume fact packet containing the project, final objective, recent result, current target and rationale, next direction, done condition, blockers, confidence limits, and any genuine owner decision. Pass that settled resume fact packet to `/ad-brief`. When `/ad-brief` returns, the resume protocol must regain control: print the preparation receipt, then the returned brief, then continue with the recommended first action unless a genuine decision blocks it. `/ad-handoff` alone writes and persists the complete handoff artifact; `/ad-brief` neither gathers handoff state nor writes the file.
+
+The `## Working rules` section is copied into the handoff verbatim — this block, restated below, is deliberately not referenced:
+
+**These are restated, not referenced, and that is deliberate.** A handoff is an ephemeral `$TMPDIR` artifact read once by an agent with no history; a pointer it may not follow is worth less than four lines it cannot miss. The anti-duplication rule protects versioned documents from drifting copies — this file is deleted after it is read.
+
+**Reporting to the engineer.** They are the boss, not the co-pilot, and they did not read the files you read. Lead with the conclusion — what happened, what it means, what comes next — in plain terms first, technical detail after. Write so they grasp it in about thirty seconds; that is a target for how the report lands, not a length limit, and clarity beats compression when the two pull apart. Translate artifacts into what they mean and what to do — a pasted diff or metric is not a report.
+
+**Deciding vs asking.** Default is decide. A grounded happy path, a single-criterion winner, an established pattern, a green deterministic gate: take it, do not ask. Ask only for design and taste, irreversible or high-blast-radius actions, genuine ties, insufficient evidence, or a fuzzy spec — and when you ask, bring one question with the recommended answer first and why the alternatives are weaker. Never a survey.
+
+**Grounding before building.** Non-trivial change gets `/ad-ground` first — official docs, validated implementation references, in-repo patterns, git history — then a stated happy path. Deviating from it needs an irrefutable reason, stated.
+
+**Hypotheses before fixes.** A bug gets 3–5 ranked falsifiable hypotheses before any of them is tested, each naming the prediction that would kill it. Single-hypothesis debugging anchors on the first plausible idea and is the most common failure mode after having no feedback loop. `/ad-diagnose` carries the loop.
+
+**Validate before correcting.** Never fix on a claim you have not reproduced — including a claim from a reviewer, a prior session, or this handoff. Re-run it and state what you observed, or say UNVERIFIED. An "N of M" claim needs the command that reproduces the enumeration **and** the false positives in its output named — or a statement that none were found and how that was checked.
+
+**Tests before the fix is trusted.** When the behaviour is expressible as a test, write the failing test first and let it drive the change — one test at a time, verifying behaviour through public interfaces, never bulk-writing tests after the fact. Every bug that gets fixed gets a regression test that fails without the fix.
+
+**Spike when the technique is the unknown.** If the uncertainty is *how* rather than *what* — several plausible approaches and no way to pick from reading — prove it with a staged spike and a golden fixture (`/ad-spike`) before correcting anything. Only when that is genuinely the situation; a spike for a problem whose technique is already settled is wasted motion.
+
+**Review before landing.** `/ad-review` on the range before anything merges, two axes, fresh context. The agent that wrote the code is biased about it.
+
+Suggested-skills picks from the installed `ad-*` set. Common patterns:
+
+- Mid-implementation, behavior expressible as test → `/ad-tdd`.
+- Stuck on a bug → `/ad-diagnose`.
+- Spec unclear → `/ad-grill-me`.
+- About to land work → `/ad-commit` → `/ad-pr` → `/ad-merge`.
+- Ready for fresh-context review → `/ad-review main..HEAD`.
+
+Write the file with `Write`. Print the absolute path to the user so they can paste it into the next session.
+
+## Step 7 — Hand off
+
+Tell the user:
+
+1. The handoff path.
+2. The roadmap, rendered inline in the reply — the user reads the plan here, not by opening a file. Conclusion first, no preamble: done and open in one list, graspable in about thirty seconds without opening the file.
+3. What hygiene deleted (merged branches only) and what it left for them, each with its command.
+4. Any ask the sweep found unlanded — surface these even when they are inconvenient; a handoff that quietly drops a request is worse than no handoff, because it looks complete.
+5. The single recommended first action, and the suggested-skills list verbatim.
+6. On a host that exposes a background-task chip primitive, the resume chip, offered in the same reply (see below). It is part of the hand-off, not an extra.
+
+When the host exposes a background-task chip primitive — a tool that renders a suggested task as a one-click chip spawning a fresh session (e.g. `spawn_task` in the Claude Code desktop app) — offer the handoff as a chip (item 6). The chip's prompt must stand alone: the absolute handoff path with the instruction to read it first, follow its `Resume protocol` before any work, and continue with its recommended first action. Do not separately invoke `/ad-philosophy`; that would replace the compact receipt with the verbose explicit-invocation mode the resume protocol deliberately avoids. Prefer the chip over a pasted prompt where the host offers one — it survives the clipboard and carries the path verbatim. Title: short imperative naming the work. The chip complements the file — the file stays the durable artifact; on hosts without the primitive (terminal CLI, IDE extensions, Codex) the printed path is the handoff, as above.
+
+The skill itself never runs `/clear` or anything destructive. In a manual handoff the user decides when to discard the current session. The automatic rollover below is the one place a session is cleared without a keypress, and the skill is not what clears it: the owner keeps the switch, and the `agentic-session` plugin clears only after the whole handoff file exists (ADR-0098).
+
+## Automatic mode — `--auto [path]`
+
+The automatic context rollover (ADR-0098) is a handoff in place of a compaction. Near the auto-compaction point the `agentic-session` plugin asks for a handoff, waits for the whole file, clears the session and submits the resume prompt in the same window, interactive or headless (`claude -p`). On by default; `AGENTIC_AUTO_HANDOFF=off` (or the plugin option `autoHandoff`) turns it off and `AGENTIC_AUTO_HANDOFF=<1-99>` moves the start point from 80%. The plugin's request names this mode and the path; an owner or an orchestrator may also invoke `--auto` directly.
+
+In this mode the steps above shrink to:
+
+1. Ask nothing and delete nothing. No question to the user, no branch deletion (hygiene is reported under `Running`, never run), no chip, no roadmap rendered in the reply.
+2. Path: the one given. Without one, `<home>/.agentic/handoffs/<ISO>-auto-<slug>.md` under the user's home directory (`$HOME`, or `%USERPROFILE%` on Windows) — the same place on every system, with no POSIX `/tmp` and no shell needed. Never inside the repository.
+3. Shape: [references/auto-handoff-template.md](references/auto-handoff-template.md) — its eight sections, in that order, none omitted; an empty one is written as "none". Compact and factual, in the language of the conversation. The roadmap, lost-ask sweep and redaction rules above still bind; state only what this session has evidence for.
+4. End marker: the last line of the file is exactly `<!-- ad-handoff:end -->`. The plugin treats a file without it, or without the required headings, as unfinished and clears nothing.
+5. Write the file with the write tool. If the write is refused, give the whole handoff as the answer, ending with that same last line. Otherwise answer only `handoff written` and end the turn. Do not run `/clear`.
+
+Where nothing asks at a turn's end and nothing clears — Codex, or Claude Code without the plugin — `--auto` still writes the same file and gives the same one-line answer; the owner or the orchestrator starts the fresh session with `Read "<path>" first and follow its Resume protocol`.
+
+## Output contract
+
+- A single markdown file at `${TMPDIR:-/tmp}/agentic-handoffs/<ISO>-<slug>.md`.
+- File contains only the sections above, in that order. Omitted sections are removed entirely (not left as `## Heading\n\nN/A`). `Roadmap` and `Asks that never landed` are never omitted — an empty sweep is written as "none", because silence and emptiness are indistinguishable to the next agent.
+- The roadmap is a single checklist covering done and open work in dependency order, each line self-sufficient, with an explicit priority-alignment line.
+- Repo hygiene deletes fully-merged branches with `git branch -d` and reports them; everything destructive (`-D`, worktree removal, file deletion) is reported with its command and never run. Confirmation is matched to blast radius (WORKFLOW §7), not waived and not inflated.
+- The `Working rules` section states the rules outright rather than pointing at them; `/ad-philosophy` binds posture and is never presented as covering grounding, hypothesis, test or review discipline.
+- The resume protocol keeps preparation exhaustive and private, passes a settled resume fact packet to `/ad-brief`, emits a four-line preparation receipt plus the returned one-screen brief, and never prints the full `/ad-philosophy` applied-binding statement.
+- References artifacts by path; never duplicates their content.
+- Secrets are replaced with `<REDACTED:type>` placeholders.
+- Suggested skills are drawn from the installed `ad-*` set and each line carries a one-clause rationale.
+- With `--auto`: one file at the given path or under `<home>/.agentic/handoffs/`, in the automatic template's shape, ending with `<!-- ad-handoff:end -->`; no question, no deletion, and the answer is only `handoff written`.
+- The user receives the absolute path of the file and the recommended first action; on hosts exposing a background-task chip primitive, a one-click resume chip is also offered. No destructive session ops are performed.
+
+## Next
+
+- Paste the handoff path into the next session: `cat /tmp/agentic-handoffs/<file>.md` (or the host-specific opener).
+- On Claude Code: `/clear` then `Read <path>` as the first turn; with the `agentic-session` plugin the automatic rollover does both by itself.
+- On Codex: `/clear` then paste the file contents, or explicitly spawn a Codex subagent with the handoff path as its context packet.
+- If the handoff surfaced an unresolved decision worth recording: open an ADR with `/ad-adr` before the next agent picks the work up.
+- If the handoff surfaced a vocabulary drift (a term you kept paraphrasing): `/ad-domain` to land it in `CONTEXT.md` so the next agent inherits the canonical noun.
+- Need only a live explanation without creating a handoff file: `/ad-brief`.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/2233admin/reverse-skill-evolver (path: CTF-Sandbox-Orchestrator/ctf-sandbox-orchestrator/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Default entrypoint and master ctf-sandbox-orchestrator workflow for CTF, exploit, reverse engineering, DFIR, pwnable, crypto, stego, mobile, AI-agent, cloud, container, Active Directory, Windows-host,

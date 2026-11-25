@@ -1,0 +1,135 @@
+---
+name: redmine-cli
+description: Use the `redmine` CLI to interact with Redmine. Activate when the user asks to create, list, update, close, or search issues, epics, or subtasks, log or view time entries, read or edit Redmine wiki pages, manage versions or memberships, query projects/users/groups, or perform any Redmine project management task. Also activate when the user says "redmine", "issue", "ticket", "time entry", pastes a Redmine URL (e.g. `.../issues/123`), or references Redmine workflows.
+---
+
+# Redmine CLI
+
+A CLI for the Redmine REST API. Use `redmine <command> --help` for detailed flags and examples — this skill only covers what `--help` cannot tell you.
+
+## Available Commands
+
+Only these top-level commands exist. Do NOT invent subcommands that aren't listed here — run `redmine <command> --help` to discover subcommands.
+
+| Command | Purpose |
+|---------|---------|
+| `issues` | Create, list, get, update, copy, close, reopen, assign, comment, delete, open, browse issues; `issues copy <id> [--project] [--link] [--with-attachments] [--with-subtasks]` copies an issue; `issues comment edit <journal-id>` edits a comment (Redmine 5.0+; journal IDs come from `issues get <id> --journals`); manage watchers and relations (`issues watchers …`, `issues relations list/get/add/remove`). To search issues, use `search issues` |
+| `attachments` | Inspect attachment metadata (`attachments get <id>`), download files (`attachments download <id>`) or thumbnails (`attachments thumbnail <id> --path <file>`), and edit or remove them (`attachments update <id> --filename/--description/--content-type`, `attachments delete <id>`) using the active profile's auth |
+| `queries` | List Redmine saved queries; reuse them via `issues list --query` / `--query-id`, or with `--type time_entry` via `time list --query` / `--query-id` |
+| `projects` | List, get, create, update, archive, unarchive, delete projects; list project members. `--include` on list/get exposes trackers, modules, categories, custom fields, and time-entry activities (Redmine 5.0+ for archive). |
+| `time` | Log, list, get, update, delete, summarize time entries |
+| `versions` | Create, list, get, update, delete project versions (milestones) |
+| `files` | List and upload project-level files (release artifacts) |
+| `memberships` | List, get, create, update, delete project memberships |
+| `users` | List, get, create, update, delete users |
+| `my-account` | Get and update your own Redmine account (works without admin) |
+| `groups` | List, get, create, update, delete groups; add/remove users |
+| `roles` | List and get roles, including their permissions |
+| `categories` | List, get, create, update, delete issue categories (`--assignee` sets the default assignee, `none` clears it; `delete --reassign-to <category>` moves the issues to another category of the same project) |
+| `news` | List, get, create, update, delete project news (`list` without `--project` spans all projects; `get --include attachments,comments`; `create` looks the new ID up afterwards; news comments are read-only) |
+| `trackers` | List and get trackers |
+| `statuses` | List issue statuses |
+| `priorities` | List issue priorities and their IDs (for `--priority`) |
+| `activities` | List time entry activities; `--project <p>` shows the ones available in that project incl. overrides with their own IDs |
+| `document-categories` | List document categories |
+| `custom-fields` | List and get custom field definitions (admin-only endpoint) |
+| `search` | Search issues, wiki, news, messages, or browse results |
+| `auth` | Login, logout, list, switch, and check status of authentication profiles |
+| `wiki` | List, get, create, update, delete wiki pages (`get --include attachments` shows attachment IDs; `update --start-page`, `--redirect-existing-links=false` with `--title`, `--remove-attachment <id>` repeatable and confirmed unless `--force`; `delete --children nullify\|destroy`, `destroy` deletes every descendant; to keep children, `update <child> --parent <page>` first) |
+| `api` | Make raw authenticated API requests |
+| `config` | Show the active configuration (server, profile, default project) |
+| `update` | Update the CLI to the latest release |
+
+## Setup
+
+If the `redmine` command is not found, install it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aarondpn/redmine-cli/main/install.sh | bash
+```
+
+Then run `redmine auth login` for interactive configuration, or without a terminal: `echo "$KEY" | redmine auth login --server <url> --api-key-file -`. Use `redmine config` to verify an existing setup.
+
+## Critical Rules
+
+- **Use `--jq` (`-q`) to extract fields** — e.g. `redmine issues get 123 --jq '.status.name'`. It is built in (no external `jq` needed) and implies `-o json`. Never parse output with Python, awk, or regex. If the flag is unknown, the CLI is outdated — ask the user to run `redmine update`.
+- **Errors go to stderr with a non-zero exit code**; on failure stdout is empty. Check the exit code — never merge stderr into stdout (`2>&1`) or discard it (`2>/dev/null`). Error code `jq_failed` means the command itself succeeded and only the filter failed — don't re-run writes (except `api -i` on a 4xx/5xx response, where the request failed).
+- **Use `--limit 0`** to fetch ALL results. The default limit is 100.
+- **Inspect attachments**: when reading an issue, add `--attachments` and look at any it has before answering (see below).
+- **All name-accepting flags** (--project, --tracker, --status, --priority, --assignee, --category, --version, --activity, --custom-field) resolve human-readable names automatically. Don't look up IDs or option lists first — only when a name fails to resolve, check the valid values (e.g. `redmine projects get <project> --include trackers,issue_categories`) and ask the user if it's still unclear. Custom field names need admin rights; otherwise use the numeric ID from the resource's `custom_fields` in JSON output.
+- **`--assignee me`** refers to the current API user.
+- **`--status "*"`** shows all issues regardless of status (default is `open`).
+
+## When Something Doesn't Work: Stop and Use `--help`
+
+**Do NOT guess, loop, or retry with invented flags/subcommands.** If a command fails or you're unsure about the correct syntax:
+
+1. **Run `redmine <command> --help`** (or `redmine <command> <subcommand> --help`) to see the actual available options, flags, and subcommands.
+2. **Read the help output carefully** — it is authoritative and always up to date. Trust it over your own assumptions.
+3. **Never invent flags or subcommands** that aren't shown in `--help`. If you think an option should exist but it doesn't appear in the help, it doesn't exist.
+4. **Do not loop** — if the same command fails twice, stop and re-read the help output. Do not keep retrying with slight variations hoping one will work.
+5. **Ask the user** if the help output doesn't clarify things — that's better than spiraling through failed attempts.
+
+## Permission Errors
+
+- **Never retry with other credentials** (other profiles, API keys from env vars, CI settings, or config files). Permissions come from the user's Redmine role — stop and ask the user.
+- User and group names resolve through the project's members, so they work without admin.
+
+## After Creating Resources
+
+When you create an issue, project, user, or other resource, the CLI returns the new ID. Offer the user a clickable URL so they can open it in the browser:
+
+- **Issues**: `redmine issues open <id>` opens the issue directly. You can also provide the URL: `<server>/issues/<id>`
+- **Projects**: `<server>/projects/<identifier>`
+- **Users**: `<server>/users/<id>`
+- **Time entries**: `<server>/time_entries/<id>/edit`
+
+Get the server URL with `redmine config --jq .server`. Always mention the URL or the `open` command after a successful create so the user can quickly navigate to the new resource.
+
+## Attachments: Always Download and Inspect Them
+
+Issues often carry attachments (screenshots, diagrams, logs, PDFs) that contain
+information not present in the text. **Whenever an issue has attachments,
+download them and inspect their contents before answering** - especially
+images, which frequently hold the actual error, mockup, or detail the ticket is
+about.
+
+1. **Discover attachment IDs**: `redmine issues get <id> --attachments` lists each
+   attachment's `id`, `filename`, `filesize`, and `content_type` (JSON: `.attachments[]`).
+   Without `--attachments` the issue output doesn't show them.
+2. **Download one file**: `redmine attachments download <att-id> -d <dir>` saves it
+   under its real filename (or `--path <file>` for an exact path, `--path -` to
+   stream to stdout). No `curl`, no manual API-key handling - it reuses the active
+   profile's auth.
+3. **Download everything at once**: `redmine issues get <id> --download-attachments <dir>`
+   pulls every attachment of the issue into `<dir>` in one step. Same-named
+   attachments are kept side by side: the newest keeps the plain name, older
+   ones become `name (attachment-<id>).ext`; read the reported paths.
+   Neither command overwrites an existing file: it fails with "already exists".
+   Add `--clobber` to replace it. A filename starting with `.` (e.g. `.bashrc`)
+   is refused with "refusing to save the hidden filename"; pass `--allow-hidden`
+   only if you really want that dotfile in `<dir>`, or download that one
+   attachment with `--path <file>` under a name you choose.
+4. **Inspect metadata only** (no download): `redmine attachments get <att-id>`.
+
+After downloading an image, open/read it and use what it shows.
+
+## Non-Obvious Behaviors
+
+- `--custom-field name=value` works on `issues create/update`, `projects create/update`, `time log/update`, `versions create/update`, `users create/update`, `my-account update` and `groups create/update`. For multi-value fields repeat the same field (`--custom-field Tags=a --custom-field Tags=b`); `--custom-field Tags=` clears it. Values keep spaces and `=`: quote each pair and repeat the flag per field.
+- `--filter key=value` (raw Redmine filter, repeatable) works on `issues list`, `time list`, `projects list` and `users list`, e.g. `time list --filter cf_3=Onsite --filter spent_on='><2026-01-01|2026-01-31'`. Repeat keys ending in `[]` for Redmine's `f[]`/`op[]`/`v[]` syntax (`--filter 'f[]=hours' --filter 'op[hours]=>=' --filter 'v[hours][]=2'`). A `--filter` key that a dedicated flag also sends replaces the flag's value. With `f[]`, Redmine applies only the filters listed in `f[]`; filters set by other flags such as `--status` are dropped. The same lists take `--sort` (e.g. `spent_on:desc`); `time list` also runs saved time entry queries with `--query` / `--query-id` (find them with `queries list --type time_entry`); the saved query's filters replace all other filters; only `--project` and `--sort` still apply.
+- `projects list` shows only active projects unless `--status closed` or `--status all` is given; archived projects are never listed by the API. `users list --status all` includes locked and registered users on every Redmine version. `groups list --builtin` adds the Anonymous and Non member groups.
+- If `time log` fails with `validation_failed`, the server may require time entry custom fields or an activity: pass them with `--custom-field` / `--activity`.
+- User preferences go through `--pref key=value` on `users create/update` and `my-account update` (e.g. `--pref no_self_notified=1`, `--pref hide_mail=1`, `--pref time_zone=Berlin`); booleans are `1`/`0` (not `true`/`false`), list-valued keys are not supported, and Redmine ignores unknown keys. `--language`, `--pref` and `--notified-project` are write-only: no `get` shows them. `--notified-project` only matters with `--mail-notification selected`.
+- `users update --group` and `--notified-project` replace the whole set (`--group ""` clears it). Set a password with `users update <user> --password-file <path>` or `--password-file -` (stdin; prompted with hidden input in a terminal); there is no plain `--password` on update, and MCP cannot set passwords.
+- `memberships create --user a --user b` adds several users with the same roles in one request, all or none (one invalid user or existing member rejects the whole batch); with `--user`, `-o json` always prints an array, `--user-id` / `--group-id` print one object.
+- `versions create/update --default-project-version` makes a version the project default; `groups create/update --twofa-required` and `projects create/update --default-issue-query` need Redmine 5.0+ (older servers ignore them).
+- `redmine issues get <id> --journals` includes comments and history (property changes are shown one per line). `--children` and `--relations` add those sections and `--watchers` adds a Watchers row; the text output shows every field Redmine sent and omits empty ones.
+- `redmine issues get <id> --include allowed_statuses -o json` lists the statuses the current user may transition to.
+- `redmine issues update` only sends flags you explicitly pass — omitted flags are not changed.
+- `issues update <id> --project <p>` moves the issue; it fails with `project_not_applied` when Redmine ignored the move (no Add issues permission in the target). `--remove-attachment <att-id>` (repeatable) deletes attachments and needs `--force` in scripts.
+- `--attach-description` pairs with `--attach` by position (1st description for the 1st file) on `issues create/update`, `wiki create/update` and `news create/update`; more descriptions than files is an error.
+- `issues watchers add <id> <user>...` adds several watchers in one request.
+- If `--project` is omitted, the configured default project is used (set via `redmine auth login`).
+- Projects can accumulate hundreds of versions, most of them closed or locked. When you need a version for a new issue, time entry, or similar workflow, always start from `redmine versions list --open` so the shortlist stays small and you don't pick a version that can no longer accept work.
+- Any date flag (`--due-date`, `--date`, `--from`, `--to`) accepts the literal keyword `today` as a shortcut for the current date.

@@ -1,0 +1,188 @@
+---
+name: ai-shifu-skill-release
+description: "Release AI-Shifu skills using the maintained release.py workflow: open version-bump PRs, build and verify channel packages, preview complete PR changelogs grouped by type, run preflight checks, publish to ClawHub and SkillHub, prepare and record manual WorkBuddy/Doubao uploads, and track channel publication results. Use for skill version upgrades, packaging, release notes, release checks, or publication. Source PRs require human merge; never bypass that workflow by editing local business-skill source."
+---
+
+## Execution Environment
+
+All operations go through this tool's `scripts/release.py`. Publisher identity and non-secret channel settings belong to `release.toml` and are read from the release's pinned source revision. Human merge of a version-increase PR authorizes the GitHub workflow to build, verify, and publish the formal Release automatically. The initial automatic run then explicitly invokes channel jobs; they use `submit-channel`, which downloads and verifies Release attachments before submission. Do not duplicate packaging logic or call channel publication commands directly.
+
+1. Locate the directory containing **this** `SKILL.md`. In `ai-shifu/skills`, it is `tools/ai-shifu-skill-release/`, not the Git repository root. Use it as the working directory for the commands below. A standalone copy uses the same sibling layout.
+2. Confirm that `scripts/release.py` and `channels/workbuddy/.codebuddy-plugin/plugin.json` exist there. Stop if the intended tool cannot be located.
+3. Read `python3 scripts/release.py --help` if the implementation may have changed. Read [Publishing Environment](references/publishing-environment.md) for runtime, publisher configuration, and authentication requirements.
+4. Before packaging, check `git status --short` and `git log -1 --oneline` in the enclosing repository when present. The builder supports standalone copies without Git and records unavailable provenance as null; do not claim a clean repository without evidence.
+5. GitHub `ai-shifu/skills` remote `main`, or a specified commit from it, is the source of business skills and channel templates. Sharing a repository with the tool does not make local skill edits build inputs. Formal tags pin Release drafts; a tag push does not publish them or upload to platforms. Platform Actions jobs download and verify the published Release attachments before submission; they do not rebuild or require the old tag to remain the current `main` tip.
+
+Building and publishing do not modify skill source. Version changes go through `bump`, which opens a source-repository PR for human review and merge. Only the primary source skill's `SKILL.md` stores the release version; all four channel versions derive from it, with no independent version under this tool directory. If the user specifies a version, compare it with `release.json`. For formal publication, stop on a mismatch and explain that the target version must first reach remote `main` through a merged bump PR. Creating a version PR does not include creating a Draft Release. Use Actions artifacts for previews before merge. After human merge, follow the automatic publication run and report the published Release and channel results; no second publication confirmation is required. The [README release sequence](README.md#github-release-draft-and-publication) owns automatic version detection, source pinning, and recovery details.
+
+## Safety Rules
+
+- Use the exact release directory printed by `build`, or explicitly identified by the user. Do not guess which `dist/` directory is newest.
+- `build`, `verify`, `notes`, `check`, and `manual-plan` do not upload packages and do not require publication authorization.
+- Before local publication, confirm the tool's enclosing worktree is clean, verification succeeds, and all selected automated channels report `ready`. For a standalone copy, do not treat unavailable Git provenance as proof of a clean worktree.
+- Before `publish ... --execute`, show the release ID, source commit, skill and plugin versions, artifact hashes, selected targets, and preflight results. Obtain explicit authorization for that candidate and those channels.
+- Packaging, checking, preparation, or inspection requests do not authorize publication.
+- Never request or print platform tokens. If authentication is missing, provide the login command and wait for the user to authenticate locally.
+- Do not commit or push the current checkout without an explicit user request. `bump` requires an explicit request for that operation and only pushes a dedicated branch and opens a PR. Never merge its PR or push directly to `main`.
+- For local `check` or `publish`, if GitHub `main` has advanced, do not delete existing artifacts; rebuild and use the new output directory. Actions recovery instead retains the original merged source as described in the README.
+- Only accept `release.json` schema 6. Rebuild older candidates.
+- Do not record a manual channel as `verified` without a platform URL and confirmation of independent validation.
+
+## Choose the Workflow
+
+| User intent | Steps | Stop point |
+| --- | --- | --- |
+| Accept automation changes without a new skill release | Keep the existing skill version, review and merge the automation PR, then run **Release Skills** with `preview_type=artifact` on the merged `main` commit | Report the preview run and six temporary attachments; do not create a version tag or submit to platforms |
+| Preview a future version before its PR is merged | Use the PR trial artifacts, or run **Release Skills** with `preview_type=artifact` on the version branch and its matching expected version | Report the six temporary attachments; wait for administrator merge |
+| Release a version after its PR is merged | Follow the automatic **Release Skills** publication job triggered by the merged version increase | Report the published formal `vX.Y.Z` URL, verified attachments, and actual channel results |
+| Recover or explicitly retry GitHub publication | Inspect the failed run and follow the README's original-run retry or pinned `preview_type=publish` recovery | Report the verified published Release; recover any missing channel separately after checking the platform |
+| Explicitly prepare an unpublished draft | Use **Release Skills** with `preview_type=draft` on `main` and its matching expected version | Report the draft URL and attachment checks; retain the requested unpublished state |
+| Follow an administrator's manual draft publication | Inspect the retained `release.published` channel jobs | Read and report both channel results; WorkBuddy and Doubao remain manual |
+| Upgrade a version | `bump` | Return the source PR and wait for human merge |
+| Build or package | `build`, then `verify` | Report artifacts |
+| Preview release notes or a changelog | Verify the specified candidate, then `notes` | Return the JSON facts and Markdown preview; no Release is created |
+| Check or dry-run | Build if needed, then `verify` and `check` | Report channel readiness |
+| Publish automated channels | Build if needed, verify, check, obtain authorization, publish | Report channel results |
+| Prepare manual channels | Build if needed, then `verify` and `manual-plan` | Return exact upload paths and hashes |
+| Record manual results | Verify the specified release, then `record-manual` | Report the updated ledger |
+| Import Actions channel results | Verify the matching release, download each channel result artifact, then `record-channel` | Report the updated ledger |
+| Complete a full release | Follow applicable stages in order | Stop at each human gate |
+
+Automated targets are `clawhub` and `skillhub`. Manual targets are `workbuddy` and `doubao`.
+
+## Upgrade the Skill Version
+
+```bash
+python3 scripts/release.py bump --skill-name ai-shifu-course-creator \
+  --skill-version <X.Y.Z>
+```
+
+Use `--level major|minor|patch` instead of an explicit version when requested. `--draft` creates a draft PR; `--no-pr` pushes the branch without opening a PR.
+
+Version-bump PR titles must use `chore: bump version to vX.Y.Z`, replacing `X.Y.Z` with the target version; for example, `chore: bump version to v1.2.12`. Follow this format for both automatically and manually created release PRs. `bump` uses the same title for the version commit.
+
+`bump` modifies the frontmatter version in a temporary source-repository clone without changing the skill body, pushes a branch, and uses `gh` to create a PR. It does not edit the current checkout. **Never merge the PR.** Return its URL for human review and stop at the merge gate. SSH write access is required. If `gh` is missing, the branch is still pushed and a PR must be created manually.
+
+## Build and Verify
+
+For each new packaging request, first read and show the primary source skill's version on remote `main`, then confirm whether to keep it or upgrade and to which version. Do not ask again when the user has already specified that choice for the current request. All four channels use that version; do not edit local source or introduce an independent plugin version to satisfy a mismatch.
+
+After confirmation:
+
+```bash
+python3 scripts/release.py build --skill-name ai-shifu-course-creator
+```
+
+For a trial build of a particular commit, pass `--source-ref <full-commit-sha> --expected-version X.Y.Z`. Pass `--source-repo-url <checkout-path>` when testing a local checkout before its commit exists upstream. PR validation keeps its packages and notes in Actions; those attachments are never publication candidates. Select `preview_type=artifact` for additional previews before merge or automation-only acceptance runs on `main`. After the administrator merges the version PR, follow the automatic publication job and report its actual published `vX.Y.Z` URL and six verified attachments. Follow the channel results separately. See [README](README.md#github-release-draft-and-publication) for automatic version detection, tag pinning, recovery runs, and the full release sequence.
+
+Record the exact output directory as `RELEASE_DIR` and verify it:
+
+```bash
+python3 scripts/release.py verify "$RELEASE_DIR"
+```
+
+The default output is `dist/` relative to the caller's working directory. With the standard working directory above, that is the tool's own `dist/`. Explicit `--output` paths retain their existing semantics.
+
+Read `$RELEASE_DIR/release.json` and report:
+
+- The release ID and recorded SHA-256.
+- The source repository, source commit, and skill version.
+- Paths, versions, and hashes for ClawHub, SkillHub, WorkBuddy and Doubao.
+- Source-body consistency across channels. For Doubao, report the embedded source manifests, the format-specific allowlisted frontmatter changes, and static package validation. The new plugin uses Skill display metadata and may change `version_management` to `plugin`; historical partner packages use their original override policy.
+- Whether the builder's enclosing worktree had uncommitted changes, or whether provenance was unavailable.
+
+If the user only requested packaging, stop here.
+
+## Preview Release Notes
+
+After verifying the specified release directory, generate its complete changelog with the read-only command:
+
+```bash
+python3 scripts/release.py notes "$RELEASE_DIR" --output release-notes
+```
+
+Use `--preview` when the source commit contains unmerged branch changes. Report the pinned base and head, collection status, PR count, and the generated `release-notes.json` and `release-notes.md` paths. Read the Markdown to confirm that the requested changes are present. The [README release-note contract](README.md#release-notes-and-changelog) owns the range rules, fixed type order, tie breaking, explicit base and local-repository options, Draft refresh behavior, and output details. A collection error must be resolved before formal publication.
+
+For `github-release --prepare-only`, review the notes under the output directory's `notes/` subdirectory alongside the six package attachments. For Draft or formal publication, pass `--notes-output <directory>` to retain the same JSON and Markdown. Actions keeps these files in a separate artifact and displays the Markdown in its summary. A release-note preview does not authorize publication.
+
+## Check the ClawHub Registry Version
+
+Before ClawHub publication, inspect version history:
+
+```bash
+npx --yes clawhub@latest inspect ai-shifu-course-creator --versions --json
+```
+
+Use the Node version and CLI package configured under `[channels.clawhub]` in `release.toml`; the example commands use its defaults. The publisher resolves npx from `CLAWHUB_NPX` or `--clawhub-npx`, then PATH, then the nvm fallback for the configured Node version; see [Publishing Environment](references/publishing-environment.md).
+
+Publishing an existing version can overwrite that version's content. Point out the existing version and obtain explicit confirmation before proceeding.
+
+## Check Automated Channels
+
+```bash
+python3 scripts/release.py check "$RELEASE_DIR" --target all
+python3 scripts/release.py check "$RELEASE_DIR" --target clawhub
+python3 scripts/release.py check "$RELEASE_DIR" --target skillhub
+```
+
+Choose the applicable target. `check` verifies authentication, confirms that remote `main` still matches the candidate, and performs registry dry runs. It must not upload.
+
+If authentication fails, have the user run the appropriate local command:
+
+```bash
+skillhub login --key <API_TOKEN>
+npx --yes clawhub@latest login
+```
+
+Do not ask the user to send credentials. After login, recheck failed channels. Do not publish while any selected automated target is not `ready`.
+
+## Publish Automated Channels
+
+After satisfying the safety rules and obtaining explicit authorization:
+
+```bash
+python3 scripts/release.py publish "$RELEASE_DIR" --target all --execute
+```
+
+Use `--target clawhub` or `--target skillhub` when only one channel is authorized. Read `release-report.json` afterward and report each channel independently as `published` or `failed`. Automated publication does not perform platform lookup or fresh-install verification; do not describe accepted uploads as `verified`.
+
+After partial failure, keep the same immutable release directory. Diagnose the failure and retry only failed channels. Rebuild only if remote `main` has advanced.
+
+## Import Actions Channel Results
+
+To record Actions channel results, use the verified `RELEASE_DIR` matching the published tag and source commit. Download each channel's `platform-result-<tag>-<channel>` Actions artifact into its own receipt directory using the [README commands](README.md#channel-submission-from-the-release), then import both results:
+
+```bash
+python3 scripts/release.py record-channel "$RELEASE_DIR" \
+  --result "$RELEASE_DIR/receipts/clawhub/platform-result.json"
+python3 scripts/release.py record-channel "$RELEASE_DIR" \
+  --result "$RELEASE_DIR/receipts/skillhub/platform-result.json"
+```
+
+Read the updated `release-report.json` and report the actual channel states. The [README](README.md#channel-submission-from-the-release) explains receipt validation and status meanings. Recording a receipt does not submit packages or establish fresh-install verification.
+
+## Prepare and Record Manual Publication
+
+```bash
+python3 scripts/release.py manual-plan "$RELEASE_DIR" --target all
+```
+
+Use `--target workbuddy` or `--target doubao` for a single manual channel. Give the user the exact `upload_path`, plugin version, embedded skill version, and artifact SHA-256. The user uploads on the platform.
+
+Record the user's result with:
+
+```bash
+python3 scripts/release.py record-manual "$RELEASE_DIR" \
+  --target <workbuddy|doubao> \
+  --status <submitted|verified|failed> \
+  --url <platform-url> \
+  --note <optional-note>
+```
+
+Both `submitted` and `verified` require `--url`. Only `failed`, when no platform page exists, may omit it. For Doubao, test the three suggested instructions and the learning-report capability on the target client. Supply the Skill evaluation-report links and any additional test prompts required by the chosen platform submission. Do not treat static validation as platform acceptance.
+
+## Completion Report
+
+Read `release-report.json` and summarize the release ID and source commit, automated channel outcomes, manual outcomes and evidence URLs, blocked or failed actions, and work that remains outside the tool.
+
+State the limits accurately: manual channels require upload and platform validation; automated uploads do not include fresh-install verification; `bump` creates a PR but never merges it. Stop at the human gates rather than treating success at one stage as permission for the next.

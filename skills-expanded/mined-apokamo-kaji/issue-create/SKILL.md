@@ -1,0 +1,165 @@
+---
+description: Issue作成とラベル付与を行う。開発ワークフローの起点。review-ready の共通・type別観点を満たす本文生成を誘導する。
+name: issue-create
+---
+
+# Issue Create
+
+GitHub Issue を作成し、適切なラベルを付与する。
+
+本スキルは `issue-review-ready`（`.claude/skills/issue-review-ready/SKILL.md` の共通・type 別チェック観点）で RETRY にならない水準の本文を生成することを目標とする。単なるテンプレ埋めではなく、「何を」「どこに」「なぜ」「何が満たされれば完了か」「その根拠」を明示できるまで対話で不足を補う。
+
+## いつ使うか
+
+| タイミング | このスキルを使用 |
+|-----------|-----------------|
+| 新機能・バグ修正・リファクタの着手前 | ✅ 必須 |
+| 既存Issueがある場合 | ❌ 不要 |
+
+**ワークフロー内の位置**: **create** → (grill-me: 任意・明示起動) → review-ready → start → ...
+
+## 引数
+
+```
+$ARGUMENTS = <title> [type] [description]
+```
+
+- `title` (必須): Issue タイトル
+- `type` (任意): `feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `perf` / `security`（デフォルト: feat）
+- `description` (任意): 詳細説明。省略時は対話で収集。
+
+## type → ラベル マッピング
+
+> **参照**: `docs/rfc/github-labels-standardization.md`（GitHub Labels 標準化ドキュメント）
+
+| type | ラベル | 用途 |
+|------|--------|------|
+| `feat` | `type:feature` | 新機能追加 |
+| `fix` | `type:bug` | バグ修正 |
+| `refactor` | `type:refactor` | リファクタリング |
+| `docs` | `type:docs` | ドキュメント |
+| `test` | `type:test` | テスト追加・改善 |
+| `chore` | `type:chore` | 雑務・依存の掃除 |
+| `perf` | `type:perf` | パフォーマンス改善 |
+| `security` | `type:security` | セキュリティ対応 |
+
+## 実行手順
+
+### Step 1: 引数の解析
+
+`$ARGUMENTS` から `title`, `type`, `description` を取得する。
+
+- `type` が未指定なら `feat` をデフォルトとする
+- `description` が未指定または情報不足なら、ユーザーに対話で詳細を確認する
+
+### Step 2: review-ready のチェック観点に沿った素材収集
+
+本文起草の前に、以下が揃っているかを確認する。不足している場合は **対話で補う**、またはコマンド実行・ファイル閲覧で事実を確認する。推測で埋めない。
+
+| # | 観点（review-ready）| 収集する情報 |
+|---|--------------------|--------------|
+| 1 | 構造の完備 | 概要・目的・完了条件の3セクションを埋める材料 |
+| 2 | 概要の具体性 | 「何を」「どこに」: 対象モジュール / ディレクトリ / ファイルパス、対象ドキュメントパス |
+| 3 | 目的の根拠 | 背景・動機: 既存コード/ドキュメント/運用で困っている具体的事象 |
+| 4 | 完了条件の検証可能性 | 客観的に判定可能な条件（CLI 実行結果、ファイル存在、テスト通過、docs 整合等） |
+| 5 | 1次情報の明示 | 外部 URL、`docs/` パス、関連 Issue/PR 番号、ログ、CLI 出力のいずれか |
+| 6 | 記述間の整合性 | 概要・目的・完了条件が互いに矛盾しないこと |
+| 7 | 作業スコープの推定可能性 | dev: 対象ファイル/ディレクトリ/技術スタック。docs-only: 対象ドキュメントパスまたは領域 |
+| 14 | workflow 内判定可能性 | RETRY して環境非依存で同じ結果を得られる条件と、merge・実機適用・外部応答後の確認を分離する材料 |
+| 15 | 重要判断の着手可能性 | [共通正本](../_shared/critical-decision-checklist.md)に従い、source of truth の指定、人間が決定済みの方針と出典、未決の重要判断と可逆性を収集する。one-way door は起票時に人間へ確認 |
+
+**補強のヒント**:
+- 「〜したい」で止まる動機は、**どの現状のどこが問題か**を 1 文追加する
+- 「改善する」「最適化する」等の主観表現は、計測可能な判定条件に置き換える（例: 「実行時間 X 秒以内」「Y が表示される」「`make check` 通過」）
+- 「らしい」「はず」など推測を断定調に書かない。確認できないものは Issue に書かずに事実確認してから書く
+
+### Step 3: Issue 本文の作成（type 別テンプレートを Read して適用）
+
+Step 1 で確定した `type` に応じて、以下のテンプレートファイルを Read ツールで読み込み、その本文構造に従って Issue 本文を組み立てる。
+
+| type | テンプレートファイル |
+|------|----------------------|
+| `feat` | `.claude/skills/issue-create/templates/issue-feat.md` |
+| `fix` | `.claude/skills/issue-create/templates/issue-bug.md` |
+| `refactor` | `.claude/skills/issue-create/templates/issue-refactor.md` |
+| `docs` | `.claude/skills/issue-create/templates/issue-docs.md` |
+
+**canonical 外 type のフォールバック**: `test` / `chore` / `perf` / `security` を受け取った場合は `issue-feat.md` を使用する（dispatch 方式の制約）。
+
+> **dispatch 方式**: パターン A（Read ツールによる静的選択読み）を採用。SKILL.md は薄く保ち、テンプレート本文は外部ファイルで管理する。
+
+各テンプレートには「本文の雛形」に加えて、type 特有のチェックポイント（例: feat のユースケース、bug の OB/EB、refactor の測定指標、docs の対象パス）が記載されている。テンプレート末尾の「チェックポイント」を対話で必ず確認してから本文を確定する。
+
+**共通の追記ルール**（全 type 共通）:
+- 設計書の配置先が明らかなら `draft/design/issue-<issue_id>-<slug>.md` を参考欄に予告してもよい
+- 推測や「〜らしい」を事実として書かない
+- 対話で集めた 1 次情報（URL / docs パス / Issue 番号 / ログ）は参考欄に必ず明記する
+- 観点 15 で対話中に確定した重要判断（source of truth の指定、人間が決定済みの方針とその出典、
+  one-way door の未決事項）は、参考欄の末尾に `### 重要判断` サブセクションを設けて本文へ必ず記録する。
+  記録しないと creation の対話にしか残らず、`issue-review-ready` は Issue 本文と人間コメントしか
+  検査しないため（`issue-review-ready/SKILL.md` Step 1）provenance が失われ、RETRY/ABORT か
+  provenance 欠落のまま進行する。記録形式は `判断 / 方針 / 出典（人間決定の参照）/ 未決事項` とし、
+  判断対象がなければ `- 該当なし` と確認根拠を書く。判断軸の正本は
+  [`_shared/critical-decision-checklist.md`](../_shared/critical-decision-checklist.md)
+- `## 完了条件` の末尾に `### ワークフロー完了後の確認項目` を置く。workflow を RETRY して
+  環境非依存で同じ結果を得られない merge 後・実機適用後・外部応答後の確認だけをここへ分離する
+- 事後確認がなければ同サブセクションは `- なし` とし、未チェックの placeholder を残さない
+- 事後確認を書くときは、確認項目の後に `#### 確認できる時期` を添えて確認がいつできるかを書く。
+  書式の正本は [`workflow_completion_criteria.md` § 確認できる時期の書き方](../../../docs/dev/workflow_completion_criteria.md#確認できる時期の書き方)
+- 分類の正本は `docs/dev/workflow_completion_criteria.md` § workflow 内完了条件と事後確認の分離
+
+### Step 4: Issue 作成とラベル付与
+
+```bash
+kaji issue create --title "[title]" --body "[body]" --label "[label]"
+```
+
+### Step 5: 完了報告
+
+Issue 作成後に `.claude/skills/grill-me/SKILL.md` の「要否門番」と同じ基準で、
+workflow 開始前の interview が必要かを判定する。one-way door を含みうる重要な Issue なら
+`/grill-me [issue_id]` を推奨し、軽微で不要なら `/issue-review-ready [issue_id]` を案内する。
+`grill-me` を自動起動せず、`issue-create` 内で interview を代行しない。
+
+以下の形式で報告すること。
+
+```
+## Issue 作成完了
+
+| 項目 | 値 |
+|------|-----|
+| Issue | [issue_ref] |
+| タイトル | [title] |
+| Type | [type] |
+| ラベル | [label] |
+| URL | [issue-url] |
+
+### 次のステップ
+
+- grill-me 推奨: `/grill-me [issue_id]` を明示起動し、完了後に `/issue-review-ready [issue_id]`
+- grill-me 不要: `/issue-review-ready [issue_id]`
+```
+
+## Verdict 出力
+
+実行完了後、以下の形式で verdict を出力すること。
+
+```
+---VERDICT---
+status: PASS
+reason: |
+  Issue 作成成功
+evidence: |
+  Issue [issue_ref] を作成、ラベル付与済み
+suggestion: |
+---END_VERDICT---
+```
+
+**重要**: verdict は **stdout にそのまま出力** すること。Issue コメントや Issue 本文更新とは別に、最終的な verdict ブロックは stdout に残す。
+
+### status の選択基準
+
+| status | 条件 |
+|--------|------|
+| PASS | Issue 作成成功 |
+| ABORT | 作成失敗、または review-ready の観点に必要な素材が対話でも揃わない |

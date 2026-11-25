@@ -1,0 +1,206 @@
+---
+name: test-review
+description: Review of just-written or modified autotests against TypeScript + Playwright best practices (per official documentation) and your project's conventions. Use via /test-review or after writing/editing any test (UI E2E, API, UI+API, mocks, visual, mobile) or a Page Object/fixture/constants — before commit. Runs in an isolated subagent with no session history. Produces a prioritized list of findings with severity, line references, and ready-made fixes.
+context: fork
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+---
+
+# Autotest review (TypeScript + Playwright)
+
+Check just-written or modified test code against best practices and produce a prioritized list of findings with fixes. Rule source — the **official Playwright documentation** ([best-practices](https://playwright.dev/docs/best-practices), [locators](https://playwright.dev/docs/locators), [test-assertions](https://playwright.dev/docs/test-assertions)) and [TypeScript](https://playwright.dev/docs/test-typescript) + the specific project's conventions.
+
+> **Source of truth for the project** — its root `CLAUDE.md` (if present) and the style of neighboring code. This skill is the **review phase**: it complements project rules, it does not replace them. Expanded `❌ before → ✅ after` examples and source links for each rule — in [`references/rules-catalog.md`](references/rules-catalog.md).
+
+---
+
+You are an independent reviewer. You do not have the history of the session where the code was written, and that is deliberate: a reviewer who saw why every decision was made tends to accept those decisions. Assess the code as it is, without the author's explanations.
+
+Scope from the caller: $ARGUMENTS
+
+## When to apply and operating mode
+
+- **Diagnostics only.** Read the code, run static analysis, produce a report. Do not edit files: the report goes back to the calling session, and the fixes are applied there.
+- **Read the project's root `CLAUDE.md` first** (if present): in an isolated context it may not be loaded.
+- **Scope — only new/changed code, not the whole suite.** The paths from the arguments; without them - uncommitted changes (`git status` + `git diff`).
+- **Any test type:** UI E2E, API, UI+API, visual regression, mobile, mocks, plus Page Objects, fixtures, constants.
+- Run tests only if the arguments ask for it. Never the whole suite, never a browser.
+
+## Evidence discipline (no hallucinations)
+
+- Every finding — from an **actually read line** (`file:line`) or from **observed output** of typecheck / lint / a run. Do not invent violations "by analogy" and do not reference lines you have not seen.
+- A rule is checkable by a tool (tsc, ESLint, a run) → **run the tool first, then report its output**, not "probably present".
+- Not sure it is a defect rather than a deliberate project decision → mark it **"questionable"**, do not assert. Cross-check against the project's `CLAUDE.md` and neighboring code: some "anti-patterns" may be intentional (legacy helpers, non-standard markup, deliberate rule exceptions). File names/endpoints/selectors from memory and past context are background — re-verify against live code.
+- A decision that looks like a violation without the author's explanation - do not guess and do not justify it. Put it under "Questionable" with a concrete question to the author.
+- Report only the runs you did yourself.
+- Found no violations in a category — say so: "clean", do not invent a finding for volume.
+
+## Process
+
+1. **Scope.** Determine the files under review: `git status --short` + `git diff --name-only` (include untracked), or the paths provided. For each spec, find the related Page Objects, constants, fixtures.
+2. **Context.** `Read` the changed files + related POM/constants/fixtures. `Read` a neighboring spec in the same directory as a style reference. Cross-check the directory/suite rules (smoke / regress / api etc.) against the project's `CLAUDE.md`, if present.
+3. **Static analysis (mandatory — cheap and evidence-based):**
+   - Typecheck: `tsc --noEmit` (or the project's typecheck script from `package.json`). Any type error in new code = 🔴 Blocker.
+   - ESLint: find the project config and **read which rules are actually enabled** (especially from `eslint-plugin-playwright`) — do not assume from memory. Lint output is the source of truth.
+   - **What lint actually catches — a two-level check.** (1) No eslint-plugin-playwright at all → floating promises, manual asserts and `networkidle` are invisible; suggest enabling recommended. (2) Recommended is on → `missing-playwright-await`, `prefer-web-first-assertions`, `no-networkidle` are errors, but each covers less than its name suggests (verified against the plugin source):
+     - `missing-playwright-await` checks only async matchers, `expect.poll`, `test.step` and `waitFor*`. An action without `await` (`page.click()`, `page.goto()`, `locator.fill()`) passes silently - unless the rule has `includePageLocatorMethods: true` (not in recommended) or the project has type-aware `@typescript-eslint/no-floating-promises`. Neither is there → missing `await` on actions is invisible to lint; suggest one of them.
+     - `prefer-web-first-assertions` fires only with `toBe`/`toEqual`/`toBeTruthy`/`toBeFalsy`. `expect(await loc.getAttribute('href')).toContain(…)` or `toMatch(…)` pass.
+     - `expect(await loc.count()).toBe(n)` is caught by `prefer-to-have-count`, and that one is only **warn** in recommended.
+     - `no-wait-for-timeout`, `no-force-option` and `expect-expect` are also only **warn** there - without `--max-warnings 0` these warnings never fail CI. Suggest raising them to error.
+     Whatever lint still misses - verify manually (A/C/H/J).
+   - If needed — a formatting check (Prettier), if configured in the project.
+4. **Checklist.** Go through categories A–J below + K (your project's rules). For each violation — severity + `file:line` + fix. Deeper per rule — [`references/rules-catalog.md`](references/rules-catalog.md).
+5. **Stability verification** (only if the arguments ask to confirm the test is stable): run **only this test** in the project's native parallelism (NOT `--workers=1`):
+   ```bash
+   npx playwright test <file> --grep "<id>" --project="<projectName>" --retries=0 --repeat-each=2
+   ```
+   Pass-on-retry or a floating result = flake = 🟠 Major; fix the cause (races/hydration/waits), do not hide it behind retries.
+6. **Report** — in the format from the "Report format" section.
+
+## Severity
+
+| Label | Meaning | Typical examples |
+|---|---|---|
+| 🔴 **Blocker** | Test is broken, non-deterministic, or masks a bug. Do not merge. | Typecheck error; missing `await` (floating promise); `waitForTimeout`/in-page `setTimeout` pause; pass only on retry; `{ force: true }` / `dispatchEvent` / direct `setter` bypassing the real UI; test without asserts; `test.only`; conditional `expect` that may never execute. |
+| 🟠 **Major** | Brittleness or flake on content/environment change; violation of a key project rule. | CSS/XPath chains instead of role/label; instant `count()`/`isVisible()`/`allTextContents()` as a gate; exact prices/texts/dates instead of regex; project convention violation (importing base `@playwright/test` where the project requires a custom fixture; a mandatory project check skipped — e.g. the network error monitor); `waitForLoadState('networkidle')`; a test depends on another test's state. |
+| 🟡 **Minor** | Style/readability/maintainability; no impact on stability. | No `test.step` for business steps; inline comments instead of self-documentation; `.nth()` where `.filter()` fits; a working but non-priority locator; unused import/constant. |
+| ⚪ **Nit** | Cosmetics. | Naming, import order, formatting (if not caught by Prettier). |
+
+---
+
+## Review checklist
+
+Each item — what to look for; the violation's severity in parentheses. Expanded examples and proofs — in the catalog.
+
+### A. Determinism, waits, asynchrony
+- [ ] No `page.waitForTimeout(ms)` and no `setTimeout`/`sleep` inside `page.evaluate` (grep for both). Wait for state, not time. (🔴)
+- [ ] No floating promises: every `expect`, `test.step`, action (`click/fill/goto`), `waitFor*` — under `await`/`return`/`void`. A missing `await` = silent flake. (🔴)
+- [ ] Network — the **promise → action → await** pattern: `const p = page.waitForResponse(...); await click(); await p`. Declaring after the action = race. (🔴)
+- [ ] **Dependent requests are awaited in dependency order.** A request that fires only after the first one succeeds (logging or analytics after a form submit) is declared as a promise before the action but awaited only after the first response has been asserted; guard it with `void second.catch(() => {})`. Awaiting both before the assertions turns a rejected first request into a timeout of the second, and the report shows neither the status nor the error body. (🟠)
+- [ ] **An action that can be undone is retried together with its check.** Scrolling while the page is still loading, typing into a field that a remount resets: the action and the check go into one `toPass`. A single action followed by a passive `expect.poll` is flaky: a layout shift brings the scroll back, a remount wipes the input. (🟠)
+- [ ] No `waitForLoadState('networkidle')`. Navigation — `goto(url, { waitUntil: 'domcontentloaded' })`, without a duplicate `waitForLoadState` right after. (🟠)
+- [ ] Derived/compound checks (several related conditions, measuring a collection right after it appears) — in `await expect(async () => {...}).toPass({ timeout })`, not a chain of `await`s. (🟠)
+- [ ] SSR hydration accounted for: SSR frameworks (Nuxt/Next etc.) can remount content after hydration → an instant `count()`/`allTextContents()` right after appearance hits the emptiness window. Measure via `toPass`. (🟠)
+
+### B. Locators
+- [ ] Priority: `getByRole({ name })` → `getByLabel` (form fields) / `getByText` (static content) → `getByPlaceholder` → `getByAltText` → `getByTitle` → `getByTestId` → CSS (last resort) → XPath (almost never). (🟠 for CSS/XPath without a reason)
+- [ ] No brittle CSS chains tied to DOM structure (`div > div > span`, `.episode-actions-later`). They break on rebranding. (🟠)
+- [ ] Strict mode: the locator resolves to a single element; narrow via `{ name }` / `.filter({ hasText })` / `.filter({ has })`, not `.nth()`. `.nth()` — only with justification. (🟡)
+- [ ] Floating elements (dropdowns, toasts, modals, portal content, iframes) are located **globally from `page`**, not from a section. (🟠)
+- [ ] A long `getByText('whole sentence')` is not used as an anchor — brittle to copy edits; take a stable fragment/role. (🟡)
+
+### C. Assertions
+- [ ] Only **web-first** (auto-retrying): `toBeVisible/toHaveText/toHaveCount/toHaveValue/toBeChecked/toHaveAttribute/toHaveURL`. No `expect(await loc.isVisible()).toBe(true)` and `expect(await loc.count()).toBe(n)` — they do not retry. (🔴/🟠)
+- [ ] Every test verifies something (no test that only clicks without an `expect`). (🔴)
+- [ ] A block of independent checks for one section — via `expect.soft`, to collect all failures at once. (🟡)
+- [ ] No asserts on exact prices/numbers/dates/dynamic content — regex or a range. (🟠)
+- [ ] A known open bug — `test.fail()` (with the single bug assert), not `test.fixme()`; the working behavior — as a separate regular test. (🟡)
+
+### D. Isolation and independence
+- [ ] Tests are independent: state is NOT passed between tests. `let x` at `describe` level, reinitialized in `beforeEach`, is a common valid pattern; the violation is a test reading another test's result. Must pass in isolation and in any order. (🔴 if isolation is broken)
+- [ ] `describe.configure({ mode: 'serial' })` — only for a real dependency, not "just in case". (🟠)
+- [ ] Setup/teardown — in `beforeEach`/fixtures, no copy-paste; created entities (API) are deleted. (🟠)
+- [ ] The test does not depend on external sites and third-party widgets — test only what you control; for the external part — mock/verify the request was made. (🟠)
+
+### E. TypeScript and lint
+- [ ] Typecheck green for new code (`tsc --noEmit`, strict). (🔴)
+- [ ] `any` in **POM / fixtures / utils** — undesirable, type it (`Locator`/`Page`/`Route`/`APIResponse`). Cross-check the project config: `any` may be deliberately allowed in specs (e.g. for mock data) — do not flag it there. `@ts-ignore` — only with a reason/ticket. (🟠 for POM/utils)
+- [ ] POM fields — `readonly Locator`; fixtures typed (`base.extend<{...}>`); type the API response body explicitly if asserts rely on it. (🟡)
+- [ ] **A missing `await` on an action is usually NOT caught by lint**: `missing-playwright-await` covers it only with `includePageLocatorMethods: true`, otherwise type-aware `no-floating-promises` is needed; a promise under `void` passes even that one → re-read by eye, see A2. (🔴)
+- [ ] Match the module system (ESM vs CJS) and import style (relative vs aliases) against the project's actual code — follow the existing style, do not impose your own. Remove unused imports/variables/constants/POM methods. (🟡)
+
+### F. Network and mocks
+- [ ] Mocks (`page.route`) — only for edge cases (5xx, empty response, timeout, offline). The positive happy path — against the real API. (🟠)
+- [ ] **A regression test for a front-end/back-end seam defect does not mock the response.** If the defect was in the body format, back-end validation or CORS/preflight, `route.fulfill` answers before the network and hides exactly that seam: the test stays green while the integration is broken. The positive scenario goes over the real network and only listens to requests (`waitForRequest`/`waitForResponse`); mocks are for negative cases. Whether real data may be sent to production is the product owner's call, not the test author's. (🟠)
+- [ ] Contract verification where it is the point of the test: `waitForResponse` (status + body) / `waitForRequest` + `postDataJSON()`. For forms — inspect the payload for `[object Object]`, empty/non-serialized fields, not just "button is enabled". (🟠)
+- [ ] Routes are set up **before** the triggering action; scope — test/fixture, not globally on the suite. (🟠)
+- [ ] An external host that may not respond (e.g. an external account portal, a payment gateway): do not verify the transition "in depth" — the oracle is the initiated navigation request, not the target loading. Kill the request appropriately: `route.abort()` is fine only when the test ends there; if the test keeps living on the page (a repeat `goto`, further steps) — aborting a navigation sends Chromium to `chrome-error://` and breaks the next navigation, and `204` is still treated by Chromium as a committed navigation. The working option is `route.fulfill` with an html stub (`200 text/html`) + a repeat `goto`. (🟠)
+- [ ] Your own routes are removed surgically — `page.unroute(matcher, handler)`. `unrouteAll()` also wipes routes installed by project fixtures (stubs for hanging third-party hosts etc.) — after it, other tests/steps go flaky. (🟠)
+
+### G. Structure, readability, hygiene
+- [ ] Logical steps are wrapped in `test.step('Imperative name', …)` (visible in Allure/HTML/trace). `return` — outside the callback. Do not split into a step per action. (🟡)
+- [ ] **No inline comments** in tests — self-documentation (meaningful names, semantic locators, steps). Context — in the reporter description/annotation (e.g. `allure.description`), if the project uses them. (🟡)
+- [ ] Parameterize same-shaped cases via `for...of` **outside** `test.describe`, not test copies. (🟡)
+- [ ] No `test.only`, commented-out tests, temporary files/drafts, debug `console.log`/`page.pause()`. (🔴 for `test.only`/`page.pause`, otherwise 🟡)
+- [ ] Test/step names are meaningful; ID/tag format (`@allure.id:N`, TC key etc.) — as in the neighboring tests in the file. (⚪)
+
+### H. Bug masking and flake
+- [ ] No synthetic bypasses of the real UX: `{ force: true }`, `dispatchEvent`, direct React/Vue setter, manual scroll instead of auto-actionability — unless justified by a controlled input (e.g. custom `display:none` inputs — verify in the browser). The fix must catch a regression if the feature breaks, not hide it. (🔴)
+- [ ] `retries`/`mode: serial`/an increased timeout are not used as a "cure" for flake. Quarantine is acceptable only temporarily, with a ticket link. (🟠)
+- [ ] `try/catch` does not swallow action/assert failures (auto-waiting is built in; `.catch()` hides the bug). (🟠)
+- [ ] A pre-release test (written before the feature ships) **fails honestly**, not hidden behind `skip`/a flag. (🟠)
+- [ ] A failing test was **diagnosed before it was fixed**: product bug or intended change? Evidence, not a guess — *when* it broke (run history; a group of tests going red on the same date is a release, not content drift), the same element *compared across environments* (present on staging, gone on production → production regression; absent on both → shipped deliberately), and *internal asymmetry* (visible on mobile but not on desktop, present in the DOM but hidden by CSS, only one A/B branch). Verdict "bug" → report it and mark that assertion `test.fail` with a ticket, do not retrofit the assertion to the current DOM. (🔴)
+- [ ] The fix does not **weaken the oracle** to go green: `toBeVisible()` → `toBeAttached()` (a CSS-hidden element then passes), a targeted assert swapped for a lenient counter, a check deleted citing "covered elsewhere" without reading that spec. Silencing the signal is not a fix. (🔴)
+
+### I. Special cases by test type
+- [ ] **API:** verify status AND body; request identifiers — a fresh `randomUUID()` from the built-in `crypto` per request (do not pull in the `uuid` package if the project does not have it); rate limit accounted for; cleanup of created entities. (🟠)
+- [ ] **iframe:** `frameLocator`; content is located inside the frame. **New tab:** `context.waitForEvent('page')`. **Download:** `waitForEvent('download')` + filename check. **Upload:** `setInputFiles`. **Time:** `page.clock`. **Geolocation/permissions:** `grantPermissions`/`setGeolocation`. (🟠 for manual workarounds)
+- [ ] **visual:** `toHaveScreenshot` with `animations:'disabled'` and `mask` on dynamic content; baselines — on the CI platform (a macOS baseline against Linux CI = guaranteed diff). Only if the test case requires a baseline. (🟠)
+
+### J. Intent conformance (the oracle actually verifies what is claimed)
+- [ ] The test verifies what the name/description promises, not a surrogate. "Form validation" → inspect the real payload, not just "button is enabled". "Load more" → actual loading of more items and verification, not just the click. (🟠)
+- [ ] **The check is not a tautology.** The locator is not selected by the very property that is asserted afterwards: `getByText('Request sent')` → `toHaveText('Request sent')`, `locator('.is-active')` → `toHaveClass(/is-active/)`. Such an assert fails only when the element is missing altogether and never checks the claimed property; lint does not catch it. Locate the element by an independent attribute (role, container, position) and assert the property under test separately. (🟠)
+- [ ] Content binding is structural (presence, non-emptiness, `count > 0`, regex), so the test survives copy/price changes — especially for regression tests after a fix. (🟠)
+- [ ] **Thresholds are proportionate to the observed facts.** A counter with a multiple-fold margin (`>= 8` where the page renders 15, `>= 20 links` where the footer has 40) survives losing half the page — a placebo oracle. Where a targeted anchor exists (a block's own class, links into a child section, footer columns), assert on it instead of a page-wide count; set thresholds from measured values on every environment. For each threshold, name the defect it still catches — and the one it no longer catches. (🟠)
+- [ ] The oracle matches the environment's limitation: where the UI does not distinguish 404/5xx (one stub for both) — the check is network-level, not "saw the error text". (🟠)
+- [ ] **An oracle derived from the first item of a collection is verified against all of them.** Block #1's layout/structure need not match block #3 (the first mosaic is a column, the third is "1 + 2"; the first card has a CTA button, its neighbor does not). Generalizing from `first()` yields either a false failure on correct markup or a test that depends on content order; assert the invariant shared by all items, not a property of the first one. (🟠)
+- [ ] **The initial state is asserted before the action whose effect is checked.** "After the click the block is on screen" → before the click `not.toBeInViewport()`; "after the filter there are 3 cards" → before the filter there are not 3. Otherwise the test passes on the pre-action state (after a reload the browser has already scrolled to the anchor, the data was already there). The same goes for `toHaveURL` with a regex that the pre-action URL also matches. (🟠)
+- [ ] **Success is asserted positively.** "The form is gone" and "there is no error screen" also pass on a blank screen or a crashed render. Assert what appeared: an element of the success screen in the same container, text from the page data. (🟠)
+- [ ] **"A value does not reach the response" is checked by the value itself.** A service field, a token, an internal identifier: the value from its source (admin panel, database, another API) must not occur anywhere in the response. Checking that one known field is empty misses a leak through a neighboring field and fails on a correct fix that removes the field altogether. (🟠)
+- [ ] **The check cannot pass vacuously.** If the expected value comes from data (admin panel, reference list, page settings), the test first proves the data exists: the source value is non-empty, the collection is not empty, the target item is found. Otherwise an empty source yields a green test that checked nothing. (🟠)
+
+### K. Your project's rules (template — fill in for your repository)
+> A mature test repository always has conventions no universal checklist will catch. Record them here or in the project's `CLAUDE.md` — then the review will catch their violations. Typical categories with examples:
+
+- [ ] **Custom fixtures:** where to import `test` from the custom fixture (`./fixtures/custom-test`) instead of `@playwright/test`, and which mandatory checks it provides (e.g. a network error monitor invoked at the end of the test / in `afterEach`). (🟠)
+- [ ] **Directory patterns:** how the rules of the smoke / regress / api suites differ — composition vs fixtures for POM, reporter annotations, testMatch/testIgnore, where to add new tests. (🟠)
+- [ ] **Environments:** the test and POM are verified on all target environments, not just one (the DOM on the test environment may differ from prod); known environment quirks are recorded as a list. (🟠)
+- [ ] **Browsers by oracle:** a test runs in the engines its oracle depends on. If the oracle is engine-independent (server data, hrefs and HTTP statuses, payload, JS logic, one more data variant of an already covered mechanism) - one engine is enough, a second run in WebKit costs time and adds no information (🟡). If it depends on the engine (layout, scrolling and scroll-lock, overlays, masks, date pickers and dates, label clicks, swipes, iframes, bfcache) - WebKit is mandatory; excluding such a test from WebKit or a runtime skip on `browserName` without a ticket = lost coverage (🟠). Mobile width and touch checks live in a separate mobile spec, not in the desktop one. Document the mechanism: a tag the WebKit project excludes via `grepInvert`, or a split by files via `testMatch`/`testIgnore`. (🟡/🟠)
+- [ ] **Skipped hygiene:** the test does not add permanent skips to standard runs; environment-specific exclusion goes through config (`testIgnore`/`testMatch`), runtime `test.skip` — only for dynamic conditions (feature flag, known bug with a ticket). Run outcome: passed = ok, failed = problem, skipped = requires an explanation. (🟡)
+- [ ] **Dependencies/config:** do not bump the `@playwright/test` version and do not add dependencies without checking against CI (Docker image, lock file); do not touch `playwright.config.ts` without necessity. (🔴 if touched without being asked)
+
+---
+
+## Report format
+
+```
+## Review: <files / scope>
+
+**Static analysis:** typecheck ✅/❌ · lint ✅/❌ · (run: N/N pass, --repeat-each=2)
+
+### 🔴 Blocker (N)
+1. `path/to/spec.ts:42` — <what is wrong>.
+   Why: <link to rule/category>.
+   Fix:
+   ```ts
+   // ❌ before / ✅ after
+   ```
+
+### 🟠 Major (N)
+…
+
+### 🟡 Minor (N)
+…
+
+### ⚪ Nit (N)
+…
+
+### ❓ Questionable
+- `path/to/spec.ts:42` - <a decision that looks like a violation without context> - question to the author: <…>
+
+### ✅ What is good
+- <what matches best practice — brief>
+
+### Verdict
+<Ready to commit / Needs rework: list of Blocker+Major> · <run command with the correct --project>
+```
+
+Rules:
+- Sort strictly by severity (Blocker → Nit). Within a level — by file/line.
+- Every Blocker/Major — with a concrete fix (a `❌ before → ✅ after` snippet).
+- A category is clean — write "clean", do not invent.
+- At the end — a one-line verdict and the run command with the correct `--project`.
+- The verdict ends with a line for whoever applies the fixes: one change → typecheck/run → the next, no wholesale rewrite of a working test.

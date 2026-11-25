@@ -1,0 +1,255 @@
+---
+name: llm-wiki-research
+description: Research sprints, competitive deep dives, and auto-enrichment of stub wiki pages. Captures sources to raw/ with the core ingest step. Files all findings back into the wiki.
+when_to_use: Use for "research [topic]", "deep dive on [topic/company]", "auto-research", "enrich [entity]", "find more about [X]", "what do we know vs what's public about [X]", "competitive research on [company]", "research sprint". Does not handle routine ingest — use core llm-wiki-pm for that.
+allowed-tools: Read Grep Write Bash WebFetch WebSearch
+---
+
+# LLM Wiki Research
+
+Sub-skill of llm-wiki-pm. Handles research sprints, competitive deep dives, and auto-enrichment of stub entities. Every fetched source goes through the core ingest capture step, so privacy filtering and raw/ logging happen correctly.
+
+**WebFetch note:** use `WebFetch` freely to preview a page. Before you save a source to raw/, apply the privacy filter from the core ingest guide.
+
+## Orient First
+
+Orient per AGENTS.md before any writes:
+
+1. Read `$WIKI/SCHEMA.md`
+2. Read `$WIKI/index.md`
+3. Read last 20-30 lines of `$WIKI/log.md`
+4. Read `$WIKI/overview.md`
+
+Research sprints may create many pages. Get user confirmation before creating 10+ pages; below that, write and report.
+
+## Wiki Path Resolution
+
+```bash
+WIKI=$(cat .wiki-path 2>/dev/null | tr -d '[:space:]')
+CONF='${user_config.wiki_path}'; case "$CONF" in '${'*) CONF= ;; esac  # plugin option, if set
+WIKI=${WIKI:-${CONF:-${WIKI_PATH:-}}}
+[ -z "$WIKI" ] && [ -f SCHEMA.md ] && WIKI=$(pwd)  # cwd only if it is already a wiki
+```
+
+## Source Capture
+
+For each source, fetch it (`WebFetch`) and capture it with the core skill's Ingest step ① (`llm-wiki-pm/references/ingest-guide.md`: route to `raw/<subdir>/`, apply the privacy filter, dedup by URL). Use the saved `raw/<subdir>/<slug>.md` path for synthesis and `[source: ...]` markers. For 4+ sources, a general-purpose subagent can fetch and save them in parallel; give it the ingest-guide rules.
+
+---
+
+## Operation 1: Research Sprint
+
+**Trigger:** "research sprint on [topic]", "deep research on [topic]"
+
+**① Define scope**
+
+Confirm with user:
+- What is the topic / question to answer?
+- Target depth: surface / standard / deep
+- Time budget (number of sources)
+
+**② Wiki-first**
+
+```bash
+grep -r "<topic>" $WIKI --include="*.md" -l
+```
+
+Read all relevant pages. Surface: "Wiki has N relevant pages. Here's what we already know: [...]. Gaps: [...]."
+
+**③ Research plan**
+
+Present 3-5 specific sources to fetch — name each, why it's relevant, what question it answers. Typical: analyst reports, company pages, recent press, whitepapers, industry forums. Get user confirmation before fetching.
+
+**④ Capture sources**
+
+For each confirmed source, fetch it and save it to raw/ (see Source Capture).
+
+If a fetch fails (404, paywall, timeout), note it and continue. Collect all raw/ paths before writing.
+
+**⑤ Synthesize**
+
+Read all fetched raw files. Extract entities, claims, data points. Cross-reference against existing wiki pages. Distinguish:
+- Confirmed (claim now in 2+ independent sources)
+- New (single source, not yet corroborated)
+- Contradicts wiki (surface the conflict explicitly)
+
+**⑥ File findings**
+
+Create/update wiki pages per core ingest discipline: inline provenance, coverage markers, confidence levels, min 2 outbound wikilinks, backlink audit.
+
+Produce a synthesis page at `queries/research-<topic>-<YYYY-MM-DD>/research-<topic>-<YYYY-MM-DD>.md` (the page is named after its folder so its slug matches):
+
+```markdown
+---
+title: "Research Sprint: <Topic>"
+created: YYYY-MM-DD
+type: query
+tags: [<relevant tags>]
+sources: [<raw slugs fetched>]
+---
+
+## Scope
+Question: [...]  Depth: [...]  Sources: N
+
+## What We Knew
+[Pre-sprint wiki state summary]
+
+## What We Learned
+[Net-new findings with inline citations]
+
+## Confirmations
+[Claims now corroborated by 2+ sources]
+
+## Contradictions
+[Conflicts with existing wiki pages — cite both sides]
+
+## Still Unknown
+[Gaps that fetching didn't resolve]
+
+## Pages Created/Updated
+- [[slug]]: [brief note]
+```
+
+**⑦ Surface delta**
+
+What did we learn that we didn't know? What did it confirm? What's still unknown? Any contradictions with the wiki?
+
+**⑧ Log**
+
+```
+## [YYYY-MM-DD] research-sprint | topic: <X> | sources: N | pages created/updated: N
+```
+
+---
+
+## Operation 2: Competitive Deep Dive
+
+**Trigger:** "competitive deep dive on [company]", "full competitive analysis of [company]"
+
+**① Read existing coverage**
+
+Read `$WIKI/entities/<company>.md` and related `comparisons/` pages. If `coverage: comprehensive`, ask: "Already marked comprehensive — update pass or fresh deep dive?"
+
+**② Research plan**
+
+Standard source set:
+- Official website (product, pricing, about)
+- Recent press (last 6-12 months)
+- Job postings (signals: what they're building)
+- Pricing page
+- G2 / Gartner / Capterra reviews
+- Analyst mentions (MQ, Wave, IDC)
+- Crunchbase / LinkedIn (funding, headcount)
+
+Get user confirmation before fetching.
+
+**③ Capture sources**
+
+Fetch each confirmed source and save it to raw/ (see Source Capture).
+
+**④ Update entity page**
+
+Apply diff discipline (core §4): snapshot to `_archive/<company>-<date>.md` first, report the diff after writing, update inline provenance on revised facts, sweep stale variants.
+
+**⑤ Update comparison pages**
+
+Update existing comparisons/ pages. Create a new comparison page if the deep dive reveals strong differentiation.
+
+**⑥ Flag confidence by source**
+
+| Source type | Confidence |
+|---|---|
+| Official website, press releases | `verified` |
+| Analyst reports, G2 reviews | `likely` |
+| Forums, social media, unofficial blogs | `rumor` |
+
+**⑦ Log**
+
+```
+## [YYYY-MM-DD] competitive-deep-dive | entity: <company> | sources: N | pages updated: N
+```
+
+---
+
+## Operation 3: Auto-Research (Stub Enrichment)
+
+**Trigger:** "auto-research [entity]", "enrich [entity]", "fill in [entity] page"
+
+For entity pages with `coverage: stub`. Fast enrichment pass. This is *factual/web*
+enrichment.
+
+**① Read the stub** — what do we already know? What's in `gaps:`?
+
+**② Search**
+
+```
+WebSearch: "[entity name]" recent news
+WebSearch: "[entity name]" official website
+WebSearch: "[entity name]" [primary domain, e.g. pricing / funding / product]
+```
+
+**③ Extract** — description, key facts, relationships to other wiki entities, recent events.
+
+**④ Update stub page** with inline provenance `[source: url, date]`. Bump `coverage:` stub → partial if meaningful data found. Update `gaps:` and `sources:` frontmatter. Bump `updated:`.
+
+Do NOT fabricate. If search returns nothing useful, say so. Leave `coverage: stub`.
+
+**⑤ Log**
+
+```
+## [YYYY-MM-DD] auto-research | entity: <X> | coverage: stub→partial | sources: N
+# or if nothing found:
+## [YYYY-MM-DD] auto-research | entity: <X> | no public data found | coverage: stub (unchanged)
+```
+
+---
+
+## Operation 4: Gap Research
+
+**Trigger:** "research our gaps", "fill coverage gaps", "research stubs"
+
+**① Scan for stubs**
+
+```bash
+grep -r "coverage: stub" $WIKI --include="*.md" -l
+grep -rL "coverage:" $WIKI/entities $WIKI/concepts --include="*.md"
+```
+
+**② Present list** — ask user which to prioritize.
+
+**③ Run Operation 3** on each selected stub in sequence. Surface result before moving to next: "Enriched [[entity]] — stub → partial. Found: [key facts]. Continue?"
+
+**④ Report**
+
+```
+Gap research complete:
+- N pages enriched (stub → partial)
+- N pages still stub (insufficient public data)
+- N pages skipped
+```
+
+**⑤ Log**
+
+```
+## [YYYY-MM-DD] gap-research | stubs scanned: N | enriched: N | still-stub: N
+```
+
+---
+
+## Review before reporting
+
+Before you report findings or a brief, run the `llm-wiki-review` sub-skill on it: a separate reviewer checks every statement against its sources and searches for what is missing; you revise and end with the "Reviewed by" line.
+
+## Pitfalls
+
+- **Orient first**: before any writes. Research sprints may touch many pages.
+- **Capture through ingest**: save every source to raw/ with the core ingest rules (privacy filter, routing, dedup).
+- **Confirm before mass creates**: 10+ pages → user confirmation first.
+- **Inline provenance**: every non-obvious claim needs `[source: slug, location]`.
+- **Coverage markers**: bump `coverage:` after meaningful enrichment.
+- **Confidence discipline**: verified / likely / rumor — label accordingly.
+- **No fabrication**: if search returns nothing, say so.
+- **Snapshot before destructive updates**: `_archive/<slug>-<date>.md` before deep dive overwrites.
+- **Dedup**: grep before creating. Prefer updating an existing page to creating one.
+- **Privacy**: private by default — leave customer names, deal sizes, and 1:1 content unflagged (never add `shareable: true` to them).
+- **Synthesis page**: research sprints always produce `queries/research-<topic>-<date>/research-<topic>-<date>.md`.

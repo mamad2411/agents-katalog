@@ -1,0 +1,124 @@
+---
+name: tutorial
+disable-model-invocation: true
+description: >
+  Write hands-on, self-verified, code-first tutorials where every step ends
+  in a runnable action and the reader finishes able to do the thing.
+argument-hint: "[topic or concept to teach]"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+license: MIT
+metadata:
+  author: Andy Pai
+  version: "1.1.1"
+---
+
+# Tutorial
+
+Write tutorials that are dense, hands-on, and code-first. The reader finishes
+able to do the thing. Knowing the name is not enough. Every step gives the
+reader one action to take and one done-when check.
+
+## Before writing
+
+Identify (infer from context, don't interrogate):
+
+- **Audience and entry point** — what does the reader already know?
+- **Concrete outcome** — what can the reader build or do when finished?
+- **Runtime and toolchain** — what versions, package managers, or platform does the reader need?
+
+State assumptions briefly if load-bearing. Only ask when the answer would materially change the structure.
+
+## Step stack (the spine)
+
+Order steps into a dependency chain. Step N uses only what steps 1…N-1 established. No forward references. Each step does exactly one thing.
+
+```
+A (setup) → B (first working thing) → C (extend it) → D (ship/use)
+```
+
+Show a working result as early as the toolchain allows. If setup legitimately
+takes longer, make every prerequisite observable instead of compressing it into
+one overloaded step.
+
+Use as many numbered steps as the tutorial needs. Never target a fixed count,
+and never pack several actions into the last step to make the outline fit. Split
+again whenever a reader needs a separate action, observation, or concept.
+
+## Voice
+
+Use direct language appropriate to the audience. Show the action before its
+explanation when that helps the reader act, keep names consistent, and define
+unfamiliar terms at first use.
+
+## Structure
+
+- **Numbered steps** — the reader always knows where they are.
+- **Opening: name what you'll build, in one sentence.** No preamble. Do not promise a step count. `"You'll build a rate limiter for an Express API."`
+- **Prerequisites block** — what the reader needs before step 1 (tools, versions, prior knowledge). Exact versions. Keep it short.
+- **Each step: show → explain → run.**
+  1. Action block first: source code when they write a file, shell command when they set up or inspect.
+  2. One short paragraph explaining what it does and why.
+  3. A command to run, or output to verify the step worked.
+  4. A done-when check the reader can observe before moving on.
+- **Checkpoints at meaningful milestones.** Put one after a cluster of steps
+  whose combined result is worth verifying; do not add them by quota.
+- **Closing: one sentence pointing forward.** Where does the reader go next? Never summarize what was just done.
+
+## Code blocks
+
+- Runnable as written. No pseudocode. No placeholder stubs.
+- When a code block's location matters, identify the filename. Use a top filename comment like `// src/server.ts`; for shebang files, put the shebang first and the filename comment second.
+- Inline comments only for non-obvious behavior.
+- Show the command to run immediately after code that requires it.
+- Show expected output (trimmed) when it confirms the step worked.
+
+```
+$ npm start
+Server listening on :3000
+```
+
+## Prove the path
+
+When local execution is possible, run the tutorial yourself before returning it.
+Use a clean scratch directory or resettable fixture, then follow only the
+prerequisites, file edits, and commands the tutorial gives the reader.
+Record the working directory for each verification command.
+
+Treat the runnable artifact as the source of truth. Build or run the final
+example first, then write the tutorial from the command history that produced
+that result.
+
+If a command depends on unavailable hardware, credentials, paid services, or a
+remote account you cannot access, run every local step around it. Mark the
+blocked command clearly, give the exact blocker, and include the next command
+the reader should run once the dependency exists. Never show unrun output as
+observed output.
+
+## Audit pass
+
+Before returning, verify:
+
+1. Every step gives the reader one action to take (run a command, write a file, open a URL) and one done-when check
+2. The first working result appears as early as the real setup permits
+3. Every code block is complete and runnable as written
+4. No step teaches two things
+5. Checkpoints cover meaningful milestones without duplicating each step's check
+6. The tutorial uses as many steps as needed, with no compressed final step
+7. Runnable commands were executed from a clean scratch path or fixture, unless a named blocker prevents it
+8. Expected output matches observed output, or the command is clearly marked unrun
+9. The final answer names the verification command plus working directory, or blocker
+
+## Format
+
+Choose the output format before writing. Return Markdown by default. If the
+tutorial has many code files or exceeds 50 lines, write to a descriptive local
+path. For tutorials with visual structure (architecture diagrams,
+side-by-side comparisons, tabbed code), produce a self-contained HTML file
+instead — ivory background, serif headings, restrained borders, code panels
+with syntax theme.

@@ -1,0 +1,114 @@
+---
+name: ad-tdd
+description: 'Test-driven implementation: red, green, refactor, one behavior per test through public interfaces. Use on "TDD", "test first", "write a failing test".'
+summary: Test-Driven Development per WORKFLOW §16. Red-green-refactor as deterministic LLM guardrail. Four steps — plan, tracer bullet, incremental loop with refactor on green, close-out. Tests verify behavior through public interfaces. Horizontal slicing rejected.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+---
+
+# /ad-tdd
+
+Implements WORKFLOW.md §16. Process scaffold for the implementation phase when the change's behavior is known and expressible as a test up front. No file written — output is the verified implementation that lands through normal commits.
+
+TDD is a deterministic LLM guardrail: a failing test is unambiguous, so "almost right" (the WORKFLOW §12 failure mode) cannot slip past. The skill keeps the agent inside red-green-refactor and blocks the named anti-pattern (horizontal slicing).
+
+**Good tests read like a specification.** *"User can checkout with a valid cart"* tells you exactly what capability exists. **Bad tests couple to implementation** — mock internal collaborators, assert on private state, test the *shape* of things (data structures, function signatures) rather than user-facing behavior. A test that breaks on a rename but not on a behavior change was testing implementation, not behavior. A **tautological test** is the same failure in a quieter form: its expected value is recomputed the way the code computes it, so it passes by construction and cannot catch the bug. Take expected values from an independent source — a literal, a worked example, the spec.
+
+## Not for
+
+- The outcome (ground-truth pair) is known but the *implementation strategy* between input and output has multiple plausible paths → `/ad-tdg` (WORKFLOW §9). TDD focuses on driving code through one test at a time; TDG picks between three implementation candidates against one ground-truth pair.
+- The *technique itself* is uncertain across multiple plausible approaches → `/ad-spike` (WORKFLOW §14).
+- The task is bug investigation, not behavior implementation → `/ad-diagnose` (WORKFLOW §15).
+- No test runner is wired and the project does not yet have a green baseline → `/ad-hooks` first to scaffold deterministic gates per WORKFLOW §11. TDD depends on a fast green/red signal.
+
+When both TDD and TDG apply (behavior is test-expressible AND multiple implementation strategies are plausible), use TDD as the outer loop and invoke `/ad-tdg` inside the GREEN phase to pick the implementation strategy for that test cycle.
+
+## Step 1 — Plan vertically
+
+Before writing a test or a line of code:
+
+1. **Read `CONTEXT.md`** if it exists — anchor the test names and interface vocabulary in the project's ubiquitous language. When a domain term changes, the model changed: rename the tests with the code.
+2. **Confirm the public interface.** What is the smallest surface the caller needs to know? Types, ordering constraints, error modes. Interface design is testability design.
+3. **Identify deepening opportunities** (small interface over deep implementation per WORKFLOW §8). Surface-area-light interfaces are easier to test against and survive refactors.
+4. **List the behaviors to test, not the implementation steps.** Pick the **first** behavior — the one that proves end-to-end the path works. The rest wait on the list until the tracer bullet lands; add behaviors the cycles reveal.
+5. **Stateful unit: write the state × event table.** When the unit keeps state between calls (a tracker, latch, observer, coordinator), list every state, every event that can reach it, and the same-instant, tie, and inclusive/exclusive boundary variant of each before the first test. Each cell becomes a behavior in the list or an explicit N/A with its reason. Review passes over a new state machine find the next unlisted cell one round at a time; the table finds them up front.
+6. **Test Dependency Map (TDM) for existing code.** If the change modifies existing code, list the tests already covering the surface and run them to establish the green baseline. New-code changes skip the existing-tests TDM and write the first test fresh.
+7. **Get user approval on the plan.** One sentence — "I'll test behavior X first via interface Y, then iterate." User confirms or steers before any test is written.
+
+You cannot test everything. Confirm with the user which behaviors matter most; focus on critical paths and complex logic.
+
+## Step 2 — Tracer bullet
+
+Write ONE test that confirms ONE behavior through the public interface. Then:
+
+```
+RED:   Write the test → run it → confirm it fails for the expected reason.
+GREEN: Write the minimum code that makes the test pass → run → confirm green.
+```
+
+The test fail-reason matters. A test that fails because the function is undefined is different from a test that fails because the assertion is wrong — only the latter proves the test is verifying behavior, not just the existence of a symbol.
+
+The tracer bullet is the end-to-end proof that the path works. Do not write a second test until this one is green.
+
+## Step 3 — Incremental loop
+
+For each remaining behavior:
+
+```
+RED:      Write the next test → run → fail.
+GREEN:    Add minimum code to pass → run → green.
+REFACTOR: Optional, on green → run after each step → still green.
+```
+
+Rules:
+
+- **One test at a time.** The horizontal-slicing anti-pattern (write all tests, then write all code) is rejected. Bulk-written tests verify *imagined* behavior, not actual behavior; the suite becomes insensitive to real changes and the agent *outruns its headlights*, committing to test structure before understanding the implementation.
+- **Only enough code to pass the current test.** Anticipating the next test bloats the implementation and couples it to assumptions not yet verified.
+- **Tests verify behavior through public interfaces.** No private-method tests, no internal-collaborator mocks, no direct database/file-system assertions when the public interface is what the caller uses. If a test would couple to implementation, surface it and prompt the user — either rewrite to the public surface or accept the coupling explicitly with rationale in the task notes.
+- **Keep the test name behavior-shaped.** *"user can sign in with valid credentials"* — yes. *"calls authenticate() with username arg"* — no.
+- **Refactor on green, every cycle.** Once the test passes, tidy what this cycle touched — names, structure, a helper — and rerun after each step. Never refactor while RED.
+- **Duplication is a hint, not a command.** Remove it when it obscures intent; leave it while a third case has not shown the right shape.
+- **Add each test you discover to the list.** Making a test pass often reveals another behavior or edge case; write it on the list, do not chase it mid-cycle.
+
+## Step 4 — Close-out
+
+When the list is empty:
+
+- [ ] **Deepen** — move complexity behind a smaller interface (WORKFLOW §8 vocabulary). The deletion test applies: a module whose interface is nearly as complex as its implementation is shallow; refactor toward depth.
+- [ ] Apply SOLID where natural; never force-fit a pattern.
+- [ ] Consider what the new code reveals about the existing code — opportunities to deepen pre-existing shallow modules surface during TDD because the new tests pin behavior the old code was implicitly relying on.
+- [ ] Run tests after **each** refactor step. Never refactor while RED — get to GREEN first, then refactor with the green baseline as the safety net.
+- [ ] **Stateful unit: sweep operator mutations before the first publication.** Flip one comparison or logical operator at a time (`<`/`<=`, `>`/`>=`, `==`/`!=`, `&&`/`||`, null checks) in the unit's file and rerun its tests. Each survivor is a missing test until a distinguishing input has been searched for and none exists; close survivors one at a time through the Step 3 loop, and record the search beside any survivor kept. A bare "equivalent" is a claim, not a result.
+
+The close-out is where module-level deepening happens. Treat the tests as a fixed contract; the implementation is free to change shape as long as the contract holds.
+
+## Per-cycle checklist
+
+Before moving to the next behavior:
+
+- [ ] Test describes behavior, not implementation.
+- [ ] Test uses public interface only.
+- [ ] Test would survive an internal rename or method-signature shuffle that does not change observed behavior.
+- [ ] Code is minimal for this test — no speculative features added.
+- [ ] Green baseline holds.
+
+If any checkbox fails, fix it before writing the next test. The cycle's contract is what makes TDD work.
+
+## Output contract
+
+No file written. Output is structured conversation:
+
+1. Vertical plan (Step 1) — interface, behaviors-to-test list, first behavior, approval.
+2. Tracer bullet (Step 2) — test, red, minimum code, green.
+3. Per-behavior incremental loop (Step 3).
+4. Close-out with rationale (Step 4): deepening and, for a stateful unit, the mutation sweep.
+5. Per-cycle checklist confirmation.
+
+When the change is committed, the behaviors covered, the deepening that surfaced, and the rejected couplings (if any) go into the commit message body. When a task file exists, the same content lands in the task's `Notes` log under a dated entry.
+
+## Next
+
+- After the close-out (Step 4): use `/ad-commit` to land one or a small handful of behavior-shaped tests with their implementation; commits stay atomic.
+- `/ad-review main..HEAD` (or current scope) before merge — WORKFLOW §10. TDD verifies the implementation against tested behaviors; §10 review checks coupling, edge cases, spec drift the tests did not cover.
+- If the cycle surfaced a refactor opportunity larger than the GREEN-phase refactor allows: `/ad-deepen` (WORKFLOW §8), when the design friction is load-bearing.
+- If multiple tests fail in unexpected ways during the cycle (not the predicted RED for the new test): `/ad-diagnose` to investigate the regression before continuing the TDD loop.
+- If the work spans multiple sessions: `/ad-task` for explicit decomposition; cite this TDD run in the task `Notes`.

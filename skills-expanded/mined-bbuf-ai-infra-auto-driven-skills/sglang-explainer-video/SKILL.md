@@ -1,0 +1,378 @@
+---
+name: sglang-explainer-video
+description: Turn an SGLang PR (number or URL) or a technical article (Markdown path) into a Chinese explainer video that fully explains every algorithm and code change (length follows the material, no time cap) — natural edge-tts narration, word-synced bilingual 中文/English captions, a cover designed for each video, SGLang-brand visuals by default (or the kimi-dark theme), and ending links to the source and the cookbook — built on HyperFrames' pr-to-video pipeline and delivered to ~/Desktop. Use when the user sends an sgl-project/sglang PR number or link, or an article file, and asks for a video (做个视频, 讲解视频, PR 视频, 文章转视频).
+---
+
+# SGLang explainer video
+
+Input: `sglang PR <N>` (or a github.com/sgl-project/sglang/pull/N URL), or a Markdown article path.
+Output: `~/Desktop/SGLang_PR<N>_讲解_中英字幕.mp4` (article: `SGLang_<slug>_技术解读_中英字幕.mp4`) plus a still `…_封面.png` and a Bilibili cover `…_封面_B站.png`, rendered 1920×1080 with a 中文 narration and bilingual captions.
+
+This skill drives HyperFrames' **pr-to-video** workflow (heygen-com/hyperframes, pinned) with a fixed house
+style and several fixes that make it work for Chinese. Read `references/house-style.md` before writing any
+script — it holds the rules the user already corrected once (terms, captions, cover, credits, PR status).
+
+## Core principle: understand it fully, explain all of it
+
+The video exists so a viewer who has not read the PR / article **understands every algorithm and every
+meaningful code change** in it. That decides everything else:
+
+- **No target length.** Length follows the material: a one-line docs PR may need ~1 min; a multi-file kernel
+  or scheduler PR, or a long article, may need 5–10+ min. Never cut a mechanism, code path, edge case, number
+  or caveat to make the film shorter — add frames instead. Keep each frame to one idea (≲ 60 汉字, ~11 s) so
+  visuals keep up; the *number* of frames is unbounded.
+- **Understand before you script.** Read all of the source (Step 2) and write `capture/understanding.md`
+  first; every item in it must map to at least one frame.
+- **Code is the spine, not a footnote.** Open with the value (what the change fixes / speeds up), then walk
+  through the algorithm and every changed code path in a sensible order, with a worked example where it helps.
+  This overrides pr-to-video's `story-design.md` where it says otherwise (its "Whole-film target ≤ ~3 min",
+  "feature 2–4 real diff hunks", "implementation is the footnote"): feature **every hunk that carries logic**
+  (group pure renames / formatting / test boilerplate into one frame), split long hunks across frames
+  (≤ 12 lines each), and explain why each change is needed, not just what it is.
+
+## 0. Setup (start of every session)
+
+```bash
+bash <this-skill>/scripts/setup_env.sh      # first run ~2 min; afterwards seconds (idempotent)
+source ~/.cache/sglang-explainer-video/env.sh
+```
+
+Re-run it at the start of each session: `env.sh` records this skill's install path (`$SEV_SKILL`,
+`$HF_MEDIA_ENGINE`), so it must point at the copy you are using now.
+
+It needs Node ≥ 22 (`brew install node@22`), `ffmpeg`/`ffprobe`, git, curl and Chrome. It creates a venv
+(edge-tts, fonttools, and mlx-whisper on Apple Silicon for `pron_check.py`), a pinned HyperFrames checkout with `patches/hyperframes-captions-cjk-bilingual.patch`
+applied, the Noto Sans/Serif SC fonts, and `env.sh` (`$SKILL_DIR` = pr-to-video, `hf` = pinned HyperFrames CLI wrapper,
+`$HF_MEDIA_ENGINE` = our edge-tts engine, `$SEV_SKILL`, `$SEV_PY`). Nothing is installed globally:
+always run the CLI as `hf …`, never `npx hyperframes init` without the env (init would install skills
+into `~/.claude/skills`).
+
+Every command below assumes `source ~/.cache/sglang-explainer-video/env.sh` and `P=<project dir>`.
+
+## 1. Project + brief
+
+```bash
+P=$SEV_WS/projects/sglang-pr-<N>            # article: $SEV_WS/projects/sglang-article-<slug>
+hf init "$P" --non-interactive --example=blank --skill=pr-to-video
+```
+
+Write `$P/BRIEF.md` (template in `references/house-style.md` §Brief). Run **autonomous** (`flow: automation`,
+`storyboard: no`): do not stop for plan/sketch approval; the only questions worth asking are real choices
+(voice change) — otherwise follow the house style. Never ask about length: it follows the material.
+
+## 2. Ingest the source
+
+PR mode — always the **full URL** (`owner/repo#N` fails outside a git checkout):
+
+```bash
+(cd $P && node $SKILL_DIR/scripts/fetch-pr.mjs --pr https://github.com/sgl-project/sglang/pull/<N> --out-dir ./capture \
+  && node $SKILL_DIR/scripts/ingest.mjs --pr-json ./capture/pr.json --diff ./capture/diff.patch --out-dir ./capture/extracted \
+  && node $SKILL_DIR/scripts/fetch-people-avatars.mjs --people ./capture/extracted/people.json)
+```
+
+Article mode — copy the article to `$P/capture/extracted/visible-text.txt`, write a minimal
+`capture/extracted/tokens.json` (`{"title": "...", "colors": [], "fonts": []}`), and download the article's own
+figures into `$P/assets/article/fig<i>.<ext>` (they are the author's images; they become real assets on frames).
+
+**Read everything before writing anything.** `capture/extracted/visible-text.txt` is budget-truncated, so it is
+not enough on its own:
+
+- PR mode: the PR body, the **full** `capture/diff.patch`, review comments that changed the design
+  (`gh pr view <URL> --comments`), and every touched function **in full at the PR head**
+  (`gh api "repos/sgl-project/sglang/contents/<path>?ref=<headRefOid>" --jq .content | base64 -d`) so you can
+  explain the code around each hunk, not just the hunk. Follow calls into helpers when the change depends on them.
+- Article mode: the whole article, every code block and figure, and any PR / source file it links to that the
+  argument depends on.
+
+Then write `$P/capture/understanding.md`: the problem; the algorithm step by step; every changed code path
+(`file:function` → what changed and why); the numbers with their conditions (hardware, model, workload);
+the model the PR involves (the one the bug shows up on, or the one it was measured on: the title and the description
+will name it, `references/publishing.md`); the caveats the author states. This is the coverage checklist for Step 3.
+
+Then put the SGLang brand on the project (frame.md, CJK/bilingual caption skin, ending block, logos). The theme is
+`sglang-orange` unless the video is about a Kimi / Moonshot model or the user asks for a different look; then use
+`--theme kimi-dark` (`references/house-style.md` §Themes):
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/apply_brand.py --project $P [--theme kimi-dark]
+```
+
+## 3. Story + script
+
+Follow `$SKILL_DIR/SKILL.md` Step 3 and its `references/story-design.md` (PR: fix-explainer / feature-reveal /
+refactor-walkthrough; article: a value-first explainer — hook → landscape → method → every evidence beat the
+article makes → lessons → summary), **with the Core principle above overriding its length and hunk limits**.
+Before moving on, tick every item of `capture/understanding.md` against the storyboard; add frames for
+anything uncovered. Then apply the house style:
+
+- **Frame 1 is always the cover** `compositions/frames/00-cover.html` (built in Step 6, not by a worker),
+  `status: animated`. Frame N's file is `NN-<slug>.html` with `NN = N-1`.
+- PR videos end on the **author page** (name/@login/avatar on screen, never spoken; the PR link; no status).
+- **Every video's last frame carries the SGLang ending block** (the project's `assets/brand/follow-strip.html`), at
+  y 652–872, so plan that frame's content to end above y≈630 (house style §Ending links):
+  - a links card with this video's own links: the source it explains, and the cookbook or docs page to open next;
+  - the fixed follow strip (关注 SGLang · GitHub · 博客 · 文档).
+  - Pick the two links now and write them into that frame's Scene text. Take them from `main` and from
+    `docs.sglang.io/sitemap.xml`, never from memory. The block is on screen only, not narrated.
+- Chinese narration, English technical terms, one idea per frame (≲ 60 汉字, ~11 s); as many frames as the
+  material needs — no whole-film cap. Long films get section kickers (e.g. 「① 问题」「② 算法」「③ 代码」) so
+  viewers keep their place.
+- `SCRIPT.md` voice line: `zh-CN-XiaoxiaoNeural (edge-tts)`. Numbers only from the PR/article.
+- **Every English word must be read right and in one breath** (`references/pronunciation.md`): no `_` reaches
+  the voice, CamelCase brand names are spaced, symbols (×, #, +%) are spoken as Chinese. Write the narration
+  normally — `pronunciation.json` rewrites only what the voice hears, captions keep the written form — then run
+  the check and fix every FAIL (lexicon entry or reword) before TTS:
+
+  ```bash
+  $SEV_PY -I $SEV_SKILL/scripts/pron_check.py --script $P/SCRIPT.md --asr
+  ```
+- **Chinese polyphones must take the intended reading.** 行 meaning "row / line" is respelled to 航 automatically
+  (the voice read 一行 as yì xíng in 42 % of past lines). For any other polyphone the user flags, measure it
+  with `scripts/poly_probe.py`. Edge picks the reading per request, so it synthesizes several takes and
+  compares each one acoustically with unambiguous homophones. Add a `patterns` rule when the spoken form
+  still misreads. See `references/pronunciation.md` for the details.
+
+## 4. Narration (edge-tts, word timings)
+
+```bash
+(cd $P && node $SKILL_DIR/scripts/audio.mjs --script ./SCRIPT.md --storyboard ./STORYBOARD.md --hyperframes . \
+   --out ./audio_meta.json --voice zh-CN-XiaoxiaoNeural \
+ && node $SKILL_DIR/scripts/audio.mjs sync-durations --audio-meta ./audio_meta.json --storyboard ./STORYBOARD.md \
+ && cp audio_meta.json audio_meta.built.json)
+```
+
+`HF_MEDIA_ENGINE` swaps HyperFrames' TTS for `scripts/edge_tts_engine.py`: per-word timestamps from WordBoundary,
+punctuation re-attached, split terms re-joined (FP32, FLUX.2, torch.equal), 2 s of silence after the last line;
+the voice reads the spoken forms from `pronounce.py` and the timings map back to the written tokens.
+Then check the recorded take — pauses inside a clause and every English term in context:
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/pron_check.py --meta $P/audio_meta.json --hyperframes $P --asr
+```
+
+Then check where the voice cut the Chinese: `seg_check.py` compares Edge's word tokens with a Chinese
+segmentation and flags a token that straddles a word (值相同时下标 → 「时下|标」, 下标取反 → 「标取|反放」), a pause
+inside a word (1 除以 T → 「除 | 以」), or a number fused with 只 (乘 24 只要 → 「24只|要」, read as a measure word). Reword each hit (a comma, 的, or a different phrasing), re-synthesize the line,
+and run it again until it prints ✓:
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/seg_check.py --meta $P/audio_meta.json
+```
+
+Then listen to the Chinese: `line_asr.py` transcribes every line and diffs it with the narration in pinyin. It catches
+a digit or a clause-final 时 that merges into another number (「L2 时」 heard as 二十, 「大时」 as 大十, 「batch 是 1」 as
+11, 「batch 为 1」 as 唯一). Reword those (的话 / 的时候 / 只有 1), re-synthesize the line, and read the remaining hits;
+homophone noise is expected, and a hit that repeats in a fresh take is not proof (pronunciation.md, §Listening to whole lines):
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/line_asr.py --script $P/SCRIPT.md --meta $P/audio_meta.json
+```
+
+Then listen to every 行 in the take: the respelling lowers the misread rate, but Edge still picks the reading per
+request, and Whisper writes 行 for either reading. `hang_take.py` compares each 行 in the take with fresh takes
+that say 航 or 型 there and flags the ones that took the wrong reading (128 字节行 and 行距 were read xíng in the
+PR 48380 video as delivered). Re-synthesize every WRONG line and run it again until it prints ✓:
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/hang_take.py --script $P/SCRIPT.md --meta $P/audio_meta.json
+```
+
+Then listen for the polyphones that differ only in tone (切 qiē / qiè). hang_take and poly_probe compare spectra,
+which carry almost no pitch, so they cannot hear these. `tone_take.py` force-aligns the take and same-line
+controls (切 swapped for 接/些 vs 借/谢) with the Montreal Forced Aligner and compares the pitch slope of the
+vowel with Praat. It needs the optional tone env once (`bash $SEV_SKILL/scripts/setup_tone.sh`, about 1.5 GB).
+Edge reads a given text the same way every time, so reword every WRONG line (its `reword:` hint says how),
+re-synthesize it, and run the check again until it prints ✓:
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/tone_take.py --script $P/SCRIPT.md --meta $P/audio_meta.json
+```
+
+A FAIL there means re-synthesize that line after a lexicon fix or a reword (subset re-TTS, see troubleshooting).
+
+**Keep the pronunciation lexicon growing.** Every term this video exposed as misread goes back into the skill
+before delivery. That includes `pron_check` FAILs, OK~ terms that sound wrong, and anything the user flags
+in review. Each fix lands in `scripts/pronunciation.json` (patterns / parts / lexicon / approved), with its
+evidence row in `references/pronunciation.md` and a test case when the rule is new. Ship these as a PR to
+the skill repo. The skill only stays reliable if each video leaves it a little better; see
+`references/pronunciation.md` §The lexicon is a living file.
+A frame running long means it holds two ideas — split it; never drop content to shorten the film.
+Print the timings for Step 5:
+
+```bash
+python3 -c "import json;[print(v['frame'],v['duration_s'],' | '.join(f\"{w['text']}@{w['start']}\" for w in v['words'])) for v in json.load(open('$P/audio_meta.json'))['voices']]"
+```
+
+**Keep `audio_meta.built.json`.** edge-tts takes are not bit-identical; frames are cued to this take.
+
+## 5. Visual design (Step 4 of pr-to-video)
+
+Write `## Video direction` + per-frame time-coded Scenes per `$SKILL_DIR/references/visual-design.md`, using the
+**real word start times** above. Put the palette/type/font rules from `references/house-style.md` §Visuals into
+Video direction. Code beats need a `### Source excerpt` (≤ 12 real lines); article frames that show a real figure
+carry `- asset_candidates: assets/article/figN.png — …`.
+
+## 6. Cover
+
+Every video gets its own cover design (house style §Cover). Do not reuse the previous video's.
+
+1. Look at what has been used: `references/cover-log.md`, and the newest covers side by side.
+   ```bash
+   $SEV_PY $SEV_SKILL/scripts/cover_kit.py wall --out $P/cover_wall.png
+   ```
+2. Design this video's cover from its content: what the bug or the speed-up looks like. It differs from each of
+   the last five covers in at least three of ground colour, accent colour, type, composition and illustration
+   technique. It keeps the hook as the largest line and the small tag 「SGLang PR 讲解 · #N」 top-left.
+3. Write the design as `$P/work/make_cover.py`: `css(width, dy)`, `body(prefix)`, the reveal steps and the list of
+   text to fade. `cover_kit.py`'s docstring shows the shape. Keep the content inside y 135–880.
+   ```bash
+   $SEV_PY $P/work/make_cover.py png                       # cover.png (1920×1080) + cover_bili.png (1440×1080)
+   $SEV_PY $P/work/make_cover.py frame <frame-1 voice s>   # compositions/frames/00-cover.html
+   ```
+   Time the reveals to the cover narration's word cues in `audio_meta.json`.
+4. Compare, then log it:
+   ```bash
+   $SEV_PY $SEV_SKILL/scripts/cover_kit.py wall --out $P/cover_wall.png --add $P/cover_bili.png
+   ```
+   If the new tile could be taken for a neighbour, redesign it. Then add its row to `references/cover-log.md` and
+   ship that with the video's other skill updates.
+
+`cover_bili.png` is the cover to upload to Bilibili, which crops one image to both 4:3 and 16:9.
+
+The series template "A" (`scripts/make_cover.py --project $P --series "SGLang PR 讲解" --badge "#<N>" --title-zh …
+--title-en … --meta … --duration <frame-1 voice s> --png $P/cover.png --png-bili $P/cover_bili.png`) is only for a
+video whose user asks for the series look.
+
+## 7. Captions (bilingual)
+
+```bash
+(cd $P && node $SKILL_DIR/scripts/captions.mjs build --storyboard ./STORYBOARD.md --audio-meta ./audio_meta.json \
+   --hyperframes . --out ./caption_groups.json)
+```
+
+Translate **every** group's `text` into `$P/caption-translations.json` (`{"<中文 group text>": "<English>"}`),
+then rebuild; the build warns `no translation for N group(s)` until all are covered.
+
+## 8. Frames (≤ 5 parallel workers)
+
+```bash
+(cd $P && for b in <code-* blocks named in STORYBOARD>; do hf add "$b"; done)
+node $SKILL_DIR/scripts/frame-packets.mjs --project "$P" --storyboard "$P/STORYBOARD.md"
+```
+
+Dispatch at most five background workers (Agent tool) at a time (five ran fine on an M4 Mac, 2026-10-23), each with the role file path, its packet paths and
+the dispatch context from `references/worker-dispatch.md` **verbatim** (it carries the hard rules that broke
+earlier runs). A packet over 48 KB means the blueprint + cited rules are too big: drop one cited rule or use
+`blueprint: compose`. Mark frames `animated` as workers return. A long film (many frames) goes in waves: give each worker
+≤ 5 packets per dispatch, keep frames that share a stage on the same worker, and start the next wave as workers
+return. Then:
+
+```bash
+node $SEV_SKILL/scripts/check_frames.mjs $P          # frame contract + no system CJK fonts
+$SEV_PY -I $SEV_SKILL/scripts/subset_fonts.py --project $P   # re-run after ANY text change
+(cd $P && node $SKILL_DIR/scripts/captions.mjs build --storyboard ./STORYBOARD.md --audio-meta ./audio_meta.json --hyperframes . --out ./caption_groups.json \
+ && node $SKILL_DIR/scripts/assemble-index.mjs --storyboard ./STORYBOARD.md --hyperframes . \
+ && node $SKILL_DIR/scripts/transitions.mjs inject --storyboard ./STORYBOARD.md --hyperframes . \
+ && node $SKILL_DIR/scripts/transitions.mjs verify --storyboard ./STORYBOARD.md --index ./index.html \
+ && hf lint && hf check)
+```
+
+A failed frame goes back to its worker once with the exact finding (SendMessage). `lint`/`check` errors you
+fix yourself with the smallest edit. `id_requires_css_escape` warnings and transition-time `content_overlap`
+infos are expected.
+Contrast warnings that all carry one timestamp inside a crossfade window come from the outgoing frame fading out
+(PR 50374: 39 warnings at one instant, on text drawn in solid ink). Check the named elements' own colours and fix only
+a warning at a time when one frame is alone on screen.
+
+## 9. Render, QA, deliver
+
+```bash
+(cd $P && hf render --skill=pr-to-video --quality high --output renders/video.mp4)
+bash $SEV_SKILL/scripts/qa_sheet.sh $P/renders/video.mp4 $P/qa 2.5
+```
+
+Read **every** sheet of the rendered MP4 (not Studio snapshots): 乱码, wrong characters, untranslated or
+mistranslated terms, captions out of sync, content under the caption band, stray status lines. Fix, re-render,
+re-check. Before delivering, make sure this video's pronunciation fixes are in the skill (§4 "Keep the
+pronunciation lexicon growing"). The same applies after the user's review: a word they say was misread becomes
+a lexicon entry plus a skill PR, not a one-off edit in the project.
+
+Open the links the ending shows (and, once they are drafted, the publish texts):
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/check_links.py --project $P [--text desc.txt body.txt]
+```
+
+Then copy to the Desktop:
+
+```bash
+cp $P/renders/video.mp4 ~/Desktop/SGLang_PR<N>_讲解_中英字幕.mp4
+cp $P/cover.png ~/Desktop/SGLang_PR<N>_讲解_封面.png
+cp $P/cover_bili.png ~/Desktop/SGLang_PR<N>_讲解_封面_B站.png
+```
+
+## 10. Publish (only when the user asks)
+
+Follow `references/publishing.md`: the user picks each file in the native dialog, the agent fills the rest.
+The title and the description are written for this video, from its own hook; they name the model the PR involves
+(DeepSeek, GLM, Qwen, …), which draws more views; and they end with the same source and cookbook links as the last
+frame (§Title and description).
+Bilibili: 含AI生成内容 · 分区 人工智能 · ~8 tags · 1440×1080 B站 cover. 小红书: **always 标记 SGLang** via
+添加组件 → 标记地点或标记朋友 → 用户 → SGLang (official, orange SGL avatar) — never an @ in the body — plus topics
+#人工智能 #大模型 #SGLang and 笔记含AI合成内容.
+
+Every publish runs the five checks in `references/publishing.md` §Checks:
+1. `publish_check.py` on the files and texts before anything is uploaded.
+2. The B站 form before 立即投稿.
+3. The stored B站 archive (简介, tags, 分区, duration, cover, 合集) after submit.
+4. The 小红书 form before 发布 (topics, 标记, AI 声明, the cover actually used).
+5. The 小红书 note list after 发布.
+
+The publish is done only when all five pass. Tell the user what each one showed.
+
+Fixing a published video (a re-voiced line, a re-render) replaces the file in place on both sites; the post, its
+plays and its comments stay. Follow §Replacing the video of a published post: 小红书 drops the 标记 on every swap.
+
+## Changing narration after frames exist
+
+Edit `SCRIPT.md` (and the storyboard `voiceover`), re-run Step 4, then — instead of rebuilding frames —
+
+```bash
+$SEV_PY -I $SEV_SKILL/scripts/retime_frames.py --project $P --ref-meta $P/audio_meta.built.json
+```
+
+re-maps each frame's timeline onto the new take (piecewise-linear, anchors = matched clause starts). Frames are
+found through STORYBOARD.md `- src:` (so `19b-*.html` works). `--chain` handles a project whose built take was
+lost by an earlier retime: the new anchors are composed through each frame's existing WARP. Re-make the cover
+frame (`work/make_cover.py frame <new frame-1 voice s>`, with its cues moved to the new take), or let retime warp
+`00-cover` too.
+Then retranslate changed caption groups, re-subset fonts, re-assemble, and re-render.
+
+**Re-voicing a finished video** (new voice, same frames) is one command per project:
+
+```bash
+bash $SEV_SKILL/scripts/revoice.sh $P            # VOICE=zh-CN-XiaoxiaoNeural by default
+```
+
+It runs these steps:
+1. Back up the old state once to `revoice_backup/`.
+2. Synthesize the new take, through the pronunciation layer.
+3. Restore the frames, then retime them.
+4. Run the pause check, captions, font subset, assemble, lint and check.
+5. Render `renders/video_revoiced.mp4`. The old `renders/video.mp4` is never touched.
+
+`revoice.sh $P tts` stops after the take. Use it to run `pron_check --meta --asr` across many projects, fix the
+lexicon, and only then render. A batch of 13 published videos (132 min) took about 30 min of TTS plus about
+2× real time to render.
+
+## References
+
+- `references/house-style.md` — narration, term glossary, captions, cover, author page, ending links, brief template.
+- `references/cover-log.md` — what each cover so far looked like; read it before designing one, add a row after.
+- `references/pronunciation.md` — English terms and Chinese polyphones read right: spoken-form rules, lexicon,
+  `pron_check.py`, `poly_probe.py`, `hang_take.py`, `tone_take.py`.
+- `references/worker-dispatch.md` — the dispatch context to paste into every frame worker.
+- `references/troubleshooting.md` — every failure seen so far and its fix.
+- `references/publishing.md` — publishing to Bilibili and 小红书 (always 标记 SGLang on 小红书, never @), and the
+  checks every publish must pass (`publish_check.py` plus what each site stored), and replacing the video of a
+  published post.

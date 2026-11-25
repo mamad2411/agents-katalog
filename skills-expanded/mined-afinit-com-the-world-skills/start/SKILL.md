@@ -1,0 +1,485 @@
+---
+name: start
+description: The World — Create or resume a World harness from Claude Code or Codex, which also runs the bots. Build collaborating characters, their tools and relationship map, verify locally, then connect Slack. Use for "the world start", "world init", "하네스 만들어", "감시 봇 만들어", or continuing this harness's setup; not for arbitrary Slack bot development.
+disable-model-invocation: true
+---
+
+# start
+
+Turn a plain-language job into a harness: a process that runs agents on changes, on a
+schedule, or when mentioned in Slack. Respond in the language of the user's first message,
+without asking which they prefer, and write the questions, the reports, and the generated
+documents (`WORLD.md`, `README.md`) in it; switch only when they ask. Keep the term
+“하네스”. This is a hands-on learning kit, so the several characters working together are
+part of what the user came for. Do not merge characters to simplify setup.
+
+How you get there is yours to decide. What must hold is below.
+
+## Step 0: prerequisites
+
+Before anything else, run `scripts/check-prereqs.py` from this loaded skill's directory
+with `python3` (`python` on Windows); add `--runtime claude|codex` once the runtime is
+chosen. It checks and reports only. Report each missing item, with the next action it
+prints, alongside the first question rather than instead of it. A missing item never holds
+up the questions or the design, but installing the kit and verifying wait until the script
+exits 0; rerun it before installing.
+
+In the same first reply, state the install profile (see "The profile" below) and where the
+harness will live (see "Where the harness lives") in one line of the user's words, and let
+them correct it. They should not have to learn what a profile is. For a Korean-speaking
+user: `이 Mac에서 Codex로 실행하고, 봇과는 Slack에서 대화하도록 만들게요. 하네스는
+~/code/my-app-world에 만들어요. 다르게 하고 싶으면 말해주세요.` Don't turn it into a question
+unless something is genuinely unclear, and don't repeat it later unless it changed.
+
+## Where the harness lives
+
+The harness is its own directory, never a folder inside the project it watches, and its
+place follows from where the user ran you:
+
+- **In the project** (the current directory is a repository or has files): "this repo"
+  means the current directory, and the harness goes beside it as `<project>-world`
+  (`~/code/my-app` → `~/code/my-app-world`). If that name is taken by something that is
+  not a harness, add a number rather than reuse it.
+- **In an empty directory**: the harness goes here. The project is the path named in the
+  request, or the first question asks for it.
+
+Put the harness inside the project only when the user asks for that. A harness that is
+already there (resuming) stays where it is.
+
+## The first question
+
+Unless you are resuming, open with one question, in the user's language: ask for the path
+of the project to hand over, or the job to hand over. For a Korean-speaking user, ask in
+exactly these words:
+
+> 맡길 프로젝트의 경로나, 맡기고 싶은 일을 알려주세요!
+
+The project is the repository or directory whose changes the harness watches, whose
+state it reads, or where its workers work; it is not the harness's own directory. The
+user may answer with either half. Fill in the other from what you can see — the project's
+README and agent instructions suggest a job, and a job usually names its project — and
+ask only for what is still missing. A job without a project leaves you guessing every
+worker's sources and boundaries, so settle both before designing a worker.
+
+When the user gives a project but no job, or answers that they don't know what to hand
+over, don't ask "what should it do?" back. Find out what the user keeps doing by hand, and
+propose jobs from that. Many users have never thought of their agent history as something
+to use, so never ask them to pick a tool or a data source; just look.
+
+- The project itself, when there is one: README, agent instructions (`CLAUDE.md`,
+  `AGENTS.md`), the project's own skills and commands, journals or logs it keeps, and
+  recent `git log`.
+- What the user has asked their coding agents to do. Run the sibling skill's script:
+  `python3 <this skill's dir>/../dig-my-sessions/dig.py chores --project <project>`, or
+  without `--project` when there is no project yet. It finds every agent's local history
+  on its own (Claude Code, Codex, opencode, Cursor, Antigravity, Gemini), reads it
+  read-only, and sends nothing anywhere. Add `--errands` when the output runs to
+  thousands of rows. Never pass `--jev` from here. Before running it, tell the user in one
+  line, in their words, with no jargon ("session", "transcript", "history file"), and
+  without asking: for a Korean-speaking user, `최근 Claude·Codex에서 시키신 일들을 훑어볼게요.
+  이 컴퓨터 밖으로는 안 나가요. 빼고 싶은 프로젝트가 있으면 말해주세요.` Pass any project they name
+  as `--exclude-project`.
+  If the script is not there, read the history yourself, starting with the tool you are
+  running in. Claude Code keeps it in `~/.claude/projects/<the absolute path with every
+  non-alphanumeric character replaced by '-'>/*.jsonl`; Codex in
+  `${CODEX_HOME:-~/.codex}/sessions/**/rollout-*.jsonl`, where the first line's `cwd`
+  names the directory. Read what the user typed and which commands ran, not whole
+  transcripts.
+
+Propose two or three jobs in plain words, each with the evidence behind it ("지난 두 달
+동안 배포 확인을 8번 직접 시키셨어요", or the commits and journal entries that show it), and
+let the user pick. A job proposed without a project names the project it came from, which
+settles the project too. If you found no history, say so and say the proposals come from
+the project alone. If nothing fits, ask the user to describe one thing they did by hand
+this week, and build the job sentence from that.
+
+Once both are settled, ask which world the cast lives in (세계관), before you name a
+character, split the job into roles, or write `WORLD.md`. The world is the user's to
+choose, not a detail you fill in for them. Offer two or three original worlds that the
+project calls to mind: a genre or a setting, such as a pirate crew, a mission-control room,
+or a neighborhood post office. Never name a published work, its characters, or a pun on one
+(a kit called "The World" does not make JoJo a proposal). The kit must not be the one to
+put someone else's work on the table. Then invite theirs, and mean it: a favorite anime,
+game, or novel world is just as good and often more fun, and so is one they make up. Once
+the user picks a published work, follow it. A portrait still gets its own design rather
+than a copy of an official character, and if the harness or its images will be shared
+outside the team, say in one line that the work's rights belong to its owner. Don't
+propose a cast in the same message. A missing prerequisite such as Python or `uv` can be
+reported alongside the question, but it doesn't replace the question.
+
+## What must hold
+
+**Every worker's authority is declared in code, and narrow.** A worker that writes declares
+a `write_scope`; `tasks/{task}/work` is the ordinary lane. A worker that only reads leaves
+it empty, which writes nothing, and gets no write path. A new worker never comes out wider
+than the ones already there.
+
+**A promise in a prompt is not enforcement.** If a boundary matters, it lives in code or
+the capability is absent. Prefer a scoped tool over a wider Bash allowlist, and omit a
+dangerous operation rather than guarding it with a check. The kit's reasoning for each
+boundary, and the incident behind it, is in `docs/philosophy.md` (installed into the
+harness). Read it before designing a worker's authority.
+
+**Outward actions wait for a human.** Anything that leaves the machine, or writes outside
+a worker's scope, goes through the harness's approval path rather than being done and
+reported afterwards. For a worker that watches GitHub, Linear, or Jira, start from the
+recipes in `docs/integrations.md` (installed into the harness).
+
+**Workers hand off to each other by name.** When a job belongs to a teammate, the worker
+says so to that teammate rather than widening itself to cover it. A persona passes work
+with its `hand_off` tool, not an @-mention; the harness runs the teammate's turn after the
+current one, in the same thread, capped per thread, and re-runs a queued handoff after a
+restart.
+
+**People talk to the main persona only.** It is the one identity listening on Slack; the
+other personas post, and are reached through its handoff. A human @-mention of a
+sub-persona is never received. So when you tell the user how to use the harness, every
+example addresses the main persona (`@Guide Scout한테 다시 돌려달라고 해줘`), never a worker.
+
+**Buttons are proposed, not defaulted.** A result announcement carries no buttons unless
+its worker declares them on `Agent.buttons`. For each worker, propose a set to the user
+before writing it: for every button, what the reader does next with this result and why a
+click beats typing a mention. Ground the proposal in how Slack buttons behave and in the
+reader's moment:
+
+- A click carries no input. If the next step needs a free-form answer, it is a mention.
+- A button stays clickable as long as the message lives, and anyone in the channel can
+  press it. Every click except `link` and `show` is gated to the approver, so don't put a
+  button in front of readers who can't use it.
+- An `ask` click costs a model turn; `link` and `show` cost nothing. When the next step is
+  looking at something that already exists, link to it.
+- Two or three buttons, each label a verb naming the outcome (`원인 더 파봐`, not `확인`).
+  At most one `primary`, for the step most readers take. `danger` only for something
+  destructive, which still goes through approval. The kit refuses more than five.
+- None is a fine answer. A status note nobody acts on needs no buttons.
+
+**Every persona's speaking style is drafted, shown, and confirmed.** For each persona,
+draft a style (말투) that fits the chosen world and the character: 존댓말 or 반말, verbal
+habits, emoji use, message length. Show it to the user as two or three realistic Slack
+messages from that persona: starting a task, reporting a result, and asking for approval.
+Write it to `Persona(voice=...)` only after the user edits or approves it; no persona skips
+this, and silence is not approval. The examples are in the conversation's language, and
+the same confirmation settles which language the personas speak: offer it as the choice
+"이대로 좋아요 / 다른 언어로 / 직접 고칠게요", never as a separate question. A style is tone
+only. Numbers, "unverified" markers, errors, and approval requests stay exact in every
+example, and the kit injects that same rule beside the voice into every prompt.
+
+**Messages are laid out, not run on.** Every message the harness posts to Slack is Block
+Kit: a headline with the one-line outcome, then the facts as fields or short bullets (ids,
+paths and versions in backticks), then small context, with dividers between groups. The
+kit does this for its own posts, and beside the voice it injects a layout rule into every
+persona prompt: a headline line first, one fact per line, a blank line between groups.
+Draft the voice examples in that shape too. Harness code that posts by itself (a tick
+task, a monitor, a check's notice) builds the message with `world.slack.blocks.card(title,
+fields=..., bullets=..., body=..., context=..., buttons=...)`, which returns `(text,
+blocks)`, and posts `listener.post(text, blocks=blocks)`. Never hand-build a one-line
+string that joins several facts with commas.
+
+**Every check says what it covers.** Before a worker depends on a source, confirm the
+source exists: the endpoint answers, the property ID is readable, the file is there. A
+`/health` that returns 404 is a finding to report, not a URL to poll. When you describe a
+worker, name what it checks and what it does not. An HTTP status check is not a health
+check of the database, the login, or the pages a browser renders. A person who asks "is it
+only a ping?" has been told too little.
+
+**The world's own words are the interface.** Fill `WORLD.md` with the cast, how they
+relate, a vocabulary, and what is watched, all in the world's terms. Nothing else goes in
+it: it is sent with every mention turn to every persona, so whatever it says is read as a
+standing fact. An install step, a command, a path, an env variable, a PID, or "Slack is not
+connected yet" stays there after it stops being true. Those go elsewhere:
+
+- How to operate (start, logs, change a target, add a character): `README.md`, for people.
+- Values that change (target URL or repo, schedule, time zone): `settings.json`, read by
+  `harness.py`. `WORLD.md` may say "every morning" and point at the setting, never the value.
+- What is true right now (running, connected, last run): the generated `STATUS.md`.
+- One character's procedure: that character's prompt file, not the shared world.
+
+`bin/smoke.py` flags a code block, path, command, PID, env name, or install heading in
+`WORLD.md`; fix every `[WARN] WORLD.md` line before you finish.
+
+**The world's words become the harness's commands.** Every harness gets four, one per
+flow, via `bin/scaffold-world-skill.py <word> agent|tool|verify|ops --universe ...
+--description ...`: adding a character (`agent`), equipping the cast (`tool`), checking
+the harness end to end (`verify`), and running it (`ops`: start, stop, restart, status,
+the watchdog, and repair after the folder moves). Once the world is chosen, draft the four
+words from it, as you draft the cast: a pirate crew might `enlist` a hand, `rig` a tool,
+`drill` the crew and take the `helm`. Show them in the same message as the cast and their
+voices, each with its meaning in the user's words (`enlist — 선원 모집: 새 캐릭터를
+들여요`), so one confirmation settles both. Write them only after the user approves or
+edits them, and put them in `WORLD.md`'s vocabulary.
+
+- A word is ASCII, lowercase, kebab-case (the scaffolder refuses anything else), and not
+  the name of a command the host already has (`status`, `init`, `review`, `config`,
+  `help`, `start`). Put its meaning in the user's language in `--description`, and the
+  phrases they will type in `--extra-trigger-phrases`, written as `, "부활시켜", "새 동료"`
+  (for the ops word: `, "켜줘", "꺼줘", "재시작", "상태"`).
+- Fall back to `recruit`, `equip`, `verify` and `ops` only when no world was chosen or the
+  user declines the world's words. Honor explicit naming choices.
+
+The tool word does not assume a tool: it splits the request into pieces, places each as a
+tool, code, prompt procedure, skill, knowledge, setting or world sentence, and builds only
+after the user confirms the proposal table. The ops word reads before it acts
+(`bin/ops-kit.py --check`, then the launcher's `status`), renders the scripts when there
+are none, and shows the watchdog's register and remove commands for the person to run.
+The scaffolder keeps a wrapper that exists, so a tool word scaffolded before this flow has
+no proposal table, and it and an older agent word still say "`write_scope` never empty".
+On resume, move such a `SKILL.md` aside (under `.claude/skills/<word>/` and
+`.agents/skills/<word>/`), re-run the scaffolder with the same flow, and carry over the
+user's own edits. A harness that has no ops word yet gets one on resume. One that kept the
+fallback words although a world was chosen gets the offer of the world's words once; on a
+yes, scaffold them and move the old folders aside.
+
+**Exit 0 is not completion.** A worker that produces analysis (`writes_report=True`) is
+verified by a file landing in its task's `work/`, never by an exit code.
+
+**Verify past the dry run with `docs/verify.md`.** `harness.py --verify-plan` fills its six
+steps from this harness: local checks, tool boundaries tested through `world.tool_check`,
+process and connection, a real thread, what was left behind, and a report. Run it right
+after Slack is first connected, with the first real thread, and say which steps were not
+reached. In a browser, read before writing: send a new message only when the user allowed
+it in this conversation and only a request that leaves nothing outside the chat, and never
+press an approve or deny button. That click is the approver's. For Slack only, an authorized
+verifier without Slack MCP or a user token can use `bin/say-as-human.py init` and `send`
+(`--thread <ts>` for replies); see `docs/verify.md` for `--prefix`, the secret, and restart.
+These messages exercise conversation only; approval still needs the human's button click.
+
+**Report only what happened.** A dry run is not a Slack connection and not a real agent
+result. Name what is still unverified, including any check blocked on missing credentials.
+A handoff happened when a `hand_off` call was queued. A persona writing "I'll ask Scout"
+is not one, so verify a handoff by the call.
+
+**Resume rather than reinstall.** If `harness.py` or `WORLD.md` is already there, keep its
+names, workers, wrappers, and configuration, and add only what is missing. Re-running the
+installer replaces kit-owned files and is an upgrade, not a way to continue Slack setup.
+Never print token values.
+
+## The profile: OS, runtime, channel
+
+Three choices, stated in the first reply (Step 0) and passed to the installer as `--os`,
+`--provider` and `--channel`. To the user they are "where it runs", "which AI runs the
+bots" and "where you talk to the bots"; "profile", "provider" and "channel" are the kit's
+words, not theirs, and "channel" alone reads as a Slack channel name, which is a later,
+separate question.
+
+- **OS**: where the harness will run. Detect it, say it, and ask only if the harness will
+  run somewhere other than this machine. Native Windows is supported; don't steer a
+  Windows user to WSL. Only a `windows` profile carries the Windows tool bridge, so a
+  harness moved to Windows later is re-installed with `--os windows`.
+- **Runtime**: `claude` or `codex`, which runs the bots. Default to the tool the user is
+  talking to you in. Use `both` only when they ask for it.
+- **Channel**, where people talk to the bots: `slack` (the default), `discord`
+  (experimental), or `none` for a harness that only polls and schedules. Not the Slack
+  channel name; that is picked up during the Slack connection.
+
+The installer copies only what the profile selects and records it in
+`project-profile.json`. The harness then carries one runtime and one channel, with nothing
+else to read past, and `world/` refuses a configuration outside the profile. Never install
+`both` to keep options open. A later re-run with a flag adds the other runtime cleanly.
+
+On Windows:
+
+- Run the kit scripts with `python` and the harness with `uv run` from PowerShell.
+  Without uv, the interpreter is `.venv\Scripts\python.exe`.
+- Pass any non-ASCII text you hand to another CLI (a `gh issue`/`gh pr` body, a commit
+  message, a Slack message) as a UTF-8 file, such as `--body-file`, `-F`, or `git commit -F`,
+  never through a PowerShell pipe or here-string. PowerShell re-encodes piped text to the
+  console code page, and Korean arrives as `?` with no error. For Python you start
+  yourself, set `$env:PYTHONUTF8 = "1"`.
+- If something in the kit fails on this machine, fix the minimum in `world/`, list each
+  change in a note outside `world/`, and tell the user to report it upstream. Don't build a
+  `kit-source/` checkout, a `patches/` directory, or a patch exporter in the harness.
+
+## The runtime you are building against
+
+The kit is bundled at `assets/kit/`; install it with `scripts/install-kit.py <target>
+--os <os> --provider <runtime> --channel <channel>` from this loaded skill's directory, resolving paths from where this skill is loaded rather than the
+target directory. Do not modify the installed plugin; scaffold into the target.
+
+If the installer or `bin/scaffold-world-skill.py` exits with `cannot write to ...`, the
+host sandbox refused a path (Codex's `workspace-write` protects `.codex/` and `.agents/`)
+and nothing was written. Ask the user to approve writing those paths (escalation) and
+re-run. Never hand-copy the rest of the kit around it. If not approved, report the guard
+hooks and word commands as not installed.
+
+`world/` is kit-owned and stays as shipped. Its surface:
+
+```python
+from world import (Agent, Button, Harness, MentionTrigger, Persona, PollTrigger, RunResult,
+                   Schedule, ScheduleTrigger, Signal, SlackConfig)
+
+h = Harness(name=..., provider="claude"|"codex", home=Path(__file__).resolve().parent,
+            world_doc="WORLD.md", main_persona=Persona(key=..., display=..., flavor=...),
+            slack=SlackConfig(..., respond_to_channel_messages=False))   # see below
+h.register(AGENT)                    # once per worker
+h.main()                             # entry point
+
+AGENT = Agent(name=..., trigger=PollTrigger(check=check),   # or MentionTrigger()
+              prompt_file=...,       # standing instructions, relative to home
+              persona=Persona(...), writes_report=True, mutates=False,
+              write_scope=("tasks/{task}/work",), tools=[...], allow_bash=False,
+              buttons=(Button.ask("원인 더 파봐", "<request to this worker's persona>"),
+                       Button.link("Jenkins 열기", "https://..."),
+                       Button.show(), Button.dismiss()))   # none unless proposed
+```
+
+One character, one word. Name each worker's `Agent` the same as its `Persona.key`, its
+folder (`abilities/<key>/`), and its prompt file, so `STATUS.md`, `HEARTBEAT.md`, a task
+folder, and `WORLD.md` all show the same word for it; startup logs `naming:` when they
+differ. Put the main persona in its own folder too, and the values a person will change
+(target URL or repo, schedule, time zone) in `settings.json` that `harness.py` reads.
+
+A poll `check(state, now)` is non-LLM and returns `Signal(prompt=..., on_done=...)` to
+spawn or `None` to stay idle; per-worker bookkeeping lives in `state["agents"][name]` so it
+survives restarts, and `on_done` runs only after a verified-complete run.
+`ScheduleTrigger(Schedule.daily(9, 0, "Asia/Seoul"))` is the wall-clock alternative. On a
+harness's first start it adopts the current occurrence as already done and waits for the
+next one, so a dry run is not a first real run and the report should say when that is.
+A scheduled or polled run is announced as a card whose headline is the task title: the
+`title=` given to `Signal` or `ScheduleTrigger`, else the prompt's first line. Give a
+worker whose prompt opens with an instruction to the model a `title=` a person can read.
+`Agent(announce=...)` picks the card body:
+- `"result"` (default): the start of the run's final message, with the completion
+  evidence shrunk onto the status line. End a scheduled worker with a summary a person
+  can read (a briefing, a digest), not "done" or "saved report.md".
+- `"evidence"`: the completion evidence; the final message when none was recorded.
+- `"file"` (needs `writes_report=True`): the opening of the report this attempt wrote
+  under the task's `work/`: front matter and a leading `# ` title skipped, then up to
+  the first `## ` (or the first `## ` section, when the report opens with one). Name the
+  report with `announce_file="briefing.md"` (a path or glob under `work/`); otherwise the
+  first `.md`, then `.txt`, top level first, logs, data and hidden files left out. With
+  no readable report it falls back to `"result"`, so put the summary first in the report
+  and still end the run with one. On native Windows `file` cannot read reports safely
+  and always shows `"result"`; the harness warns at startup.
+  Selection uses artifacts and modification times (mtime), so preserved mtimes or clock
+  changes can select an older report or cause `"result"` fallback.
+
+Every mode keeps the 300-character excerpt and mention handling. A `file` excerpt also
+masks common token shapes, `token=`-style values and secret env values, but it quotes
+the report into the channel and masking is not complete: never point it at raw logs or
+API dumps. Selection and masking details live in `world/channels/base.py`
+(`_file_preview`) and `world/env.py` (`redact_file`).
+
+`Harness(provider=...)` takes `claude` or `codex`.
+
+`mutates=True` makes each task run in its own git worktree (the kit cuts it at spawn
+and refuses the run if it cannot), so leave it `False` unless the worker edits the repo.
+A docs, CS-reply or research worker needs no git: `mutates=False`, its writes bounded by
+`write_scope`, and anything outward (sending a reply, publishing) in the persona's
+`mention_tools` so it waits for an approve click. In a project that is not a git
+repository, `mutates=True` is refused on every run, and the dry run says so up front.
+
+Verify from the generated harness directory:
+
+```bash
+uv run python bin/smoke.py
+uv run python harness.py --once --dry-run --no-slack
+```
+
+`HEARTBEAT.md` and `.the-world/agent-scope.json` are where you confirm the worker is
+registered with the scope you declared.
+
+Defer Slack credentials and app provisioning until local verification passes, unless the
+user has them ready or asks for Slack now. When connecting, ask for the channel and the
+approver, and nothing about the Slack plan: one app serves every persona, so the free
+plan's app limit never matters. Say in one line that on a free plan messages vanish past 90
+days, and keep anything that must outlive that in a file rather than a thread. One Slack app serves every
+persona: it is the main persona, and the others post through it under their own name and
+icon with `chat:write.customize`, so a free plan's 10-app limit never counts personas. Give
+a persona its own app (`bot_token_env`) only when the user wants it to have its own Slack
+profile. Real tokens go in `env/harness.env`, never a committed file.
+
+A persona has two picture fields, read by different places. `Persona.portrait` is a local
+image file inside the harness (PNG/JPEG/WebP, 2 MB or less) that the world map embeds;
+`Persona.icon_url` is a public http(s) image URL that Slack and Discord show beside the
+persona's messages. A harness written before `icon_url` existed may hold that URL in
+`portrait`: chat still uses it when `icon_url` is empty, and the world map draws a name card
+for it and prints a warning, so move it to `icon_url`.
+
+Say what a persona without its own app is, before the user finds out. Its messages go
+through `chat.postMessage` with `username` and `icon_url` (Slack also takes `icon_emoji`;
+the kit does not send it). It is not a Slack account: nobody can @-mention it, and clicking
+its name opens the main app's profile. A message's name and icon cannot be changed with
+`chat.update` once it is posted, so messages sent before the icon was set keep the main
+app's icon. The icon must be a public URL. A file uploaded to a Slack channel is not one,
+because it needs a workspace login. Use a custom emoji's image (`emoji.slack-edge.com`) or
+public image hosting, and only an image you made or have the right to use. An existing
+Slack app's avatar (`avatars.slack-edge.com`) also works; one stayed reachable right after
+its app was deleted, but nothing guarantees it stays that way, so prefer the other two for
+anything meant to last.
+
+People in a dedicated channel often just type, without an @-mention, and read the
+silence as a broken bot. Ask whether the harness's channel is its own. If it is, offer
+`SlackConfig(respond_to_channel_messages=True)`: a plain message there goes to the main
+persona, which answers in a thread. Relay channels, bots, and edits still need a mention.
+
+Create the app with the Slack CLI rather than by hand. Write `slack-app/slack-apps.json`
+(prefix, description, `team` — the workspace ID from `slack auth list` — and one entry for
+the main persona with its key, display name, and the bot- and app-token variable names
+`harness.py` reads, marked `main`; add an entry for another persona only if it gets its own
+app). Fill `team`: without it the CLI asks which workspace, and a shell with no terminal
+(yours, or the user's `!`) cannot answer. Slack accepts any script in the app name but only
+ASCII letters, digits, `.`, `_` and `-` in the bot user's name. When the display name is not
+ASCII, the main app's bot is named after the prefix (`@lighthouse`), and a persona with its
+own app `<prefix>-<key>`; set `bot_username` on the entry to choose another. Then have the user run
+`uv run python bin/slack-provision.py` in their own terminal, since the CLI may ask which
+workspace or whether to request admin approval. It needs `slack` installed and one
+`slack login`, creates and installs the app from the manifest template with no browser
+click, and writes the tokens into `env/harness.env` without printing them. Re-running it
+skips apps that already have tokens. Read its summary rather than assuming: a pending
+admin approval or a missing app-level token is reported there, with the next step. Without
+the CLI, or if the user prefers, fall back to pasting `templates/slack-manifest.json.tmpl`
+at api.slack.com.
+
+Never ask the user to paste a token into the chat, and never `cat`, print, or read back
+`env/harness.env`; a chat transcript is not a secret store. Tokens reach that file only
+through `bin/slack-provision.py` or the user editing it directly in their own editor. To
+check whether a value is filled in, rely on the provisioner's summary or the harness's
+startup line, not on the file's contents.
+
+Don't ask the user to look up the channel ID or their member ID. Have them run
+`uv run python bin/slack-pair.py --prefix <PREFIX>`, invite the bot to the channel, and
+say `@<bot> 안녕` there: the script reads the channel and the speaker from that one
+event, proposes the speaker as the approver, writes both on a yes, and answers in the
+thread. Only if that cannot run, tell them where to find each: the channel ID is at the
+bottom of the channel's details (`C…`), a member ID under the profile's ⋮ → Copy member ID
+(`U…`). A public channel is joined by the bot itself at startup; a private one needs the
+invite.
+
+Fill the installer's `README.md` before you finish: replace every `…` with this
+harness's real file for each change (voice, schedule, target, procedure, Slack, adding a
+character) and where reports land, in the user's language. It is the page a person opens
+without you; `WORLD.md` is not.
+
+Give the harness a history. Upgrading re-installs the kit and deletes its trees first, and
+`git diff` is then the only record of what changed, so a harness outside any git repository
+gets `git init` and one local commit after verification passes (never a push; `.gitignore`
+already keeps tokens, state, and task output out). A harness inside an existing repository
+is the user's to commit: leave it and say so.
+
+Finish by telling the user the harness path, the project it works on, and the profile it was
+installed for. Give each worker's job, when it runs next in their time zone, and what it
+does not check. Say which checks actually passed, what remains unverified, and one next
+action. Also say that nothing runs unless `harness.py` is running: the kit sets up no
+service, so a reboot stops it until the user starts it again. If a worker runs on a
+schedule or a poll, offer once to keep it running ("상시 실행을 원하면…"), and do nothing
+more unless they say yes. On yes, run `uv run python bin/ops-kit.py` on the machine the
+harness runs on, from the harness (`--notify --prefix <PREFIX>` once Slack is connected, if they want
+restarts announced there). It only writes `scripts/`. Show the commands it prints that register the
+watchdog and let the user run them; don't run them yourself. Fill the README's "Stopping it
+on purpose" rows from that output: with a watchdog, remove the watchdog before `down`.
+On Windows it writes PowerShell scripts and a Task Scheduler task to register with
+`schtasks`; there `down` stops a run in progress without waiting for it, so say that.
+`docs/operations.md` has the rest. Either way, say that the ops word starts, stops,
+restarts and checks on it from now on, and sets up the watchdog later if they want it.
+The harness needs neither this plugin nor the kit to run. Re-running the installer is only
+for upgrades.
+
+End the report with one line telling the user to open a new session in the harness
+directory, with its real path: `cd <harness> && claude` when you scaffolded the words for
+Claude Code, `cd <harness> && codex` for Codex (in Windows PowerShell 5.1, `cd <harness>;
+claude`). Say that the four words and the guard hooks load only in that session, not in
+the one you are in. This is the last line, after the next action. For a Korean-speaking
+user:
+
+> 이제 새 터미널에서 `cd ~/code/my-app-world && claude`로 하네스 세션을 여세요.
+> enlist·rig·drill·helm 명령과 가드 훅은 거기서만 동작해요.

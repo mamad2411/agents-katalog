@@ -1,0 +1,199 @@
+---
+name: review-prompt-composer
+description: "Compose one repository-local, copy-ready Markdown prompt for another team or AI agent to review Git changes in the same working tree. Use for prompt-only requests covering committed ranges, staged, unstaged tracked, untracked, or all uncommitted changes when the reviewer can read the same repository and index. Persist under $repo_root/.review-handoff/prompts/ with branch-aware naming, 24-hour expiration, strict scope evidence, and a Review-Prompt-ID. Do not execute the review, run tests, modify reviewed code, commit, stage, stash, push, send the prompt, duplicate code, or use when the receiver lacks working-tree access. Use agentic-review-handoff to execute reviews, validate returned feedback, or run review-fix-re-review loops."
+metadata:
+  author: adonis
+  version: "2.1.2"
+---
+
+# Review Prompt Composer
+
+Generate one authoritative Markdown review prompt inside the current repository. Treat the shared working tree as the only source of reviewed code; never duplicate changes into delivery artifacts.
+
+## Workflow
+
+### 1. Resolve repository identity and scope
+
+Run:
+
+```bash
+git rev-parse --show-toplevel
+git rev-parse --abbrev-ref HEAD
+git rev-parse HEAD
+git status --short
+```
+
+Map the request to exactly one scope:
+
+| User intent                           | Canonical scope   | Includes                                   | Excludes                 |
+| ------------------------------------- | ----------------- | ------------------------------------------ | ------------------------ |
+| current/local/all uncommitted changes | `all-uncommitted` | staged + unstaged tracked + untracked      | nothing                  |
+| staged only                           | `staged-only`     | index changes                              | unstaged + untracked     |
+| unstaged only                         | `unstaged-only`   | tracked working tree relative to index     | staged + untracked       |
+| untracked only                        | `untracked-only`  | `git ls-files --others --exclude-standard` | tracked changes          |
+| branch or commits                     | `ref-range`       | resolved requested refs                    | other working-tree state |
+
+Use the user's explicit scope without another confirmation. Ask only when different interpretations materially change the reviewed files. Do not fold untracked files into `unstaged-only`.
+
+This skill requires the receiver to read the same repository and working tree. If that premise is false, stop because the requested delivery mode is unsupported.
+
+### 2. Collect scope evidence
+
+Use read-only evidence:
+
+| Scope             | Commands                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `all-uncommitted` | `git diff --cached --stat`, `git diff --cached`, `git diff --stat`, `git diff`, `git ls-files --others --exclude-standard` |
+| `staged-only`     | `git diff --cached --stat`, `git diff --cached --name-status`, `git diff --cached`                                         |
+| `unstaged-only`   | `git diff --stat`, `git diff --name-status`, `git diff`                                                                    |
+| `untracked-only`  | `git ls-files --others --exclude-standard`, then read each in-scope file                                                   |
+| branch range      | `git log --oneline "$base".."$head"`, `git diff --find-renames "$base"..."$head" --stat`, full diff                        |
+| commits           | `git show --find-renames --stat "$sha"` and full show for every resolved SHA                                               |
+
+Untracked nested Git repositories and other non-file, non-symlink entries are unsupported: the writer and freshness check stop with a relative-path error. Define a separate explicit review scope for a nested repository; do not silently omit it or recursively read its contents. This does not affect scopes such as `staged-only` that exclude untracked entries.
+
+If the selected scope is empty, stop without writing a prompt. Build an evidence-backed inventory with repository-relative paths, Git status, and concrete changes. Include rename, delete, binary, mode, and public-contract changes; do not invent intent.
+
+### 3. Gate sensitive prompt content
+
+Before writing repository paths, summaries, logs, remotes, or background into the prompt, inspect the material for credentials, private keys, tokens, cookies, `.env` values, credential-bearing URLs, internal addresses, personal data, and other content the receiver should not receive.
+
+- Never print a suspected secret value.
+- Report only the repository-relative path and risk type.
+- Redact only when review completeness remains intact.
+- Stop when safe redaction would invalidate the review.
+
+Shared-worktree access does not weaken this gate.
+
+### 4. Define falsifiable objectives and checks
+
+Write the central claim as a target the reviewer must try to disprove. Label only user-supplied intent as `用户声明的待验证目标`; do not add inferred guarantees to that claim. Put additional evidence-based hypotheses and safety checks under review focus, clearly as reviewer checks. If diff evidence conflicts with the claim, report the conflict before composing the prompt.
+
+Read applicable `AGENTS.md`, repository docs, package scripts, and CI configuration to find exact test, lint, typecheck, or build commands. Record commands and observable expected results; do not run them or claim they pass. Omit the checks section when reliable commands cannot be established, and state why.
+
+### 5. Compose the prompt body
+
+Create this body with actual evidence. Include `{{REVIEW_PROMPT_ID}}`, `{{SCOPE_DIGEST}}`, and `{{VERIFY_COMMAND}}` exactly once each; the writer replaces them atomically.
+
+Summarize changes in prose with repository-relative paths; do not paste source code or diff blocks into the prompt. The reviewer must read the current working tree through the scope checks above. Keep every user-included path in scope throughout the prompt. Discuss change-grouping concerns separately; do not ask the reviewer to exclude or reclassify explicitly included files as out of scope.
+
+````markdown
+# 审核任务：<repository and change summary>
+
+## 工作区与范围
+
+仓库：`<absolute repository root>`
+分支：`<actual branch>`
+起始 HEAD：`<actual SHA>`
+审核范围：`<canonical scope>`
+明确排除：<actual exclusions>
+生成时状态：
+
+```text
+<exact git status --short output>
+```
+
+生成时 scope digest：`{{SCOPE_DIGEST}}`
+
+开始审核前先运行 writer 提供的只读 freshness check：
+
+```bash
+{{VERIFY_COMMAND}}
+```
+
+只有它返回 `status: fresh` 才继续。`legacy_prompt_has_no_scope_digest`、HEAD/branch 变化或 `scope_digest_mismatch` 都表示提示词已失效。随后运行：
+
+```bash
+git rev-parse --show-toplevel
+git rev-parse HEAD
+git status --short
+```
+
+仓库或 HEAD 不一致时，停止并报告提示词已失效。完整 `git status` 只是上下文，不是独立 freshness 门禁：若变化只发生在提示词明确排除的路径，且 writer 的 `--verify-prompt` 对所选 canonical scope 返回 `status: fresh`，提示词仍可继续。若状态变化改变了 scope membership、影响 in-scope 内容，或 verifier 返回非 fresh，则停止。无论状态路径是否相同，仍须读取当前完整 in-scope diff / untracked 内容并逐项核对；`scope_digest` 才是所选范围内容的新鲜度权威。
+
+## 待验证目标
+
+**用户声明的待验证目标：<falsifiable invariant>。请主动寻找反例。**
+
+## 改动清单
+
+1. `<repository-relative path>` — <Git status and evidence-backed change>
+
+## 审核重点
+
+- <counterexample and regression focus>
+- <boundary, security, compatibility, or public-contract risks>
+
+## 输出要求
+
+审核结果第一行必须原样返回：
+
+Review-Prompt-ID: `{{REVIEW_PROMPT_ID}}`
+
+1. 给出总体结论：通过 / 有保留通过 / 阻塞。
+2. 按严重程度列出发现，并附仓库相对路径、行号或 diff hunk 证据。
+3. 对改动清单逐项标注核对结果。
+4. 列出每条检查命令的实际结果；未运行时说明原因。
+````
+
+Only when step 4 establishes reliable repository commands, insert this section before output requirements:
+
+````markdown
+## 检查命令
+
+```bash
+<exact repository-defined commands>
+```
+
+预期：<observable result; never claim it already passed>。
+````
+
+Otherwise omit the checks heading entirely and state the reason under review focus. Do not leave any other placeholder in the final body.
+
+### 6. Persist through the writer
+
+Locate this skill's directory, save the composed body to a repository-external temporary UTF-8 file with an available file-writing tool, then run:
+
+```bash
+python3 <skill-directory>/scripts/write_review_prompt.py \
+  --repo "$repo_root" \
+  --scope all-uncommitted \
+  --body-file "$temporary_body"
+```
+
+`ref-range` 还必须传已解析的 `--base "$base_sha" --target "$target_sha"`；其他 scope 不传这两个参数。writer 按 scope 计算 canonical SHA-256：tracked/staged diff 使用 Git binary diff，相关 untracked 文件用 NUL-safe 路径、类型、mode 与原始内容 framing。禁止另写近似算法。
+
+Use the canonical scope from step 1. The script:
+
+- ensures `$GIT_COMMON_DIR/info/exclude` contains `/.review-handoff/` without duplicates;
+- archives expired prompts for the current branch without deleting them;
+- writes under `.review-handoff/prompts/active/<branch_slug>/`;
+- derives prompt `branch_slug` by lowercasing, replacing `/` and `\` with `-`, replacing remaining non-`[a-z0-9._-]` runs with `-`, and trimming punctuation;
+- uses local `YYYY-MM-DD_HH-mm-<scope_slug>.md` names with collision suffixes;
+- writes UTC `created_at` and `expires_at` values with a 24-hour lifetime;
+- replaces the prompt ID token and verifies the artifact stays ignored;
+- replaces the digest / verify-command tokens, writes `format_version: 2` plus `scope_digest` / resolved range metadata, and provides a read-only `--verify-prompt` command using the same algorithm;
+- fails before final output on malformed bodies or high-confidence sensitive content.
+
+Read the JSON result, delete the temporary body, then read the final prompt file completely. Verify its path, ID, scope, HEAD, expiration, required headings, and absence of unresolved tokens before reporting success.
+
+### 7. Return the artifact
+
+Do not duplicate the full prompt in chat. Return only:
+
+- a clickable absolute path to the authoritative Markdown file;
+- `prompt_id`, canonical scope, `scope_digest`, and expiration;
+- a short instruction to open and copy the file to the reviewer;
+- any non-destructive archive warnings from the writer.
+
+When feedback returns, invoke `agentic-review-handoff`; it can resolve the echoed `Review-Prompt-ID` and validate findings against current code.
+
+## Guardrails
+
+- Write only the prompt artifact and the repository-local exclude entry needed to hide `.review-handoff/`.
+- Never modify reviewed source, tests, configs, index, HEAD, tracked ignore files, or repository configuration.
+- Never run checks, commit, stage, unstage, stash, push, or send the prompt.
+- Never overwrite an active or archived prompt; create a collision suffix.
+- Never delete expired or malformed prompts automatically.
+- Never assume a prompt summary proves a reviewer finding.
+- Never treat matching HEAD and status paths as content freshness. Require `--verify-prompt` to return `fresh`, then reconcile the current full scope diff with the inventory.

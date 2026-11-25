@@ -1,0 +1,215 @@
+---
+name: soleri-subagent-driven-development
+tier: default
+description: 'Triggers: "use subagents", "parallel agents", "subagent driven", "isolated execution". Decomposes work into isolated units, dispatches subagents.'
+---
+
+# Subagent-Driven Development
+
+Decompose work into isolated units, dispatch subagents via the Agent tool, merge results back. You are the orchestrator — you make all decisions, subagents execute.
+
+**Announce at start:** "I'm using the subagent-driven-development skill to dispatch isolated agents."
+
+## The Orchestrator Contract
+
+**You are the boss. Subagents are the crew.**
+
+1. **All decisions stay with the orchestrator.** Research the task, consult the vault, decide the approach. Subagents receive exact specs — scope, file boundaries, acceptance criteria. They execute, they don't decide.
+2. **Subagents MUST NOT create plans.** Only the orchestrator creates plans. Subagent prompts must explicitly state: "Do NOT create plans, do NOT call planning tools."
+3. **If a subagent hits ambiguity, it returns — it doesn't guess.** The orchestrator resolves, then re-dispatches.
+4. **The orchestrator reconciles all work.** After subagents return, the orchestrator reviews changes, merges, captures knowledge.
+
+## Hybrid Agent Routing
+
+Not all subagents are equal. Route by complexity:
+
+| Signal                                | Agent Type                | Why                           |
+| ------------------------------------- | ------------------------- | ----------------------------- |
+| Single file, clear spec, no decisions | **Claude Code worker**    | Fast, low overhead            |
+| Approach already in parent plan       | **Claude Code worker**    | Spec is decided               |
+| 3+ files, cross-cutting concerns      | **Soleri agent instance** | Needs vault, brain, lifecycle |
+| Unresolved design decisions           | **Soleri agent instance** | Needs judgment                |
+| New dependencies or architecture      | **Soleri agent instance** | Needs full context            |
+
+**User overrides:**
+
+- "Use full agent for everything" → all Soleri agent instances
+- "Just use workers" → all Claude Code workers
+- Default: hybrid routing
+
+## Model Selection
+
+Subagent-type (worker vs instance) picks _who_ runs the task. Model selection picks _how much brain_ they bring. Both decisions happen at dispatch, independently.
+
+### Tier rubric
+
+| Tier     | Model    | Subagent purpose — trigger patterns                                                                                                                             |
+| -------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| simple   | `haiku`  | Exploration, file/symbol lookup, pattern search, single-fact retrieval, dedup detection, quick classification, data extraction from known formats               |
+| standard | `sonnet` | Code implementation, refactors, test writing, documentation, migrations, data transformation, routine reviews, general research                                 |
+| complex  | `opus`   | Architecture review, deep-review, plan creation, grading/scoring, critical bug diagnosis, cross-cutting design decisions, ambiguity resolution, nuanced writing |
+
+### Fallback chain
+
+If the target model is unavailable (rate-limited, quota exceeded, provider down):
+
+- **Opus unavailable** → fall back to Sonnet with a warning, proceed
+- **Sonnet unavailable** → fall back to Haiku ONLY if the task is clearly simple; otherwise pause and report
+- **Haiku unavailable** → pause and report, don't escalate upward
+
+**Never silently fall back upward** (Haiku→Sonnet, Sonnet→Opus). Cost-aware fallback flows downward only; upward moves require the user to say so.
+
+### Override contract
+
+The user can pin a model for any dispatch:
+
+- "Dispatch task-3 on Opus" → honor it, even if rubric says Sonnet
+- "Run this on Haiku" → honor it, even if rubric says Opus
+- Default: rubric applies
+
+Explicit pin always wins over the rubric.
+
+### Dispatch decision log
+
+Before every Agent call, state one line aloud:
+
+> Dispatching <subagent description> on <model> (tier=<simple|standard|complex>, reason=<pattern match>).
+
+Examples:
+
+> Dispatching "Find all call sites of parseUrl" on haiku (tier=simple, reason=exploration).
+> Dispatching "Implement parser refactor" on sonnet (tier=standard, reason=code implementation).
+> Dispatching "Audit migration safety" on opus (tier=complex, reason=architecture review).
+
+Overrides stated explicitly:
+
+> Dispatching "Routine doc edit" on opus (tier=standard, overridden by user request).
+
+One line, before the Agent call. Auditable after the fact.
+
+## When to Dispatch
+
+| Signal                                        | Dispatch?                                |
+| --------------------------------------------- | ---------------------------------------- |
+| 2+ independent tasks touching different files | Yes — no conflict risk, parallel speedup |
+| Risky/experimental work (spike, prototype)    | Yes — isolate blast radius in a worktree |
+| Large refactor across unrelated modules       | Yes — each module is a clean unit        |
+| Single-file change or trivial fix             | **No** — overhead exceeds benefit        |
+| Tasks with sequential dependencies            | **No** — cannot parallelize              |
+| Tasks modifying the same file                 | **No** — guaranteed merge conflicts      |
+
+## The Process
+
+### Step 1: Research & Decide (Orchestrator only)
+
+Read all relevant files. Consult the vault for patterns. Make every design decision. Define the exact spec for each subagent task: files to touch, approach to use, acceptance criteria.
+
+```
+YOUR_AGENT_core op:memory_search
+  params: { query: "subagent decomposition" }
+
+YOUR_AGENT_core op:brain_recommend
+  params: { query: "<task domain>" }
+```
+
+### Step 2: Decompose & Route
+
+Break work into discrete units. For each, determine: files involved, dependencies on other units, conflict risk, complexity. Assign agent type per the routing table.
+
+### Step 3: Dispatch
+
+Present the dispatch table to the user:
+
+```
+## Dispatching N tasks in parallel
+
+| # | Task | Agent | Why |
+|---|------|-------|-----|
+| 1 | Description | Worker / Instance | Routing reason |
+```
+
+Each subagent prompt must include:
+
+- Task scope and file boundaries
+- Acceptance criteria
+- "Do NOT create plans. Do NOT make design decisions. Execute this spec exactly."
+- For Soleri instances: "Activate, execute, run orchestrate_complete when done."
+
+Launch all independent subagents in a **single message** so they run in parallel.
+Use `isolation: "worktree"` for file-modifying tasks.
+
+### Step 4: Review, Merge, and Clean Up
+
+For each returning subagent:
+
+1. **Review** — read actual file changes (do not trust self-reports alone), verify tests pass, check scope compliance
+2. **Merge** — `git merge` or `git cherry-pick` from the worktree branch, one at a time
+3. **Test** — run the full suite after each merge; only proceed if green
+4. **Clean up the branch** — after merge is confirmed and tests pass:
+   ```bash
+   git branch -D <subagent/taskId>              # delete local branch
+   ```
+   Worktree branches are local-only — never push them to remote.
+5. **Conflicts** — resolve manually, re-run tests, capture as anti-pattern
+
+**Branch cleanup is mandatory.** Every merged branch must be deleted immediately. Do not leave branches for later cleanup — they accumulate fast during parallel execution.
+
+### Step 5: Reconcile & Report
+
+After all merges, report to the user:
+
+**Minimal (default):**
+
+```
+N/N complete. M patterns captured to vault.
+  -> Decisions: [any design decisions the orchestrator made]
+```
+
+**Detailed (on request):**
+
+```
+| # | Task | Agent | Status | Knowledge |
+|---|------|-------|--------|-----------|
+| 1 | Desc | Worker | Done | -- |
+| 2 | Desc | Instance | Done | 2 patterns |
+```
+
+Capture learnings to vault. Run `orchestrate_complete` for the parent plan.
+
+```
+YOUR_AGENT_core op:capture_knowledge
+  params: { title: "<learned pattern>", description: "<merge strategy or decomposition insight>", type: "pattern", domain: "orchestration", tags: ["subagent", "parallel-execution"] }
+```
+
+## Worktree & Branch Cleanup Guarantee
+
+Worktree branches are **local-only** — never push them to remote. Four layers ensure nothing accumulates:
+
+1. **Per-task:** `finally` block in dispatcher removes worktree and local branch after each task
+2. **Per-merge:** Orchestrator deletes local branch immediately after confirmed merge (Step 4)
+3. **Per-batch:** `cleanupAll()` runs after all subagents complete
+4. **Per-session:** `SessionStart` hook prunes orphaned worktrees and deletes merged `subagent/*` and `worktree-agent-*` local branches
+
+## Anti-Patterns
+
+| Anti-Pattern                                 | Why It Fails                                        |
+| -------------------------------------------- | --------------------------------------------------- |
+| Subagent creating its own plan               | Stale plans accumulate, lifecycle never completes   |
+| Subagent making design decisions             | Inconsistent approaches, orchestrator loses control |
+| Dispatching for a 5-line fix                 | Startup overhead exceeds the work                   |
+| Parallel dispatch of dependent tasks         | Second agent works on stale assumptions             |
+| Skipping worktree isolation for nearby files | Silent overwrites between agents                    |
+| Trusting self-reports without reading code   | Agents miss edge cases or misunderstand scope       |
+| Dispatching 10+ agents at once               | Review bottleneck shifts to the controller          |
+| Not cleaning up worktrees after merge        | Disk bloat, stale branch accumulation               |
+
+## Merge Strategy
+
+| Situation                           | Strategy                                                 |
+| ----------------------------------- | -------------------------------------------------------- |
+| Completely separate directories     | Fast-forward merge, no conflicts expected                |
+| Different files in the same package | Merge one by one, test after each                        |
+| Unexpected conflict                 | Resolve manually, re-run tests, capture as anti-pattern  |
+| Subagent result fails review        | Dispatch fix subagent into same worktree (max 2 retries) |
+
+**Related skills:** parallel-execute, executing-plans, verification-before-completion

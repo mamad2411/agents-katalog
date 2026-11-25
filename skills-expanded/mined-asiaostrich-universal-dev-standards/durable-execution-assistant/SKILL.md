@@ -1,0 +1,111 @@
+---
+source: ../../../../skills/durable-execution-assistant/SKILL.md
+source_version: 1.0.0
+translation_version: 1.1.0
+last_synced: 2026-10-11
+source_hash: b7b644cafbce
+status: current
+description: |
+  [UDS] 引导容错工作流设计，包含检查点、重试策略与回滚计划。
+  Use when: 长时间运行的工作流总是中途失败、设计检查点的粒度、选择重试或退避策略。
+  Not for: 处理正在发生中的线上事故——请用 /incident；部署回滚的实现机制——请用 /deploy。
+  Keywords: durable execution, checkpoint, retry, backoff, idempotency, rollback, 持久执行, 检查点, 重试策略, 幂等.
+---
+
+# 持久执行助手
+
+> **语言**: [English](../../../../skills/durable-execution-assistant/SKILL.md) | 简体中文
+
+引导容错工作流程设计，包含自动恢复、检查点与重试策略。
+
+## 使用方式
+
+| 命令 | 用途 |
+|------|------|
+| `/durable` | 启动交互式故障恢复引导 |
+| `/durable --checkpoint` | 设计检查点策略 |
+| `/durable --retry` | 配置重试策略 |
+| `/durable --rollback` | 规划回滚程序 |
+| `/durable <workflow>` | 分析特定工作流的持久性 |
+
+## 核心概念
+
+| 概念 | 定义 |
+|------|------|
+| **检查点** | 在已知正确的位置储存执行状态 |
+| **重试** | 自动重新尝试失败的操作 |
+| **回滚** | 失败时回复到上一个已知正确状态 |
+| **幂等性** | 操作重新执行时产生相同结果 |
+| **断路器** | 失败率超过阈值时停止重试 |
+
+## 故障恢复决策树
+
+```
+侦测到故障
+├── 是否为暂时性？（网络、超时）
+│   ├── 是 → 带退避的重试
+│   └── 否 → 状态是否损坏？
+│       ├── 是 → 回滚至检查点
+│       └── 否 → 是否为逻辑错误？
+│           ├── 是 → 停止、回报、修复代码
+│           └── 否 → 带诊断信息升级处理
+```
+
+## 重试策略指南
+
+| 策略 | 使用时机 | 配置 |
+|------|---------|------|
+| **立即重试** | 罕见故障、快速操作 | 最多 2 次重试 |
+| **指数退避** | 网络/API 调用 | 基底 1s、最大 30s |
+| **断路器** | 下游服务问题 | 阈值 50%、窗口 60s |
+| **死信队列** | 重试后仍不可恢复 | 最多 5 次重试后排入队列 |
+
+## 检查点粒度
+
+| 粒度 | 使用场景 |
+|------|---------|
+| **每步骤** | 长管线（> 5 步骤） |
+| **每批次** | 批量数据处理 |
+| **每阶段** | 多阶段工作流程 |
+| **起始/结束** | 短暂的原子操作 |
+
+## 工作流程
+
+1. **侦测** - 识别故障类型与范围
+2. **诊断** - 判定根本原因类别
+3. **恢复** - 套用适当的恢复策略
+4. **验证** - 确认系统状态一致
+5. **继续** - 从上一个检查点继续
+
+## 使用示例
+
+```
+User: /durable deploy-pipeline
+AI: Analyzing deploy-pipeline for durability...
+    Steps: build → test → deploy → verify
+    Risk: deploy step has no rollback strategy.
+    Recommendation: Add checkpoint after test,
+    configure rollback for deploy using blue-green strategy.
+```
+
+## 下一步引导
+
+`/durable` 完成后，AI 助手应建议：
+
+> **持久性分析完成。建议下一步：**
+> - 执行 `/methodology` 选择适合的开发方法论 ⭐ **推荐**
+> - 执行 `/commit` 提交持久化设计变更
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| 1.0.0 | 2026-03-24 | 初始版本 |
+
+## AI 代理行为
+
+> 完整的 AI 行为定义请参阅对应的命令文件：[`/durable`](../../../../skills/commands/durable.md#ai-agent-behavior--ai-代理行為)
+
+## 授权
+
+CC BY 4.0

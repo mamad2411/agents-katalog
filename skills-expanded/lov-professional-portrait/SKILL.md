@@ -1,0 +1,215 @@
+---
+name: lov-professional-portrait
+description: >
+  把单人照片修成仍像本人的职业形象照：克制磨皮、面部提亮、去帽补发型、背景整理并做身份质检。Use when
+  the user mentions "职业照", "形象照", "精修人像", "professional headshot", "remove hat".
+license: MIT
+compatibility: >
+  Portable Agent Skills format. Requires an agent runtime with image viewing
+  and generative raster-image editing, such as image_gen or an equivalent
+  built-in image tool. No Python dependency is required.
+metadata:
+  author: lovstudio
+  version: "0.2.3"
+  tags:
+    - portrait
+    - headshot
+    - retouch
+    - identity-preserve
+    - photo-editing
+---
+
+# 职业形象照 · Professional Portrait
+
+Turn one source photo into a polished, believable professional portrait. The
+face should still look unmistakably like the same person; "more professional"
+must not become "a different, AI-perfect person."
+
+## Triggers
+
+### Activate when
+
+- “职业照”“形象照”“证件形象照”“精修人像”“磨皮提亮”“去掉帽子”“换发型”
+- "professional portrait", "headshot", "portrait retouch", "remove hat", or a
+  request for a business portrait, profile photo, skin retouch, brighter face,
+  or hairstyle cleanup.
+- A casual photo needs to become a professional headshot or profile image.
+- The user wants cleaner skin, brighter facial exposure, or a more polished
+  overall look without changing identity.
+- A hat, stray hair, or distracting background should be repaired.
+- The user is iterating with feedback such as "变化不明显", "更干净帅气一点",
+  or "只提亮面部".
+- The user wants a before/after or progressive comparison after the edits.
+
+### Do not activate when
+
+- The photo shows several people, or the goal is a different identity (face
+  swap, a fictional person).
+- The user wants a stylized portrait: a Riso print avatar goes to
+  `lov-riso-portrait`; a cinematic environmental portrait from a travel or
+  outdoor photo goes to `lov-spectacular-ps`.
+- A new image is generated from scratch: use `lov-image-creator`.
+- A caption bar or brand logo is added to an existing image: use
+  `lov-image-decorator`.
+
+## Skill Group Composition
+
+Read `references/skill-composition.md` before routing to or extending an
+adjacent Skill.
+
+## Core Principle
+
+Identity fidelity outranks beautification. Lock the following unless the user
+explicitly requests a change:
+
+- Face geometry, eyes, nose, lips, jaw, ears, and apparent age.
+- Skin tone family and recognizable facial details.
+- Expression, gaze, body proportions, pose, and camera perspective.
+- Clothing, accessories, framing, and background.
+
+Remove only temporary distractions by default. Preserve believable skin
+texture, asymmetry, and age-appropriate detail.
+
+## Workflow (MANDATORY)
+
+### Step 1: Inspect the edit target
+
+Identify the user's source photo as the **edit target**, not merely a style
+reference.
+
+- If the photo is a local file, view it with the runtime's image-viewing tool
+  before editing.
+- Check face visibility, lighting, sharpness, crop, background, clothing,
+  accessories, hair boundaries, and compression artifacts.
+- Never publish, upload as a public example, or add the user's portrait to a
+  repository unless the user separately asks for that.
+
+### Step 2: Infer the smallest sufficient brief
+
+Do not ask the user to choose from a long style menu when the request already
+has a clear outcome. Use these defaults:
+
+| User intent | Default treatment |
+|---|---|
+| "磨皮 / 干净一点" | Light skin cleanup with visible pores |
+| "提亮" | Lift face exposure and eye clarity; preserve skin tone |
+| "职业照 / 形象照" | Natural retouch + balanced light + polished crop/background |
+| "去帽子" | Reconstruct only the hidden hair/head region |
+| "帅气 / 精神" | Improve grooming, contrast, posture impression, and catchlights without reshaping the face |
+
+Ask one concise question only when the answer materially changes the result,
+such as whether to replace the background or what hairstyle to reconstruct.
+Use the user's prior messages and visible photo to infer everything else.
+
+### Step 3: Plan the passes
+
+Use the fewest generative edits possible because every extra pass can drift
+identity.
+
+1. **Base pass** — restrained retouch and lighting cleanup.
+2. **Structural pass** — only when requested: remove hat, rebuild hair, replace
+   background, or adjust wardrobe.
+3. **Correction pass** — one targeted fix after inspection, not another broad
+   makeover.
+
+When multiple changes are requested together and the edit tool handles them
+reliably, combine them into one identity-locked pass. Otherwise isolate the
+structural change.
+
+### Step 4: Build the edit prompt
+
+Classify the task as `identity-preserve`. Label the source image as:
+
+```text
+Image 1: edit target and identity reference.
+```
+
+Every prompt must include:
+
+- Intended use: professional profile photo or headshot.
+- Exact requested changes.
+- Identity and composition invariants.
+- Realistic skin and hair requirements.
+- A short avoid list.
+
+Read `references/prompts.md` and use the closest recipe. Keep the prompt
+specific to the current request; do not silently add wardrobe, background,
+body, or facial changes.
+
+### Step 5: Edit with the native image tool
+
+- Prefer the runtime's built-in generative image-editing tool.
+- Include the inspected source photo as the edit target.
+- Preserve source resolution and aspect ratio unless the user requests a crop.
+- Save non-destructively. Default filename:
+  `<source-stem>-professional-portrait-v1.png`.
+- If the user names a destination, save the selected final there.
+- Do not substitute a text prompt, SVG mockup, or CSS filter for the requested
+  raster portrait.
+
+### Step 6: Inspect at full image and face crop
+
+Read `references/quality-gate.md`. Check at least:
+
+1. Identity match.
+2. Natural skin texture and tone.
+3. Eyes, teeth, ears, jaw, and hairline integrity.
+4. Hat-removal seams or background edge artifacts.
+5. Coherent lighting, shadows, and sharpness.
+6. Professional framing without unrequested changes.
+
+If a check fails, make one localized correction and repeat the gate.
+
+### Step 7: Handle iterative feedback precisely
+
+Translate short feedback into one changed dimension:
+
+- "没太大区别" → increase only the requested retouch/brightness strength.
+- "脸不够干净" → refine blemishes and uneven tone; preserve pores and shape.
+- "再亮一点" → lift face exposure and midtones; do not whiten globally.
+- "风格变了" → restore original color, composition, clothing, and facial
+  character; reduce the edit scope.
+- "更职业" → improve light, background discipline, crop, grooming, and finish;
+  do not make the person older, richer, or more corporate by assumption.
+
+Repeat all identity invariants in every correction prompt.
+
+### Step 8: Deliver
+
+Return:
+
+- The final image inline when the runtime supports it.
+- The saved file path for project-bound or local-file work.
+- A concise list of intentional changes.
+- A note confirming what was preserved.
+
+If requested, create a separate before/after or progressive comparison board.
+Do not bake labels, watermarks, or marketing text into the portrait itself.
+
+## Completion Criteria
+
+The task is complete only when:
+
+- The final is recognizably the same person at first glance.
+- The requested improvement is visible at normal viewing size.
+- Skin and hair remain photographic rather than plastic or painted.
+- No unrequested identity, clothing, pose, or scene changes remain.
+- The original file is untouched and the final path is reported.
+
+## Runtime context (shared)
+
+运行前读取本 Skill 包的 `skill.yaml`，由宿主提供 `skill-runtime/v1` 上下文。字段解析顺序为：当前请求、项目上下文、个人 Preferences、品牌 Profile、通用默认值。
+
+- 只使用 Manifest 声明的字段；Profile 保存公开品牌事实，Preferences 保存个人工作偏好。
+- `required: true` 字段缺失时，按 Manifest 的问题配置向用户提出一个聚焦问题；用户明确同意后再保存回答。
+- 报错提供可复制的 `context_id`、字段路径与来源，诊断内容避开秘密、完整私人路径和原始配置。
+
+## 通用反馈闭环
+
+用户在 Skill 驱动任务中提出修改意见时，继续当前产物前必须执行：
+
+1. 先判断意见是 `task-specific`（仅本次）还是 `reusable`（可跨任务复用）。
+2. `task-specific` 只修改当前任务，不改 Skill。
+3. `reusable` 先确定作用域：领域规则先更新对应 canonical Skill；适用于所有 Skill 的规则先更新共享规范。
+4. 完成规则更新、版本、lint 与分发核验后，再把修改应用到当前任务。
+5. `reusable` 修改会使此前的“确认”“继续”“发吧”失效；完成当前产物修改和回读后必须停下，等待用户下一步指示，不自动进入发布、提交或其他外部写入。

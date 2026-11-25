@@ -1,0 +1,102 @@
+---
+name: repository-governance-lifecycle
+description: >-
+  For ADRs, DESIGN/DX FAQ edits, north_star_impact, stale-plan hygiene, ethics, brand tone, MoE on governance conflicts, and doc-lattice changes that outlive one repair.
+  Not for repo adopt/baseline, ecology compress/merge/retire, or product feature work—use repo-quality-system-lifecycle or native gates.
+license: MIT
+type: governance
+metadata:
+  author: skill-steward
+  version: "1.1.0"
+  category: governance
+---
+
+# Repository Governance Lifecycle
+
+## Concept bridge (read before procedural steps)
+
+Skill Steward procedures assume three portable lenses. If you only have this skill installed, load the digests in `references/` (they ship with the skill). Full essays live on docs.page.
+
+| Lens | One-line | When to apply | Digest | Full |
+|------|----------|---------------|--------|------|
+| **Engineering Stewardship** | Keep the repo ecology understandable and improvable via observe → decide → update → prove → preserve | Friction repeats or survives one session | [stewardship-loop.md](references/stewardship-loop.md) | [docs.page](https://docs.page/arenukvern/skill_steward/core/stewardship-loop) · [North Star](https://docs.page/arenukvern/skill_steward/NORTH_STAR) |
+| **Evolutionary simplicity** | Evolve toward lower future confusion (split / compress / promote / demote / delete / stay native) — not always fewer parts | Before adding, splitting, merging, or deleting a surface | [evolutionary-simplicity.md](references/evolutionary-simplicity.md) | [docs.page](https://docs.page/arenukvern/skill_steward/core/evolutionary-simplicity) |
+| **Generational architecture** | Choose the smallest useful layer (G0–G5); higher is not automatically better; mature stewardship can move down | Before promoting codegen, harness actions, or new abstractions | [generational-architecture-ladder.md](references/generational-architecture-ladder.md) · [structure-grammar.md](references/structure-grammar.md) | [docs.page](https://docs.page/arenukvern/skill_steward/core/generational-architecture-ladder) |
+
+**Install-world rule:** never rely on `../../docs/core/...` alone — those paths only work inside a skill_steward checkout. Prefer the digests above and absolute docs.page URLs.
+
+These lenses are not a new doctrine skill (see [DESIGN_FAQ](https://docs.page/arenukvern/skill_steward/DESIGN_FAQ)). This skill *applies* them; the digests *teach* them when the docs tree is not present.
+
+This is the central nervous system for governing an agent-operated repository. It applies to apps, libraries, tools, plugins, harnesses, and meta repos; Skill Steward itself remains a structural stewardship repo, not a domain tutorial catalog. It unifies ethics, branding, architectural decision logs (ADRs), and living documentation (FAQs) into a single, cohesive loop: **Decide → Document → Cleanup**.
+
+Whenever an agent proposes or executes a structural shift, claim change, durable policy change, or docs-lattice change, they must walk this loop. Routine repo repairs should keep the original goal and native gate first; use this governance loop only when the repair changes durable ownership, policy, evidence, ADR/FAQ truth, or plan hygiene.
+
+Ordinary work: [work discipline](references/work-discipline.md). Do not restate it.
+
+## Absorbed procedures
+
+These skills are superseded. Do not load them for new work.
+
+- **Mixture of Experts** — ADR-level `amends` / `conflicts` only. Define Expert Personas, keep an Integration contract, and label a missing_lens. Include a Generational Architecture Skeptic and Evidence / Validation QA when the change claims architecture or proof. Not a preflight for ordinary fixes.
+- **Vision alignment** — when the direction itself is uncertain, name the falsifier before writing another plan.
+- **Continuity boundaries** — status claims still need a mode, a handoff, and non-claims. A handoff does not create an owner.
+- **Docs refresh and public stories** — compress the living doc or disclose generated story material inside this loop. Do not open a parallel docs or storytelling queue.
+
+## The Governance Loop
+
+### 1. Check Ethics & Boundaries (NORTH_STAR)
+Before making any decision, check the repository's foundational charter and ethical baseline.
+- Read [Charter and Ethics](references/charter-and-ethics.md) to ensure your proposed changes do not violate the repository's moral boundaries (e.g. no hype; no domain tutorials inside Skill Steward; domain docs belong in the governed product repo when they are that repo's product).
+- Read [North Star Rules](references/north-star-rules.md) to understand the extension model.
+- Classify `north_star_impact` for durable structural changes: `none`, `applies`, `clarifies`, `sub_star`, `amends`, or `conflicts`. Use the protocol only when ownership, policy, evidence truth, ADR/FAQ truth, or the repo's center may change.
+- Ask the gate questions before editing durable governance surfaces: what pain triggered this; which North Star value path it serves; whether it is a mechanism or a new center; whether it changes what the repo owns or refuses; where the ADR is if it does; and what check prevents the mechanism becoming the mission if it does not.
+- Route `none` and `applies` through the native workflow, `clarifies` through FAQ/skill/map/check updates, `sub_star` through an explicit parent/child boundary, and `amends` or `conflicts` through an ADR plus a North Star diff before implementation.
+- `none`, `applies`, and `clarifies` do not wait on a Mixture of Experts review. MoE is optional critique for ADR-level `amends` / `conflicts`, not a preflight. Shipping repos should keep `moe_required_for_architecture: false`.
+- Forward plans stay a spine. Fold new work into an open item or one deferred note. Do not open a parallel queue. When the item lands, extract durable truth and delete the plan instruction.
+
+### 2. Log the Decision (ADRs)
+If you have made an architecturally significant decision (or triggered a T1-T8 threshold), you must write it down. Decisions are not valid if they only live in an agent's context window.
+- Follow the formatting rules in [ADR Format](references/adr-format.md) to write a formal Decision Record.
+
+### 3. Update Living Docs (FAQs)
+Decisions change how the repository operates day-to-day. You must update the living system of record.
+- Update `docs/DESIGN_FAQ.mdx` (the *Why*) or `docs/DX_FAQ.mdx` (the *How*).
+- Follow the exact structuring rules in [FAQ Format](references/faq-format.md) to ensure questions are searchable and direct.
+
+### 4. Apply Brand & Tone Identity
+When writing ADRs, FAQs, or any user-facing documentation, you must adhere strictly to the repository's tone.
+- Do not use corporate marketing jargon.
+- Review the banned word list in [Brand Guidelines](references/brand-guidelines.md) (e.g. do not use "unlock", "supercharge", "ultimate").
+
+### 5. Plan Hygiene (Cleanup)
+Never leave stale planning artifacts (`task.md`, `implementation_plan.md`) as permanent documentation.
+- Once the ADR and FAQs are updated, your knowledge is durable.
+- Extract any remaining useful context and delete or ignore the scratch files.
+- For stale or overlapping non-plan docs, choose one disposition before editing: keep, merge, move to ADR, move to FAQ, move to skill, move to check, move to evidence, move to consumer proof, or delete.
+- Ask what existing doc can shrink or disappear because of this change.
+- Keep canonical architecture in the owning repo; consumer repos should carry adoption proof, local deltas, blocked state, and links to the owner.
+- For broader surface-shape decisions such as split, compress, promote, demote, delete, or stay native, route through [repo-quality-system-lifecycle](../repo-quality-system-lifecycle/SKILL.md) and [Evolutionary simplicity](references/evolutionary-simplicity.md) ([full](https://docs.page/arenukvern/skill_steward/core/evolutionary-simplicity)) instead of inventing a governance-only doctrine.
+- Before upgrading steward, adoption, harness-ready, or maturity language in an ADR/evidence note, run `steward claim check --claim <claim> --evidence <path> --json`. Treat `not_rejected` as a negative-gate result, not acceptance.
+
+### 6. Route Evidence Deliberately
+Do not turn every run, plan, or discussion into evidence. Use [Evidence artifacts](https://docs.page/arenukvern/skill_steward/core/evidence-artifacts) as the routing rule:
+
+- ADR: durable decision, trade-off, status, or consequence.
+- FAQ: standing why/how that humans and agents will ask again.
+- Skill: repeatable agent procedure or interpretation loop.
+- Check/tool/schema/test: deterministic drift, freshness, shape, or blocked-state detection.
+- Current ledger: weakest true current status and rerun route.
+- Evidence artifact: real run proof, blocked state, pattern review, PDSA loop, postmortem, unknown case, or reference that protects a claim or changes future behavior.
+- Delete/remove: completed checklist, stale plan, or template once useful truth has been extracted.
+
+When you create or materially update an evidence artifact, use the canonical envelope in [Evidence artifacts](https://docs.page/arenukvern/skill_steward/core/evidence-artifacts). ADR 0023 explains why that envelope exists.
+
+## Install
+
+```bash
+npx skills add arenukvern/skill_steward --skill repository-governance-lifecycle
+```
+
+## Sources
+
+See [references/sources.md](references/sources.md).

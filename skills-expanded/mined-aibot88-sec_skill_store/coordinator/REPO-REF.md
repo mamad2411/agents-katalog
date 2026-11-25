@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/coordinator/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Autonomous penetration testing coordinator using ReAct methodology. Automatically activates when user provides a target IP or asks to start penetration testing. Orchestrates reconnaissance, exploitati

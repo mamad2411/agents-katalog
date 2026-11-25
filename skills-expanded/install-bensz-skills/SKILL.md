@@ -1,0 +1,436 @@
+---
+name: install-bensz-skills
+category: normal
+description: 当用户需要将生产 Skill 安装或更新到系统级目录，或需要创建、检查、更新统一的 benszapi Conda 运行环境与其中的 BSK 等托管 Python 工具时使用。默认处理 alpha；只有用户明确指定时才处理 beta；支持 72 小时 TTL 到期后的静默增量更新。
+metadata:
+  author: Bensz Conan
+  keywords:
+    - install-bensz-skills
+---
+
+# Install Bensz Skills（系统级安装器）
+
+## 目标
+
+当需要把本仓库 skills/alpha 下的生产 skills 安装到系统级（默认同时安装到 Codex: ~/.codex/skills 和 Claude Code: ~/.claude/skills），以便在任意项目/对话中可被发现与调用时使用。默认不安装 skills/beta；只有显式指定 beta 源目录时才处理 beta skill。使用 MD5 哈希进行版本控制，仅安装有更新的 skills；支持 --skill 指定单个或少量技能安装/更新、强制覆盖安装、指定单一目标安装和远程安装模式（--remote --check/--auto）。远程场景另提供版本预检脚本，默认只筛选包含 `huangwb8` 的远程源。
+
+目的：把当前仓库 `skills/alpha/` 中的生产 skills（**包括 install-bensz-skills 自身**）**复制安装**到：
+
+- Codex：`~/.codex/skills/`
+- Claude Code：`~/.claude/skills/`
+
+从而让这些 skills 在**任意项目**里都能被发现与触发（不依赖当前 workdir，也不使用软链接）。
+
+## 流程
+
+### 输入
+
+#### 输入参数
+
+- **源目录**：默认从当前项目或祖先目录发现 `./skills/alpha/`；beta 仅在显式传入 `--source` 时使用。
+- **目标平台**：默认 Codex 与 Claude Code；可用 `--codex` 或 `--claude` 限定单一目标。
+- **安装选择**：可选 `--skill`、`--force`、`--dry-run`、`--source`，以及远程模式的 `--remote --check/--auto` 与源过滤参数。
+- **运行环境**：本地完整安装器要求 Python 3.11+；Python 3.8–3.10 仅支持标准库 bootstrap 的远程首次/应急安装。
+- **远程快速更新**：运行 `scripts/update_remote_skills.py`；它只影响远程安装，本地源码安装仍使用原有 MD5 策略。
+- **托管运行时**：默认使用安装器独占的 `~/.bensz-skills/envs/benszapi` Conda prefix；当前托管最新版生产 BSK，包清单由 `scripts/managed-runtime.json` 定义。
+- **静默更新**：宿主在新任务/会话入口可调用 `python3 "$INSTALLER" --silent-update`；它只在 72 小时状态过期时检查，更新托管运行时，并增量更新已安装技能。
+
+### 执行步骤
+
+#### 你要做的事（触发后必须执行）
+
+用户明确选择 `--remote --check` 仅授权下载、缓存和对比预览；安装/更新前仍按流程询问确认。用户明确选择 `--remote --auto` 才授权无确认的系统级安装/更新。未明确授权远程模式时，不进行远程下载或远程写入；本地模式仍按用户明确的安装请求执行本地源检查及系统级安装、更新或 legacy 清理。
+
+执行前先确认 `python3` 版本。Python 3.11+ 才能使用本地完整安装器；不要检查当前项目目录下是否存在 `./install-bensz-skills/scripts/install.py`，也不要把本地脚本作为优先入口，而应直接从系统级已安装位置查找：优先 `~/.codex/skills/install-bensz-skills/scripts/install.py`，其次 `~/.claude/skills/install-bensz-skills/scripts/install.py`。安装源目录默认从当前工作目录及其祖先目录自动识别当前项目的 `./skills/alpha/`，因此可从项目子目录运行；`./skills/beta/` 永不自动选中，只有用户明确传入 `--source ./skills/beta`（或其它 beta 根目录）时才允许安装 beta。
+
+Python 3.8–3.10 只能使用标准库 bootstrap 进行远程首次/应急安装，不得调用本地完整安装器；若任务要求安装本地源码、显式 beta 目录或运行 Kernel，应说明必须升级到 Python 3.11+。Python 3.8 以下不受支持。
+
+本地安装器默认不会扫描历史 `pipelines/skills/alpha/`；仅迁移旧仓库时可显式传入 `--legacy-source`。bootstrap 最低支持 Python 3.8，仓库开发、本地完整安装器和 Kernel 统一要求 Python 3.11+。两入口写入同一 manifest 核心契约：`schema_version`、`source`、`target`、`target_root`、`skills[]`（名称、MD5、状态、原因）和运行时间；本地入口可附加实现细节。
+
+##### 托管 benszapi 运行时
+
+运行 BSK 前先确保系统级安装器可用，再执行：
+
+```bash
+# 创建缺失的 Conda 环境；超过 72 小时时更新到最新生产版并运行健康检查
+python3 "$INSTALLER" --ensure-runtime
+
+# 只读检查环境、已安装包版本和 BSK 健康状态
+python3 "$INSTALLER" --runtime-status
+
+# 忽略 TTL，立即检查并更新
+python3 "$INSTALLER" --force-runtime-update
+
+# 系统 Python 只有 3.8-3.10 或尚未安装完整安装器时，使用 bootstrap
+python3 /path/to/bootstrap_install.py --ensure-runtime
+```
+
+环境固定在 `~/.bensz-skills/envs/benszapi`，不采用或修改其它 Conda 安装中的同名环境。安装器依次查找 `BENSZ_CONDA_EXE`、`CONDA_EXE`、`conda`、`mamba`、`micromamba`；首次创建后直接使用该 prefix 的 Python 更新包，避免 PATH 和解释器错配。成功后生成 `~/.bensz-skills/bin/bsk`；Skill 与 AI 应调用这个固定入口，不调用 PATH 中来源不明的裸 `bsk`，也不通过系统 `python3` 导入 Kernel。
+
+`--ensure-runtime` 使用 72 小时 TTL；环境缺失、健康检查失败或实际包版本偏离上一次成功状态时不受 TTL 限制。更新完成后必须通过包版本读取、`bsk --version`、`bsk diagnostics` 和 `bsk capabilities`。更新失败时不删除已有环境；静默入口记录失败并继续当前任务，显式入口返回非零状态。
+
+##### 本地安装
+
+1) 先定位系统级安装器脚本：
+
+```bash
+CODEX_INSTALLER="$HOME/.codex/skills/install-bensz-skills/scripts/install.py"
+CLAUDE_INSTALLER="$HOME/.claude/skills/install-bensz-skills/scripts/install.py"
+if [ -f "$CODEX_INSTALLER" ]; then
+  INSTALLER="$CODEX_INSTALLER"
+elif [ -f "$CLAUDE_INSTALLER" ]; then
+  INSTALLER="$CLAUDE_INSTALLER"
+else
+  echo "未找到系统级 install-bensz-skills 安装器" >&2
+  exit 1
+fi
+```
+
+2) 运行安装脚本：
+
+```bash
+# 默认：同时安装到 Codex 和 Claude Code（仅安装有更新的）
+# 说明：脚本默认只自动识别 ./skills/alpha；beta 必须显式 --source
+python3 "$INSTALLER"
+
+# 仅安装到 Claude Code
+python3 "$INSTALLER" --claude
+
+# 仅安装到 Codex
+python3 "$INSTALLER" --codex
+
+# 强制重新安装所有 skills（忽略版本检查）
+python3 "$INSTALLER" --force
+
+# 仅安装/更新指定 skill（不存在则新安装，已存在则按 MD5 判断更新或跳过）
+python3 "$INSTALLER" --skill nsfc-bib-manager
+
+# 预览模式（不实际安装）
+python3 "$INSTALLER" --dry-run
+
+# 指定额外 skills 源目录
+python3 "$INSTALLER" --source /path/to/skills
+
+# 显式安装 beta（不会被默认扫描）
+python3 "$INSTALLER" --source ./skills/beta
+
+# 多个源目录（逗号分隔）
+python3 "$INSTALLER" --source /path/skills-a,/path/skills-b
+```
+
+也可以直接运行某个系统级脚本路径：
+
+```bash
+# Codex 安装位置（优先）
+python3 ~/.codex/skills/install-bensz-skills/scripts/install.py
+
+# 或 Claude Code 安装位置
+python3 ~/.claude/skills/install-bensz-skills/scripts/install.py
+
+# 若无法自动识别源目录，则显式指定 alpha
+python3 ~/.codex/skills/install-bensz-skills/scripts/install.py --source ./skills/alpha
+```
+
+##### 远程安装
+
+远程 `general` 源固定指向仓库的 `skills/alpha`，因此 bootstrap 与 Git 远程模式都不会下载或安装 beta。其它远程源沿用各自配置的生产 skills 路径。
+
+**交互式检查模式**（`--remote --check`）：
+
+```bash
+# 检查并交互式安装远程技能
+python3 "$INSTALLER" --remote --check
+
+# 仅对 Claude Code 执行远程检查
+python3 "$INSTALLER" --remote --check --claude
+
+# 仅对 Codex 执行远程检查
+python3 "$INSTALLER" --remote --check --codex
+```
+
+流程：
+1. 创建临时目录 `~/.bensz-skills/installation/tmp-remote-install`
+2. 询问是否安装每个远程源（根据配置文件）
+3. 下载远程技能到本地缓存并更新工作树；重复运行时优先复用 `~/.bensz-skills/installation/cache/remote-sources/` 中的缓存 repo，通过浅 fetch 增量更新。当远程源配置了非根目录 `skills_path` 时，优先使用 Git sparse checkout 只拉取目标子目录；若同时指定 `--skill`，进一步只拉取 `skills_path/<skill-name>` 目录；GitHub 传输 reset/timeout 会自动重试，已有可用缓存时会复用 last-known-good 缓存完成本轮安装，缓存不可用时再重建或回退到完整浅克隆
+4. 与本地已安装技能对比，生成更新报告
+5. 询问是否确认安装/更新
+6. 执行安装/更新
+7. 清理临时目录
+
+**自动强制模式**（`--remote --auto`）：
+
+```bash
+# 自动下载并强制安装所有远程技能（无确认）
+python3 "$INSTALLER" --remote --auto
+
+# 仅对 Claude Code 执行自动安装
+python3 "$INSTALLER" --remote --auto --claude
+
+# 仅安装/更新远程源中的指定 skill
+python3 "$INSTALLER" --remote --check --general --skill git-commit
+```
+
+流程：
+1. 创建临时目录
+2. 直接更新远程技能缓存（无确认）；非根目录 `skills_path` 优先只拉取目标子目录，指定 `--skill` 时只拉取目标 skill 目录
+3. 强制安装/更新（无对比，无确认）
+4. 清理临时目录
+
+##### Legacy 技能清理
+
+名称兼容由 `config.yaml:skill_aliases` 声明（旧名 → 正式名称）。旧安装参数解析为正式名称并去重，例如 `--skill nsfc-humanization` 和 `--skill humanization` 都只安装/更新 `humanization`。本地、远程 sparse 下载、bootstrap、快速版本检查与静默更新均按同一映射解析；旧目录列入 `legacy_skill_names`，对应正式 Skill 成功安装或确认无需更新后再清理，失败时保留旧目录。映射只支持直接名称，不接受路径、自引用或别名链。
+
+安装时会读取 `install-bensz-skills/config.yaml` 中的 `legacy_skill_names`，并从 `~/.codex/skills/` / `~/.claude/skills/` 删除这些已弃用旧名，避免 skill 改名后旧目录继续留在系统级目录里干扰触发。
+
+研究类 skill 重命名后，旧目录 `get-review-theme`、`guide-updater`、`check-review-alignment`、`make-research-plan`、`systematic-literature-review` 也属于 legacy 清理对象；兼容性由新 `research-*` skills 的触发描述承担。已弃用的 `nsfc-roadmap`、`nsfc-schematic` 也会作为 legacy 目录清理。
+
+如果只想单独执行清理，可直接运行：
+
+```bash
+python3 "${INSTALLER%install.py}remove_legacy_skills.py"
+python3 "${INSTALLER%install.py}remove_legacy_skills.py" --codex
+python3 "${INSTALLER%install.py}remove_legacy_skills.py" --claude --dry-run
+```
+
+##### 验证
+
+建议在任意其它目录执行：
+
+```bash
+codex exec "列出所有可用的技能"
+```
+
+#### 安装模式
+
+##### 本地安装模式（默认）
+
+直接从本地仓库安装 skills。
+
+##### 远程安装模式
+
+从远程 GitHub 仓库下载并安装 skills，支持交互式确认和自动强制安装。
+
+###### 远程安装前置条件
+
+- 本地已安装 Git（`git --version` 可用）
+- 具备 PyYAML 依赖（`python3 -m pip install pyyaml`）
+
+###### 标准库 bootstrap 安装
+
+本 Skill 内置 `scripts/bootstrap_install.py`，它整合了原根级 `@install/install.py` 的无第三方依赖远程引导能力。首次安装或无法使用 Git/PyYAML 时，可从 GitHub 下载本文件后直接运行；其 `general` 源固定为 `skills/alpha`，不会安装 beta：
+
+```bash
+python3 -c "import urllib.request; exec(urllib.request.urlopen('https://raw.githubusercontent.com/huangwb8/skills/main/skills/alpha/install-bensz-skills/scripts/bootstrap_install.py').read())"
+```
+
+#### MD5 版本控制机制
+
+脚本使用 **MD5 哈希值**进行智能版本控制：
+
+- **版本计算**：对 skill 目录内的可安装文件进行 MD5 计算（排除 `tests/`、`plans/`、缓存与临时文件，以及 skill 根目录下给人看的 `README.md` / `CHANGELOG.md`）
+- **版本存储**：安装后在目标目录生成平台特定 manifest（`.skill-manifest.{codex,claude}.json`）记录版本信息
+- **智能安装**：
+  - ✅ **已安装且版本未变**：跳过，不重复安装
+  - ✅ **版本已变化**：强制覆盖安装
+  - ✅ **新 skill**：直接安装
+
+##### 安装报告示例
+
+```
+============================================================
+📦 正在安装到 CLAUUDE: /Users/xxx/.claude/skills
+============================================================
+
+【安装过程】
+────────────────────────────────────────────────────────────
+installed: /Users/xxx/.claude/skills/nsfc-bib-manager
+
+【安装摘要】
+────────────────────────────────────────────────────────────
+┌────────────────────────┬──────────────┬─────────────────┐
+│ Skill 名称              │ 状态         │ 原因            │
+├────────────────────────┼──────────────┼─────────────────┤
+│ nsfc-bib-manager        │ ✅ 已安装    │ 版本已更新...  │
+│ git-commit              │ ⏭️  跳过     │ 版本未变化     │
+└────────────────────────┴──────────────┴─────────────────┘
+
+【辅助技能（已忽略，仅用于开发）】(1 个)
+   • install-bensz-skills ⏭️ 跳过
+
+────────────────────────────────────────────────────────────
+📊 统计
+────────────────────────────────────────────────────────────
+普通技能: 1 个已安装, 1 个跳过
+
+============================================================
+🎯 总体安装摘要
+============================================================
+
+总计数:
+  • 已安装/更新: 1 个
+  • 跳过: 1 个
+```
+
+**注**：完整报告格式规范见 [references/install-report-template.md](references/install-report-template.md)。
+
+#### 安装策略（脚本保证）
+
+- 仅安装"包含 `SKILL.md` 的目录"（即每个 skill 的根目录）。
+- skill 根目录下的 `README.md`、`CHANGELOG.md` 不会被复制到系统级目录，避免把面向人的说明文档带进 AI 的技能上下文。
+- **技能类型控制**：通过 SKILL.md 中的 `category` 字段控制（`normal` 可安装，`auxiliary` 和 `test` 不安装）。
+- **MD5 版本检查**：优先检查 `.skill-manifest.{codex,claude}.json`，回退到重新计算
+- **直接替换**：发现到目标路径已存在同名目录且版本变化时，直接删除旧版本并安装新版本（不备份）
+  - 理由：Git 已提供版本控制，可随时回退；新版本通常比旧版本更好
+- 若存在旧的 `pipeline-skills` 软链接：会移除该软链接（不删除真实目录）。
+- 若 `config.yaml` 声明了 `legacy_skill_names`：清理这些已弃用名称对应的系统级目录；别名映射的旧目录在正式 Skill 就绪后再清理。
+
+#### 命令行参数
+
+##### 本地安装参数
+
+| 参数 | 说明 |
+|------|------|
+| `--dry-run` | 预览模式，不实际写入文件 |
+| `--codex` | 仅安装到 Codex |
+| `--claude` | 仅安装到 Claude Code |
+| `--force` | 强制重新安装所有 skills（忽略 MD5 检查） |
+| `--skill` | 仅安装/更新指定 skill；可重复传入，也可用逗号分隔 |
+| `--source` | 指定额外的 skills 源目录路径 |
+| `--ensure-runtime` | 创建、按 TTL 更新并验证托管 benszapi 环境 |
+| `--runtime-status` | 只读检查托管环境，不联网、不写入 |
+| `--force-runtime-update` | 忽略 TTL，强制更新托管包 |
+
+##### 远程安装参数
+
+| 参数 | 说明 |
+|------|------|
+| `--remote` | 启用远程安装模式（必须与 `--check` 或 `--auto` 一起使用） |
+| `--check` | 检查模式（交互式确认后再安装） |
+| `--auto` | 自动模式（强制安装，无需确认） |
+| `--{id}` | 仅安装指定远程源（如 `--general`、`--research`） |
+
+**参数组合**：
+- `--remote --check`：交互式远程安装
+- `--remote --auto`：自动强制远程安装
+- `--remote --check --codex`：仅对 Codex 执行远程检查
+- `--remote --check --claude`：仅对 Claude Code 执行远程检查
+- `--remote --check --general`：仅检查并安装 general 源
+- `--remote --check --general --skill git-commit`：仅检查并安装/更新 general 源中的 `git-commit`
+
+##### 远程源配置
+
+远程技能源通过 `config.yaml` 配置文件定义：
+
+```yaml
+# install-bensz-skills/config.yaml
+remote_sources:
+  - id: "general"
+    name: "通用技能"
+    url: "https://github.com/huangwb8/skills"
+    branch: "main"
+    skills_path: "skills/alpha"
+    description: "通用技能，建议所有用户安装"
+    recommended: true
+
+  - id: "research"
+    name: "科研技能"
+    url: "https://github.com/huangwb8/ChineseResearchLaTeX"
+    branch: "main"
+    skills_path: "skills"
+    description: "科研相关技能，建议有科研需要的用户安装"
+    recommended: true
+
+legacy_skill_names:
+  - "make_latex_model"
+  - "transfer_old_latex_to_new"
+  - "write-paper-sci"
+  - "explain-figures"
+  - "complete_example"
+  - "get-review-theme"
+  - "guide-updater"
+  - "check-review-alignment"
+  - "make-research-plan"
+  - "systematic-literature-review"
+  - "nsfc-roadmap"
+  - "nsfc-schematic"
+```
+
+配置字段说明：
+- `id`：源 ID（用于 `--{id}` 过滤）
+- `name`：源名称（用于显示和提示）
+- `url`：Git 仓库 URL
+- `branch`：分支名称（默认 `main`）
+- `skills_path`：技能目录相对于仓库根目录的路径
+
+本仓库的 `general` 源必须写为 `skills/alpha`；不要改成仓库根目录或 `skills/beta`。beta 仅允许通过本地 `--source` 显式安装。
+如果 `skills_path` 指向子目录（如 `skills`），安装器会优先用 Git sparse checkout 只下载该子目录，避免把仓库中与 skill 无关的大文件一并拉取。指定 `--skill` 时，下载范围会进一步收窄到 `skills_path/<skill-name>`；如果某个源中没有该 skill，不再为了确认缺失而完整下载该源。远程 repo 会缓存在 `~/.bensz-skills/installation/cache/remote-sources/`，后续运行用 `git fetch --depth 1` 增量更新；缓存损坏、GitHub 连接 reset 或 sparse checkout 超时时会自动重试。若更新失败但缓存中仍有可安装 skill，安装器会复用 last-known-good 缓存完成本轮安装；只有缓存不可用或非 `--skill` 场景需要路径回退识别时，才重建缓存或回退到完整浅克隆。
+- `description`：源描述（用于提示用户）
+- `recommended`：是否推荐安装（影响默认提示行为）
+- `skill_aliases`：旧名到正式名称的标量映射，旧名解析为正式名称，只处理正式目录；例如 `nsfc-humanization: humanization`。bootstrap 从 canonical 远程配置读取，失败时沿用版本化 fallback。
+- `legacy_skill_names`：需要从系统级目录主动清理的已弃用名称列表，可包含仍被安装参数接受的别名，名称兼容不要求保留旧目录
+
+### 输出
+
+输出为目标平台安装/更新结果及 manifest（包含源、目标、Skill 名称、MD5、状态、原因和运行时间）；远程模式另保留远程仓库缓存并输出更新/安装报告。托管运行时输出环境就绪状态、脱敏 prefix、包版本和固定启动器路径，状态保存在 `~/.bensz-skills/installation/state/managed-runtime.json`。`--dry-run` 只报告计划不写入，默认仅处理 `skills/alpha`，beta 必须由 `--source` 显式指定。
+
+### 输出管理
+
+#### BenszAPI 任务工作区
+
+
+### 校验
+
+安装前校验 Python 版本、安装器来源、源目录和目标平台；安装后核对 manifest、MD5 状态、目标 `SKILL.md`/资源可发现性、legacy 清理结果以及 bootstrap 与本地入口的核心契约一致。托管运行时还要核对固定 prefix、包元数据、启动器和 BSK 三项健康命令；失败或跳过项必须出现在报告中。
+
+### 失败与恢复
+
+#### 常见问题
+
+##### 本地安装
+
+- **如果你刚更新了本仓库的技能**：再次触发本 skill 运行脚本即可完成系统级更新（仅安装有变化的）。
+- **只想更新一个 skill**：使用 `--skill skill-name`；目标不存在时会新安装，目标已存在时仍按 MD5 判断更新或跳过。
+- **需要强制重装**：使用 `--force` 参数。
+- **Claude Code / Codex 都需要新会话**才会重新加载更新后的技能；安装后建议新建会话验证。
+- **如何回退到旧版本**：使用 Git 回退源代码后，重新运行安装脚本即可（不备份旧版本）。
+- **未找到 Conda/Mamba**：安装 Conda、Mamba 或 Micromamba，或通过 `BENSZ_CONDA_EXE` 显式指定可执行文件；不得回退到系统 Python 中的旧 BSK。
+- **托管 prefix 已存在但不是有效环境**：停止并报告，由用户确认该目录后再修复；不得自动删除未知内容。
+- **托管包更新失败**：保留现有环境和上一次成功状态。显式 `--ensure-runtime` 返回失败；`--silent-update` 只写入脱敏失败摘要，不阻塞当前业务任务。
+
+##### 远程安装
+
+- **如何添加新的远程源**：编辑 `config.yaml`，在 `remote_sources` 数组中添加新的源配置。
+- **远程安装失败**：安装器会自动重试 GitHub 传输错误；若已有可用缓存，会先用缓存完成本轮安装，避免一次 GitHub reset 导致完整重下。若某个源仍失败，可先用 `--general`、`--research` 等源过滤参数只更新可连通的源，或删除 `~/.bensz-skills/installation/cache/remote-sources/` 后重试。某些网络环境仍可能需要配置 Git 代理。
+- **临时目录未清理**：手动删除 `~/.bensz-skills/installation/tmp-remote-install` 目录。
+- **安装记录、缓存与临时目录在哪里**：统一保存在 `~/.bensz-skills/installation/` 下；其中 manifest 在 `~/.bensz-skills/installation/manifests/`，远程仓库缓存位于 `~/.bensz-skills/installation/cache/remote-sources/`，远程安装临时目录在 `~/.bensz-skills/installation/tmp-remote-install`。
+- **远程技能与本地冲突**：远程安装会覆盖本地同名技能，建议先备份或使用 `--check` 模式预览变更。
+
+
+## 约束
+
+<!-- BEGIN COMMON CONSTRAINTS -->
+<!-- Source-Hash: sha256:15120201e9e0c7569517261d57ecefb63ac279c26ed13876f8e95b6dc35854d3 -->
+<!-- Template-ID: skill-common-constraints; Template-Version: 1; Sync-Policy: exact-block -->
+
+### 公共硬约束
+
+本块由 `docs/templates/skill-common-constraints.md` 统一维护；每个 `SKILL.md` 的 `## 约束` 必须逐字同步本块，不得在副本中改写公共规则。
+
+- 任务需要落盘时，使用唯一的 `./.bensz-api/task-{yyyymmdd-hhmm}-{简短描述}/` 根目录；共享材料放入 `shared/`，Skill 专属材料放入该 Skill 的 `input/`、`output/`、`log/`。
+- 正式交付物、源代码和正式计划按项目约定保存，不写入任务工作区；未经授权不覆盖、删除、迁移或远程写入。
+- 项目维护变更检查 BAC 可用性并记录需求、AI 产出、工具结果、文件改动和验证摘要；BAC 只做过程审计，不替代署名、责任或合规判断。
+- 不记录 API Key、访问令牌、密码、Cookie、环境/凭据文件、私有 Prompt、身份信息、本地用户名、主机名或不必要的大体积原始数据。
+- 文件路径必须规范化并限制在授权项目范围内；外部 URL、子进程和网络访问遵循最小权限，防止路径遍历、SSRF 和命令注入。
+- Skill 版本唯一记录在自身 `config.yaml:skill_info.version`；公开 API、协议、目录或配置变更同步文档与 `CHANGELOG.md`。
+- `bensz-collect-bugs` 是一个 Agent Skill；仅将 Bensz Agent Skill 或 Bensz 基础设施本身的设计缺陷交给它。先脱敏写入 `~/.bensz-skills/bugs/`，当前任务不中断，只有用户明确要求才公开上报，禁止直接修改用户已安装的 Skill 源码。
+
+<!-- End of canonical common constraints. -->
+<!-- END COMMON CONSTRAINTS -->
+
+### 静默更新与 bootstrap 协议
+
+- `--silent-update` 是后台自动入口，不等同于用户主动的 `--remote --check` 或 `--remote --auto`。
+- 自动入口只使用 `general` 的 `skills/alpha` 生产源，以目标平台中已经存在的 Skill 为起点，并通过 `skill_aliases` 将旧名称迁移为正式名称；仅在正式 Skill 就绪后清理该平台的旧目录；Codex 与 Claude Code 的集合分别计算，不做跨平台并集安装。
+- 状态文件位于 `~/.bensz-skills/installation/state/silent-update.json`，记录 TTL、来源、平台集合、结果、失败类型和脱敏错误摘要。旧状态缺字段按过期处理，未知 schema 保守跳过。
+- `bootstrap_install.py --silent-update` 在旧版安装器不支持该参数时，先仅升级 `install-bensz-skills` 自身，再由新版入口接管；后台失败不阻塞宿主任务。
+- 远程更新先在 staging 目录完成复制与校验，再原子替换目标 Skill；安装器自身最后生效，新版本从后续会话加载。

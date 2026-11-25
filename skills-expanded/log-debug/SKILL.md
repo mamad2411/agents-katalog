@@ -1,0 +1,152 @@
+---
+name: log-debug
+description: Investigate a running GoFastr app by querying its log MCP tools. Use when the user asks "why is /path slow", "what's the last error", "check the access logs", "is logging healthy", "what just happened on the server", or any debug-the-running-server question where the app exposes /mcp.
+---
+
+# Debug a live GoFastr app via the log MCP tools
+
+The `battery/log` plugin registers JSON-RPC tools on the App's MCP
+server: three read-only (`log_recent`, `log_filter`, `log_metrics`)
+unconditionally, plus `log_set_level` only when
+`log.Config.AllowMCPMutation` is true. Use these to investigate a
+running app: agent live-debugging, not log greps from the user.
+
+## Prerequisites
+
+The user's app must be:
+1. Running with the `battery/log` plugin registered (generated
+   apps and `examples/site` both do).
+2. In the dev loop (`gofastr dev` sets `GOFASTR_DEV`, which
+   auto-enables the tools + the `/mcp` mount; opt-out
+   `GOFASTR_DEV_MCP=0`); OR built with `log.Config{EnableMCP: true}`
+   and an `/mcp` mount (`framework.WithMCP()`) for non-dev processes.
+
+Quickest way to spin up a known-good target in this repo:
+
+```bash
+./scripts/dev-watch.sh   # examples/site on :8082, auto-rebuilds; tools auto-enable
+# or
+GOFASTR_DEV=1 go run ./examples/site   # :8083; plain go-run without the env has NO log tools
+```
+
+Then curl `http://localhost:8082/mcp` (or whatever port your app uses).
+
+## The tools (three read-only, plus optional `log_set_level`)
+
+| Tool            | Use                                                                                  |
+|-----------------|--------------------------------------------------------------------------------------|
+| `log_recent`    | Last N entries in chrono order. Optional `limit` (default 50) + `level` filter.       |
+| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level`. `historical=true` tails the file sink for entries evicted from the ring. |
+| `log_metrics`   | Counter snapshot: `post_stop_drops`, `sink_write_failures`, `webhook_dropped`, `webhook_gave_up`. |
+| `log_set_level` | Flip the runtime log level (DEBUG/INFO/WARN/ERROR). Returns the previous value. **Only registered when `log.Config.AllowMCPMutation` is `true`.** |
+
+## How to invoke
+
+Use the Bash tool to curl the MCP endpoint with a JSON-RPC payload.
+The MCP URL is `http://localhost:<PORT>/mcp` (ask the user if you
+don't know the port; common defaults are 8082 (dev-watch) / 8083
+(plain `go run ./examples/site`); prefer the URL the launch output prints).
+
+### Last 5 access entries
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"log_recent","arguments":{"limit":5,"level":"INFO"}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+The double `jq` is intentional: MCP wraps the tool result in
+`content[0].text` as a JSON-encoded string, so we parse that text
+back into structured JSON for readability.
+
+### All errors in the last 5 minutes
+
+Use `since_ts` with an RFC3339 timestamp:
+
+```bash
+# GNU date (Linux containers): use this form first.
+SINCE=$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+       || date -u -v-5M +%Y-%m-%dT%H:%M:%SZ)    # macOS fallback
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",
+       \"params\":{\"name\":\"log_filter\",
+                   \"arguments\":{\"level\":\"ERROR\",\"since_ts\":\"$SINCE\",\"limit\":50}}}" \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+### Trace a specific request by ID
+
+The framework's `middleware.RequestID` stamps every request with
+`X-Request-ID`. Pull it from the user's curl response (or browser
+network panel), then:
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"log_filter",
+                 "arguments":{"request_id":"<paste-id-here>","historical":true}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+`historical=true` extends the search into the file sink so you can
+trace IDs older than the ring buffer's window (default 1000 entries).
+
+### Temporarily switch to DEBUG
+
+If the agent needs verbose output for an investigation:
+
+```bash
+# Flip to DEBUG. The response returns {.level:"DEBUG", .previous_level:"<X>"}
+# save previous_level so you can restore what was actually there.
+RESP=$(curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"log_set_level","arguments":{"level":"DEBUG"}}}')
+echo "$RESP" | jq -r '.result.content[0].text' | jq .
+PREV=$(echo "$RESP" | jq -r '.result.content[0].text' | jq -r '.previous_level')
+
+# ...reproduce the bug, then call log_recent / log_filter...
+
+# Restore the captured level (always restore; leaving DEBUG on in prod is rude;
+# the starting level comes from log.Config.Level, NOT guaranteed INFO)
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",
+       \"params\":{\"name\":\"log_set_level\",\"arguments\":{\"level\":\"$PREV\"}}}" \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+### Health of the logging system
+
+Before trusting the log queries, check the counters are zero:
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"log_metrics","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+Non-zero `sink_write_failures` or `post_stop_drops` means the
+plugin lost entries; anything queried might be incomplete.
+
+## Anti-patterns
+
+- **Don't reach for the file directly.** The ring buffer is faster
+  and structured; only fall through to file (via `historical=true`)
+  when the ring window's been exhausted.
+- **Don't leave DEBUG on after an investigation.** Other observers
+  see the firehose. Restore the `previous_level` the DEBUG call
+  returned, not a hard-coded INFO (the app may start at WARN/ERROR).
+- **Don't treat `remote` as authoritative.** Unless the app set
+  `Config.TrustForwardedFor`, `remote` is just `r.RemoteAddr`;
+  `forwarded_for` is the raw client header, attacker-controlled.
+- **Don't filter for what isn't structured.** The plugin's
+  `http.access` entries carry `method`/`path`/`status`/`bytes`/
+  `dur_ms`/`request_id`/`remote`/`forwarded_for`. Anything else
+  is a substring search via `msg` or post-filtering in your head.

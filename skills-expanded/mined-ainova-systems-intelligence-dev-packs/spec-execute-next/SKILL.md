@@ -1,0 +1,35 @@
+---
+name: spec-execute-next
+description: "Picks the highest-value approved spec, drives it to an outcome-labeled pull request, and resets the workspace. Autonomous mode only."
+argument-hint: "[focus hint, e.g. 'frontend only']"
+---
+
+# Execute Next Best Task
+
+Orchestrator-of-orchestrators: select ONE ready item, delegate the whole execution to `spec-execute` / `spec-continue` (their rules apply verbatim - this skill adds only selection and cleanup), then reset the workspace. Designed for autonomous and scheduled runs - this is `execution_mode: autonomous` machinery; its queue is filled by `spec-approve`, and a supervised project does not schedule it.
+
+## Steps
+
+1. **Preflight.** Run `git-to-base`: a dirty tree or a base it cannot fast-forward halts this run and is surfaced; never sweep foreign work into a task.
+2. **Inventory.**
+   - Candidates, by `spec.mjs status` (`spec-validate`): `approved` specs in the project's spec area (profile `specs_dir`; else detect) - the primary pool - plus `in-progress` specs with no open PR (to finish; finishing beats starting). Never `proposed` (unreviewed - the owner approves via `spec-approve` first), `completed`, `cancelled`, or `superseded`. Skip idea-collection notes without a concrete ticket-sized item.
+   - In-flight work: `gh pr list --state open --json number,title,headRefName,labels,updatedAt`; per-PR file scope via `gh pr view <n> --json files --jq '.files[].path'`.
+3. **Select ONE.**
+   - Value order: explicit priority marker - mid-flight spec with no open PR (finishing beats starting) - unblocks queued work - smaller effort at equal value. A focus-hint argument narrows the pool, never overrides the conflict gate.
+   - Conflict gate, skip the candidate if: it already has an open PR (`ai:processing` means another run holds it; `ai:manual` / `ai:failed` need the owner, not a re-run); its file scope overlaps any open PR's files; it needs a decision the spec leaves open (that is `ai:manual` before even starting).
+   - Interactive session - confirm the choice plus runner-up in one question (`dev-working-with-people`). Autonomous run - proceed. No eligible candidate - report per-candidate skip reasons and stop (skip step 5's sync, still end clean).
+4. **Execute until outcome.** Mid-flight spec - `spec-continue`; otherwise `spec-execute`. Run until the PR carries an outcome label (`ai:completed` with every declared factor, or `ai:manual` / `ai:failed`). Never merge.
+5. **Reset (runs regardless of outcome).** Run `git-to-base`. Close any spec whose PR merged since the last run (`spec-close`) so the queue and docs reflect reality. Re-render the project's generated intelligence outputs when it has an engine that produces them, using the command that engine documents; skip when it has none. Report (`dev-working-with-people`): task picked + why; PR URL + outcome label; what needs the owner; runner-up for the next run.
+
+## Verify
+
+- Exactly one task progressed to an outcome label; workspace back on a clean, current base.
+
+## Scope / hand-off
+
+- All execution rules - `spec-execute`; the merge - `git-merge-pr` after owner accept. The approved queue this skill drains is filled by `spec-approve` (the owner's gate-1 decision).
+
+## Constraints
+- ONE task per invocation; the next starts only after reset and fresh context.
+- The conflict gate is non-negotiable - when in doubt about overlap, pick the next candidate.
+- Never block other agents' open PRs.

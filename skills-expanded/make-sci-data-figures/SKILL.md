@@ -1,0 +1,196 @@
+---
+name: make-sci-data-figures
+description: Raw-data scientific figure workbench and editable template engine for CSV/TSV/XLSX tables. Use for 原始数据, Excel/CSV, design checks, group comparisons, relationships, time-course, compositions, matrices, survival, dose-response, ROC/PR and supplied specialist results. Generate data-backed candidates and Figure Studio bundles and statistical reports with explicit analysis provenance. Route microscopy standardization and final-only SVG polishing to the companion skills.
+---
+
+# Make SCI Data Figures
+
+Start from the biological question and experimental unit, not from a preferred chart type. Produce several honest candidates from the same data, keep their canvas and typography identical, and explain why each candidate is or is not appropriate.
+
+An ordinary request such as “帮我把这张表画成适合论文的图” is enough to begin. Read the table before asking questions; when design is unresolved, ask concretely whether records describe the same objects before/after or different objects. Offer a small useful shortlist and explain what each reveals instead of requiring statistical jargon or an elaborate prompt.
+
+## Plan linked results and export analyses
+
+For multiple endpoints or evidence types, read [evidence and reporting workflow](references/evidence_and_reporting.md). Profile the inputs before asking for missing design facts, then trace each panel to the experimental unit, endpoint and supported claim. Hand off reviewed panels and their source records to the polish workflow.
+
+For a saved workbench analysis, run `python scripts/export_analysis_report.py RUN/analysis_plan.json --out statistical-report.html` from this skill folder. Export a report from the analysis record even if the figure intentionally omits statistical labels. Keep the original plan alongside it. In a supported Studio build, **Export statistical report** in the analysis dialog saves the current validated preview as HTML before applying figure annotations.
+
+## Shared Figure Discovery
+
+When a user says “不知道这些数据该怎么画”, call the same deterministic engine used by Figure Studio, from the suite root:
+
+```bash
+python sci_figures.py discover data.csv --json
+python sci_figures.py discover data.xlsx --sheet 0 --context research-context.json --out discovery-results --json
+```
+
+Read [the discovery contract and context examples](../../docs/figure-discovery.md). The CLI adapter requires Node.js 18+ in addition to the verified Python environment. CSV/TSV/XLSX are read locally. The `ResearchDiscovery` browser module is the sole scientific recommendation implementation; do not invent a second rule list in the prompt. Inspect `profile.confirmation_needed` and `excluded` before asking the few relevant design questions. Record only actual user declarations: column-name matches remain `inferred_unverified`. Never infer independence, pairing, biological replication, nesting or completed differential analysis from a keyword. Counts are observations or distinct IDs until experimental units are confirmed.
+
+Use a local JSON context to declare column roles, raw/summary/results level, design, outcome type, technical replicates and nesting. Paired long tables require an explicit `pair_order`. ROC requires observed labels/scores and a positive class; volcano requires supplied adjusted P values and explicitly confirmed display thresholds. `--out` runs the existing workbenches, validates each real-data candidate and produces an editable Studio HTML plus a trace JSON. Check `renderer_status`: rule eligibility does not itself certify successful rendering. Existing specialist workbenches and the full manual template library remain available outside the initial curated discovery subset.
+
+Discovery never searches online automatically. In Studio, literature searches are explicitly started with separately reviewed public keywords; research-context text and tables must never be copied into a literature query. Papers can support a locally eligible view, never override its data contract. Do not claim a specific figure unless its caption and figure label were actually checked.
+
+## Verify the agent's Python runtime first
+
+Before profiling or generating, select an existing interpreter yourself: prefer the current project's `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python`, then a runtime exposed by the host's dependency tools, then registered Python launchers or `python3`. Do not assume bare `python` is compatible or that the host runtime contains SciPy. Run the candidate with `-c "import sys; print(sys.executable); print(sys.version); sys.exit(0 if (3,10) <= sys.version_info[:2] <= (3,12) else 2)"`, then actually import `numpy`, `pandas`, `scipy`, `matplotlib`, `openpyxl` and `PIL`. Try the next existing candidate if either check fails.
+
+Use the verified executable for the full suite's `sci_figures.py doctor --font SELECTED_FONT --json` when available, and for every later script/subprocess; use `-X utf8` on Windows. All `python` examples below refer to this executable. Do not ask the user to discover paths or write an environment-check prompt. If no candidate works, identify the missing component and propose a task-local environment or the installed Figure Studio option; never silently install globally or change PATH.
+
+For unified CLI inspection and confirmation states, read `references/safe_cli_routing.md`. Never treat a role inferred from a column name as a declared experimental unit or design.
+
+For the original editable gallery, run `scripts/gallery_cli.py --list` to inspect the 191 bilingual data contracts, then `scripts/gallery_cli.py --view TEMPLATE --input TABLE.csv --out NEW_DIRECTORY`. The bundle opens in Figure Studio; its local data engine prepares seven canvas sizes and enables table editing. Together with 27 ROC/PR presentations, the editor provides 218 starters. Read [editable gallery and Studio contracts](references/editable_gallery_and_studio.md) before template selection or interactive statistical analysis. Validate the scientific meanings of required columns before choosing a template. Model-result templates require those results; changing an input table must not be described as refitting an upstream model. Inspect normal, narrow, wide and tall renders and a valid data replacement before delivering a new template.
+
+The gallery CLI accepts `--palette NAME`, using the registry's existing palette validation. Its default `zhoy_muted` keeps the gallery's blue/red display colors (`#3f6da3`, `#c95770`); the legacy workbench's palette of the same name has its own established colors. Do not silently recolor existing figures to make these entry points identical.
+
+This skill remains the AI/CLI data entry point in the complete suite. Figure Studio is the official Windows companion in the [same repository's releases](https://github.com/zhoy0409-debug/polish-sci-figures/releases); it bundles this engine for users who want an installed visual editor without Python or an AI environment. It does not replace this skill or require a fourth skill. Keep all three suite folders together for the original source workflow.
+
+## Minimum intake
+
+Accept tidy CSV, TSV, or XLSX. Route the table by scientific structure rather than forcing every dataset into a group comparison:
+
+| Structure | Required declarations | Script command |
+| --- | --- | --- |
+| Continuous group comparison | group, value, biological-unit ID, independent/paired design, authoritative order | `figure_workbench.py generate` |
+| Numeric relationship | x, y, biological-unit ID; optional group | `data_family_workbench.py relationship` |
+| Longitudinal response | time, value, group, biological-unit ID | `data_family_workbench.py timecourse` |
+| Composition | sample, category, non-negative value; optional group | `data_family_workbench.py composition` |
+| Tidy matrix | row, column, value; explicit or automatic display clustering | `data_family_workbench.py matrix` |
+| Survival | follow-up time, 0/1 event, group, biological-unit ID | `advanced_template_workbench.py survival` |
+| Dose-response | positive dose, response, group; optional unit ID | `advanced_template_workbench.py dose-response` |
+| Classification | binary outcome, score, biological-unit ID; optional cohort | `advanced_template_workbench.py roc` |
+| Supplied specialist results | family-specific estimate/result columns | `advanced_template_workbench.py FAMILY` |
+
+Before inferential statistics, establish:
+
+1. the outcome, unit, and intended claim;
+2. the biological experimental unit;
+3. whether observations are independent, paired, repeated, nested, or technical replicates;
+4. the reference group and group order;
+5. whether endpoints or contrasts were pre-specified or exploratory.
+
+For a group comparison, run `scripts/figure_workbench.py profile INPUT` immediately. For another family, run its generator only after identifying the required columns; the command performs family-specific validation before drawing. Ask only for high-impact facts that the file cannot reveal. Do not silently treat cells, fields, wells, repeated measurements, or technical replicates as independent biological units.
+
+Read `references/data_contract.md` for accepted layouts. Read `references/statistics_and_chart_selection.md` before selecting a statistical design or making significance claims.
+
+## Generate candidates
+
+Use an explicit design for inference:
+
+```bash
+python scripts/figure_workbench.py generate data.csv \
+  --group condition --value response --unit sample_id \
+  --design independent --order Control,Treatment --outcome-type continuous \
+  --unit-label "%" --outdir results
+```
+
+For paired data, use the same biological-unit ID in both conditions and pass `--unit subject_id --design paired`. The command creates:
+
+- fixed-canvas PNG, SVG, and PDF candidates;
+- a same-size comparison gallery;
+- `data_profile.json`, `analysis_plan.json`, and `figure_recipe.json`;
+- a deterministic rendering recipe that can be recolored without changing data, statistics, geometry, or group order.
+
+Candidate types are conditional, not decorative: two-group estimation graphics; rainclouds when group sizes support density estimation; raw points with estimate and 95% CI; box/violin plus raw observations; paired estimation graphics and trajectories for complete pairs; and horizontal group-estimate intervals for multi-group designs. Never default to a bar chart when the raw distribution can be shown.
+
+## Generate other validated data families
+
+Use the smallest command matching the declared structure:
+
+```bash
+python scripts/data_family_workbench.py relationship data.csv \
+  --x exposure --y response --unit sample_id --group cohort --outdir relationship_results
+
+python scripts/data_family_workbench.py timecourse data.csv \
+  --time day --value signal --group condition --unit subject_id --outdir timecourse_results
+
+python scripts/data_family_workbench.py composition data.csv \
+  --sample sample_id --category cell_type --value count --group condition --outdir composition_results
+
+python scripts/data_family_workbench.py matrix data.csv \
+  --row pathway --column condition --value z_score --cluster auto --outdir matrix_results
+```
+
+These commands generate two complementary views instead of one default chart: fitted relationship plus joint distributions; individual time trajectories plus within-unit change; whole-sample composition plus normalized heatmap; or heatmap plus signed-magnitude dot matrix. Each command creates fixed-canvas PNG/SVG/PDF, a comparison gallery, `data_profile.json`, `analysis_plan.json`, and `figure_recipe.json`.
+
+These families are not a license to invent specialist inference. Relationship statistics are association summaries; longitudinal ribbons are descriptive pointwise intervals; compositions are normalized but not tested component by component; matrix clustering is exploratory and records its method and order.
+
+## Use the upgraded 1-124 template atlas
+
+The audited atlas maps every source template number exactly once into 20 scientific families. Resolve a remembered template number before drawing:
+
+```bash
+python ../polish-sci-figures/scripts/template_router.py resolve --template 73
+python ../polish-sci-figures/scripts/template_router.py self-check
+```
+
+The router converts decorative variants into input contracts and executable workflows; it does not copy source artwork. Families already handled above stay on their established workbenches. Use `scripts/advanced_template_workbench.py` for:
+
+- Kaplan-Meier plus risk table; forest intervals; volcano; confusion matrices; enrichment;
+- four-parameter dose-response plus residuals; ROC plus precision-recall;
+- feature ranking; supplied embeddings; aligned replacements for dual axes;
+- signed diverging comparisons; empirical cumulative distributions; swimmer plots.
+
+Every advanced command validates its scientific contract and creates two fixed-canvas candidate views, editable PNG/SVG/PDF exports, `data_profile.json`, `analysis_plan.json`, `figure_recipe.json`, and a comparison gallery. Use `advanced_template_workbench.py recolor RECIPE --palette PALETTE --outdir OUTPUT` for palette-only rerendering.
+
+Read `references/advanced_template_contracts.md` before running an advanced family or describing its statistical meaning.
+
+Do not turn the atlas into a style menu. Select the family from the question, experimental unit, measurement structure, and intended claim. Decorative bars, donuts, flowers, watercolor fills, and dual y-axes are replaced when they hide distributions, uncertainty, denominators, or incompatible units.
+
+## Change the palette without changing the science
+
+```bash
+python scripts/figure_workbench.py recolor results/figure_recipe.json \
+  --palette okabe_ito --outdir results_okabe_ito
+```
+
+For relationship, time-course, composition, or matrix recipes, use `scripts/data_family_workbench.py recolor`; for the advanced families, use `scripts/advanced_template_workbench.py recolor` with the same arguments.
+
+Use `assets/palettes.json` as the single palette registry. A palette change must not alter filtering, order, estimand, uncertainty, axes, annotations, or canvas. User/project colors override bundled defaults.
+
+## Statistical behavior
+
+- Lead with an estimand and 95% confidence interval. Treat a test result as supporting evidence, not the plot's sole message.
+- Default to exploratory scope and keep *P* values in the analysis record rather than the artwork. Show an exact *P* value only after the user confirms a pre-specified confirmatory analysis family (`--scope confirmatory --show-p-value`).
+- For two independent groups, use the mean difference with bootstrap CI and Welch's test, with Mann–Whitney as a labeled sensitivity analysis.
+- For paired groups, use the paired mean difference with bootstrap CI and a paired test, with Wilcoxon as a labeled sensitivity analysis.
+- For more than two independent groups, use a global Welch ANOVA and Kruskal–Wallis sensitivity result. Do not invent pairwise post-hoc claims.
+- The preceding primary/sensitivity behavior describes the legacy `figure_workbench` route. The separate Studio analysis dialog/API supports explicitly requested Welch, Mann–Whitney, paired t or Wilcoxon pairwise comparisons. It requires declared design and genuine unit roles, and applies one Holm correction across the complete requested family, including facets. Do not silently add these comparisons to a legacy omnibus-only result. Follow [the Studio analysis contract](references/editable_gallery_and_studio.md#local-analysis-and-result-binding).
+- Do not switch tests solely because a small-sample normality test crossed 0.05.
+- Do not pool technical replicates as biological replicates. Do not average or impute missing values without an explicit rule.
+- Keep exact test names, biological-unit counts, exclusions, effect direction, uncertainty definition, diagnostics, analysis scope, and multiplicity status in `analysis_plan.json`.
+- Synthetic example data must remain labeled synthetic. Never relabel it as experimental data.
+- For relationships, report Pearson, Spearman, and slope as association summaries and refuse repeated biological-unit IDs.
+- For longitudinal data, preserve individual trajectories and refuse duplicate unit-time cells. Do not generate a repeated-measures *P* value without a declared longitudinal model.
+- For compositions, enforce non-negative components and positive sample totals, normalize within sample, and state the sum-to-one dependence. Do not run naive component-wise tests.
+- For matrices, reject duplicate cells, preserve or record clustering order, and refuse a density that would make the fixed publication canvas unreadable.
+- For survival, preserve censoring and risk sets, use pointwise log-log Greenwood intervals, and limit automatic inference to an unadjusted two-group log-rank result. Require a declared specialist model for adjusted effects.
+- For dose-response, fit a four-parameter logistic model on positive log-dose values, report a generic midpoint with covariance interval, and use IC₅₀/EC₅₀ terminology only when the endpoint and direction justify it.
+- For ROC/PR, require one prediction per biological unit, record prevalence, and use deterministic unit-level bootstrap intervals. Never call internal performance external validation.
+- For volcano, enrichment, forest, feature-rank, and embedding inputs, treat supplied results and coordinates as authoritative. Do not recreate differential models, ontologies, uncertainty, clusters, or causal claims from display columns.
+- Replace dual y-axes with aligned original-unit panels and an explicitly standardized overlay; standardization is not an effect-size estimate.
+
+Use the worked independent, paired, and multi-group examples in `references/statistics_and_chart_selection.md` to explain the statistical match. State what the skill selected, why it matches the experimental unit, what it refused to infer, and which output makes that decision visible.
+
+## Artwork rules
+
+- Use Arial by default, or replace the global font once when the verified target requires another family. The requested font must be installed; use `--allow-font-fallback` only for draft previews and never label fallback output as final submission-ready.
+- Do not place panel letters, serial numbers, per-panel titles, subtitles, or conclusions inside reusable artwork.
+- Use correct case, italics, symbols, units, subscripts, and superscripts.
+- Reserve a non-data annotation margin for compact statistical evidence; never print text over points, lines, intervals, or markers.
+- Keep all candidate canvases identical. Never use tight bounding-box export.
+- Keep SVG text live and editable.
+- Size typography for the declared final slot, then inspect it at that size. A contact sheet must not shrink panels into thumbnails; stack candidates vertically for README/showcase review when a horizontal row would make ticks, units, or evidence hard to read.
+
+## Finish with the polish skill
+
+After a candidate is selected, use `$polish-sci-figures` to run final-size typography, overlap, whitespace, fixed-canvas, SVG-editability, and real-container checks. Do not call a generated candidate publication-ready until that acceptance gate passes.
+
+Read `references/professional_basis.md` for the reporting, experimental-unit, *P*-value, figure-selection, and implementation sources behind these safeguards. The code is original to this repository; the references define scientific constraints, not copied implementation.
+
+## Acceptance gate
+
+Do not deliver if the experimental unit/design is unresolved, a required group is missing, a family-specific uniqueness/positivity check fails, specialist inference has been substituted with a descriptive shortcut, statistics are presented as confirmatory without declared scope, raw observations are hidden unnecessarily, candidate canvases differ, palette switching changes semantics, final-size text is small or ragged, or any title/number/overlap appears in the artwork.
+
+## Resume an edited Studio project
+
+Use the polish skill's [scoped project operation protocol](../polish-sci-figures/references/project_operations.md). Inspect actual capabilities and target revisions first. Existing data-bound candidates may change display emphasis after scientific review; new statistical models still use the established workbench and confirmed experimental-unit contract. Preserve all unrelated human edits, raw data and analysis records. Never overwrite a whole saved project to change one panel.

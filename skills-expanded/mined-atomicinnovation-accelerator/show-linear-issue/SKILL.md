@@ -1,0 +1,63 @@
+---
+name: show-linear-issue
+description: >
+  Use this skill when the user asks about a specific Linear issue by identifier
+  (e.g. BLA-123, ENG-456) — for viewing the description, state, assignee, or
+  comments. Trigger when the user says 'look up', 'check on', 'tell me about',
+  'what's on', or 'what is the status of' an identifier, or asks any direct
+  question about an issue they reference. Do NOT trigger when an identifier
+  appears incidentally inside other prose (commit messages, code review
+  comments, release notes), where the user is talking about the issue rather
+  than asking to fetch it.
+argument-hint: "<IDENTIFIER> [--comments N]"
+disable-model-invocation: false
+allowed-tools:
+  - Bash(accelerator config *)
+  - Bash(accelerator linear *)
+---
+
+# Show Linear Issue
+
+!`accelerator config context --skill show-linear-issue --fail-safe`
+
+> **Configuration**: Set `work.integration: linear` in `.accelerator/config.md`.
+> See the
+> [`### work` section of `configure/SKILL.md`](../../config/configure/SKILL.md#work)
+> for the full reference.
+
+Fetch and render a single Linear issue by identifier.
+
+## Step 1: Resolve the identifier
+
+Read the issue identifier from the argument string (e.g. `BLA-123`). If none was
+supplied, ask the user which issue to show.
+
+## Step 2: Fetch the issue
+
+Run:
+
+```
+accelerator linear show <IDENTIFIER> [--comments N]
+```
+
+Run the bare launcher **directly** as an executable; never prefix it with
+`bash`/`sh`/`env` (a wrapper prefix escapes the skill's `allowed-tools`
+permission and forces an unnecessary prompt).
+
+The subcommand emits a JSON document with a top-level `outcome` keyword —
+`found` or `not-found`. When `outcome` is `not-found`, tell the user the issue
+was not found.
+
+## Step 3: Render the issue
+
+Render the issue's fields under `.data.issue`:
+
+- **Identifier**: `.identifier`
+- **Title**: `.title`
+- **State**: `.state.name`
+- **Assignee**: `.assignee.name` (or `unassigned`)
+- **Description**: `.description` — already native Markdown, render it directly
+  (no ADF conversion).
+- **Comments**: each `.comments.nodes[].body` (Markdown), if any.
+
+!`accelerator config instructions show-linear-issue --fail-safe`

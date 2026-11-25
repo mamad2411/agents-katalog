@@ -1,0 +1,191 @@
+---
+name: lov-mobile-adapt
+description: >
+  扫描并修复 Web 项目的移动端问题：溢出、安全区、100vh、触控尺寸、响应式布局与多级页面导航。Use when
+  the user mentions "移动端适配", "手机适配", "mobile adapt", "fix mobile overflow".
+license: MIT
+compatibility: >
+  Requires Python 3.8+ (no external dependencies).
+  Works with any web project: React, Vue, Next.js, Nuxt, Svelte, plain HTML/CSS.
+depends_on:
+  - lov-branding-consistency
+metadata:
+  author: lovstudio
+  version: "0.2.3"
+  tags:
+    - mobile
+    - responsive
+    - safe-area
+    - overflow
+    - navigation
+---
+
+# 移动适配师 · Mobile Fit
+
+Scan and fix mobile adaptation issues in an existing web project: viewport
+configuration, overflow prevention, safe area handling, responsive breakpoints,
+100vh pitfalls, touch targets, and multi-level page navigation.
+
+## Triggers
+
+### Activate when
+
+- “移动端适配”“手机适配”“多级页面”“移动端布局”
+- "mobile adapt", "responsive optimization", "fix mobile overflow", "add safe
+  area", or a request to adapt a site for phones or tablets.
+- Converting a desktop-first site to work well on mobile
+- User reports overflow, cut-off content, or notch overlap on phones
+- Adding mobile navigation (back button, page stack) to a sidebar-based layout
+- Fixing 100vh issues on iOS/Android browsers
+- General "make it mobile friendly" requests
+
+### Do not activate when
+
+- The target is a native iOS/Android app (Swift, Kotlin, React Native, Flutter)
+  rather than a web project.
+- The user wants a new interface or a visual redesign: use `lov-frontend-design`.
+- A new app is being generated: use `lov-app-generator`.
+- The complaint is runtime jank, battery, or memory growth on phones: use
+  `lov-app-optimizer`.
+
+## Skill Group Composition
+
+Read `references/skill-composition.md` before routing to or extending an
+adjacent Skill.
+
+## Workflow (MANDATORY)
+
+**You MUST follow these steps in order.**
+
+Resolve `SKILL_DIR` from the installed skill context before running the helper.
+For manual execution, set it to the directory containing this `SKILL.md`.
+
+### Step 1: Scan the Project
+
+Run the scanner to identify issues:
+
+```bash
+python3 "$SKILL_DIR/scripts/scan_mobile_issues.py" <project-path>
+```
+
+For JSON output (easier to process programmatically):
+
+```bash
+python3 "$SKILL_DIR/scripts/scan_mobile_issues.py" <project-path> --format json
+```
+
+Review the output. The scanner checks:
+- viewport meta tag presence and `viewport-fit=cover`
+- CSS overflow risks (fixed widths, min-width)
+- 100vh usage (should be 100dvh)
+- safe-area-inset usage on fixed/sticky elements
+- Touch target sizes (< 44px)
+- Responsive breakpoint coverage
+- Tailwind-specific issues (h-screen → h-dvh)
+- Text overflow without ellipsis handling
+
+### Step 2: Ask the User
+
+**IMPORTANT: Use `AskUserQuestion` to collect scope BEFORE making changes.**
+
+Present the scan results summary, then ask:
+
+```
+Question: "扫描发现 X 个问题。要修哪些类别?"
+Options:
+  1. 全部修复 (Recommended) — fix all categories found
+  2. 只修布局和溢出 — overflow + responsive only
+  3. 只修导航 — convert to mobile stack navigation
+  4. 让我选具体类别 — pick specific categories
+```
+
+If the project has sidebar/tab navigation on desktop, also ask:
+
+```
+Question: "桌面端的侧边栏/tab 导航要改成移动端多级页面吗?"
+Options:
+  1. 是,改成 push/pop 页面栈 (Recommended)
+  2. 改成底部 tab bar
+  3. 不改导航结构
+```
+
+### Step 3: Fix Issues
+
+Apply fixes in this priority order:
+
+1. **Viewport meta** — add or fix `<meta name="viewport">` with `viewport-fit=cover`
+2. **Global overflow guard** — add `overflow-x: hidden` to html/body
+3. **100vh → 100dvh** — replace all 100vh usages, add fallback
+4. **Safe area padding** — add `env(safe-area-inset-*)` to fixed/sticky elements
+5. **Image/media overflow** — add `max-width: 100%; height: auto`
+6. **Text overflow** — add ellipsis/line-clamp where `white-space: nowrap` exists
+7. **Touch targets** — increase size of interactive elements below 44px
+8. **Responsive breakpoints** — add mobile-first media queries or Tailwind responsive
+9. **Navigation restructure** — convert to mobile page stack if requested
+
+For each fix, refer to `references/mobile-patterns.md` for the correct pattern.
+
+### Step 4: Navigation Restructure (if applicable)
+
+When converting sidebar/panel navigation to mobile stack:
+
+1. Identify the navigation structure (sidebar, tabs, nested panels)
+2. Create a responsive layout wrapper that switches between desktop and mobile
+3. On mobile: render as a full-screen page stack with back button
+4. Use CSS slide transitions for page push/pop
+5. Preserve desktop layout unchanged at `md:` breakpoint and above
+
+See `references/mobile-patterns.md` → "Multi-Level Page Navigation" for
+implementation patterns per framework.
+
+### Step 5: Verify
+
+After all fixes:
+
+1. Re-run the scanner — confirm issues resolved
+2. Check the site in a mobile viewport (375px width)
+3. Verify:
+   - No horizontal scroll
+   - Content not cut off by notch or home indicator
+   - All interactive elements are tappable (44px+)
+   - Navigation back button works
+   - Full-height layouts don't overflow behind browser chrome
+
+## CLI Reference
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `project` | (required) | Path to web project root |
+| `--format` | `text` | Output format: `text` or `json` |
+
+## Key Patterns (quick reference)
+
+| Problem | Fix |
+|---------|-----|
+| Missing viewport meta | `<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">` |
+| 100vh overflow | `height: 100dvh` (with `100vh` fallback) |
+| Notch overlap | `padding: env(safe-area-inset-top)` on fixed elements |
+| Horizontal overflow | `overflow-x: hidden` on body + `max-width: 100%` on media |
+| iOS input zoom | `font-size: 16px` on inputs |
+| Small touch targets | `min-height: 44px; min-width: 44px` |
+| Pull-to-refresh conflict | `overscroll-behavior-y: contain` |
+
+For detailed patterns see `references/mobile-patterns.md`.
+
+## Runtime context (shared)
+
+运行前读取本 Skill 包的 `skill.yaml`，由宿主提供 `skill-runtime/v1` 上下文。字段解析顺序为：当前请求、项目上下文、个人 Preferences、品牌 Profile、通用默认值。
+
+- 只使用 Manifest 声明的字段；Profile 保存公开品牌事实，Preferences 保存个人工作偏好。
+- `required: true` 字段缺失时，按 Manifest 的问题配置向用户提出一个聚焦问题；用户明确同意后再保存回答。
+- 报错提供可复制的 `context_id`、字段路径与来源，诊断内容避开秘密、完整私人路径和原始配置。
+
+## 通用反馈闭环
+
+用户在 Skill 驱动任务中提出修改意见时，继续当前产物前必须执行：
+
+1. 先判断意见是 `task-specific`（仅本次）还是 `reusable`（可跨任务复用）。
+2. `task-specific` 只修改当前任务，不改 Skill。
+3. `reusable` 先确定作用域：领域规则先更新对应 canonical Skill；适用于所有 Skill 的规则先更新共享规范。
+4. 完成规则更新、版本、lint 与分发核验后，再把修改应用到当前任务。
+5. `reusable` 修改会使此前的“确认”“继续”“发吧”失效；完成当前产物修改和回读后必须停下，等待用户下一步指示，不自动进入发布、提交或其他外部写入。

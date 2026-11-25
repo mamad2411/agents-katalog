@@ -1,0 +1,85 @@
+---
+name: gorev-yetki-ve-yargi-yolu
+description: "Mütalaa konusu uyuşmazlığın hangi yargı koluna, hangi görevli ve yetkili mahkemeye ait olduğunu, varsa zorunlu ön başvuru yolunu belirlemek gerektiğinde kullanılır; dava stratejisinin ilk kapısıdır."
+---
+
+# Görev, Yetki ve Yargı Yolu Tespiti
+
+## Görev
+Uyuşmazlığın doğru yargı kolu (adli/idari), görevli mahkeme, yetkili yer ve varsa zorunlu ön prosedür (dava şartı arabuluculuk, idari başvuru, hakem heyeti) yönünden çerçevesini çizmek. Yanlış yol veya merci, esasa girilmeden davanın reddine yol açar.
+
+## Soğuk başlangıç (intake)
+- Uyuşmazlık özel hukuk mu, idareyle/kamu gücüyle mi ilgili?
+- Taraflar tacir mi, uyuşmazlık ticari iş niteliğinde mi?
+- Sözleşmede tahkim/yetki şartı var mı?
+- Zorunlu bir ön başvuru/arabuluculuk gerekiyor mu?
+
+## Denetim şeması
+1. Yargı yolu ayrımı: İdari işlem/eylem ve kamu gücü kullanımı idari yargıda (İYUK m.2 — iptal/tam yargı); özel hukuk ilişkileri adli yargıda; vergi uyuşmazlıkları vergi mahkemesinde. Yargı yolu yanlışsa merci tecavüzü/görevsizlik doğar.
+2. Görevli mahkeme: Adli yargıda kural asliye hukuk (HMK m.2); sulh hukukun görevi sınırlıdır (HMK m.4 — kira/tahliye, paylaştırma, vb.). Özel görevli mahkemeler: tüketici mahkemesi (6502), iş mahkemesi (7036), ticaret mahkemesi (TTK m.5 — ticari davalar), aile mahkemesi, fikri-sınai haklar mahkemesi. Görev kamu düzenindendir, re'sen gözetilir (HMK m.114/1-c).
+3. Yetki (yer): Genel yetki davalının yerleşim yeri (HMK m.6); özel/kesin yetki halleri (taşınmazda HMK m.12, sözleşmede ifa yeri HMK m.10, haksız fiilde HMK m.16) ayrıca kontrol edilir; kesin yetki re'sen gözetilir.
+4. Zorunlu ön prosedür: Ticari ve işçilik alacaklarında dava şartı arabuluculuk (7036 m.3, 6325/TTK m.5/A), tüketici uyuşmazlıklarında parasal sınır altında tüketici hakem heyeti (6502), idari para cezalarında sulh ceza hâkimliği (5326), idari işlemde gerekiyorsa zorunlu idari başvuru.
+5. Tahkim/yetki şartı: Geçerli tahkim şartı varsa mahkeme yolu kapalıdır (HMK m.413/tahkim hükümleri); yetki sözleşmesinin geçerlilik şartları (HMK m.17-18) denetlenir.
+6. Ara sonuç: Yargı yolu + görevli mahkeme + yetkili yer + zorunlu ön başvuru tek bir tabloda.
+
+## Çıktı modülleri
+- Yargı yolu ve görevli mahkeme tespiti (gerekçeli)
+- Yetkili yer mahkemesi (genel/özel/kesin ayrımıyla)
+- Zorunlu ön prosedür kontrol listesi
+- Yanlış yol/merci riski uyarısı
+
+## Plugin bağlamı
+
+Bu beceri `hukuki-mutalaa` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

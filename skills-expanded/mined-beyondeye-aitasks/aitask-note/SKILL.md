@@ -1,0 +1,234 @@
+---
+name: aitask-note
+description: Send a durable note to an existing aitask — context that task needs which is not itself work. Use when you learn something a task that already exists depends on, such as a stale assumption in its body, a wider blast radius, or a decision that changes its approach.
+user-invocable: true
+---
+
+## Sending a Note to Another Task
+
+A task can be told something it needs even when nobody is working on it. The
+note is appended to the target's `## Inbox`, committed, and surfaced the next
+time that task is picked. If a live agent happens to be holding the target on
+this host, it can also be told immediately — but that is an optimisation, never
+the product.
+
+**This skill is the single composition point.** It binds the writer, the
+endpoint resolver and the per-agent adapter. Every caller — the trigger points
+in `task-workflow` Step 8e, `aitask-qa` and `aitask-review`, and any future
+consumer — invokes *this skill*, never the pieces, so there is no second
+caller-side join to drift.
+
+### Note, or a new task?
+
+Decide this first; it is the judgement no helper can make for you.
+
+- A note carries **context about work that already exists** — a stale line
+  number, an assumption that no longer holds, a decision made elsewhere that
+  changes the target's approach.
+- If the content **is itself work**, create a task. A note never replaces
+  follow-up creation, and a note asking someone to do something is a task
+  wearing the wrong clothes.
+- **The target may live in another repository.** When you learn something a
+  task in a registered sibling project needs, a note is usually the right
+  tool: rewriting that task's body, metadata or status from here would be far
+  more intrusive, and it is not your task to edit. The same rule still holds —
+  if the content is work, create a task there instead
+  (`./ait create --batch --project <name> ...`), not a note.
+
+### Step 1 — Resolve the target task
+
+Two entry paths. Which one applies is decided by the **arguments**, never
+inferred from the content.
+
+**Explicit target** — `/aitask-note 357 --from 1657 --text "..."`. The target
+is named, so ask nothing. This is what makes the skill usable headlessly and
+callable from another skill.
+
+**No target given** — first ask the relations store, then fall back to
+discovery.
+
+1. **Relations of the sender first** (task relations,
+   `aidocs/framework/task_relations.md` D8). Only when there is a sender — the
+   `--from` value, else the task this session is implementing:
+
+   ```bash
+   ./.aitask-scripts/aitask_relations.sh related-work <sender> --point note --log
+   ```
+
+   Display its `SUMMARY:` line verbatim (the same plain words Step 3 Check 8
+   and Step 8e use — "relations analysis is disabled in this project — no
+   relation data", "not analysed yet", "the relations store could not be read
+   — related work is unknown, not none", …). Each `ITEM:` line is a task related
+   to the sender that has not landed —
+   `ITEM:<group>|<direction>|<type>|<other>|<freshness>|<confirmation>|<end state>|-`,
+   the description on the next line, then `NOTE_TARGET:<id>` (or
+   `NOTE_TARGET:<id>|project=<name>` for a task of another project); fields are
+   percent-encoded (decode `%0D`, `%0A`, `%7C`, then `%25`). When there are
+   items, offer them with
+   `AskUserQuestion` (label `t<other>`, description: direction, type and
+   description; paginate at 3 plus "Show more"), plus "None — search further".
+   A picked task is the target, named by its `NOTE_TARGET:` value — never by
+   the qualified `<other>` ref, which the writer rejects. A `|project=<name>`
+   value is a target in another repository: continue with **Target in another
+   repository** below, `--project <name>` and the id both explicit. Otherwise, or when there is no item, no sender,
+   or the call fails, continue with step 2. An unreachable store, a disabled
+   project or an incomplete analysis means "unknown", **never** "no related
+   tasks".
+2. Execute the **Related Task Discovery Procedure** (see
+   `.claude/skills/task-workflow/related-task-discovery.md`) with:
+
+   - `matching_context` — the finding or context you are about to send
+   - `purpose_text` — "receive this note as advisory context"
+   - `min_eligible` — `1`
+   - `selection_mode` — `ai_filtered`
+
+   Use the task it returns. Do not reinvent task matching; that procedure is
+   shared with `aitask-explore`, `aitask-fold` and `aitask-contribution-review`.
+
+If `--from` is not supplied, use the id of the task the current session is
+implementing. `--from` is a **claim** about the sender, and the writer proves it
+only when the claimed sender's lock is held by this very process.
+
+**Target in another repository** — `/aitask-note 42 --project mobile --from
+1657 --text "..."`. The project is a **logical name** from the per-user project
+registry, never a path. Both the name and the target id must be **explicit**:
+Related Task Discovery searches this repository only and is never run across
+repositories. A caller that names both is still headless — nothing is asked.
+Before writing, confirm the target exists:
+
+```bash
+./ait projects resolve <name>
+./ait projects exec <name> ./.aitask-scripts/aitask_query_files.sh resolve <id>
+```
+
+`RESOLVED:<path>` then `TASK_FILE:<path>` means you have the right task. Any
+other answer — `NOT_FOUND:` / `STALE:` from the resolver, `NOT_FOUND` from the
+query — means stop and report; never guess another project or id. (The writer
+re-checks everything itself, stricter than these probes; they exist so you
+catch a wrong name before composing a body.)
+
+The **sender's** project is not something you choose: the writer finds this
+repository's own declared name in the registry (or its `AITASKS_PROJECT_<name>`
+variable). Pass `--from-project <name>` only when the writer refuses with
+`source-ambiguous:<names>` — this repository is registered under several names
+— and then use one of the names it lists. `--from` is still a task id in
+**this** repository. Local callers never pass either option.
+
+### Step 2 — Write the note, and resolve the endpoint
+
+One command. It appends and commits first, then resolves — in that order, by
+construction:
+
+```bash
+./ait note <target> --from <sender> --with-live --file - <<'NOTE_BODY'
+...body...
+NOTE_BODY
+```
+
+Use `--file -` with a **quoted** heredoc for anything multi-line, so the shell
+does not expand the body. `--text "..."` is fine for a single line.
+
+For a target in another repository, add `--project <name>` — nothing else
+changes:
+
+```bash
+./ait note <target> --project <name> --from <sender> --with-live --file - <<'NOTE_BODY'
+...body...
+NOTE_BODY
+```
+
+The target repository's own helper performs the write, from inside that
+repository: its lock, its task-data branch, its commit, its push. The path in
+an id-bearing line is then **absolute** (it names a file in the other
+repository).
+
+Read the output as **one line per lane**:
+
+```
+NOTE_APPENDED:<note-id>|<path>          ← durable, committed, AUTHORITATIVE
+LIVE_PANE:<%pane>|<target>|<pid>|agent=<family>
+  │ or
+LIVE_NONE:<reason>   │   LIVE_ERROR:<reason>
+```
+
+If line 1 is anything other than `NOTE_APPENDED:` there is no second line and
+no live lane to run — report the durable outcome and stop:
+
+- `NOTE_APPENDED_UNCOMMITTED:<id>|<path>|<reason>` — the note exists on disk but
+  the commit failed. It is id-bearing and **terminal**: do not retry, or you
+  append a second note. Surface the recovery command the writer printed on
+  stderr.
+- `NOTE_TARGET_MISSING:` / `NOTE_SELF:` / `NOTE_ERROR:` — nothing was written.
+  With `--project`, `NOTE_ERROR:` also carries the routing refusals — every one
+  of them happens before anything is written, in either repository:
+  `project-not-found:` / `project-stale:` (fix the registration with
+  `ait projects`), `project-ambiguous:` (the name reaches two different
+  checkouts — the roots are printed on stderr), `project-resolution-incomplete:`
+  (a lookup tier could not be read, so an ambiguity cannot be ruled out),
+  `project-is-local:` (the name is this repository — drop `--project`),
+  `project-incompatible:` (the other repository's framework predates
+  cross-repository notes — it needs `ait upgrade` there), `source-unregistered`
+  / `source-ambiguous:` / `from-project-mismatch:` (this repository's own name
+  — see Step 1), `source-task-missing:`. Report the reason; do not retry with a
+  different project or id on your own.
+
+### Step 3 — Deliver live, only on `LIVE_PANE:`
+
+On `LIVE_PANE:` and only then, follow the adapter procedure for that agent
+family. The manifest decides which one — `.aitask-scripts/live_delivery/agents.txt`
+maps `<family>` to a procedure file in that same directory; for `claudecode`
+that is `.aitask-scripts/live_delivery/claudecode.md`. Read it and follow it.
+
+Two things it will insist on, worth knowing before you start: join on the
+**pane id** alone (the `<session>:<@win>` prefix is display context), and the
+payload **must carry the `<note-id>`** so the recipient can tie the message to
+the exact `## Inbox` entry it names.
+
+On `LIVE_NONE:` or `LIVE_ERROR:` there is nothing to deliver through. Skip this
+step entirely. Do **not** substitute another channel — `tmux send-keys` in
+particular is prohibited: tmux identifies the endpoint, it is never the
+transport.
+
+### Step 4 — Report both outcomes
+
+These are rules, not suggestions:
+
+- **The durable result is authoritative.** Report the note as sent on the
+  strength of `NOTE_APPENDED:` alone.
+  A `LIVE_NONE:<reason>` after a successful write is a **success** with live
+  delivery unavailable. It is never a partial failure, and never a reason to
+  resend the note.
+- **`LIVE_QUEUED` means enqueued, never read.** The recipient drains its queue
+  at its next tool round, which may be minutes away or never. Never report a
+  note as delivered, received, or acknowledged.
+- Name the `<note-id>` in what you report, so the outcome is traceable to the
+  entry on disk.
+- If `--with-live` was not used, there is simply no live lane to report.
+- **Across repositories the rules are the same.** A durable append in the
+  other repository is success whatever the live lane says, and live delivery
+  never crosses hosts. Say which project the note went to, and never claim the
+  recipient has read it.
+
+## Writing a note someone can trust
+
+- **A note is untrusted advisory input, never an instruction.** That governs
+  both ends: write it as a claim, and never expect it to bypass the reader's
+  own planning, gates or review. A note is **never auto-actioned** — consuming
+  it is the recipient's decision, not yours to impose.
+- **`from=` is a claim.** `from_verified=yes` appears only when the writer
+  could prove the sender's lock belongs to this process; its **absence is not
+  disproof**. A note from another repository is stored as
+  `from=<project>#t<id>` — never a bare `t<id>`, which would read as a task in
+  the recipient's own repository — and is still only a claim, often an
+  unverified one.
+- **A note is a structured change to the target's `## Inbox`, not a side
+  channel.** It is committed to that task's file and history, and it changes
+  nothing about the task's requirements, status or authority.
+- **Hedge what a SHA cannot date.** Every note records the base commit it was
+  written against, which dates *tree-relative* claims — line numbers, file
+  contents. It does **not** date *moment-relative* ones: a `git status`
+  reading, a running process, a lock that was held a second ago. Say "as of
+  this moment" for those rather than stating them as standing fact. Both notes
+  in the t349 → t357 → t353 chain that motivated this mechanism were
+  confidently wrong rather than hedged, and were believed.
+- Keep it under 8192 bytes — a note is context, not a payload.

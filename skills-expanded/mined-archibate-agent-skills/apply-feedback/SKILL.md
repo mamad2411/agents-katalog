@@ -1,0 +1,85 @@
+---
+name: apply-feedback
+description: Apply a user feedback to future sessions, changing agent default behavior. Use this skill when user wants to permanently apply a feedback, save a preference, remember a lesson, or asked "next time", "remember this", "always do", "in future sessions", "never again". Offer this skill after agent mistake was corrected by user.
+context: fork
+---
+
+# Apply user feedback
+
+## Scope
+
+Given the user feedback, resolve two questions (infer from context or ask user):
+
+- **Persistence**:
+  - Apply permanently (affects future sessions) → use this skill
+  - Ephemeral in-session constraint (forget on exit) → skip this skill
+- **Which workspace**:
+  - Matters only when one tool or harness is in use (a CLI, an SDK) → that tool's skill page or reference page, so the lesson loads only with the tool (progressive disclosure), not in the rule files that every session loads
+  - Otherwise:
+    - Feedback applies globally (affects all other projects) → global rule files
+    - Only matters in current project (session in current workspace) → project rule files
+
+In Claude Code, this skill replaces the built-in memory for feedback; do not also save a feedback memory.
+
+## Target files
+
+Global: update every one of these that exists, so the lesson reaches all agents:
+
+- `~/.claude/CLAUDE.md`
+- `~/.codex/AGENTS.md`
+- `~/.config/opencode/AGENTS.md`
+- `${KIMI_CODE_HOME:-~/.kimi-code}/AGENTS.md`
+- `${PI_CODING_AGENT_DIR:-~/.pi/agent}/AGENTS.md`
+- You are on a niche harness? the rule file of it
+
+Project: update `<project>/AGENTS.md` and `<project>/CLAUDE.md` where they exist; if one is a symlink to or imports the other, write once.
+
+Tool: put the lesson in the narrowest page of the tool's skill whose load condition matches the lesson's trigger, so that it loads only when it can apply:
+
+- It can apply whenever the skill is in use, or the skill is one page → the skill's `SKILL.md`.
+- It applies only under the condition on which `SKILL.md` sends the agent to `references/<page>.md` → that page.
+
+With no skill for the tool, create an optional one under `~/.agents/skills/<name>/`, with a description that triggers when the tool is used and the tool's own know-how beside the lessons.
+
+These files may contain an installer-managed block between `<!-- archibate/agent-skills:begin -->` and `<!-- archibate/agent-skills:end -->`; reinstall overwrites it. Place the section after the end marker. Do not edit `~/.agents/AGENTS.md`: it is the installer source, committed to a public repo.
+
+## Format
+
+Create or update the `## User feedback` section, in this format:
+
+```markdown
+## User feedback
+
+These are real conversation snippets cited from history sessions between user and assistant. Each lesson is a pattern corrected by user feedback. The lessons are negative examples to criticize, not to imitate. Manage with `$apply-feedback` skill.
+
+**IMPORTANT:** BEFORE your next response matches ANY of the assistant trajectory below, apply the corresponding user feedback (last message in each lesson) IMMEDIATELY.
+
+<lessons>
+  <lesson name="use-uv-not-pip">
+    <message role="user">
+      Add requests to this project
+    </message>
+    <message role="assistant">
+      <tool_calls>
+        <tool_call name="bash" tool_call_id="1">{"command":"pip install requests"}</tool_call>
+      </tool_calls>
+    </message>
+    <message role="user">
+      Never use pip in my projects, always `uv add`.
+    </message>
+  </lesson>
+  <lesson name="some-random-lesson">
+    ...
+  </lesson>
+</lessons>
+```
+
+Transcribe the real conversation from your context into this schema. Redact secrets, tokens, personal data, and exact UUIDs.
+
+Do not fabricate conversations. Do not add narrative. Do not explain.
+
+Range from the first involved user message before assistant mistake, to the user feedback message. Deliberately drop the assistant response to user feedback (low-information self-reflection or apology).
+
+Keep only what a reader needs to recognize the mistaken trajectory and to understand the feedback. Cut other turns, tool results, and sentences; mark a cut inside a message with `(...)`. Copy the kept text verbatim, so the scenario stays concrete.
+
+If an existing lesson covers the same pattern, replace it with the new one instead of appending a duplicate.

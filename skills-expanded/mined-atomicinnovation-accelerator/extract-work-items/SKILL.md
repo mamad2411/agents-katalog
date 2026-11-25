@@ -1,0 +1,784 @@
+---
+name: extract-work-items
+description: Extract work items in batch from existing documents (specs, PRDs,
+  research, plans, meeting notes, design docs). Use whenever the user wants
+  to capture, pull out, or convert requirements, work items, user stories,
+  bug reports, or actionable tasks from existing files into structured
+  work items in meta/work/ — even if they don't say "extract" explicitly.
+argument-hint: "[document paths...] or leave empty to scan all"
+allowed-tools:
+  - Bash(accelerator config *)
+  - Bash(accelerator work *)
+  - Bash(accelerator corpus metadata derive)
+  - Bash(accelerator corpus frontmatter validate *)
+---
+
+# Extract Work Items from Meta Documents
+
+!`accelerator config context --skill extract-work-items --fail-safe`
+!`accelerator config agents --fail-safe`
+
+If no "Agent Names" section appears above, use these defaults:
+accelerator:reviewer, accelerator:codebase-locator,
+accelerator:codebase-analyser, accelerator:codebase-pattern-finder,
+accelerator:documents-locator, accelerator:documents-analyser,
+accelerator:web-search-researcher.
+
+**Work items directory**: !`accelerator config path work --fail-safe`
+**Codebase research directory**: !`accelerator config path research_codebase --fail-safe`
+**Plans directory**: !`accelerator config path plans --fail-safe`
+**Active integration**: !`accelerator config work integration --fail-safe`
+**ID pattern**: !`accelerator config work id_pattern --fail-safe`
+
+When **ID pattern** is `{tracker}`, the tracker owns every item's `id`: an
+item takes its issue's key once the tracker creates it, and one no tracker
+has confirmed is saved as a **draft** under a provisional `draft-` ID, which
+`/sync-work-items` promotes later. Step 4 then creates the whole batch
+through `accelerator work create-batch` (see "Step 4 under `{tracker}`").
+Under every other pattern, Step 4 allocates numbers and writes the files as
+described there.
+
+## Work Item Template
+
+The template below defines the sections and frontmatter fields that every
+work item must contain. Read it now — the valid work item kinds live in the `kind`
+field (not a hardcoded list elsewhere in this skill), and every written file
+must populate every frontmatter field.
+
+!`accelerator config template work-item --fail-safe`
+
+You are tasked with identifying requirements, work items, and actionable
+tasks within existing meta documents and helping the user capture them as
+formal work items. Source documents typically tell you *what* work items should
+exist but rarely give the full business context, testable acceptance
+criteria, dependencies, and assumptions a good work item needs. The model,
+the user, and web research fill those gaps.
+
+Extraction therefore proceeds in two layers:
+
+- **Source-derived content stays faithful.** Anything you draw from the
+  source documents must reflect what they actually say — do not silently
+  invent requirements that are not there.
+- **Business-context gaps are surfaced.** The `Assumptions`, `Open Questions`
+  and `Drafting Notes` sections serve different purposes when present, and all 
+  matter:
+  - **Assumptions** are interpretations you made that affect the work item's
+    meaning. Flag one only when using the wrong interpretation would lead
+    someone to build something different. Example: *"Interpreted 'users' as
+    end users rather than internal staff — if wrong, scope changes."*
+  - **Open Questions** are genuine unknowns the source raises but leaves
+    unanswered that a reader or implementer needs resolved before work can
+    proceed. Example: *"What does 'better results' mean — improved relevance, 
+    faster delivery, or both?"*
+  - **Drafting Notes** capture interpretations you made while filling out
+    the work item — business-context calls, scope decisions, or technical
+    choices that someone should review if they turn out to be wrong.
+    Actively populate this section. If you inferred who the stakeholders
+    are, what a vague term means, what the scope boundary is, or which
+    technical approach the source implies, write it down.
+    Examples: *"Treated this as a spike because no acceptance criteria are 
+    defined — if implementation is already expected, kind and scope both 
+    change."* Routine field selections (kind, priority, tags) don't need an 
+    entry unless the choice reflects a substantive scope or meaning 
+    interpretation that a reviewer should be aware of.
+
+For each selected candidate, you offer the user the choice between
+*enriching* the work item interactively (with model knowledge, web research,
+and a few focused questions, similar to `/create-work-item`) or *accepting
+the source-derived skeleton as-is* and refining later. The enrichment
+loop is per candidate, not pre-generated, so the work the model invests
+matches the depth the user wants for each work item.
+
+## Initial Setup
+
+When this command is invoked:
+
+1. **Check if parameters were provided**:
+
+- If one or more file paths were provided, note them as the target documents
+- If no parameters provided, ask conversationally and helpfully which
+  documents to work with. Give the user enough context to respond easily:
+  briefly explain what kinds of sources work (specific files, planning docs,
+  meeting notes, research, specs), mention that you can also scan all
+  documents in the configured directories, and invite them to direct.
+  Helpful examples matter more here than brevity — aim for something
+  welcoming and informative rather than a single terse question.
+
+Wait for user input.
+
+## Process Steps
+
+### Step 1: Identify Source Documents
+
+1. If specific files were provided, read them FULLY. Before reading,
+   verify each path exists. If any path does not exist, report which
+   paths are missing and ask the user to correct or remove them — do not
+   silently skip them or proceed with an empty set.
+2. If scanning all meta documents:
+   - Spawn a **{documents locator agent}** agent to find all documents in the
+     configured research and plans directories (shown above)
+   - Present the discovered documents and let the user select which to scan:
+     ```
+     I found the following documents:
+
+     **Research:**
+     - `{research directory}/2026-04-08-topic.md` — Topic research
+     - ...
+
+     **Plans:**
+     - `{plans directory}/2026-04-19-feature.md` — Feature plan
+     - ...
+
+     Which documents should I scan for work items? (enter numbers, "all", or
+     specific paths)
+     ```
+   - Wait for user selection.
+
+### Step 2: Analyse Documents for Work Items
+
+1. **Spawn {documents analyser agent} agents** (one per document, in parallel)
+   with instructions to identify requirements and actionable work items.
+   Look for:
+   - Explicit requirements ("The system must...", "Users need to...",
+     "We need to implement...")
+   - User stories ("As a..., I want..., so that...")
+   - Feature descriptions and acceptance criteria
+   - Bug reports with symptoms and expected behaviour
+   - Open-ended investigations or unknowns requiring research
+   - Multi-deliverable themes that span several stories
+   - One-off tasks (migrations, infrastructure work, documentation)
+
+2. **Wait for all agents to complete.**
+
+3. **Deduplicate**: Where the same work item appears across multiple
+   documents, merge the entries and record all source documents it came from.
+
+4. **Present discovered candidates** as a numbered list:
+
+```
+I found the following actionable items across the scanned documents:
+
+1. **[Short title]** — [one-line description]
+   Source: `{research directory}/2026-04-08-topic.md`
+
+2. **[Short title]** — [one-line description]
+   Source: `{plans directory}/2026-04-19-feature.md`, `{research directory}/2026-04-08-topic.md`
+
+3. ...
+
+Which items would you like to create work items for? (enter numbers, "all",
+or "none")
+```
+
+If no actionable items are found across all documents, inform the user:
+"No actionable items found in the provided documents." and exit cleanly.
+
+Wait for user selection. If the user selects "none", exit cleanly without
+writing any files.
+
+### Step 3: Enrich and Approve (Per Candidate)
+
+For each selected candidate, in original presented order, build a
+source-derived skeleton, present it, and let the user choose how much
+enrichment to invest. Do NOT pre-generate drafts for the entire batch
+in advance — enrichment can change a draft significantly, so generation
+happens per candidate inside this loop.
+
+#### 3.1 Build the source-derived skeleton
+
+For the current candidate:
+
+- Infer the work item kind from its content using kinds read from the
+  work item template's `kind` field:
+  - clear bug reports with symptoms and expected/actual behaviour → `bug`
+  - open-ended investigations with specific questions → `spike`
+  - broad multi-deliverable themes → `epic`
+  - specific single deliverables → `story`
+  - one-off technical or operational tasks → `task`
+  - Default to `story` for items where the kind is genuinely ambiguous.
+- Draft a complete work item from the source content alone, using `XXXX`
+  as the placeholder work item number.
+- Kind-specific content placement:
+  - bug: reproduction steps, expected/actual behaviour → `Requirements` section
+  - spike: research questions, time-box, exit criteria → `Requirements` section
+  - epic: initial story decomposition → `Requirements` section as a list
+  - Do not rename or add sections beyond those in the work item template.
+- Surface business-context gaps using the right section: put your
+  interpretation in `Assumptions` (when you made a call and the wrong call
+  changes what gets built). Put unanswered questions in `Open Questions` when 
+  you genuinely cannot tell from the source. Populate `Open Questions` with 
+  anything that would materially change scope, approach, or acceptance 
+  criteria if resolved differently. Add a `Drafting Notes` entry for every 
+  meaningful interpretation you made (scope boundaries, who
+  stakeholders are, what vague terms mean, which technical approach is implied).
+- Include all source documents for this item in the `References` section.
+
+#### 3.2 Present the skeleton with options
+
+```
+Candidate #N of M: [title]
+Kind (proposed): [kind]
+Source: [paths]
+
+[work item content with XXXX placeholder, including Drafting Notes section]
+
+```
+
+Use the `AskUserQuestion` tool with four options:
+
+1. **Enrich** — interactive Q&A, web research where useful, then approve
+2. **Accept as-is** — write this skeleton as a thin draft for later refinement
+3. **Skip** — exclude from this batch
+4. **Accept all remaining** — fast-path every remaining candidate as a thin draft
+
+Wait for the user's choice. If the user enters free-form text via the "Other"
+input, treat it as **Enrich** seeded with those instructions: enter the
+enrichment loop in 3.3 using the supplied text as the first round of revision
+guidance, skipping the question phase if the instructions are already
+substantive.
+
+#### 3.3 enrich — interactive enrichment
+
+Treat this as a focused, per-candidate version of the `/create-work-item`
+flow, seeded with the skeleton above:
+
+1. **Ask 1–3 focused business-context questions** tailored to this
+   candidate. Fewer than `/create-work-item`'s 3–5 because the source
+   already provides some context. Cover whichever of the following are
+   not already clear from the source:
+   - What pain point or problem does this address, and who experiences it?
+   - What is the desired outcome — what changes for people once this is done?
+   - Are there constraints, deadlines, or dependencies worth knowing?
+   - For bugs: what is the impact, and is it a blocker?
+   - Anything you are uncertain about, or that should be researched?
+
+2. **Spawn `{web-search-researcher agent}`** when there is uncertainty
+   about any aspect of this candidate the model lacks confidence on —
+   business rules, domain concepts, competitive landscape, industry
+   standards, external technology. Skip only when the candidate is
+   self-contained and well-understood from the source plus user answers.
+   When in doubt, prefer to spawn research — over-asking is cheaper
+   than producing a vague enriched draft.
+
+3. **Update the draft** combining source content, user answers, model
+   knowledge, and research findings. Re-present it as a structured
+   proposal that:
+   - Confirms or revises the kind
+   - Lists requirements drawn from source + enrichment
+   - Proposes specific, testable acceptance criteria — prefer
+     Given/When/Then for story/task; draw on domain knowledge and
+     research to make them thorough
+   - Lists dependencies (blocking and blocked) where known
+   - Keeps a `Drafting Notes` section for any interpretations still
+     unresolved so the user can challenge them
+   - Lists remaining open questions in the `Open Questions` section
+
+   Then use the `AskUserQuestion` tool with four options:
+
+   1. **Approve** — accept this draft and move on to the next candidate
+   2. **Revise** — update the draft with additional instructions (prompted after
+      via plain-text — do NOT use `AskUserQuestion` for the instructions)
+   3. **Skip** — discard this candidate entirely
+   4. **Accept as-is** — discard enrichment and use the original source-only skeleton
+
+4. **Iterate on the same candidate.** Challenge weak or untestable
+   acceptance criteria — when a criterion is not measurable, ask what a
+   passing test would look like and reformulate together. Do not accept
+   vague criteria into the draft. The candidate position (e.g. "Candidate
+   #N of M") does NOT advance during iteration: re-present the updated
+   draft for the same candidate and accept further free-form revision
+   instructions, looping as many times as needed. Only `approve` (or one
+   of the interrupts below) advances to candidate N+1. Once the user
+   explicitly approves, mark the candidate **approved (enriched)** and
+   advance to the next candidate.
+
+The user may switch out of enrichment at any point by saying:
+
+- `skip` — exclude this candidate entirely. Discard any partial
+  enrichment work — questions answered, drafts re-proposed — and never
+  approve it later, even if `accept remaining as-is` is invoked on a
+  subsequent candidate.
+- `accept as-is` — replace the in-flight enriched draft with the
+  original 3.1 source-derived skeleton (NOT the partially enriched
+  state) and apply the 3.4 thin-draft assumptions note. The user is
+  saying "stop enriching this one; take the source-only version".
+
+Honour these interrupts immediately on the turn they are received.
+
+#### 3.4 accept as-is — thin draft
+
+Take the source-derived skeleton from 3.1 as the final draft for this
+candidate. Append (or extend) the `Drafting Notes` section with the
+following note **verbatim** (so future tooling like `/refine-work-item`
+and human reviewers can detect thin drafts deterministically):
+
+> Extracted from source documents without interactive enrichment.
+> Acceptance criteria, dependencies, and kind may need refinement before
+> promoting from `draft` to `ready`.
+
+If the candidate already has source-derived drafting notes, keep them
+and add the verbatim note as a separate paragraph beneath.
+Keep any `Open Questions` from the 3.1 skeleton — these are genuine
+business unknowns that need resolution regardless of whether enrichment
+happened. Mark the candidate **approved (thin)** and advance to the next.
+
+#### 3.5 skip
+
+Exclude this candidate from the batch and advance to the next. Skipped
+candidates never become approved later, even if a subsequent
+`accept remaining as-is` is used.
+
+#### 3.6 accept remaining as-is — fast-path
+
+Mark every remaining *unreviewed* candidate as **approved (thin)**,
+applying the same skeleton + assumptions note as 3.4. Do not ask
+further questions. Already-skipped candidates stay skipped. Jump to
+Step 4.
+
+#### 3.7 No `accelerator work id next` calls in Step 3
+
+`accelerator work id next` is not called at any point during Step 3,
+regardless of which option the user picks. Writing happens exclusively
+in Step 4 after all approvals — enriched and thin — are collected.
+
+### Step 4: Write Work Items
+
+**A re-key in progress.** `accelerator work id next` and
+`accelerator work create-batch` refuse before reading or writing anything
+while an `accelerator work rekey` run is unfinished. Before any other branch
+on a non-zero exit from one of them, check its stderr for these codes; in
+every case nothing was written:
+
+- `E_REKEY_IN_PROGRESS` (exit 4) — tell the user a re-key is unfinished:
+  run `/rekey-work-items` to finish or undo it. Stop.
+- `E_REKEY_PLAN_UNREADABLE` (exit 4) — relay the printed remedy as is, never
+  suggesting the re-key be finished. Stop.
+- `E_REKEY_REQUIRED` (exit 4) — some items are not yet under the IDs
+  `work.id_pattern` gives them, such as after the pattern changed: relay
+  the printed remedy as is. It names `/rekey-work-items`, after any fix by
+  hand an item re-key cannot read needs first. Stop.
+- `E_WORK_ITEM_MALFORMED` (exit 4) — relay every file it lists with its
+  printed fix, as is. Each is fixed by hand. Stop.
+- `E_IDENTITY_RUN_BUSY` (exit 1) — another identity command is still running;
+  retry once it ends.
+
+When **ID pattern** is `{tracker}`, follow "Step 4 under `{tracker}`" below
+instead of this step.
+
+1. **Count approved (non-skipped) items: N.**
+
+2. **If N is 0**: print "No work items approved — nothing written." and exit
+   cleanly. Do NOT call `accelerator work id next`.
+
+3. **Otherwise**:
+
+   a. **Compute target slugs** — for each approved draft, derive a meaningful
+      kebab-case slug from its title.
+
+   b. **Read configuration.** Invoke each script by its bare path and use the
+      command's stdout as the named value — do **not** wrap the call in a `VAR=$(…)`
+      assignment, as the assignment (not the path) would become the command and escape
+      the rule:
+
+      - Run `accelerator config work id_pattern` and use its
+        stdout as `PATTERN`.
+      - Run `accelerator config work key` and use its stdout as
+        `KEY_PREFIX` (the local ID prefix).
+
+      Run the bare path **directly** as an executable;
+      never prefix it with `bash`/`sh`/`env` (a wrapper prefix escapes the skill's
+      `allowed-tools` permission and forces an unnecessary prompt).
+
+   c. **Suggest projected IDs**: if `PATTERN` references the `{key}` prefix
+      token (or the deprecated `{project}` synonym), the default prefix for each
+      row is `KEY_PREFIX` (warn and require user amendment if `KEY_PREFIX` is
+      empty). If `PATTERN` has no prefix token, no project column is shown.
+
+      Compute *display-only* projected IDs by calling, per distinct
+      project code:
+      ```
+      accelerator work id next --project <code> --count <count-for-that-project>
+      ```
+      These calls do not commit numbers; the same call is re-issued after
+      every amendment to keep the table accurate.
+
+   d. **Present an amendment table**:
+
+      ```
+      | # | Slug       | Project | Projected ID |
+      | 1 | add-foo    | PROJ    | PROJ-0001    |
+      | 2 | fix-bar    | PROJ    | PROJ-0002    |
+      | 3 | update-baz | PROJ    | PROJ-0003    |
+
+      Amend any rows? (`<rows> <PROJECT>` to set, `<rows> -` to revert to
+      default, `?` for help, `q` to cancel, blank to confirm.)
+      ```
+
+      When `PATTERN` has no prefix token, omit the `Project` column and
+      render only `| # | Slug | Projected ID |`. The amendment prompt is
+      not shown in that case — proceed directly to confirmation.
+
+      **Amendment grammar** (canonical — same wording in every state):
+
+      - `<rows>`: one row number (`2`) or comma-separated list (`2,3,7`).
+        Whitespace around commas is permitted (`2, 3, 7`) and trimmed.
+      - `<PROJECT>`: a project code matching `[A-Za-z][A-Za-z0-9]*`.
+      - `<rows> -`: revert the named rows to the default project code
+        (or to "no project" when no default is set).
+      - `?`: re-display the amendment grammar reference plus the
+        unchanged table; no state change.
+      - `q`: cancel the entire flow with no files written and no numbers
+        allocated.
+      - Blank input: confirms the current table state.
+
+      **Validation**: out-of-range row numbers re-prompt with
+      `error: row N — out of range (valid: 1-M)` without applying any
+      other amendments in the same input. Invalid project codes
+      re-prompt with `error: row N — project value "<value>" must
+      match [A-Za-z][A-Za-z0-9]*` and discard the entire input
+      (no partial application). Unrecognised commands re-prompt with
+      `error: unrecognised input. Type ? for help.` On any rejection
+      the table reverts to its last valid state.
+
+      After every accepted amendment, recompute projected IDs by
+      re-issuing the per-project allocator calls (display only).
+
+   e. **Project-aware slug-collision check** before any allocation. For
+      each row, glob:
+      - When the pattern has `{project}`:
+        `{work_dir}/<project>-*-<slug>.md` for the row's project — a
+        same-slug file under the *same* project is a real collision.
+      - Always (legacy fallback):
+        `{work_dir}/[0-9][0-9][0-9][0-9]-<slug>.md` — a same-slug legacy
+        file shadows the new file regardless of project.
+
+      Within the same batch, two amendments to the same project with
+      the same slug are also a collision. Same slug under different
+      projects (`PROJ-0001-add-foo.md` and `OTHER-0001-add-foo.md`) is
+      legitimate and not a collision.
+
+      If any collision is detected, report which slugs collide and
+      which existing files they match, abort without calling the
+      allocator, and ask the user to resolve the collision before
+      re-running.
+
+   f. **Allocate per distinct project code**, in original presentation
+      order:
+      ```
+      accelerator work id next --project <code> --count <count>
+      ```
+      One call per distinct project code; `--project` is omitted when
+      the pattern lacks `{project}`. If any allocator call exits
+      non-zero, abort immediately and surface the error verbatim — do
+      not write any files. The whole batch fails atomically.
+
+   g. **Substitute the allocated full IDs** into approved drafts in
+      their original presented order. Within a single project, the
+      first row in presentation order takes the first allocated
+      number; multiple projects each preserve their own ordering. The
+      `id` frontmatter is **always quoted** (`"PROJ-0001"`).
+
+   h. **Populate frontmatter** for every approved draft. Before writing
+      each file, capture metadata and substitute the unified base
+      fields into the template's frontmatter block:
+
+      1. Invoke
+         `accelerator corpus metadata derive`
+         once for the batch to obtain `Current Date/Time (UTC):`,
+         `Current Revision:`, and `Repository Name:`.
+      2. For each approved draft, **substitute** every field below
+         with the indicated value:
+         - `type:` ← `work-item`
+         - `id:` ← the allocated full ID, always quoted as a YAML
+           string (e.g. `id: "PROJ-0001"`)
+         - `title:` ← the draft's H1 title
+         - `date:` ← the `Current Date/Time (UTC):` value
+         - `author:` ← the author value resolved per the rules in
+           `create-work-item/SKILL.md > author` (config → VCS user →
+           prompt)
+         - `producer:` ← `extract-work-items`
+         - `status:` ← `draft`
+         - `last_updated:` ← the same `Current Date/Time (UTC):` value
+         - `last_updated_by:` ← the same value resolved for `author`
+         - `schema_version:` ← `1` (bare integer, not quoted)
+
+         Optional linkage/foreign-ref keys are omit-by-default:
+         the template shows each as `""`/`[]`, but write a
+         key into the artifact **only** when it has a value, and omit it
+         entirely otherwise (do not carry the empty placeholder
+         through). By default a freshly extracted draft names none of
+         them.
+
+         - `parent:` ← the parent work item's ID as a typed-linkage ref
+           (`"work-item:NNNN"`). Fill when the source names a parent;
+           otherwise omit the key entirely.
+         - `blocks:` ← list of typed-linkage refs to work items this
+           item blocks (`["work-item:NNNN", ...]`). Fill when blocking
+           edges are explicit in the source; otherwise omit the key.
+         - `blocked_by:` ← list of typed-linkage refs to work items that
+           block this one. Prefer writing the canonical `blocks:` on the
+           other side; emit `blocked_by:` only when the canonical side
+           cannot be written, and omit it otherwise.
+         - `derived_from:` ← list of typed-linkage refs to artifacts this
+           item is derived from (`["plan:NNNN", ...]`). Fill when
+           derivation is explicit; otherwise omit the key.
+         - `relates_to:` ← list of typed-linkage refs to related
+           artifacts. Fill when relationships are explicit; otherwise
+           omit the key.
+         - `source:` ← typed-linkage ref to the originating source
+           artifact (`"issue-research:NNNN"`). Fill when the source is a
+           meta artifact with an id; otherwise omit the key.
+         - `external_id:` ← cross-system pointer (e.g. a Jira/Linear
+           key). Fill when the item is linked to an external tracker;
+           otherwise omit the key.
+
+   i. **Write all N work item files**. Each work item's `References`
+      section must include all source document paths the item was
+      extracted from. For deduplicated items that appeared in multiple
+      documents, list every contributing source under `References`,
+      one per line.
+
+   j. If a write error occurs mid-batch: report which numbers were
+      allocated, which files were written successfully, and which were
+      not — so the user can manually write the missing files with
+      their pre-assigned IDs. Do not retry writes silently and do not
+      call the allocator again to re-allocate; the original allocation
+      stands. The user needs to know the exact state.
+
+4. **Print a summary table**:
+
+```
+Created the following work items:
+| ID         | Title   | File                                 |
+|------------|---------|--------------------------------------|
+| PROJ-0001  | [title] | `{work_dir}/PROJ-0001-slug.md`       |
+| OTHER-0001 | [title] | `{work_dir}/OTHER-0001-slug.md`      |
+...
+```
+
+Under the default `{number:04d}` pattern the ID column shows
+`0001`, `0002`, etc., and no project amendment table appears.
+
+**Validate the frontmatter**: after writing, run the validator on each work
+item written this batch
+
+```bash
+accelerator corpus frontmatter validate --file <each written work item path>
+```
+
+If any invocation exits non-zero, the document violates the canonical
+frontmatter standard; report the emitted violation and fix the frontmatter
+before completing.
+
+### Step 4 under `{tracker}`: Create the Batch
+
+1. **Count approved (non-skipped) items: N.** If N is 0, print "No work
+   items approved — nothing written." and exit cleanly.
+
+2. **Build the manifest.** Give each approved draft a short unique `ref`
+   (its slug will do). For each, write the drafted body (H1 through
+   References) to a scratch file with the `NNNN` placeholder left literally
+   in place, then write one JSON array to a scratch manifest file, one
+   entry per draft in presentation order:
+
+   ```json
+   [
+     {"ref": "add-foo", "title": "Add foo", "kind": "epic",
+      "priority": "high", "body_file": "add-foo.md",
+      "derived_from": ["plan:2026-01-01-foo"]},
+     {"ref": "foo-api", "title": "Foo API", "kind": "story",
+      "priority": "medium", "body_file": "foo-api.md",
+      "parent": {"ref": "add-foo"}}
+   ]
+   ```
+
+   - `parent` is `{"ref": "<ref>"}` when the approved hierarchy places the
+     item under another draft of this batch, or a typed reference such as
+     `"work-item:0042"` when its parent already exists. Omit it otherwise.
+   - `tags`, `blocks`, `blocked_by`, `relates_to`, `derived_from` and
+     `source` follow the same omit-when-empty rules as the frontmatter in
+     Step 4 h. `body_file` is relative to the manifest's directory.
+   - Do not call `accelerator work id next`, and never write an item
+     with the `Write` tool: `create-batch` mints every ID and writes every
+     file.
+
+3. **Make one push offer for the whole batch** (when **Active integration**
+   is non-empty). Use the `AskUserQuestion` tool with two options:
+
+   1. **Yes, push all N to [tracker] now** — create every issue and take
+      its key as the item's ID
+   2. **No, save as drafts** — save every item as a draft; `/sync-work-items`
+      promotes them later
+
+   Never ask per item.
+
+4. **Create the batch** with one call, adding `--push` only when the push
+   was accepted:
+
+   ```
+   accelerator work create-batch --manifest <manifest-file> \
+     --producer extract-work-items --author "<resolved author>" [--push]
+   ```
+
+   It creates parents before their children and writes each child's
+   `parent` as the ID its parent actually took, so a child of an item left
+   as a draft links to that draft (promotion rewrites the link later).
+
+5. **Read the output.** Each item prints one line,
+   `<ref>\t<path>\t<keyword>\t<key>`, in the order the items were created.
+   After them come `#\tdetail\t<ref>\t<source>\t<path>[\t<recovery-dir>]`
+   lines; match each to its item by `<ref>`, never by position. A
+   `holder` source names the item already claiming the key; `vcs` and
+   `recovery` sources name paths to restore, the latter from
+   `<recovery-dir>`.
+
+6. **Print a summary table**, one row per item line in printed order:
+
+   ```
+   | Item    | Outcome                  | File                            |
+   |---------|--------------------------|---------------------------------|
+   | Add foo | created ENG-42           | `meta/work/ENG-42-add-foo.md`   |
+   | Foo API | draft — push declined    | `meta/work/drafts/draft-…`      |
+   ```
+
+   The Outcome column renders the keyword:
+
+   | Keyword | Outcome |
+   |---|---|
+   | `write-once` | `created <KEY>` |
+   | `created-unwritten` | `created <KEY> — local write failed` |
+   | `declined` | `draft — push declined` |
+   | `local-save` | `draft — tracker unreachable` |
+   | `local-save` with a `warning: -: configure failed:` line | `draft — sync refused (configuration)` |
+   | `loud-terminal` | `draft — remote issue may exist` |
+   | `rejected` | `draft — request rejected` |
+   | `retirement-incomplete` | `created <KEY> — local write incomplete; restore from VCS or <recovery-dir>` |
+   | `created-blocked` | `created <KEY> — blocked by <holder>; resolve it, then promote` |
+   | `pending` | `draft — already pending as <draft>; run work sync` |
+
+   `<holder>` and `<recovery-dir>` come from the item's detail lines, and
+   `<draft>` is the item line's path. The path is empty when no local file
+   carries the item: a `created-unwritten` item, and a `pending` item whose
+   earlier create an older binary recorded without a draft. Render the File
+   cell as `—`, and a `pending` item's Outcome as `draft — already pending;
+   run work sync`. After the table, relay each `Error: <ref>: …` line from
+   stderr under its item, with the recovery for its outcome. A draft's ID
+   is the `draft-` prefix of its filename.
+
+   | Keyword | Recovery |
+   |---|---|
+   | `declined`, `local-save` | none; `/sync-work-items` promotes the draft |
+   | `local-save` with a `warning: -: configure failed:` line | if stderr carries a `warning: -: configure failed:` line, relay its cause; the draft cannot be pushed or promoted until it is fixed, and sync will refuse until then. The batch prints each distinct warning once, so it is relayed once, not under each item |
+   | `loud-terminal` | check the tracker, then `accelerator work promote <draft-id> --adopt <KEY>` if the issue exists, otherwise `accelerator work promote <draft-id> --create` |
+   | `rejected` | edit the draft to remove the cause stderr names, then `accelerator work promote <draft-id>` or `/sync-work-items` |
+   | `created-unwritten` | none; the next `/sync-work-items` links the issue |
+   | `created-blocked` | resolve the collision stderr describes, then `accelerator work promote <draft-id>` |
+   | `retirement-incomplete` | restore the paths the detail lines name, then `/sync-work-items` |
+   | `pending` | `accelerator work promote <draft-id>` or `/sync-work-items`; with an empty path, `/sync-work-items` |
+
+   Never re-run `create-batch` to recover an item. With `--push`, every
+   item it reported already has a draft or an issue, so a rerun changes
+   nothing for it; without `--push`, a rerun writes every item again.
+
+7. **Branch on the exit code.** 0, 4, 70, 71, 74 and 75 all mean the batch
+   ran; the table above is the report. 2 means the manifest was refused
+   or its parents form a cycle, and nothing was written: relay the
+   message, fix the manifest, and call again. 1 means an item could not be
+   created: the items printed before it were; relay the error, and once it
+   is fixed call `create-batch` again. With `--push`, pass the same
+   manifest: a pushed batch creates only the entries it never reached.
+   Without `--push`, a rerun writes every entry again, so pass a manifest
+   of only the entries no item line printed, with each `{"ref": …}`
+   parent naming a printed entry replaced by `"work-item:<id>"` from that
+   entry's line.
+
+8. **Validate the frontmatter** of every item whose line names a path:
+
+   ```bash
+   accelerator corpus frontmatter validate --file <path>
+   ```
+
+## Quality Guidelines
+
+- Under `{tracker}`, Step 4 under `{tracker}` replaces Step 4: the
+  `accelerator work id next` rules below apply only to other patterns.
+
+- Never call `accelerator work id next` before all approvals are collected.
+  The number space is shared and finite; consuming numbers for drafts the
+  user might still skip creates gaps that are impossible to clean up later.
+- Never call `accelerator work id next` when N=0. An all-skipped session must
+  exit cleanly with no side effects.
+- If `accelerator work id next` exits non-zero, abort immediately and surface
+  the script's error output verbatim — even if it emitted some numbers on
+  stdout before failing, treat the entire batch as failed.
+- Verify all target slugs are free BEFORE calling `accelerator work id next` —
+  collision checks happen before number allocation, by slug pattern, since
+  numbers are not yet known. Under a `{project}` pattern the collision
+  check is **project-aware**: the same slug under two different project
+  codes (`PROJ-0001-add-foo.md` and `OTHER-0001-add-foo.md`) is
+  legitimate. Same-slug legacy `NNNN-{slug}.md` files always count as a
+  collision.
+- Under a `{project}` pattern, the amendment table prompts the user
+  to assign or override project codes per row before allocation. The
+  display-only projected IDs are recomputed after every amendment.
+  No numbers are committed until the user confirms with blank input.
+- Numbers are assigned to approved drafts in their original presented
+  order, not in approval timestamp order. This makes outputs deterministic
+  and matches the order the user reviewed.
+- Every written work item MUST include all source document paths in its
+  `References` section. For deduplicated items that appeared in multiple
+  documents, list every contributing source.
+- Do not extract structural or navigational content (table of contents
+  entries, section headings with no requirements content, agenda items
+  with no actionable outcome) as candidate work items. If a heading just
+  organises content rather than describing work, skip it.
+- Work item kind inference must use kinds read from the work item template
+  frontmatter (loaded at the top of this skill), not a hardcoded list.
+  Default to `story` for items where the kind is genuinely ambiguous.
+- All frontmatter fields defined in the work item template must be populated
+  in every written work item — `type` (`work-item`), `id` matching the
+  assigned full ID, `title` matching the work item's title, `date`,
+  `author`, `producer` (`extract-work-items`), `status` (`draft`),
+  `kind`, `priority` (medium unless the source implies otherwise),
+  `parent` (empty string unless the source establishes a parent),
+  `external_id` (empty unless set), `tags` (a YAML array, possibly
+  empty), `last_updated`, `last_updated_by`, and `schema_version: 1`.
+  No field may contain unfilled placeholder text like `[author]` or
+  `NNNN`. The body H1 format is `# <full-id>: <title>` — kept in sync
+  with the frontmatter `title:` field.
+- `date` must use the work item template's `YYYY-MM-DDTHH:MM:SS+00:00`
+  format in UTC (e.g. obtained via `date -u +%Y-%m-%dT%H:%M:%S+00:00`).
+- `author` is sourced in this order: configuration if present, then the
+  source document's author/owner field if named, then the current git/jj
+  user identity, then — only if all of those fail — ask the user once
+  before writing the batch. Never write `[author]` or any placeholder.
+- "Accept remaining as-is" only marks unreviewed candidates as approved
+  (thin) — it does not resurrect skipped candidates, and writing still
+  happens exclusively in Step 4 after the single `accelerator work id next`
+  call.
+- Source-derived content stays faithful to what the source documents say.
+  Do not silently invent requirements. When you make an interpretation while
+  filling out the work item — about scope, stakeholders, terminology, or implied
+  approach — capture it in `Drafting Notes`. Use `Open Questions` for genuine
+  unknowns the source leaves unanswered. A Drafting Note is worth writing
+  whenever the wrong interpretation would send someone in a meaningfully
+  different direction.
+- The enrichment loop (3.3) is per candidate. Do not pre-generate enriched
+  drafts for the whole batch — enrichment depends on the user's answers
+  and the model's research, both of which differ per candidate. Build the
+  source-derived skeleton (3.1), present it (3.2), then enrich one
+  candidate at a time.
+- Web research (`{web-search-researcher agent}`) is a first-class step
+  inside enrichment. Spawn it whenever there is uncertainty about
+  domain, business, competitive, or technical aspects of the candidate.
+  Skip only when the candidate is self-contained and well-understood.
+- Thin drafts (accepted as-is) and enriched drafts coexist in the same
+  work items directory. Thin drafts must carry the verbatim `Drafting Notes`
+  entry recording non-enrichment so a future `/refine-work-item` invocation (or
+  manual review) can identify them as needing follow-up before promotion
+  from `draft` to `ready`.
+- Acceptance criteria in enriched drafts must be specific and testable;
+  prefer Given/When/Then for story/task. Challenge any criterion that
+  is not measurable before accepting it into the draft.
+
+!`accelerator config instructions extract-work-items --fail-safe`

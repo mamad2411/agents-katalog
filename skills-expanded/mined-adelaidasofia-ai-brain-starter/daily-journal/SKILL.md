@@ -1,0 +1,875 @@
+---
+name: daily-journal
+description: Use when the user wants to journal, do a daily or end-of-day check-in, reflect on or vent about their day, brain-dump feelings, log what happened today, or says /journal. Also fires for quick one-line captures and a second session the same day (resumes that day's entry). Not for meeting notes (use meeting-todos), morning priorities (use rise), weekly/monthly reviews (use insights), or cross-entry pattern analysis (use patterns).
+---
+
+# Daily Journal — Interview & Log
+
+A conversational journaling skill that interviews the user, identifies their emotional floor, runs a behavior accountability check, consults the advisory panel, and saves a properly formatted journal entry to their Obsidian vault.
+
+> **`{SKILL_DIR}`** = this skill's own folder (locally: the directory this SKILL.md lives in; a served brain substitutes the real path before you read this). The detail files under `{SKILL_DIR}/references/` are part of this skill: when a step says to read one, read it before acting on that step. If a path does not resolve, name the missing file and stop; never guess another location.
+
+## Language
+
+Run the entire interview and write the entry in the language the user writes in. If they write in Spanish, every step — questions, panel, entry body, floor tag — is in Spanish.
+
+**Spanish floor aliases** (wikilinks in Spanish entries route to the same floor file via aliases):
+Asco (1) · Vergüenza (2) · Bochorno (3) · Culpa (4) · Apatía (5) · Resignación (6) · Confusión (7) · Soledad (8) · Aburrimiento (9) · Duelo (10) · Decepción (11) · Herida (12) · Miedo (13) · Frustración (14) · Deseo (15) · Rabia (16) · Desprecio (17) · Orgullo (18) · Valentía (19) · Esperanza (20) · Neutralidad (21) · Disposición (22) · Aceptación (23) · Razón (24) · Confianza (25) · Compasión (26) · Humildad (27) · Pertenencia (28) · Amor (29) · Gratitud (30) · Entusiasmo (31) · Asombro (32) · Alegría (33) · Paz (34)
+
+**Floor tag:**
+- English: `*Floor: [[Fear]] · [[Low Floors]]*`
+- Spanish: `*Piso: [[Miedo]] · [[Pisos Bajos]]*`
+
+## When the message is about the panel, not the day
+
+If the message asks to set up, review or change the user's advisory panel, in any language ("help me make my panel mine", "add Esther Perel to my panel", "quita a Ray Dalio de mi panel"), this section is the whole job until the setup is finished or they drop it, so their answers along the way are setup answers, not journal content. It is not a journal entry: skip the Capture-First Contract and every step after it, and write no journal file. The crisis protocol is the one exception: if it fires, it wins, its save included. If the message also tells you about their day, finish the panel first, then offer to journal it. Be a short, warm coach, one thing at a time.
+
+1. **Learn who they are.** Read their About Me note (a file named `About Me.md` anywhere in the notes folder) and `About me/My panel.md` if it exists. Go only by those notes and by what they tell you now, never by their name or a guess. If you still don't know what they do, whether they have children, and where they live and work, ask that once, in one short message.
+2. **Tell them what they start with.** They get the default panel (the roster in Step 5). Three parts are only for some people: Technology & AI, for people who work in tech; LatAm, for people who live, work or invest in Latin America; and Colombia, for people who live, work or invest there. Say in one or two lines which you turned on or left out and why, and that they can change it. When you can't tell, leave it out.
+3. **Suggest names, one at a time.** Take the groups under "Panel suggestions" (end of Step 5) that fit what you learned. For each name: who they are in one line, why they fit this person, then ask add or skip. Wait for the answer before the next name. Stop at five names, or sooner if they say enough. Suggest nobody outside that list, and nobody already in their note.
+4. **Let them change the rest.** Ask once whether they want anyone removed, or someone else added. A name they bring themselves is fine, as long as it's a real person you can describe truthfully.
+5. **Save `About me/My panel.md`**, creating the folder if needed, then tell them in one line that it's saved and that they can edit the note in Documents. Keep what an earlier version of the note already had. Record only what they chose: skipped names stay out. Keep the headings and section names in English in every language, so the app can read them:
+
+   ```markdown
+   # My panel
+
+   ## Sections
+   - Technology & AI: off
+   - LatAm: off
+   - Colombia: off
+
+   ## Added
+   - Anne Lamott: *Bird by Bird*
+
+   ## Removed
+   - Ray Dalio
+   ```
+
+## How It Works
+
+When the user invokes `/journal`, follow this flow. The capture comes first and always; after it, the conversation sets the order (see "Conversation, not checklist").
+
+## The Capture-First Contract (the spine — read before everything else)
+
+**A journal entry is SAVED TO DISK from the user's first substantive message — before any follow-up questions, accountability check, floor analysis, or panel — and the SAME reply adds a first-take panel to it.** Everything after that first save is *enrichment* that updates the same file in place. The interview is opt-in. The capture is guaranteed, and so is the panel.
+
+Why: most people open `/journal`, type what happened, and leave. If the entry only saves after the full interview + panel (the old flow), every one of those sessions loses the entry entirely. The single most important job of this skill is **not losing what the user already told you.** A captured raw entry beats a perfect entry that never got written.
+
+**The two phases:**
+
+1. **Capture (mandatory, immediate).** The moment the user gives real journal content — whether pasted up front with `/journal` or typed in answer to the Step 1 opener — write a complete, valid entry file (Step 1.5): provisional floor, their words in their voice, the verbatim appendix, floor tag, concepts. If the session ends one second later, this file is still a real journal entry. Then, still in the SAME reply and before any follow-up question, run the first-take panel (Step 1.5b): write it into the file, and put its full text in the reply's final message, after all tool calls (Step 6). An entry that leaves the first reply has its words AND its panel.
+
+2. **Enrich (opt-in, in place).** If the user keeps going, run Steps 2–9 at the natural pauses of the conversation (see "Conversation, not checklist") — follow-ups, gratitude, accountability, finalize the floor, run the full panel (it replaces the first take) — and **update the same file** (Step 7 is now an in-place update, not a fresh create). Never create a second file.
+
+**Graceful exit — applies at every step after the first save.** If the user signals done ("that's it," "save it," "I'm good"), goes quiet, or declines to continue at any point: **finalize the existing file in place and stop.** Flush any messages they typed since the last save into the verbatim appendix, do a quick floor re-check on the fuller picture, run the light idea/to-do scans (Steps 8/8.5) and Step 9 (index rebuild, panel dissent log) on whatever exists, and confirm what you saved. Never hold the entry hostage to any later step. This session's first take is already in the file; if it somehow is not, write it into the file and put its full text in your final message (Step 6), unless the user declined the panel this session or the crisis protocol is active. Re-prompt at most once. The entry already exists — your job from here is only to keep it current and let them go.
+
+**Panel-Always Rule.** Every entry carries a `## Panel dialogue` section, and every session that saves to the entry adds its own block there.
+- **Blocks are append-only.** A session writes and edits only its own block, never an earlier session's. On a resumed day each new block opens with an italic session label in the entry's language (`*Later session, HH:MM:*`), and the label stays when the full panel replaces the first take.
+- **Only two cases leave a session without a panel**: an explicit decline and the crisis protocol. Each writes a one-line note as this session's block, in the entry's language (after the session label on a resumed day), so the absence is never silent. If the user explicitly declines the panel, this session's block is written as `*Panel declined this session.*` (replacing whatever this session's block holds: placeholder, first take, full panel or rounds; never an earlier block) and panel work stops for the session; if they later ask for one, run the full panel (Step 5) as this session's block. If the crisis protocol is active, no further panel runs this session; a first take or full panel already written stays, otherwise the block is `*No panel this session: crisis protocol.*` A run with no one to answer (a scheduled headless one) saves no entry at all: an entry needs the user's own words (Step 1.5).
+- Leaving early, going quiet, or wrapping up is not a decline; the first take already covers it.
+
+Why: when the panel was the last, optional step, sessions that ended early saved entries with no panel, and nobody noticed until the user asked where it went.
+
+This contract overrides any older "save only at the end" language anywhere below. Where a later step says to save at the end, read it as "update the already-saved file."
+
+## Crisis protocol (Tier 2 safety override — overrides every step below)
+
+This is the full definition of the "crisis-tier override" / "hold-voice protocol" referenced throughout this file, aligned with the `/rise` Tier 2 safety override. If at ANY point the user's language flips to total-self statements ("I'm worthless", "I hate myself"), somatic dysregulation ("can't breathe", "drowning"), acute grief, or crisis ideation ("I want to disappear", not wanting to be alive):
+
+1. **Stop the mechanics.** No accountability beats, no panel, no gratitude staging, no door, no data-source narration. Drop the interview structure and stay with them — witness first, plain warm language, no rushing to fix.
+2. **Ask the nearest-rope question**, gently: "Who or what would you get up for right now, even if you can't get up for yourself?" A dog, a person, a plant, a promise all count. Don't push past a non-answer.
+3. **Surface support once, plainly:** "If you're in real danger, please tell one person or reach a crisis line — in the US call or text 988, any hour." Adapt to the user's country if known. Say it once; don't repeat it every message.
+4. **The capture-first save still happens** — their words verbatim, floor tagged from what you heard, and no further panel this session (a first take or full panel already written stays; otherwise this session's block is the one-line crisis line from the Panel-Always Rule). Tell them it's saved. Enrichment can wait for another day.
+
+When in doubt about whether this applies, err toward applying it.
+
+## Conversation, not checklist (standing rule: it sets the order of Steps 2–6.5)
+
+The journal is a thinking conversation. Steps 2–6.5 are beats for natural pauses, not a sequence to march through; wherever one says "next" or "after," read it as "at the next natural pause."
+
+**When they engage the panel, run a round.** If the user asks something, pushes back on a voice, or brings a new idea or plan, answer every question they asked, fully, in that same reply, and run a panel round (Step 5): the voices they addressed respond to what they raised, or the best-fit voices if they addressed none. Each one agrees, pushes back, builds, or asks a sharper question, and at least one dissents. Write the round into the file and show it in full in the final message (Step 6).
+
+**Keep going while they are engaged. Only the user ends it.** Gratitude, accountability, the floor, the full panel and the door wait for a natural pause (the user has stopped asking, pushing back and building) and never close a thread the user is still working. Brevity is for each reply's prose, not for the depth or length of the conversation.
+
+**Spiral versus thinking.** The test is whether their last reply added something new.
+- **Thinking it through:** a new angle, idea or plan, a question, pushback on a voice, building on one. Keep the panel going.
+- **Going down a black hole:** the same point again with nothing new, distress rising reply over reply, global statements about themselves or their life ("I always ruin things"), replaying one scene late at night. Save their latest words to the entry as usual (verbatim appendix, no new panel lines), pause the panel and every other beat (gratitude, accountability, the floor, the door), and bring them to the body: say what you see in one warm sentence, then offer one thing that fits the hour (a few slow breaths together right now, a walk, water, or sleep). No lecture, no list of options. When they come back with something new, the panel is back on; if they say they're done, take the graceful exit.
+- If you can't tell thinking from a spiral, run the round and read the next reply. If their words reach the crisis protocol's language, or you can't tell a spiral from it, that protocol runs instead of everything here.
+
+## Standing Rules — Panel Behavior (applies throughout the interview)
+
+The panel is a live participant, not a closing credit. Follow these rules at every step, not just at Step 5.
+
+### Trigger → Voice routing (mid-interview interrupts)
+
+When the user uses certain language or surfaces certain situations during Steps 1–3, pull in ONE panelist mid-interview. One sentence, in their voice, then return to the interview. Do not batch panel reactions for the end.
+
+**Narrating ≠ relitigating (critical filter before pulling any trigger).** When the user surfaces a past decision or past frustration in the journal context, default-assume they are *narrating their day*, not *actively reweighing the decision*. Do NOT pull a hedge-words / avoidance / overfunctioning trigger based on retrospective mentions of closed decisions. Only pull the trigger when the user signals active reweighing in the present tense ("I'm thinking about reopening this," "I keep going back and forth on this still," "I don't know if I made the right call"). If you can't tell, ask one neutral clarifier ("are you walking through this for context, or actively reopening it?") instead of pulling the panelist. Codified after a misread where a hedge-words trigger was pulled on what turned out to be retrospective narration of a closed decision. The user's correction: *"I already have my mind made up about that. I'm not reopening that gate. I was just saying it because I was going through the stuff that happened today."*
+
+| Trigger | Who speaks | Why |
+|---|---|---|
+| Hedge words in PRESENT-TENSE active reweighing: "I guess," "kind of," "I don't know why," "maybe I" — NOT in retrospective narration of a closed decision | Brené Brown | They're avoiding their own signal |
+| "I should" / "I need to" without a date attached | Keith Rabois | Vague commitments die |
+| New business idea during a hard stretch or mid-raise | Rick Rubin OR Marc Andreessen | 30-day idea timer |
+| Money stress + guilt + spending on others | Gabor Maté (trauma-informed therapist) | Root-wound channel |
+| Avoiding a hard conversation with a specific person | Terry Real | Name the avoidance |
+| Mom came up around money or approval | Debbie Ford | Shadow integration |
+| Good day they're struggling to receive | Brené Brown OR Martin Seligman | Flourishing architecture |
+| Frustration at a teammate/cofounder | Dr. Emily Anhalt | Low-floor pre-flight check |
+| Gym missed + rationalization | Dr. Peter Attia OR Dr. Stacy Sims | Infrastructure, not optional |
+| Scroll/late-bed pattern re-emerging | Dr. Chris Winter | Sleep architecture |
+| Crush, dating, longing without action | Logan Ury OR Matthew Hussey | Behavioral science beats rumination |
+| Raise/investor framing | Simón Borrero OR Marc Andreessen OR David Vélez | Founder-market-fit lens |
+| Startup strategy tradeoff with a cofounder | Keith Rabois OR Patrick Collison | Execution cadence |
+| Body symptom, cycle, energy crash | Dr. Stacy Sims OR Dr. Lara Briden OR Dr. Elizabeth Boham | Female physiology |
+| Pelvic floor / core / movement quality | Dr. Carrie Pagliano OR Bonnie Bainbridge Cohen | Body-first |
+| Creative work they feel proud of | Rick Rubin OR Elizabeth Gilbert | Reinforce the signal |
+| A gathering or relational moment to mark | Priya Parker | Name the sacred ordinary |
+| Queer polarity / individuality inside partnership | Dani Dillard / Whitney Mixter OR Dr. Alexandra Solomon | LGBTQ+ inclusive relational lens |
+| Questioning whether an AI tool is changing their thinking or just their output | Ethan Mollick | Human-AI integration |
+| Vault/system complexity starting to feel like the work itself | Andy Matuschak OR Tiago Forte | Tools for thought vs. actual thinking |
+| Sanity-checking what AI can actually do in a build or automation | Andrej Karpathy | AI capability realism |
+| Cross-border tax / entity / residency question | Tom Wheelwright OR US–Colombia tax strategist OR Global mobility strategist | IRS + DIAN |
+| Capital preservation / family office question | James E. Hughes Jr. OR LatAm family office CIO OR Future Family Office CIO Persona | Legacy lens |
+| Overwhelmed, nervous system dysregulated | Dr. Peter Levine OR Dr. Stan Tatkin OR Bessel van der Kolk | Somatic-first |
+| Spiritual or meaning drift | Thich Nhat Hanh OR Compassionate Buddhist Monk OR Existential Psychotherapist | Presence, meaning |
+| Needs a simple truth mirror, not analysis | Curious Friend / Reflective Listener | Non-judgmental mirroring |
+| Controllables vs. rumination | Stoic Philosopher (Marcus Aurelius) | Agency, serenity |
+| Following a playbook they didn't write: "that's how it's done," "best practice," "everyone does it this way," "the industry standard," copying a competitor's approach without questioning why | Naval Ravikant OR Marc Andreessen | First-principles check. Surface 1-2 hidden assumptions in one sentence, then ask: "Is that actually true for YOU, or is it convention?" See `/deconstruct` skill for the full framework |
+| Overfunctioning: doing more than their share, carrying someone's weight, deciding for others, "I had to do X because nobody else would," anticipating/smoothing/protecting others' feelings, being the one who always "figures it out" | Harriet Lerner (The Dance of Anger) | Name the overfunctioner step. One sentence: "You're doing [specific thing] again. Which ONE step in this dance are you going to change? Name the specific thing you'll stop doing. Expect a countermove." |
+
+Pull in ONE voice per trigger, mid-interview. Save stacking for rounds and Step 5.
+
+### Omission pass (before every panel: the Step 1.5b first take and Step 5)
+
+Before writing any panel, ask: *"What did they NOT say tonight that a panelist would notice?"* Common omissions:
+- A commitment from a previous entry that never got mentioned again
+- A person they were frustrated with yesterday who vanished tonight
+- A deadline or meeting tomorrow they didn't prep for in the interview
+- A behavior change they said they'd make and didn't bring up
+- A body signal (sleep, gym, energy, cycle) they skipped past
+
+If an omission exists, one panelist must name it in one sentence, in the first take and in Step 5.
+
+### Separation rule (critical)
+
+**The main body of the journal entry is the user's original voice only.** Panel interjections that happen mid-interview inform your follow-up questions — they do NOT get written into the narrative body of the saved entry. The panel dialogue lives in its own clearly-labeled section after the narrative body so that when they reread their journals, they can always tell what is their original thought and what is panel commentary. Never blend the two. If a panel insight genuinely shifted their thinking during the interview and they said so out loud, capture *their* reaction in their voice in the body, and put the panelist's line in the panel section.
+
+### Verbatim-capture rule (critical — no exceptions)
+
+**Every message the user types during the journal session must be captured word-for-word in the saved entry.** Not paraphrased. Not summarized. Not "extracted into the narrative." Verbatim.
+
+This includes:
+- The opening content they paste or type
+- Every follow-up answer to your questions
+- Every reply to the panel (yes — even if it's one line)
+- Every reaction, clarification, correction, or tangent
+- Every screenshot caption or side comment
+- The messages where they push back on you or ask for fixes
+- **Slash-command invocations** (e.g. `/daily-journal`, `/journal`) — yes, save them
+- **Single-line transitions** ("yeah", "ok", "next", "what does the panel say", "anything else") — yes, save them
+- **Meta-messages about the session itself** ("we're not done journaling", "save it now", "fix the inaccuracy") — yes, save them
+- **Tool/system requests interleaved with journal content** (MCP loads, file requests, integration fixes) — yes, save them
+- **Messages that look 'transitional' or 'mechanical'** — these are NOT exempt; they're part of the record
+
+**Hard rule: do NOT decide which messages are 'journal content' vs 'transitional/meta.'** All of them are content. EVERY message means EVERY message — no Claude-side filtering. If the user typed it during the session, it goes in the verbatim appendix. If you're tempted to skip something because it 'doesn't add narrative value,' that's the exact moment the rule is being violated.
+
+**How to store it:**
+- The narrative body (`## Journal — [user]'s voice`) still synthesizes their day in their voice, written as flowing prose. This is the readable reflection.
+- Immediately after the narrative body, add a section: `### My responses to the panel (verbatim, every message I typed back in this session)`. Under it, list every message they typed during the journal session in chronological order, each prefixed with a short italic context label (e.g. `*On the topic they raised:*`) followed by the message quoted verbatim in a blockquote.
+- Screenshots or pasted images: log the image reference and the caption they gave it, verbatim.
+- Do NOT truncate. Do NOT fix typos. Do NOT clean up. Their raw words are the archive.
+
+**Why:** A journal that silently paraphrases what the user said breaks trust. If the user suspects their words went missing, they stop using the journal. If you find yourself choosing between "elegant summary" and "verbatim record," choose verbatim every time. The narrative is nice-to-have; the verbatim appendix is the contract.
+
+**Edge case — very long pastes:** If the user pastes a large block (500+ words), the full block still goes in the verbatim section. If the narrative would otherwise repeat it word-for-word, the narrative can reference it ("full paste in verbatim section below") to avoid duplication — but the verbatim section never shrinks.
+
+**Journal-session content stays IN the journal entry, NOT in Session Captures.** Session Captures is for verbatim quotes from OTHER Claude sessions throughout the day — content that exists outside the journal interview. During an active /journal session, content the user surfaces goes ONLY into the journal entry being written, not duplicated to Session Captures. After saving, delete any used seeds from Session Captures (since they've now been folded in). Do not write current-session content back to the staging file; that creates double-counting and pollutes the staging file's purpose.
+
+**Initial context dump goes IN the journal too.** Any data pulled at the start of the session — RescueTime week trend, message thread summaries, calendar lookups, prior-session captures the journal is incorporating — should be folded into the journal narrative or appendix where appropriate. Don't keep it as scratch context that disappears after the session ends. The user's day-context becomes part of the day's journal record.
+
+### Step 0.0: Resume-or-create check (run FIRST — before Step 0)
+
+Capture-first writes today's entry early, so a SECOND `/journal` the same day must resume it, not create a duplicate. Before anything else:
+
+1. Set the target date with the 3:45 AM day-boundary rule (defined in Step 0 below — a 2 AM session belongs to the prior day).
+2. Look for today's entry: prefer `⚙️ Meta/journal-index.json` (entry whose `date` == target date); if there's no index, scan the journal monthly subfolder for a file whose frontmatter `creationDate` matches the target date (YYYY-MM-DD prefix).
+3. **Found → RESUME it.** Read it into working memory. Do NOT create a new file. Every save this session — the capture-first save (Step 1.5) AND the finalize (Step 7) — UPDATES that file: new content folds into the body, the verbatim appendix grows, the floor is re-read on the fuller picture. This session adds its own panel block (Step 1.5b); earlier blocks stay as they are. Open with a light "Picking up today's entry — keep going," then continue the normal flow.
+4. **Not found → create.** Proceed normally; Step 1.5 writes today's file.
+
+One calendar day = ONE journal entry that grows across sessions (an afternoon check-in and the evening journal land in the same file; the morning `/rise` entry stays its own paired file per Step 0h). Start a second journal file only if the user explicitly asks ("a separate entry, don't touch this morning's").
+
+### Step 0: Pull data sources per opt-in config (ALWAYS — config-gated)
+
+**0-RUN. Run the preflight FIRST — this is the literal first tool call of every `/journal`, before the opener. Non-negotiable.**
+
+```
+python3 "⚙️ Meta/scripts/journal-preflight.py"
+```
+
+(or `Meta/scripts/journal-preflight.py` if the vault doesn't use emoji-prefixed Meta.) It auto-spans since the last entry, pulls every SCRIPT source into ONE digest — messages (WhatsApp direct + groups + iMessage, whole gap, FAMILY/PARTNER threads surfaced first with ⭐), RescueTime (per day), close-cascade journal seeds (Session Captures), today's activity, the email triage digest, and the on-disk Slack export — and writes a marker at `⚙️ Meta/.journal-context/<date>.json`. It cannot call MCP, so it prints the exact MCP pulls you MUST make yourself right after — make EVERY one it lists:
+
+1. **Calendar** — `cal_list_events(time_min, time_max)` for the window; fold meetings + attendees into `## Today`.
+2. **Email (fresh, relational)** — `gmail_search` each account since the last entry; surface FAMILY / friends / commitments, not just the (often stale) triage digest the preflight already read.
+3. **Slack (fresh)** — `slack` search/read recent DMs + #daily-updates since the last entry.
+4. **Health** (only if `body_health: on`) — latest `🏠 Home/Health Pattern Report *.md` + yesterday's `## Body track`; or run `regenerate-health-pattern-report.py` if the phone synced.
+
+Read the ⭐ FAMILY / PARTNER threads BEFORE the work chatter — that is the part most worth journaling (2026-07-07: the model buried the user's sister flying in under dev messages).
+
+**Be the executive assistant, not a transcriber.** The preflight prints a `★ PROBE` list — threads with relational or emotional weight the user may NOT bring up on their own. During the interview (Step 2), actively draw those out: *"You haven't mentioned [X] — tell me about that,"* *"What happened with [Y]?"* You have all their context across every account; use it to ask the question they didn't know they needed. The preflight also drops dev/CI/ticket noise from the close-cascade seeds (kept: `[emotional]` + brainstorm/belief/writing) — the user does not want engineering chatter in their journal. Compressed threads keep only family/partner + heavy-emotion in full; the rest are one-liners with the raw on disk — drill into a specific raw thread file ONLY if the interview goes deep on it (lazy depth = token-cheap).
+
+Do NOT ask the opener until the preflight ran AND every MCP pull it listed is done. A contextless journal — no calendar, no messages, no activity — is the exact failure this kills (2026-07-07 incident: the model skipped Step 0 and the user had to ask "why didn't you pull everything?"). If a fetcher isn't installed on this vault, the preflight says so and you proceed honestly with what it got — but you STILL run it. At save time the entry frontmatter MUST carry a `context_sources:` block naming every source folded in; `warn-journal-saved-without-context.py` fires if a journal is written for a day whose preflight marker is missing.
+
+**0-pre. Read the journal config (mandatory).** Look for `⚙️ Meta/journal-config.md` (or `Meta/journal-config.md` if the vault doesn't use emoji-prefixed Meta). Parse the `data_sources:` frontmatter block, and read `filename_format:` (`descriptive` | `date` | `date-title`; default `descriptive` when absent or the file doesn't exist yet) — apply it at every save (Steps 1.5 and 7).
+
+If the file does not exist, copy `templates/journal-config.md` from this skill's repo into the vault and ask the user once:
+
+> "I created `journal-config.md`. Cross-platform pulls (iMessage, WhatsApp, Calendar) are off by default for privacy. Want to turn any on for richer context? You can change later by editing that file."
+
+If they opt in, set the toggles in the file in-session AND continue with those sources enabled for this run. If they pass, proceed with safe defaults. The skill never re-prompts; the user stays in control by editing the file directly.
+
+**0a to 0g, per-source pulls (read `{SKILL_DIR}/references/step-0-data-sources.md` now, before acting on Step 0).** It holds the exact pull for each source: 0a RescueTime, 0b Session Captures, 0c today's activity (these three on by default), 0d-PRIMARY self-chat voice notes, 0d WhatsApp + iMessage since the last entry, 0f calendar (cross-platform sources, opt-in per vault, off unless the toggle is on), and 0g body coaching (auto-on when health data exists, silently skipped otherwise). Do not skip a source whose toggle is on. Bindings that live there and still apply: if the WhatsApp bridge is unlinked, tell the user to re-link instead of presenting stale data as current; quote load-bearing threads verbatim; 0g opens the interview with ONE body coaching prompt, and during Steps 1-3, if the user mentions fatigue, sleep, cycle, HRV, somatic symptoms or labs, pull ONE health panelist from the 0g table (their voice, then return).
+
+**Seeds.** Before the check-in question, show the user the verbatim quotes from Session Captures (their own words from the day, grouped by session) and ask which they want to talk about. After the entry is saved, delete the used seeds from the staging file, keeping its frontmatter, headers, format comments, unused seeds, and the `## Ideas & Strategy Captures` section intact (exact wording in the reference).
+
+**Day boundary is 3:45 AM, not midnight.** Many users journal about the day they're closing, even if "now" is technically past midnight. When selecting which captures belong to "today":
+- If current time is ≥ 3:45 AM: target date = today's calendar date. Include captures from 3:45 AM today through now.
+- If current time is < 3:45 AM: target date = yesterday's calendar date. Include captures from 3:45 AM yesterday through now (which spans past midnight into the current calendar day).
+
+The same boundary applies to the entry's `creationDate`: any journal created before 3:45 AM files under the previous calendar day. A 2:00 AM entry on the 18th has `creationDate: 2026-04-17T02:00`. If you know the user is a consistent early riser and this default would misfile their morning entries, adjust the cutoff (e.g. to 2:30 AM) in the user's `CLAUDE.md` and reference it here.
+
+
+**0h. Morning /rise entry pairing (auto-on if today's morning entry exists).** Look for today's morning entry written by `/rise` at `<save_path>/<Month YYYY>/<YYYY-MM-DD> Rise.md` (the `save_path` is configured in `Meta/rise-config.md`; default `Journals`). If it exists, parse:
+- `priorities:` list (what the user committed to this morning)
+- `intention:` string (how they said they'd show up)
+- `floor:` + `floor_level:` (their sunrise Floor)
+- Any `<anchor>_done` flags from the morning anchor practices
+
+Save the parsed values to working memory for Step 1 (opener incorporates them) and Step 3.5 (accountability beats). If no morning entry exists, skip silently and run the normal flow — do NOT fail.
+
+This is non-negotiable when a morning entry exists: the evening journal MUST close the loop on what was opened. Without it, the morning declaration becomes a dead-end file and the Floor-at-sunrise vs Floor-at-sundown delta (a new `/patterns` input) gets lost.
+
+### Step 1: Open with a warm, casual check-in
+
+**Door check first (if the previous entry set one):** If the most recent journal entry's frontmatter has a `door:` (the one small action they committed to at close), close that loop before anything else: "Yesterday you said you'd [door]. Did it happen?" Record the answer as `door_prev: done | partial | skipped` for today's frontmatter. No moralizing on a skip — data and continuity, not discipline. Skip silently if no previous door exists. (This composes with the `/rise` pairing below — door check first, then the morning-priorities opener.)
+
+**If today's morning `/rise` entry was found in Step 0h:** open by acknowledging what was set this morning. Pattern:
+
+> "How was today? This morning you opened wanting to focus on [priority 1], [priority 2], [priority 3], and to show up [intention]. How did that land?"
+
+Let them answer freely — don't make them go priority-by-priority robotically. They'll naturally weave through what landed and what didn't. Capture verbatim. Step 3.5 will close the formal accountability beats.
+
+**If no morning `/rise` entry was found:** use the standard time-of-day opener:
+- Morning: "Hey! How are you waking up today? What's on your mind?"
+- Afternoon: "How's the day going so far? Anything standing out?"
+- Evening: "How was today? What's sitting with you right now?"
+
+**Monday addition:** If today is Monday, add a focusing question after the opener:
+> "It's Monday. Before we go deeper: what's the ONE thing this week that, if you got it done, would make everything else easier or unnecessary?"
+
+Capture their answer. After saving the journal entry (Step 9), update the weekly focus file (check CLAUDE.md for the path, e.g. `🏠 Home/✅ This Week.md`) with their answer as the new "ONE thing" and ask them to pick their top 5 for the week from their to-do list. Replace the previous week's items. This is the weekly reset for the focusing file.
+
+### Step 1.5: Capture-first save — write the entry NOW
+
+**Trigger:** the user has just given you real journal content — a pasted entry alongside `/journal`, or their answer to the Step 1 opener. As soon as there is substance (more than a bare "hey" or "/journal"), save. Do NOT wait for follow-ups, the floor analysis, or the panel.
+
+**Capture must not be blocked by data pulls.** If the user opened with a full dump, write the file FIRST from their words, then the first-take panel (Step 1.5b), THEN run the Step 0 source pulls and fold them into the `## Today` section during enrichment. RescueTime / iMessage / WhatsApp / calendar latency must never delay the first save.
+
+**Write a complete, standalone entry** using the Step 7 format, with these capture-stage values:
+- **Frontmatter:** all required fields present — starting with `type: journal` (literal English value even in localized vaults; metadata extraction classifies by `type:` and skips the entry without it). `floor` / `floor_level` = your best read from what they've said so far (provisional — Step 4 finalizes it). Set `entry_status: captured` now; Step 7 flips it to `enriched` if the interview continues past capture (so the insights/patterns skills can tell a quick capture from a full session and weight the provisional floor accordingly). Fill the habit fields you already know; omit the optional RescueTime and morning-pairing fields you don't have yet rather than faking them.
+- **`## Today`:** include it only if you already pulled that data; otherwise leave it out for now and add it at enrichment.
+- **`## Journal — [user]'s voice`:** their content so far, in their voice, lightly shaped. This is a real entry, not a stub.
+- **`### My responses to the panel (verbatim...)`:** every message they have typed this session so far, word-for-word. The verbatim-capture rule applies from message one.
+- **Floor tag + `## Concepts`:** best-effort from the current content.
+- **`## Panel dialogue`:** this save already includes this session's block as a one-line placeholder in the entry's language (`*First take not written yet.*`, after the session label on a resumed day), so even a reply cut off right here leaves a visible marker. Step 1.5b replaces it in this same reply. A decline or crisis capture writes its own one-line note here instead (Panel-Always Rule).
+
+**Save it the same way Step 7 saves** (Bash `cat` heredoc into the monthly subfolder, then verify the file exists — never fail silently). Pick the filename now from the initial content using Step 7's filename rule (honoring `filename_format` from the config). You may refine the filename later ONLY if the day's theme clearly shifts — rename in place, never create a second file.
+
+**Don't announce the save as a production.** A light "Got it — saved." is enough, then run Step 1.5b (first-take panel) and flow into Step 2. The floor under them is already there; they don't need to feel the mechanics.
+
+**Every later save is an UPDATE to this file**, not a new write. On each update, regenerate the verbatim appendix to include all messages to date and keep the body, floor, and frontmatter current. (If Step 0.0 found an existing entry for today, the very first save this session is already an update to that file — resume and capture-first are the same write path.)
+
+**First-ever entry → fire telemetry now.** If this is the user's first journal save in this vault, run the snippet in `{SKILL_DIR}/references/first-journal-telemetry.md` at this capture (it is sentinel-idempotent — safe to run here). A capture-and-bail still counts as the funnel's first-journal event; don't wait for the end of the flow that may never come.
+
+### Step 1.5b: First-take panel (mandatory, same reply as the capture)
+
+Right after the capture save, in the same reply, before any follow-up question:
+
+1. Run the omission pass on what you have so far.
+2. Pick **3 voices** with the Trigger → Voice routing table (full roster in Step 5), following "Which panel to use" in Step 5: never a name it leaves out, and a name they added comes first when it fits. Triggers that fired in their first message are the obvious picks.
+3. Use Step 5's format, shorter: one paragraph per panelist, **2–3 sentences**, bolded name + concrete-proof credential, optional `*[Pullback: ...]*`. **At least one dissents.** End with the `**Dissent:**` line, plus `**Omission flagged:**` when the pass found something.
+4. **Write it into the file**, replacing this session's placeholder line under `## Panel dialogue` (between the accountability line and the floor tag). The block opens with the session label on a resumed day, then a one-line note in the entry's language (English: `*First take. The full panel runs once the floor is named.*`).
+5. Append its Dissent and Omission lines to the Panel Feedback Log now (Step 9's format), so a session that ends here still logs them.
+6. **Put its full text in the reply's final message**, after all tool calls (Step 6): complete and exactly as written in the file, first-take note included. Follow it with Step 6's one-line invitation (it covers edits), then ask the Step 2 follow-ups, all in that same final message. Never wait for approval before writing the panel.
+
+**Resumed entry (Step 0.0):** append this session's block beneath the earlier ones, opening with its session label, and never edit an earlier block. A later Step 5 replaces only this session's first take. A decline or the crisis protocol follows the Panel-Always Rule for this session only.
+
+The separation and verbatim rules apply unchanged: panel lines never enter the `## Journal` body.
+
+### Step 2: Follow the thread
+
+Based on their answer, ask follow-up questions, and keep asking while they keep answering: the user sets the length. Be curious, not clinical. Push gently into areas they might not go on their own:
+
+- If they mention **work/startup**: "How does that make you feel about where things are headed?" or "Is that exciting or stressful or both?"
+- If they mention **a person**: "What floor did that interaction put you on?" or "How did you feel after?"
+- If they mention **feeling good**: "What specifically made it good? I want to capture this one." (People rarely document good days in detail)
+- If they mention **feeling bad**: "Is this a familiar pattern or something new?" or "What would the High-Rise say about where you are right now?"
+- If they seem surface-level: "What's underneath that?" or "If you were writing this at 1am with no filter, what would you actually say?"
+
+**Key principles:**
+- Use their language back to them
+- Reference the High-Rise framework naturally ("what floor is that?")
+- Don't let them off the hook with "I'm fine" — gently dig
+- If they mention a parent, a crush, money stress, or cofounder frustration — those are known threads, follow them
+- Celebrate wins they'd normally skip over
+- Keep it conversational, not therapeutic — you're a smart friend who knows them well
+
+### Step 2.5: Gratitude check (MANDATORY — take from the entry or ask, capture, and optionally stage to a gratitude group)
+
+**Codified 2026-05-18, revised 2026-11-07.** Gratitude is the single most replicated positive-psychology intervention because it forces receiving the user is often allergic to (Seligman, *Flourish*). Every entry gets up to three gratitudes, folded in and optionally staged as a message draft to the user's chosen gratitude group (iMessage, WhatsApp, or any other channel they have configured). Take them from what the user already wrote; ask only when they wrote none.
+
+**Take (when the entry already shows gratitude):** Read what the user has written today, this session and earlier ones, and today's `gratitudes:` array if the file has one. If it shows gratitude they expressed (thanks, appreciation, being glad of someone or something, a gift or a blessing in their own words; a neutral "it went well" does not count), take three from it: the most specific ones, in their own words, never one they did not write. If they named only one or two, take those and do not pad. Fold them in (Capture, below) and say so in one line in the turn's final message, in the entry's language, naming them so they can swap one: "Took these gratitudes from what you wrote: [a], [b], [c]. Say if you'd swap one." Do not ask. If today's `gratitudes:` array already has them, keep them: neither ask nor repeat the line.
+
+**While the crisis protocol is active:** take them the same way, but silently: no one-line announcement (it is a mechanic, and the protocol stops the mechanics).
+
+**Ask (only when they named none):** "Three things you're grateful for today — anything. Financial, relational, body, small. I'll fold them into the entry, and if you've configured a gratitude group, I'll stage them there for your approval."
+
+**Capture:** Put them in a `gratitudes:` frontmatter array, in the user's own words (queryable for weekly/monthly reviews and pattern analysis). When you asked, also include them verbatim in the `## Journal` body in the user's voice. When you took them from the entry, they are already in it (body and verbatim appendix): add nothing there.
+
+**Stage to gratitude group (configurable per vault):**
+- Look for `gratitude_group:` in `Meta/journal-config.md` (or your vault's equivalent). Expected schema:
+  ```yaml
+  gratitude_group:
+    channel: imessage | whatsapp | none   # default: none
+    chat_id: <chat_guid or jid>           # required if channel != none
+    language: en | es | <BCP-47>          # default: en (the language the group operates in)
+    template: |
+      Gratitudes for today:
+      1. {{g1}}
+      2. {{g2}}
+      3. {{g3}}
+  ```
+- If configured, translate the user's gratitudes into the group's language (preserving voice — don't formalize), populate the template, and stage via the appropriate MCP (`mcp__imessage__send_message` or `mcp__whatsapp__send_message`).
+- Wait for explicit user approval, then call `confirm_send`. If the user edits the draft, restage and re-confirm.
+- If `gratitude_group.channel: none` or no config exists, capture the three in the entry without staging anything. Never assume a channel the user hasn't opted into.
+
+**Edge case — only one or two gratitudes given:** capture what was given, don't insist on three. The ritual aims at receiving, not at hitting a quota.
+
+**Edge case — user is in Tier 2 override (shame language, dysregulation, acute grief):** still ask for gratitudes if none were named (the evidence shows gratitude practice helps even at low floors), but skip the group send unless the user explicitly approves. Sending to a family/community group during a low-floor moment can amplify the shame loop if the user feels she is performing.
+
+**Fallback (pre-codification single-line prompt):** If they named none and haven't configured `gratitude_group:` yet, the older one-thing prompt still works: "Want to capture one thing you're grateful for today — financial, relational, anything?" Capture it in the entry without staging. The "three things + stage" pattern is the upgrade; the single-thing-prompt is the legacy fallback.
+
+### Step 3: Behavior Accountability Check
+
+After the emotional check-in, run through these accountability items. Be direct but not nagging — like a coach, not a parent.
+
+**Gym (4x/week minimum):**
+- "Did you hit the gym today?" or "How many gym days this week so far?"
+- If less than 4x pace: "You're at [X] for the week. The data is clear — gym is infrastructure, not optional. When are you going tomorrow?"
+- If on track: "Nice. That's [X] this week. The streak is building."
+- Track the count in the entry. Note it. Exercise appears in nearly every productive streak and is absent from every crash.
+
+**Sleep:**
+- "What time did you go to bed last night?"
+- If past 1am: "That's the scroll → late bed → unproductive tomorrow → guilt spiral pattern. Phone in another room tonight?"
+- If reasonable: Note it positively.
+
+**Scrolling/Focus check (RescueTime-powered):**
+- If the RescueTime MCP is connected, pull today's data automatically using `mcp__rescuetime__get_daily_summary` and `mcp__rescuetime__get_top_activities`. Present the key numbers:
+  - Productivity Pulse (0-100)
+  - Productive hours vs. Distracting hours
+  - Top 3 apps by time
+- If RescueTime data shows 1+ hour of distracting time or social media in the top 3: "RescueTime says [X hours] on [apps]. That's the scroll pattern. Phone in another room tonight?"
+- If RescueTime shows a strong day (Pulse 75+): "Productivity Pulse at [X]. That's a solid day. What made the focus stick?"
+- If RescueTime MCP is not connected, fall back to manual: "Any scroll holes or binge sessions today?"
+- Include the RescueTime summary line in the saved entry (replaces the old manual "Scroll check")
+
+**Meditation:**
+- "Did you meditate today?"
+- If yes: "Nice. How long, and what kind?" (guided, silent, breathwork, etc.) Note it in the entry.
+- If no, don't push hard — just note it. Meditation is an invitation, not infrastructure. But if they've been missing it for a week+, gently flag: "That's [X] days without sitting. Even 5 minutes counts."
+- Track in the entry line alongside gym/sleep.
+
+**Deep Work blocks (INFER FROM RESCUETIME — do NOT ask):**
+- If RescueTime MCP is connected, derive block count from `very_productive_hours` in the daily summary. Heuristic: `blocks = round(very_productive_hours / 1.5)`, capped at `total_hours / 1.5`. A day with 8.4 productive hours and 0 distracting reads as ~5 blocks of sustained focus.
+- Log into the entry as "X blocks (estimated from RT — Yh productive, Zh distracting, sustained focus)". Cite the data source so the user knows it's inferred, not asked.
+- If 2+ blocks inferred: "That's [X] blocks per RescueTime. The chain continues." Mark today in the Deep Work Chain file (check CLAUDE.md for the path, e.g. `Home/Deep Work Chain.md`).
+- If 1: "One block per RescueTime. Better than zero. Anything you wanted to push deeper on?"
+- If 0: "RescueTime shows no sustained focus stretches. Meeting-heavy day, or scattered?"
+- ONLY fall back to the manual question if RescueTime MCP is disconnected.
+- After saving the journal entry, auto-update the Deep Work Chain file by checking the appropriate boxes for today and updating the streak counter and week total.
+- General principle: any accountability metric with a data source should be inferred, not asked.
+
+**Active behavior changes:**
+- The generosity check: if they mention spending on others, ask "Can you afford that without it stinging after?"
+- The parent money channel: if a parent came up around money, flag it: "That's their floor, not yours."
+- The idea quarantine: if a new idea came up, park it (see Step 8)
+- 30-day idea timer: if they're excited about an off-focus idea during a hard stretch, name it: "Is this real inspiration or escape from the hard stretch?"
+- Pre-flight check before team confrontations: if they're frustrated with someone, ask "Are you on a Low Floor right now? Is this real feedback or projection?"
+
+### Step 3.5: Morning /rise accountability (only if Step 0h found a morning entry)
+
+If today's morning `/rise` entry was parsed in Step 0h, close the loop explicitly before identifying the floor. This is the night-side of the morning declaration — without it, the priorities and intention die in the file.
+
+**Priorities accountability:** if it wasn't already covered in Step 1's flowing answer, ask:
+
+> "Walking through this morning's list specifically: [priority 1], [priority 2], [priority 3]. Which landed, which didn't, and what got in the way of the ones that didn't?"
+
+For each priority, capture a single status: `landed | partial | dropped`. Save to working memory for Step 7's frontmatter.
+
+**Intention accountability:** ask separately:
+
+> "This morning you wanted to show up [intention]. Did you?"
+
+Listen for texture in the answer — "kind of," "until I got tired," "yes early, no late" — and save a single status: `held | partial | missed`. Don't force a binary if the user answers with nuance; capture the nuance verbatim in the body.
+
+**Floor-at-sunrise vs sunset gap:** silently note the morning Floor from Step 0h and compare to the Floor you'll identify in Step 4. The gap (e.g., morning Willingness → evening Frustration) is signal for `/patterns`. Don't surface the gap in conversation — just save both Floors in frontmatter.
+
+**Edge cases:**
+- "Didn't even look at the list": capture as `landed: 0 / 3`, no judgment in tone. Save verbatim.
+- Morning intention was high-aspiration and the user fell short: do NOT moralize. The point is data, not discipline. Save the gap and move on.
+- Crisis-tier override at any point (language flips to total-self / dysregulation / acute grief): skip remaining accountability beats, jump to Step 4 with hold-voice protocol, then skip Step 5.
+
+### Step 4: Identify the floor
+
+**Body-first check (before accepting the story):** Low floors usually arrive body-first, story-second — the mind manufactures a plausible cause after the fact. Before treating a low floor as being about the conversation/person/project the user is blaming, check four things: sleep, food, movement, sunlight. Use the data already pulled (Step 0g body track, RescueTime, yesterday's entry) before asking — infer, don't interrogate; ask only for the gaps. Record as `body_check` frontmatter (four y/n values). If two or more are "no," name it gently: "Before we decide this is about [story] — you're underslept and haven't eaten. Some of this floor might be body, not story." The floor is still real either way; this changes the prescription, not the validity.
+
+**NEVER ask the user to name the floor. Name it yourself, then check.** This is a direct, repeated user correction: naming the floor is the skill's job, not the user's. You hold the day's data, the entry history and the floor definitions; the user holds a tired brain at midnight. Do: state the floor, give the one line of evidence that picked it over its nearest neighbour or shadow twin, then ask only "is that right?" A correction from the user is the check working, not a failure. BANNED: "You call it tonight — what floor?", "What floor does that put you on?", "Which floor do you want to tag?", and every variant that makes the naming the user's homework. Applies to the shadow-twin probe too — state which twin you read and why, do not quiz.
+
+Based on everything they said, identify the PRIMARY floor:
+
+**Low Floors (1-18) — Reactive:**
+1. Disgust — outward rejection, visceral "get it away from me"
+2. Shame — "I'm such an idiot," self-disgust, hiding
+3. Embarrassment — social exposure, temporary, recoverable
+4. Guilt — "I should be doing more," not enough, letting people down
+5. Apathy — "Nothing matters," checked out, numb, Netflix spiral
+6. Resignation — shadow of Acceptance, defeated "it is what it is" (NOT the same as making peace)
+7. Confusion — mind reaching and failing, "I don't know," contradictory thoughts
+8. Loneliness — surrounded but unfound, no one gets it
+9. Boredom — restless, understimulated, THE TRAMPOLINE FLOOR (generative potential)
+10. Grief — loss, sadness, missing someone/something, killed mood
+11. Disappointment — gap between hope and what arrived, "I thought..."
+12. Hurt — breach in a relationship, "how could they"
+13. Fear — anxiety, "what if," scared, uncertain, imposter feelings
+14. Frustration — blocked energy, trying and failing, "this should be working"
+15. Desire — wanting, craving, reaching, crushes, ambition mixed with lack
+16. Anger — directed energy, "this is wrong," disrespect, explosions
+17. Contempt — "you are beneath me," hierarchical dismissal, cold not hot
+18. Pride — proving something, competitive, need for external validation
+
+**Middle Floors (19-24) — Transitional:**
+19. Courage — taking action despite fear, showing up, doing the hard thing
+20. Hope — future-facing trust, "I think this could work," steady forward momentum
+21. Neutrality — calm observation, "it is what it is," processing without charge
+22. Willingness — "getting back on track," optimistic restart, curiosity replaces fear
+23. Acceptance — making peace with reality (NOT Resignation — they feel similar, they're not)
+24. Reason — analytical, strategic, clear-headed, the ceiling of the mind
+
+**High Floors (25-34) — Generative:**
+25. Trust — quiet confidence that things hold, less hedging
+26. Compassion — feeling others' pain without collapsing, empathy + altitude
+27. Humility — accurate self-perception, "I was wrong about," no drama
+28. Belonging — being received, "I'm in the right room," quiet certainty
+29. Love — connection, warmth, feeling held, giving freely
+30. Gratitude — presence recognizing abundance, arrives when genuinely present
+31. Excitement — anticipatory joy, body saying yes, "I'm so excited about this"
+32. Wonder — awe at what exists, amazement, expansion
+33. Joy — delight, fun, laughter, alive, "best day ever" energy
+34. Peace — stillness, presence, nothing to fix, enough as-is
+
+**Elevator Emotions (not floors — movement between floors):**
+- Nostalgia = Grief (10) + Love (29), aching warmth
+- Awe = Fear (13) + Wonder (32), smallness and expansion at once
+- Jealousy = Fear (13) + Desire (15) + Anger (16), rapid cycling
+- Schadenfreude = Pride (18) + corrupted Joy (33), slide downward
+- Vulnerability = Shame (2) to Love (29), staircase (deliberate, step by step)
+- Overwhelm = any floor, flooding (capacity failure)
+- Bittersweet = Grief (10) + Joy (33)
+
+**Shadow Twins (low floor pretending to be its high twin):**
+- Resignation (6) / Acceptance (23): "I've given up" vs "I've made peace"
+- Apathy (5) / Neutrality (21): "I don't care" vs "I'm not attached"
+- Desire (15) / Love (29): "I want from you" vs "I give to you"
+- Pride (18) / Confidence: "I need you to see me" vs "I see myself"
+
+**Shadow-twin probe (mandatory when the floor you're about to tag has a twin):** Mislabeling is the #1 way people stay stuck — Resignation *feels* like Acceptance from the inside. Before tagging Acceptance, Neutrality, Peace, or confident Pride, ask ONE distinguishing question:
+- Acceptance vs Resignation: "If this could change tomorrow, would you want it to?" (Wanting change but not believing in it = Resignation.)
+- Neutrality vs Apathy: "Are you unattached, or checked out?" (Would good news land? If nothing would land, it's Apathy.)
+- Peace vs Boredom: "Nothing needs to change, or nothing matters?"
+- Confidence vs Pride: "Would this still feel good if nobody ever found out?"
+Tag what the answer reveals, not what the user first claimed. If a correction happened, note it in the entry — the mislabel itself is signal for `/patterns`.
+
+**Movement capture (feeds /insights and /patterns):** Look up the previous entry's floor (journal-index or the file) and record `floor_yesterday` plus, when the floor changed or notably held, one `moved_because` value:
+- `body` — sleep, food, cycle, illness, weather drove it
+- `witness` — being seen/unseen, honest conversation, isolation
+- `rupture` — trust broken, loss, the source of a high floor becoming the wound
+- `rope` — pulled up by love pointed outward (someone/something that needed them)
+- `role` — a context reassigned them their old floor (family, old job, certain room)
+- `story` — an actual event/insight/decision did it
+If they moved UP from a low floor, also capture `rope:` — what specifically pulled them (the dog, the person, the promise). Over months this builds the user's personal rope inventory: what reliably works for THEM when nothing else does.
+
+**Tag the primary floor — then, only if the day moved, the arc.** Set `floor:` to the single primary floor (where the entry *landed*) and `floor_level:` to its tier. Naming one base floor is deliberate, not a limitation: it is the move that reduces the charge, and it keeps the long-run dataset clean. Then, ONLY when the day moved from one floor to another, add `floor_arc:` — the floors moved through, in order, ending on the primary:
+
+```yaml
+floor: <primary floor>
+floor_level: <Low | Middle | High>
+floor_arc: [<floor>, <floor>, <primary floor>]   # optional — ordered path through the day, last element = floor
+```
+
+The arc is the point: the elevators are the lesson, the floors are just where the door opens, so a path like Fear → Frustration → Hope carries more than any single endpoint. `floor_arc` already holds both the other floors that were present and the order they came in — there is no separate "floors present" list. Keep capture frictionless: **always** ask the one primary-floor question; **offer the arc only when the person signals the day moved** ("started rough, ended okay"); **never prompt for it on a still day** — just omit it. For an elevator emotion (Nostalgia = Grief + Love), tag the floor you land on as `floor` and, if it clarifies things, record the blend as `floor_arc`. (Legacy entries may carry `floor: [A, B]`; that still reads, but new entries use a single `floor` plus an optional `floor_arc`.)
+
+### Step 5: Full Advisory Panel (replaces the first take)
+
+**Timing: never defer the full panel past the reply that names the floor (Step 4); run it in that same reply.** It replaces this session's first take (drop the first-take note, keep the session label); earlier sessions' blocks stay exactly as they were. If the user corrects the floor, write the adjusted lines and show them in the final message (Step 6). If the session ends before Step 4, the first take stands. No full panel while the crisis protocol is active. After a decline this session, none unless the user asks for one.
+
+Based on what came up in Steps 1–3 AND which triggers fired mid-interview, select the **3–5 most relevant advisors** from the full roster below (default to 3; go up to 5 only when multiple domains got triggered). Don't re-ask what they have already answered; use what's already on the table.
+
+**Format (strict, for the full panel and for every round):** Parallel single paragraphs, 3-5 sentences each. One panelist per paragraph, in their authentic voice, taking a position; the back-and-forth is between rounds, with the user. Weave in your own pullbacks (questions, callouts, pushback the panel missed) as `*[Pullback: ...]*` inline at the end of the relevant panelist's paragraph.
+
+**Rounds (whenever they engage the panel, before or after the full panel).** A round uses this format with 2–4 sentences per voice, no omission pass and no `**Panel:**` line. It answers what they just raised: the voices they addressed respond (or the best fit, if they addressed none), and at least one dissents. Write each round into this session's block under `## Panel dialogue`, after the first take or full panel and any earlier rounds, as `**Round N:** <a few words on what they raised>` (N counts from 1 within this session's block), then the paragraphs, then a `**Dissent:**` line. The full panel replaces only this session's first take; rounds stay.
+
+**Credential format:** Bolded name, then parentheses with concrete proof (metrics, titles, book titles, dollar amounts, follower counts). Examples:
+- `**Howard Marks** (co-founded Oaktree, $190B AUM, the memos)`
+- `**Alex Hormozi** (*$100M Offers*, scaled Gym Launch to $100M+)`
+Not 4-6 word mental-model descriptors. Concrete proof only.
+
+**Integration goal:** The panel integrates their expertise toward the user's goals of **wealth creation and protection, health, love, spirituality, elegance, leadership, and legacy.** Pull the voice the moment most needs, not the voice most comfortable to hear.
+
+**Hard rules:**
+- **At least one panelist MUST dissent or push back.** Not console, not affirm — challenge. Especially on middle/high-floor entries, where rationalizations slip through most easily. If all panelists agree, you have not looked hard enough.
+- **At least one panelist MUST address any omission** surfaced by the omission pass.
+- **If any facts or studies are mentioned, include the source. Don't make those up.**
+- **Remain in character.** Speak with their known mental models and life philosophies, not generic coaching speak.
+- Keep each panel's prose tight and in character. How long the conversation runs is up to the user.
+
+**Which panel to use (this governs every time this skill picks a voice: both routing tables, the first take and the full panel):** Start from `⚙️ Meta/rules/advisory-panel.md` if that file exists, otherwise the roster below. In either one, the Technology & AI, LatAm and Colombia sections are *only for* sections, marked or not. If `About me/My panel.md` exists, it decides: its `## Sections` turn those sections on or off, the names under `## Removed` are left out, and the names under `## Added` are full panelists. Without that note, use an *only for* section only when the user's About Me note or their own words show it applies. Everything else is for everyone.
+
+**The Advisory Panel (full roster):**
+
+*Wealth & Strategy:*
+Naval Ravikant (leverage, asymmetric bets, freedom-through-clarity) · Warren Buffett (capital allocation, simplicity, patience, circle of competence) · Ray Dalio (macro cycles, principles-based decisions, risk parity) · Tom Wheelwright (tax strategy, entity design, asset protection, intergenerational planning) · Marc Andreessen (tech thesis, software-eats-world, founder empathy) · Stephen Schwarzman (PE discipline, scale-up playbooks, operational value creation) · Howard Marks (credit cycles, risk management, second-level thinking) · Sam Zell (contrarian real estate, distressed value, downside-first thinking) · Robert Kiyosaki (cash-flow mindset, financial education, tax-advantaged real estate) · Ken Griffin (active strategies, risk-adjusted returns, market microstructure) · Laurene Powell Jobs (impact investing, values-led legacy) · Richard Branson (joyful entrepreneurship, brand magic, fun + family + philanthropy) · James E. Hughes Jr. (family governance, mission/values continuity, heirs' preparedness) · Future Family Office CIO Persona (portfolio discipline, opportunity triage, IPS enforcement)
+
+*LatAm / Cross-Border (only for people who live, work or invest in Latin America):*
+David Vélez (scaling startups across LatAm, regulatory navigation) · Simón Borrero (hypergrowth and execution in emerging markets) · Andrés Moreno (building and scaling cross-border companies) · Luis Carlos Sarmiento Angulo (capital preservation, Colombian financial systems) · US–Colombia cross-border tax strategist (IRS + DIAN, double taxation, entity structuring) · LatAm family office CIO (global asset allocation, currency risk, offshore strategy) · Global mobility strategist (residency, tax exposure, long-term optionality) · Cross-border real estate investor (US, Colombia, international) · LatAm political-economy strategist (regulatory and policy risk)
+
+*Colombia (only for people who live, work or invest in Colombia):*
+Carlos Raúl Yepes (former CEO of Bancolombia, *Por otro camino*) · Catalina Escobar (founded Juanfe Foundation, CNN Hero 2012) · Héctor Abad Faciolince (*El olvido que seremos*) · Francisco Reyes Villamizar (former Superintendente de Sociedades, designed the SAS framework) · Sylvia Escovar (former CEO of Terpel) · Florence Thomas (professor emerita at Universidad Nacional, *El Tiempo* columnist) · Patricia Engel (*Infinite Country*, *Vida*) · Dr. Jorge Carvajal Posada (created Sintergética)
+
+*Leadership & Ops:*
+Sheryl Sandberg (org scale, operating cadence, people systems) · Keith Rabois (execution brutality, cadence, high-velocity frameworks) · Patrick Collison (speed + quality culture, curiosity-driven execution, humane high standards) · Reid Hoffman (network strategy, blitzscaling, partnership ecosystems) · Adam Grant (organizational psychology, generosity architecture, culture design) · Priya Parker (designing gatherings, community meaning-making, social architecture) · Vanessa Van Edwards (leads Science of People, *Captivate*, *Cues*; charisma, conversation, reading people)
+
+*Power, Shadow & Civilization:*
+Robert Greene (power dynamics, strategy psychology tempered ethically) · Debbie Ford (shadow integration for leaders; power without self-sabotage) · Yuval Noah Harari (civilizational context, tech ethics, long-range perspective) · Mo Gawdat (happiness as operating system, AI optimism with responsibility) · Balaji Srinivasan (decentralization, sovereignty, network-states future)
+
+*Voice & Platform:*
+Oprah Winfrey (compassionate authority, influence, platform building) · Maya Angelou (purpose, grace, moral imagination, authentic voice) · Jackie Kennedy Onassis (elegance, discretion, privacy with power)
+
+*Health & Longevity:*
+Dr. Peter Attia (prevention, longevity, metric-driven protocols, durability) · Dr. Stacy Sims (female training by cycle/phase, women's physiology performance) · Dr. Lara Briden (hormone literacy, cycle repair, perimenopause) · Dr. Elizabeth Boham / IFM (root-cause medicine, lab-driven prevention) · Dr. Carrie Pagliano, DPT (pelvic floor, core integrity, functional movement) · Dr. Emily Anhalt (emotional fitness, resilience tools for leaders) · Dr. Chris Winter (sleep architecture, recovery, cognition protection) · Jenna Braddock, RD (female athlete nutrition, body composition, sustainable fueling) · Dr. Rhonda Patrick (micronutrients, cellular health, sauna/cold research synthesis) · Future Functional PCP (integrates data, coordinates diagnostics, coherent care plan)
+
+*Wisdom & Meaning:*
+Thich Nhat Hanh (mindful presence, compassion, peace in action) · Compassionate Buddhist Monk archetype (non-judgment, acceptance, equanimity) · Stoic Philosopher / Marcus Aurelius (agency, serenity, focus on controllables)
+
+*Psychology & Inner Work:*
+CBT Therapist (cognitive restructuring, bias correction, behavioral plans) · Existential Psychotherapist (meaning, freedom, responsibility, authentic choice) · Gabor Maté / Trauma-Informed Therapist (root wounds, compassion-led healing, addiction patterns) · Martin Seligman / Positive Psychologist (strengths, optimism, flourishing architecture) · Jungian Analyst (archetypes, shadow, dreamwork, unconscious drivers) · Inner Child Therapist (re-parenting, attachment repair, safe self-leadership) · Curious Friend / Reflective Listener (non-judgmental mirroring, simple truth prompts) · Brené Brown (vulnerability, shame research, courage) · Harriet Lerner (overfunctioning/underfunctioning dynamics, The Dance of Anger, changing your step in the relational dance, expecting countermoves)
+
+*Relationships:*
+Esther Perel (erotic intelligence, polarity, aliveness in long-term bonds) · Dr. Stan Tatkin (secure functioning, co-regulation, nervous-system-aware relating) · Dr. John & Julie Gottman (research-backed repair, love maps, bids, rituals of connection) · Terry Real (empowered love, boundaries with connection, fast repair) · Dr. Sue Johnson (attachment science, bonding, safe emotional connection) · Dr. Alexandra Solomon (relational self-awareness, LGBTQ+ inclusive frameworks) · Layla Martin (tantric intimacy, embodied feminine magnetism) · Kasja Urbaniak (power & receptivity, clean boundaries in softness) · Alain de Botton (love as education, realism with idealism) · Matthew Hussey (practical dating strategy, attunement, effortless planning) · Logan Ury (behavioral science of dating, design for chemistry + commitment) · Dani Dillard / Whitney Mixter (conscious queer polarity, individuality inside partnership) · Jay & Radhi Shetty (spiritual partnership, ritualized growth)
+
+*Somatic & Embodied Healing:*
+Dr. Peter Levine (Somatic Experiencing, body-first trauma release) · Bessel van der Kolk (embodied healing, body keeps the score) · Bonnie Bainbridge Cohen (Body-Mind Centering, movement-as-awareness)
+
+*Planetary & Sacred:*
+Jane Goodall (planetary compassion, stewardship, humility with action) · Charles Eisenstein (interbeing, sacred economics, meaning beyond metrics) · Robin Wall Kimmerer (reciprocity with Earth, indigenous wisdom, awe practice)
+
+*Creativity:*
+Rick Rubin (creativity via presence, subtractive genius, trust the muse) · Elizabeth Gilbert (creative courage, fear alchemy, permission to play) · Twyla Tharp (creative discipline, daily craft, choreographing excellence)
+
+*Technology & AI (only for people who work in tech):*
+Ethan Mollick (Wharton professor, *Co-Intelligence*) · Tiago Forte (*Building a Second Brain*) · Andy Matuschak (evergreen notes, tools for thought) · Andrej Karpathy (former Tesla AI director, OpenAI cofounder) · Tim Ferriss (*The 4-Hour Workweek*, elimination thinking)
+
+**Panel suggestions (offered only when setting up a panel, one name at a time; never in a journal entry unless the user added them):**
+
+- Parents: Dr. Becky Kennedy (*Good Inside*) · Emily Oster (*Cribsheet*, *The Family Firm*) · Dr. Daniel Siegel (*The Whole-Brain Child*) · Lisa Damour (*The Emotional Lives of Teenagers*)
+- Writers: Anne Lamott (*Bird by Bird*) · Stephen King (*On Writing*) · Julia Cameron (*The Artist's Way*) · Steven Pressfield (*The War of Art*)
+- Founders: Garry Tan (president of Y Combinator) · Michael Seibel (cofounded Twitch, longtime Y Combinator partner) · Tobi Lütke (cofounded Shopify)
+- Marketing and copywriting: Eugene Schwartz (*Breakthrough Advertising*) · Gary Halbert (*The Boron Letters*) · Donald Miller (*Building a StoryBrand*)
+- Hospitality and events: Danny Meyer (*Setting the Table*) · Will Guidara (*Unreasonable Hospitality*) · Keith Ferrazzi (*Never Eat Alone*)
+- Education: Sal Khan (founded Khan Academy) · Wendy Kopp (founded Teach For America)
+- Social impact: Esther Duflo (Nobel in economics, *Poor Economics*)
+- Creators: Casey Neistat (filmmaker, YouTube) · Ali Abdaal (*Feel-Good Productivity*) · Marques Brownlee (MKBHD) · Hank Green (Vlogbrothers, SciShow)
+- Product and design: Dieter Rams (Braun, ten principles of good design) · Jony Ive (led design at Apple) · Julie Zhuo (*The Making of a Manager*) · Don Norman (*The Design of Everyday Things*)
+- Brand: Marty Neumeier (*The Brand Gap*) · Alexandra Watkins (*Hello, My Name Is Awesome*)
+- Health care: Atul Gawande (surgeon, *Being Mortal*)
+- Law and justice: Bryan Stevenson (*Just Mercy*)
+- Consumer products: Sara Blakely (founded Spanx) · Yvon Chouinard (founded Patagonia, *Let My People Go Surfing*)
+
+### Step 6: Write every panel, then show it in the turn's final message (never wait)
+
+Applies to the Step 1.5b first take, the Step 5 full panel and every Step 5 round.
+
+**Write it into the file in the same turn**, without waiting for approval.
+
+**Then put the full panel in the turn's final message, after the last tool call:** the complete panel section exactly as written in the file — the `**Panel:**` line, every panelist's paragraph, the Dissent line, the Omission line. For a round, show that round in full (its `**Round N:**` line, every paragraph, its Dissent line), not the earlier ones again. Never a 1-line summary, and never only a note that the panel is in the entry. The Claude desktop app's Code tab folds text written between tool calls, so only the final message reliably reaches the user. The user must always see the synthetic voices that sit next to their own words; that part is non-negotiable.
+
+Right after the panel, say, for the full panel:
+
+> "Panel's in the entry. Floor: [Floor]. Edit a voice, swap a panelist, or add one?"
+
+For a first take, leave the floor out: "Panel's in the entry. Swap or cut a voice anytime." A round needs no invitation line.
+
+After writing the full panel or a round, update this session's Panel Feedback Log entry (or append one if none exists yet) with its Dissent (and Omission) lines right away (Step 9), so a session that ends here logs what was said, not only the first take.
+
+Edits follow the same rule: write any changed or added panel text into the file, then show it in the final message. A cut voice can be written straight away; if it was the panel's only dissent, add a replacement dissent and show it in the final message. Do NOT wait for approval before writing: holding the write for a reply is how sessions ended with no panel saved.
+
+**No panel only in the two Panel-Always Rule cases** (an explicit decline this session, or the crisis protocol), each leaving its one-line note. The capture itself is still never held hostage to the panel: Step 1.5 saves first.
+
+### Step 6.5: The door (map + door, never map alone)
+
+Naming a floor without pairing it to an action produces articulate stuck people — insight feels like progress and becomes its favorite disguise. Before finalizing, offer ONE small, concrete, physically doable action matched to where they are, and get a when:
+
+- **Low floors:** body-first or witness-first, never "think about it." A walk before a specific time, protein at breakfast, phone in the other room tonight, one honest sentence texted to one named person, ten minutes of sunlight before 10am.
+- **Middle floors:** one small brave action (the Courage mechanism) — send the thing, ask the thing, book the thing. Small and dated beats big and vague.
+- **High floors:** protect or extend it — give something away before feeling ready, write down what produced this so it's findable later, rest without earning it.
+
+**The Maté guard (check before prescribing):** some floors deserve time, not exits. Fresh Grief, real Anger at something genuinely wrong, a rupture days old — moving off too fast is suppression wearing resilience's clothes. If the floor is recent and proportionate to a real event, the door is a *container*, not an exit: "ten uninterrupted minutes to feel this fully," "tell one person what happened," "no big decisions until Thursday." Ask yourself: does this floor need a way out, or more time? Prescribe accordingly.
+
+One door only. Write it to frontmatter as `door:` (action + when). Tomorrow's session opens by checking it (Step 1 door check). If the user declines or the session is a quick capture-and-bail, save without one — never force it, never let it block the save. The door is distinct from Step 8.5 to-dos: to-dos are tasks the day surfaced; the door is the one floor-matched move for tomorrow.
+
+### Step 7: Finalize the entry (in-place update of the file from Step 1.5)
+
+**This is an UPDATE, not a fresh create.** The file already exists from the capture-first save. Rewrite it in place with the finalized floor, the enriched body, the full verbatim appendix (every message to date), the accountability line, the `## Today` section, and the `## Panel dialogue` section (always present per the Panel-Always Rule: one block per session, each a panel or its one-line note; the full panel replaces this session's first take; rounds, if any, stay). Never create a second file for the same session. If you refined the filename to match the day's theme, rename in place (e.g. `mv`) rather than leaving a stale duplicate. Everything below is the finalized shape the file should end up in.
+
+**File location:** Journal files go in the **monthly subfolder**, not the root. Pattern: `[VAULT_PATH]/Journals/[Month YYYY]/filename.md` (e.g. `Journals/April 2026/filename.md`). Check your vault's journal folder structure and match it.
+
+**`__SKIP` lines never land.** Before writing, strip every line whose first token is `__SKIP` — that is something the user said to you but does not want recorded. Then emit one line per dropped item so the drop is never silent: `Dropped __SKIP line 2 (token preview: <first 6 words>)`. Do not paraphrase the dropped content back into the entry, and do not copy it anywhere else. A PreToolUse hook (`block-skip-prefix-in-vault-write.py`) blocks the write if a `__SKIP` line survives, so this is enforced, not advisory. Full rule: `templates/rules/skip-prefix-convention.md`.
+
+**Always use Bash (`cat`) to read and write journal files — do NOT use the Read tool.** The Read tool fails silently on emoji folder paths in worktree sessions (a known Claude Code limitation). Use:
+- Write: `cat > "/full/path/file.md" << 'EOF' ... EOF`
+- Read/verify: `cat "/full/path/file.md"` or `ls -la "/full/path/file.md"`
+
+**Filename format:** Honor `filename_format` from `journal-config.md` (read at Step 0-pre; default `descriptive`):
+- **`descriptive`** (default): a 5-8 word Title Case summary of the content, e.g. "Ranch Weekend Dad Health Worries.md", "Great Team Meeting Feeling Momentum.md", "Mom Visit Kept Cool This Time.md".
+- **`date`**: the entry's date, `YYYY-MM-DD.md` (e.g. "2026-04-11.md").
+- **`date-title`**: date prefix + a short 2-4 word title, e.g. "2026-04-11 Ranch Weekend.md".
+
+If the vault's `CLAUDE.md` states a filename rule, it wins — `filename_format` should already match it; if they ever disagree, follow `CLAUDE.md`.
+
+**Entry format:**
+
+```markdown
+---
+type: journal               # REQUIRED — metadata extraction routes every note by `type:`; an entry without it is skipped as NO_TYPE and never indexed
+creationDate: YYYY-MM-DDTHH:MM
+floor: Primary              # single floor name — where the entry LANDED (this is the EVENING floor)
+floor_level: Low | Middle | High
+# floor_arc: [FloorA, FloorB, Primary]   # OPTIONAL — ordered path through the day, last element = floor. Add ONLY when the day moved; omit on a still day.
+entry_status: captured | enriched   # captured = saved at first touch (Step 1.5); enriched = the interview continued past capture
+context_sources: [messages, rescuetime, session_captures, todays_activity, calendar, body_health]   # REQUIRED — every Step-0 source actually folded into this entry (drop any that were off/unavailable, but name what you pulled). Absent => warn-journal-saved-without-context.py fires.
+people: ["[[Full Name]]", "[[Other Name]]"]   # people who showed up today. EVERY wikilink MUST be inside double quotes.
+# ^ YAML HARD RULE: `people: [[A]], [[B]]` is INVALID YAML — the parser reads `[[A]]`
+#   as a nested flow sequence and dies on the comma. A file whose frontmatter fails to
+#   parse is INVISIBLE to Dataview, to /second-brain-mapping, and to the insight engine
+#   — silently, with no error. Observed in the field: this had broken 10 of 14 journals
+#   in one vault, and every insight section had been rendering empty for weeks as a
+#   result, with nothing surfacing the failure.
+#   Same rule for ANY key holding wikilinks (`related:`, `projects:`): quote each one.
+#   The bracketed variant is worse, because it SUCCEEDS: `related: [[[A]], [[B]]]`
+#   parses to nested lists ([[["A"]], [["B"]]]) instead of wikilink strings. No
+#   error, no unparseable file, nothing to notice — the queries simply never match.
+# Morning pairing fields — ONLY include if a /rise entry was found in Step 0h:
+# floor_morning: <Floor at sunrise from /rise frontmatter>
+# floor_morning_level: Low | Middle | High
+# priorities_planned: ["priority 1", "priority 2", "priority 3"]   # from morning /rise
+# priorities_landed: ["landed" | "partial" | "dropped", ...]        # parallel array, same length, status per priority
+# intention_planned: "<intention sentence from morning /rise>"
+# intention_held: held | partial | missed
+# Movement fields (Step 4 movement capture + Step 6.5 door):
+floor_yesterday: <previous entry's primary floor>   # omit if no previous entry
+moved_because: body | witness | rupture | rope | role | story   # omit if unknown
+body_check: {slept: y|n, ate: y|n, moved: y|n, sunlight: y|n}
+# rope: "<what pulled them up>"      # ONLY when they moved up from a low floor
+# door: "<one small action + when>"  # from Step 6.5 — omit if declined
+# door_prev: done | partial | skipped  # previous entry's door status — omit if none existed
+gym: true | false
+gym_week: X                 # count for this week
+sleep_time: "HH:MM"
+meditation: true | false
+deep_work: X                # blocks completed today
+# RescueTime fields — ONLY include if the user has RescueTime connected:
+# rt_pulse: X               # Productivity Pulse 0-100
+# rt_productive_h: X.X
+# rt_distracting_h: X.X
+---
+
+## Today (auto-pulled per config — see ⚙️ Meta/journal-config.md)
+[ONE dense paragraph synthesized from the data sources enabled in journal-config.md. Concrete: PR numbers, test count deltas, file counts, hour totals, named events, named people, on-screen + off-screen events. Inventory shape, not narrative. Wikilink relevant people/projects/concepts so the graph picks them up. This is the "what happened today" anchor future-rereads use to date-stamp the entry. If `todays_activity` is off in config, omit this section entirely. If a section of activity was empty (no commits, no calendar events, etc.), say so explicitly rather than skipping; the absence is signal too.]
+
+## Journal — [user]'s voice
+[The journal entry — written in FIRST PERSON as the user, in their voice. Stream of consciousness, casual, honest. Mix English and Spanglish naturally if they did in the interview. Include the details they shared. Don't clean it up too much — their journals are raw and real. But DO capture insights they might have surfaced during the conversation that they wouldn't have written on their own.]
+
+[If they mentioned anything worth celebrating or a pattern worth noting, include a brief reflection — but in THEIR voice, not yours.]
+
+[Include the financial abundance note naturally.]
+
+### My responses to the panel (verbatim, every message I typed back in this session)
+*Required by the verbatim-capture rule. Every message the user typed during this journal session, word-for-word, in chronological order. Do not paraphrase, do not trim, do not fix typos. Each message gets a short italic context label, then the message as a blockquote.*
+
+*On [what this message was about]:*
+> [verbatim message 1]
+
+*On [what this message was about]:*
+> [verbatim message 2]
+
+[…continue for every message they typed.]
+
+**Gym:** [X]/4 this week · **Sleep:** [time to bed] · **Meditation:** [yes/no, Xmin] · **Deep Work:** [X]/2 blocks
+**RescueTime:** Pulse [X]/100 · Productive [Xh] · Distracting [Xh] · Top apps: [app1, app2, app3]
+
+---
+
+## Panel dialogue
+
+[One block per session, oldest first; never edit an earlier block. On a resumed day each block after the first opens with `*Later session, HH:MM:*`; a first take then adds its first-take note. A declined or crisis session's block is its one-line note instead of a panel.]
+
+**Panel:** [Name] · [Name] · [Name]
+
+**[Name]** ([concrete proof: titles, books, metrics — not a mental-model descriptor])
+[One paragraph in their voice, 3–5 sentences (2–3 for a first take), optionally ending with `*[Pullback: ...]*`.]
+
+[One paragraph per panelist, same shape: parallel positions (Step 5 format). At least one panelist dissents.]
+
+**Dissent:** [One line naming who pushed back and what they challenged]
+**Omission flagged:** [One line, only if the omission pass surfaced something — otherwise remove this line entirely]
+
+[Rounds, only if the user engaged the panel: they stay in this session's block, in order, each as below. A round has no Panel line.]
+
+**Round N:** [a few words on what they raised]
+[One paragraph per voice that answered, same shape (2–4 sentences).]
+**Dissent:** [One line naming who pushed back and what they challenged]
+
+---
+
+*Floor: [[{Floor}]] · [[{Level} Floors]]*
+
+## Concepts
+[[Tag1]] | [[Tag2]] | [[Tag3]]
+```
+
+**Concept tags:** use existing vault concepts that match the content (people, emotions, themes, framework notes). The common vocabulary is in `{SKILL_DIR}/references/concept-tags.md`; prefer a tag the vault already has over inventing one.
+
+**Important:**
+- Write the entry AS them, not about them
+- Keep their voice — they likely write in long flowing paragraphs, think out loud, argue with themselves
+- Include specific details (names, places, what happened)
+- If they surfaced something new in the interview that surprised them, make sure it lands in the entry
+- Don't over-polish. The best entries are messy and real.
+- **Strict separation:** the `## Journal` section contains ONLY their original thought, written in their voice. Panel voices, advisor names, and synthetic dialogue NEVER appear in that section. Panel commentary lives exclusively in the `## Panel dialogue` section below the horizontal rule. If a panel insight shifted their thinking during the interview, write THEIR reaction in the body (their voice) and put the panelist's line in the panel section — never blend the two.
+- **Verbatim appendix is non-negotiable:** the `### My responses to the panel` subsection inside the `## Journal` block must contain every message the user typed during the session, word-for-word. If you skip this, the entry is broken. See the verbatim-capture rule near the top of this file.
+- The floor tag goes before ## Concepts
+- Use `[[wikilinks]]` for all concept references in the body text too, naturally
+
+
+**Floor wikilinks — auto-link everything:** Every floor name in the `## Journal` body text — first occurrence — gets wrapped as `[[FloorName]]`. Same in Spanish: `[[Miedo]]`, `[[Valentía]]`, etc. This builds the graph.
+
+**Floor note template.** When the entry's floor has no note yet, create it using the template in `{SKILL_DIR}/references/floor-note-template.md` (frontmatter, sections, bilingual Substack line). If the note exists, check its bottom for the bilingual Substack line and add it if missing.
+
+### Step 8: Idea Quarantine Check
+
+Before saving, scan the conversation for any **new business ideas, project ideas, or "what if I built..."** moments. If you find any:
+1. Save them to the Idea Quarantine file (check CLAUDE.md for the path, e.g. `💼 Business/Idea Quarantine.md`) under the `## Ideas` section
+2. Format: `- **[YYYY-MM-DD]** — [the idea, 1-2 sentences] *(from journal check-in)*`
+3. Tell the user: "I also caught an idea in there — parked it in Idea Quarantine so it doesn't distract but doesn't get lost."
+
+This is critical. New ideas need to cool off before getting attention. Whatever the main priority is stays the priority. Ideas are welcome — but they go in quarantine, not into action. Parking an idea doesn't stop the panel from discussing it with them: if they want to think it through, run a round.
+
+### Step 8.5: To-Do Extraction
+
+After saving the journal entry, scan the full conversation for any **action items, follow-ups, or things they said they need to do**. Look for:
+- "Remind me to..." / "I need to..." / "I should..." / "I have to..."
+- Follow-ups promised to people
+- Conversations they flagged as needed (hard talk with X, call with Y)
+- Events or deadlines mentioned that need a task
+
+If you find any:
+1. Read the personal to-do file (check CLAUDE.md for the path) to check for duplicates
+2. Add a new section at the top (after frontmatter):
+
+```markdown
+## 📋 From Journal — [YYYY-MM-DD]
+
+- [ ] [task 1 — be specific, include context]
+- [ ] [task 2]
+```
+
+3. Update the `updated:` field in frontmatter to today's date
+4. Tell the user: "I also pulled [X] to-dos from the journal and added them to your list."
+
+If no clear action items came up, skip silently — don't force it.
+
+### Step 9: After saving
+
+**FIRST, before you tell them anything: rebuild the journal index.**
+
+The entry you just saved does not exist for `/weekly`, `/monthly` or `/sunday-review` until this
+runs. Nothing else rebuilds it — there is no hook and no scheduled task, and those skills only
+*read* the index.
+
+```bash
+python3 "[VAULT_PATH]/Meta/scripts/build-journal-index.py" --vault-root "[VAULT_PATH]" --journal-dir "[JOURNAL_FOLDER]"
+```
+
+Pass `--vault-root` and `--journal-dir` explicitly whenever the vault uses localized or
+emoji-prefixed folder names (`⚙️ Meta`, `📓 Journals`) — the script cannot infer those, and on
+Windows use `python`, not `/usr/bin/python3`.
+
+Expected output: `Indexed N entries → ...`, where N equals the number of journals on disk. **If it
+fails, say so** — never continue silently. A report built on a stale index looks successful and is
+wrong.
+
+> **Why this belongs here and not in the insights skills.** `/weekly` and `/monthly` guard the index
+> with a staleness check ("rebuild if missing or more than 7 days old"). That check measures *age,
+> not completeness*: a one-day-old index passes it while still missing every entry written since it
+> was built. Observed in the field: one vault sat at 21 indexed entries against 26 on disk, and went
+> **seven weeks without generating a single weekly or monthly report** — silently, because the index
+> was never "old", just incomplete. The index is derived from the journals, so it has to be refreshed
+> when one is *written*, not when someone remembers to check.
+
+
+Tell them the file name and floor. If relevant, connect it to a pattern from their data:
+- "This is your 3rd Courage entry this month — you're on a streak."
+- "Last time that person triggered you, you stayed on Anger for 3 entries. This time you moved to Acceptance same day. That's growth."
+- "You mentioned money stress + a new idea in the same breath. That's the pre-pivot cocktail. Just flagging it."
+- If an idea was quarantined: "Parked [idea] in Idea Quarantine. Main priority first. But it's saved."
+- Gym count: "You're at [X]/4 this week. [Encouragement or push as appropriate.]"
+
+**Auto-log panel dissents and omissions:**
+Log only this session's panel, one log entry per session: Step 1.5b appends the first take's lines, the full panel updates that same entry in place right after it is written (Step 6), and each round adds its Dissent line to it as `**Round N dissent:**`. Whenever this session's panel changes after it was logged (a swap, an added or cut voice, a decline), update this session's log entry to match; if nothing was logged yet, append one only when there is a dissent or omission to log. If CLAUDE.md names no log path, use `Home/Panel Feedback Log.md` under the vault root (`🏠 Home/` in an emoji-folder vault), creating the folder and the file, with a one-line header saying it collects synthetic panel reactions, if they are missing. If this session's panel surfaced a dissent or an omission flag that is not logged yet, automatically append it to the Panel Feedback Log (check CLAUDE.md for the path, e.g. `🏠 Home/Panel Feedback Log.md`) under the synthetic panel reactions section. Use this format:
+
+```markdown
+### YYYY-MM-DD — Daily journal dissent / omission
+
+⚠️ **Synthetic panel reaction from /journal, not real investor feedback.**
+
+**Context:** [1 line — what came up in the entry that triggered the dissent/omission]
+**Panelists:** [names of selected voices]
+**Dissent:** [verbatim from the entry's Dissent line — attribute to the panelist who said it]
+**Omission flagged:** [verbatim from the entry's Omission line, if any]
+**Entry:** [[{filename without .md}]]
+```
+
+This is automatic — never ask the user to approve the log append. If there's no dissent or omission from the entry (every panel requires a dissent; a one-line declined or crisis block has nothing to log), skip the log append silently.
+
+### Step 9.5: Fire first-journal-saved telemetry (one-time, fail-open)
+
+After the entry first persists (the capture-first save in Step 1.5, or here if the session reaches the end first), check whether this is the user's FIRST journal save in this vault. If it is, run the one-time, sentinel-guarded snippet in `{SKILL_DIR}/references/first-journal-telemetry.md`. Subsequent saves do not re-fire. Hard rules that stay binding: it sends nothing unless the local install-token marker holds a real 32-char hex token (a `declined` or `recorded` marker, or no file, means skip the call entirely); failures are silent and never block journaling; never ask the user for an email here, journaling is not a capture surface.
+
+## Notes
+
+- **Capture beats completeness.** If the user just wants a quick check-in (1-2 sentences), save it immediately per the Capture-First Contract and let them go. Even "Good day. Worked on the product. Felt productive." is a valid, complete entry — most people have detailed bad-day entries and almost no good-day snapshots. Never make a quick entry wait on the interview. It still gets its first-take panel in the same reply (Step 1.5b): the panel is part of the entry, not a reward for finishing the interview.
+- The goal is to make journaling feel like a conversation, not homework.
+- Keep the mechanics light (saving, logging, filing); let the conversation go as deep and as long as they take it. Quick is fine. Deep is also fine. Match their depth.
+- Push on behavior change but don't be annoying about it. Coach energy, not parent energy.
+- The panel is a thinking partner, not a verdict: a quick entry gets the first take, and when they engage it runs round after round. Keep every round sharp.
+- **NEVER fail silently.** After saving any file, verify it exists. If the save fails (wrong path, permissions, missing folder), TELL THE USER IMMEDIATELY. Say what failed and offer to retry. Never let a journal entry be lost.

@@ -1,0 +1,49 @@
+---
+name: maya-node-graph
+description: |-
+  Scene stage — create nodes, connect / disconnect attributes, query construction
+  history, and inspect DG / DAG topology. Use whenever you reason about how
+  nodes drive each other or construction history. Not for attribute *value* edits
+  (use maya-attributes), polygon topology cleanup (use maya-mesh-ops), or
+  scene file lifecycle (use maya-scene).
+license: MIT
+allowed-tools: Bash Read
+metadata:
+  dcc-mcp:
+    dcc: maya
+    layer: domain
+    stage: scene
+    version: 1.1.0
+    tags:
+    - maya
+    - node
+    - attribute
+    - graph
+    - utility
+    search-hint: |-
+      create node, delete node, describe node, node connection, attribute link,
+      DG topology, construction history, list connections, transfer attributes,
+      smooth subdivide
+    tools: tools.yaml
+---
+# maya-node-graph (Scene stage)
+
+Wires the Maya dependency graph: `connectAttr`, `disconnectAttr`,
+`listConnections`, history queries, plus mesh-flavoured graph operations
+that are conceptually construction-history / attribute-transfer operations
+rather than polygon topology cleanup.
+
+## Scripts
+
+- `create_node` — Create a generic Maya DG / DAG node
+- `describe_node` — Return node identity, optional attributes, and graph connections
+- `delete_node` — Delete generic Maya nodes
+- `connect_attr` — Connect two Maya node attributes
+- `disconnect_attr` — Disconnect two connected Maya node attributes
+- `list_connections` — List nodes/attributes connected to a Maya node or attribute
+- `get_dag_path` — Return the full DAG path of a Maya node
+- `smooth_mesh` — Apply construction-history smoothing; use maya-mesh-ops for topology cleanup
+- `list_history` — List construction history nodes for a Maya object
+- `delete_history` — Delete history and fail if upstream construction nodes remain
+- `apply_symmetry` — Apply mesh symmetry to a polygon object
+- `transfer_attributes` — Transfer mesh attributes (UVs, normals, vertex colors) from one mesh to another

@@ -1,0 +1,297 @@
+---
+name: release
+description: Cut a Tandem release — seven-surface version bump, changelog, tag, GitHub Release publish, smoke checklist
+disable-model-invocation: true
+---
+
+# Cut a Tandem Release
+
+The version bump has **SEVEN surfaces**, none of which bump automatically. Surfaces 1–4 are
+CI-guarded by `tests/plugin/plugin-version-pin.test.ts` (any divergence from
+`package.json` fails CI); surfaces 5–6 are **not guarded** — this skill is what
+prevents them drifting. Surface 7 is guarded more loosely and is bumped **last,
+in its own PR, after the release is published** (step 9), never with the
+other six.
+
+## The seven version surfaces
+
+1. `package.json` — `version` (the reference value the CI guard compares against)
+2. `.claude-plugin/plugin.json` — **FIVE** values in one file: the top-level
+   `version`, plus the `tandem-editor@<version>` npx pins in
+   `mcpServers.tandem.args`, `mcpServers.tandem-channel.args`, AND **one per
+   entry** in `experimental.monitors[].command`
+   (`npx -y tandem-editor@<version> monitor` — added #1201; #1354 made it two
+   entries, because the arm trigger has to be declared under both the qualified
+   and the bare skill name. Each lives in a `command` string, invisible to the
+   `args`-array walker, so they have their own guard case in
+   `plugin-version-pin.test.ts`, which loops every entry. Miss one and that
+   monitor stays pinned to the previous, dormant version.)
+   **Count the entries, do not trust this number** — it was already stale once,
+   when the second monitor was added.
+3. `src-tauri/Cargo.toml` — `[package].version` (the Cowork installer pins its
+   npx spec via `env!("CARGO_PKG_VERSION")`; stale = ships a build pinning the
+   WRONG published npm version)
+4. `src-tauri/tauri.conf.json` — `version` (drives desktop artifact names
+   `Tandem_<version>_x64.dmg`, …). It used to also *target* the GitHub release
+   through the tauri-action `__VERSION__` substitution, which is how a stale
+   value uploaded v0.15.0's build onto the PREVIOUS release and clobbered
+   v0.14.3's published artifacts. That mechanism is gone: `tauri-release.yml`
+   targets the pushed git tag, and its `create-release` job fails the build
+   before anything is signed when the tag and this file disagree. Still bump
+   it — a stale value now ships mis-*named* installers instead of mis-placed
+   ones.
+5. `package-lock.json` — regenerate, never hand-edit:
+   ```bash
+   npm install --package-lock-only
+   ```
+   Unguarded, and **nothing in CI catches it** — `npm ci` will not. Its
+   lockfile-sync check covers **dependencies** only: with the lock left stale,
+   bumping the root `version` exits 0, and even changing the root `name` exits
+   0 (verified on npm 11.12.0; only an unlocked *dependency* makes it fail).
+   Regenerate anyway — the lock's root `version` is committed, so skipping it
+   ships a lockfile disagreeing with `package.json` and leaves the next local
+   `npm install` to rewrite the file and dirty the tree.
+6. `src-tauri/Cargo.lock` — refresh and commit:
+   ```bash
+   cargo update --manifest-path src-tauri/Cargo.toml -p tandem-desktop
+   ```
+   **Do not add `--precise <version>`.** `tandem-desktop` is a local package,
+   and for a local/workspace package `--precise` is silently ignored: asking
+   for a version the manifest doesn't have exits 0 and changes nothing. The
+   version comes from `Cargo.toml`, so bump the manifest (surface 3) and let
+   plain `-p` relock it.
+
+   Hygiene only, NOT a breakage surface: nothing verifies this lockfile —
+   `ci.yml` runs a bare `cargo test --manifest-path src-tauri/Cargo.toml` with
+   no `--locked`, so cargo silently regenerates a stale lock and CI stays
+   green. The tree still goes dirty on the next local build if you skip this.
+7. `.claude-plugin/marketplace.json` — the `tandem` entry's `source.ref`, the
+   release tag the Claude Code plugin installs from (`"ref": "v<version>"`).
+   **Do NOT bump it with surfaces 1–6.** It must name a tag that exists, and
+   the tag is cut from master after the bump PR merges (step 6), so it moves
+   in its own PR at step 9, once the release is published and npm serves the
+   version. Why it exists at all: the licensor decided on 2026-10-09 (A7; the
+   analysis is L1 in `docs/reviews/2026-10-01-license-review.md`) that a
+   version of the Licensed Work is a release on the Releases page, and
+   without a `ref` the plugin installs from the default branch, a copy that
+   belongs to no version.
+   Claude Code clones the tag (measured 2026-10-09: an isolated install with
+   `ref: v0.28.0` recorded the tag's commit and version 0.28.0). Per the
+   plugin docs, a user's client refreshes the marketplace from master and
+   detects an update by the cloned `plugin.json`'s `version`, so users should
+   get the new plugin once master's marketplace names the new tag. Neither
+   the refresh nor the update has been exercised.
+
+   `plugin-version-pin.test.ts` allows this ref to be `v<package.json version>`
+   or the previous stable release (by `CHANGELOG.md` heading), so the bump PR
+   stays green with the old ref and a forgotten step 9 fails CI at the next
+   release's bump. It cannot check that the tag exists (CI is tagless), and it
+   refuses a prerelease ref: on an RC (`v1.0.0-rc.1`), skip step 9 and leave
+   the plugin on the last stable release.
+
+## Steps
+
+1. Bump surfaces 1–6 (above), then run the catch-all: grep the tree for the
+   OUTGOING version and confirm zero source stragglers remain:
+   ```bash
+   git grep -F <old-version> -- ':!CHANGELOG.md' ':!*.lock' ':!package-lock.json' ':!tests/**' ':!docs/**'
+   ```
+   **`-F` is load-bearing:** unescaped, the dots are regex wildcards, so a
+   version like `0.15.0` also matches `oklch(0.15 0.01 …)` in `index.html` — a
+   pure false positive. On the most recent release, `-F` plus `':!docs/**'`
+   took this from 33 matching lines down to 9. (CHANGELOG keeps history;
+   lockfiles carry dep versions; test fixtures and docs cite versions as
+   prose — all expected.)
+
+   **Read the survivors, don't just count them — they are not all bugs.**
+   Expect three kinds: the surfaces themselves (before you bump them; surface
+   7's `"ref": "v<old-version>"` is SUPPOSED to survive until step 9);
+   deliberate prose naming a version as history (this skill's own dated
+   plugin-install measurement — leave it alone); and source comments,
+   which the exclusions do NOT hide — `src/server/license/gate-flag.ts` carries a `Default: false (v<version>)`
+   marker. Judge each one; a straggler is a hit that still *pins* the old
+   version rather than describing it.
+
+2. Ask Bryan to run `/changelog` to generate the Keep a Changelog entry, then
+   finalize the `## [<version>]` section in `CHANGELOG.md` (the in-app View
+   Changelog button serves this file). You cannot invoke it yourself — the
+   `changelog` skill sets `disable-model-invocation: true`, which makes it
+   user-invocable only.
+
+   **Ask for it again AFTER the cut, over `v<prev>..v<new>`.** At v0.20.0 that
+   post-release run found a whole missing category that two dedicated review
+   agents had not: no `### Security` section, despite the release pinning
+   `@hono/node-server` past GHSA-frvp-7c67-39w9 in code that ships. A reviewer
+   pointed at the entries can only grade the entries that exist; nothing asks
+   which category is *absent*. Concretely, before calling the section done:
+   - Walk the merged-PR list (`git log --first-parent --oneline v<prev>..HEAD`
+     — one line per change that landed on master, whether the PR arrived as a
+     squash commit or a merge commit; `--merges` alone misses every squash),
+     not only a `#\d+` scan of the subjects — a fix can land with no issue
+     number anywhere in its subject and be invisible to that scan.
+   - Check every dependency bump against the repo's real Dependabot alert list
+     (`gh api repos/<owner>/<repo>/dependabot/alerts`). A bump next to a
+     security bump is not itself a security fix, and an automated update can
+     widen a peer range without moving the resolved version off the affected
+     one.
+   - When recording a security fix, state reachability honestly in both
+     directions — "bundled but we never call it" belongs in the entry, or the
+     note implies an exposure that did not exist.
+
+3. **Rebuild before you retest.** `APP_VERSION` is a build-time tsup define, so
+   `dist/` still carries the OUTGOING version until `npm run build` runs, and
+   `tests/build/version-baked.test.ts` fails asserting the new string against a
+   stale bundle. It reads as a real regression and is not one:
+   ```bash
+   npm run build
+   ```
+
+4. Verify the full test suite is green — `plugin-version-pin.test.ts` proves
+   surfaces 1–4 agree (it also checks `plugin.json`'s pinned npx specs, that
+   surface 7 is at most one release behind, and that `CHANGELOG.md` has a
+   `## [<version>]` heading, which step 2 provides);
+   `tests/plugin-manifest.test.ts` additionally fails if `package.json` and
+   `plugin.json` diverge — treat either failure as "you bumped some, not all":
+   ```bash
+   npm run typecheck && npm run typecheck:tests && npm test -- --run
+   ```
+   `typecheck:tests` is separate because `npm run typecheck` does not chain it;
+   `.husky/pre-push` and CI's `check` both run it.
+   Pass `--run`. The `test` script is bare `vitest`, whose watch default is
+   `!isCI && process.stdin.isTTY && !isAgent` — so it exits on its own in CI,
+   when piped, and for an agent, but sits in watch mode in Bryan's interactive
+   terminal. `--run` makes that unconditional; `ci.yml` and `.husky/pre-push`
+   both pass it.
+
+5. Ship the bump through the normal flow: branch → PR → CI green → merge →
+   verify CI green on **the commit that landed on master**: the `push` run on
+   master, plus the `merge_group` run if the PR went through a merge queue. As
+   of 2026-10-21 PRs merged directly, and a PR behind master had to be updated
+   and re-run first (CLAUDE.md, Status).
+
+6. Tag the release on the master tip and push the tag:
+   ```bash
+   git tag -a v<version> -m "Tandem v<version>" && git push origin v<version>
+   ```
+   Use `-a` (annotated). Bare `git tag v<version>` creates a *lightweight* tag
+   — `git cat-file -t` reports `commit`, not `tag` — which would break the
+   pattern: every release tag since v0.11.1 is annotated. (Older tags are
+   mostly lightweight; that is history, not the standard to copy.)
+   The `v*` tag push triggers `.github/workflows/tauri-release.yml`. Its
+   `create-release` job creates the **DRAFT** GitHub Release once (prerelease
+   flag set when the tag carries a hyphen), and the signed desktop build matrix
+   uploads artifacts + `latest.json` into it by `releaseId`; a `release-check`
+   summary job and `verify-release-manifest` follow. The tag alone does NOT
+   publish to npm. (`HUSKY=0` on the tag push is fine — the
+   commit is already CI-green.)
+
+6b. Populate the GitHub release body from the `## [<version>]` changelog
+   section — the `create-release` job's `github-script` writes only "See the
+   assets to download and install Tandem." Extract the section between its heading and the previous version's
+   and pass it via `gh release edit v<version> --notes-file <file>`. Do this
+   before publishing where possible. Inconsistent historically (v0.18.0 had
+   full notes; v0.17.0 and v0.19.0 shipped with the boilerplate), so it needs
+   to be a step rather than a habit.
+
+7. Wait for every matrix build, `release-check`, AND `verify-release-manifest`
+   to go green, then publish the draft. **Which command depends on whether the
+   version carries a hyphen** (`v1.0.0-rc.1` does, `v1.0.0` does not):
+
+   ```bash
+   # No hyphen — a normal release:
+   gh release edit v<version> --draft=false --latest
+
+   # With a hyphen — a prerelease:
+   gh release edit v<version> --draft=false --prerelease --latest=false
+   ```
+
+   GitHub's `releases/latest` resolves to the newest **non-prerelease** release,
+   and `src-tauri/tauri.conf.json` points the updater at
+   `releases/latest/download/latest.json` — so that resolution is the only thing
+   keeping every installed copy off an RC. **Do not pass a bare `--latest` on a
+   prerelease.** `create-release` already sets the release's `prerelease` flag
+   from the tag (#1748); these flags are the publish-time half of the same rule.
+
+   **A green matrix is not a complete release.** Until v0.20.1 every matrix leg
+   independently found-or-created the draft, so four jobs starting in the same
+   second could race and split the artifacts across TWO drafts sharing one tag,
+   each with a partial `latest.json`. v0.18.0 shipped that way — 8 assets and 5
+   platform keys, no `darwin-aarch64`, no linux, while a 10-asset sibling draft
+   sat orphaned and unpublished. Nothing was red. A missing platform key is
+   indistinguishable from "no update available", so every M-series Mac was told
+   it was up to date until the next release.
+
+   `create-release` + `verify-release-manifest` now make that structural, but
+   the cheap manual confirmation is worth keeping — the counts are the tell:
+   ```bash
+   gh api repos/bloknayrb/tandem/releases --jq \
+     '[.[]|select(.tag_name=="v<version>")]|length'   # must be 1, never 2
+   gh release view v<version> --json assets --jq '.assets|length'  # 17
+   ```
+   17 assets and 11 platform keys is the healthy shape: `latest.json` (1) +
+   Windows `.exe`, `.msi` and their 2 `.sig` (4) + macOS 2 `.app.tar.gz`, their
+   2 `.sig` and 2 `.dmg` (6) + Linux AppImage, `.deb`, `.rpm` and their 3 `.sig`
+   (6) = 17. The 11 keys are the list `verify-release-manifest` checks.
+   Publishing is the npm trigger: `.github/workflows/publish.yml` fires on
+   `release: [published]` and runs `npm publish --provenance`. It authenticates
+   with **npm Trusted Publishing (OIDC), not a secret** — there is no
+   `NPM_TOKEN` any more; the granular token it replaced lapsed at 90 days and
+   took v0.25.0's publish down after the GitHub release was already public.
+   Three things that gate it live on npmjs.com and are validated only at publish
+   time — repo + workflow filename, the `npm` environment name, and the
+   `npm publish` allowed action (configs created after 2026-09-03 default to
+   `npm stage publish` only). All three fail as an auth-shaped error; the
+   workflow header enumerates them.
+
+   **A failed npm publish cannot be fixed by re-running it.** A `release` event
+   runs the workflow file *from the tag*, so the retry re-executes whatever
+   `publish.yml` the tag carries. Use the `workflow_dispatch` on `publish.yml`
+   from master instead, passing the tag — it resolves the tag to its commit,
+   requires a published release for it, and publishes that tree. If macOS
+   notarization 403s on "agreement missing/expired," that is an Apple
+   legal-agreement lapse only the Account Holder (Bryan) can clear at
+   developer.apple.com / App Store Connect — re-run the failed jobs after he
+   signs.
+
+7b. Upgrade the local global install: `npm install -g tandem-editor@<version>`.
+   This is a smoke-checklist §4 step, but it is also a *correctness* step for
+   the plugin path and easy to skip because nothing fails loudly without it. A
+   stale global `tandem-editor` shadows `npx -y tandem-editor@<pin>`, so the
+   plugin's exact per-release pin in `.claude-plugin/plugin.json` silently
+   resolves to whatever old version is installed. Found at v0.20.0 sitting two
+   versions behind, at 0.18.0. Verify with `npm ls -g tandem-editor --depth=0`;
+   `tandem doctor` also asserts it (`Global tandem-editor@<v> matches this
+   build`).
+
+8. Walk [`docs/release-smoke-checklist.md`](../../../docs/release-smoke-checklist.md): CI signal first (matrix + macOS
+   launch smoke), then real installers on real
+   machines — SmartScreen/Gatekeeper, updater from the *previous* version,
+   file associations, `npm install -g tandem-editor@<version>` + `tandem
+   doctor`. Record the outcome (platforms covered, anything skipped) on the
+   release PR or tracking issue — an unstated skip reads as "verified".
+
+9. Bump surface 7 in its own PR: set the `tandem` entry's `source.ref` in
+   `.claude-plugin/marketplace.json` to `v<version>`. Only after all three hold:
+   - the tag exists on the remote: `git ls-remote --tags origin v<version>`;
+   - the release is published (step 7), not a draft;
+   - npm serves the version: `npm view tandem-editor@<version> version --prefer-online`. The
+     tagged `plugin.json` launches `npx -y tandem-editor@<version>`, so
+     pointing the plugin at the tag before npm has it ships an MCP server that
+     cannot start. The registry has lagged ~7 minutes behind a green publish
+     before (v0.26.0), so check with `--prefer-online` and don't merge on the
+     first green workflow alone.
+
+   Branch → PR → CI green → merge, like any change. Until it merges, plugin
+   users stay on the previous release, which is the intended state between the
+   tag and this step. **Skip this step for a prerelease** (a version with a
+   hyphen): the plugin stays on the last stable release, like
+   `releases/latest`, and the CI guard refuses a prerelease ref.
+
+## Important
+
+- CLAUDE.md carries no version stamp; edit its **Status** section only if a
+  flag flip, a dark system, a v1.0 blocker or the MCP tool counts changed in
+  this release.
+- Never hand-edit either lockfile — always regenerate (surfaces 5–6).
+- Changelog entries follow ADR-038 framing: "your AI" / "the AI" generically;
+  "Claude" as the concrete example only for Claude-specific features.

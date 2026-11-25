@@ -1,0 +1,191 @@
+---
+name: agent-bridge
+description: "Drive a running React Native or Expo dev build directly through @avasapp/agent-bridge: start from an app-defined scenario such as a locally signed-in user, see what's on screen, fill in forms, press buttons, seed query data, flip feature flags, set store state, navigate, mock the network, fake realtime messages and undo it all, in milliseconds per call instead of tapping through the app. Pairs with agent-device, which opens the app and covers native UI, real taps and screenshots. Use whenever you need the app in a particular state to test a change, or need to verify what a screen shows."
+---
+
+# Driving an app with agent-bridge
+
+The app mounts `useAgentBridge({ tools })` in a dev build. You call those tools
+by name. Nothing is tapped, so there is no setup to click through.
+
+## Pair it with agent-device
+
+agent-bridge works inside the app's JavaScript; agent-device works the device.
+Use both, each for what it's good at:
+
+| agent-bridge | agent-device |
+| --- | --- |
+| Put the app in a state: flags, query data, store values, network mocks, realtime messages | Install and open the app, reload, relaunch |
+| Navigate, fill forms, press buttons, check text on screen | System alerts, permission prompts, native sheets, the keyboard |
+| Undo it all with `bridge.restore` | Screenshots, recordings, one real tap to prove the UI responds |
+
+A typical run: `agent-device open` the app, set up and check the screen with
+agent-bridge, then finish with one real tap or a screenshot from agent-device.
+Don't tap through setup screens or edit backend data to reach a state that one
+bridge call can set.
+
+## Run the CLI directly
+
+The examples say `npx @avasapp/agent-bridge`; never drop the scope, because
+`agent-bridge` on npm is an unrelated package. Prefer the installed bin,
+`./node_modules/.bin/agent-bridge` (with bun too): `npx` loads npm's
+config on every call, so a project `.npmrc` with keys npm doesn't know prints
+`npm warn Unknown project config` into your output each time, and it adds
+roughly 200 ms more startup per call (machine-dependent).
+
+If the app's tools are already in your tool list as an MCP server
+(`agent-bridge mcp`; names like `screen_snapshot` for `screen.snapshot`), call
+those: each takes `args`, an array of the tool's arguments, and `full: true` for
+a result over 32 KB. With no app connected the MCP list shows only the built-in tools and calls fail until the app connects; if a call fails, call `agent_bridge_status`. A failed call keeps the session's own error (`may or may not have run`): check state before repeating a call that changes it. The rest of this skill applies the same way.
+
+## Start a session
+
+```sh
+npx @avasapp/agent-bridge session start            # add --metro host:port if Metro isn't on localhost:8081
+npx @avasapp/agent-bridge tools                    # what this app exposes
+```
+
+If Metro runs on another port, pass the same `--metro` (or set
+`AGENT_BRIDGE_METRO`) on every command that doesn't go through the session. A
+`Nothing is listening on …` error names the Metro it found instead and its apps;
+check it's yours before switching to it.
+
+Set `AGENT_BRIDGE_ON_ACTIVITY="<command>"` (or `--on-activity`) to run a command at most once a minute while you call tools, for example one that keeps a leased simulator alive. With a session, set it before `session start`: a session started without it ignores it (the client warns), so stop the session and start it again. Don't put secrets in the command (docs/cli.md, "Activity hook").
+
+Calls take `--timeout <ms>` (default 10000) for a slow call. To drive two apps
+at once, start named sessions (`session start --name ios`, `--name android`) and
+pass `--session <name>` on each call. A session is found from the nearest
+`package.json` above where you run: a command at a monorepo root also finds the
+one session started in an app folder under it (downward only; a nested checkout
+with its own `.git` doesn't count). With several app sessions under the root it
+connects directly, so pass `--session`.
+
+A session holds one connection for all your calls. It stops itself after 15
+minutes without calls and runs `bridge.restore` when it does.
+
+A JS reload (an error screen's Retry, or `app.reload`) throws away the app's
+undo state, except what lives in storage: string `mmkv.set`/`mmkv.delete` and
+persisted zustand stores are kept by the session and still undone by
+`bridge.restore`. The session reports what it kept, and
+`app reloaded; N pending restores lost: query, ...` (the areas that had
+something to undo) for the rest, as a warning on the next call (also on a
+failed one) and again in `session stop`. For the lost ones, redo your setup:
+they will not be undone.
+
+If a call fails with `app not connected; reconnecting` or `The app is gone`, the
+session lost the app (Metro or the app is down, or mid-reload). It retries on
+its 5 s health check and on your next call: wait a few seconds and call again.
+`session stop` still works. A session never moves to another app: `<app> is
+not connected; connected: …` means its app is gone and something else is there.
+
+If a call fails with `the app reloaded during <tool>; it may or may not have run`
+(or `disconnected`, `the connection dropped`), the connection dropped mid-call
+and the session did not repeat it (only read-only tools are repeated). Check the screen or state before you call again.
+
+A `timeoutMs` in the options of `screen.waitFor` or `webview.waitFor` longer
+than the call timeout stretches it, so you don't need `--timeout` for that.
+
+If `tools` fails with "agent-bridge isn't running", the hook isn't mounted in
+this build. Say so; don't fall back to tapping silently.
+
+If the app doesn't have the package or a bridge file yet, run
+`npx @avasapp/agent-bridge init --json` in the app (`--dir apps/x` from a
+monorepo root). It writes `src/dev/agent-bridge.tsx` but never edits the root
+layout: paste `mount.snippet` into `mount.file` as `mount.note` says. Ask the
+user about each entry in `choices` it reports as `open` (such as network
+tools), then rerun with the `flag` it names, or add its `lines` by hand when
+there's no flag. Then follow `next`, from `runFrom`.
+
+## Start from a scenario
+
+Apps can define named setups, such as a locally signed-in user. Use one
+instead of signing in by hand or seeding auth state yourself:
+
+```sh
+npx @avasapp/agent-bridge scenarios                                        # what this app defines
+npx @avasapp/agent-bridge call scenario.apply '["signedIn", {"user": {"name": "Ada"}}]'
+```
+
+`scenarios` shows each one's options as a JSON Schema. Bad options fail
+before anything changes, and the error lists every problem
+(`options: unknown option "usr". Known: user`): fix them and apply again.
+`bridge.restore` (and `session stop`) undoes it after everything else.
+
+A local scenario usually turns on strict network mode: any request no mock
+answers fails with a 501, and the reply carries an error that names it
+(`! error during …: agent-bridge strict network: no mock for GET https://…`).
+Add a mock for it (`net.mock`), don't turn strict mode off.
+
+If the app has no scenario for the state you need, say so. Don't sign in to a
+real account instead. If you're asked to add one, read
+[references/writing-scenarios.md](references/writing-scenarios.md).
+
+## See and use the screen
+
+```sh
+npx @avasapp/agent-bridge call screen.snapshot                       # one line per button, input, text on the focused screen (--json for rects)
+npx @avasapp/agent-bridge call screen.press '"add-plant"'            # by testID, label or text
+npx @avasapp/agent-bridge call screen.fill '["plant-name", "Fern"]'  # runs the input's handlers
+npx @avasapp/agent-bridge call screen.waitFor '"Name is required"'   # {"gone": true} waits for it to go
+npx @avasapp/agent-bridge call router.navigate /inbox
+```
+
+Check `tools` for `router.*` (expo-router) or `nav.*` (React Navigation). `nav.*`
+takes route names (`nav.navigate Inbox`, `nav.popTo Home`), and paths only if the
+app passed `linking`; read the returned `warning`.
+
+`press` and `fill` return once the app has rendered the result, so the next
+check sees it. `press` on plain text presses the nearest pressable ancestor.
+Unfocused tabs (native tabs included) and screens under others count as hidden.
+Screen tools need React Native's New Architecture (Fabric); where nothing can
+be measured they fail with a message saying so (`snapshot --all` and
+`findText` still return text, without rects). Arguments are a JSON array (or a single JSON value): the array is
+spread into the tool's arguments.
+
+## Watch for errors
+
+Every reply carries errors the app logged or threw since the previous reply,
+printed as `! error during <tool>` or `! error after <tool>`. Treat them as
+failures of the step they name. `npx @avasapp/agent-bridge call bridge.logs`
+shows the last 200 errors and warnings.
+
+## Clean up
+
+```sh
+npx @avasapp/agent-bridge call bridge.pending      # what restore will put back, per area
+npx @avasapp/agent-bridge session stop             # runs bridge.restore; --keep leaves the app as is
+```
+
+`bridge.restore` unpins queries, puts back store values, removes network mocks,
+unmutes realtime channels, then undoes active scenarios, so the next run starts
+from the real state.
+
+## Read more when you need it
+
+| When you need to… | Read |
+| --- | --- |
+| Press icon-only buttons, scroll, pull to refresh, find text, take a screenshot | [references/screen.md](references/screen.md) |
+| Drive or read a page inside a WebView (`webview "…"` in the snapshot) | [references/webview.md](references/webview.md) |
+| Read or set query data, store values, routes, modals; get argument shapes right | [references/state.md](references/state.md) |
+| Mock or inspect requests, or deal with strict network mode | [references/network.md](references/network.md) |
+| See or fake realtime messages (`realtime.*` in `tools`) | [references/realtime.md](references/realtime.md) |
+| Fake a deep link, background, offline, a push or the clock (`device.*` in `tools`) | [references/device.md](references/device.md) |
+| Handle a result over 32 KB or an argument over ~128 KB | [references/large-data.md](references/large-data.md) |
+| Run many calls at once, write a flow file, or measure timing | [references/flows.md](references/flows.md) |
+| Understand what restore undoes, or fix a value restore got wrong | [references/restore.md](references/restore.md) |
+| Add a scenario to the app | [references/writing-scenarios.md](references/writing-scenarios.md) |
+
+The app may expose its own tools for hooks the bridge has no tool for
+(`queue.flush`, `realtime.reconnect`); `tools` lists them. There is no
+`app.eval`: if the app has no tool for it, say so.
+
+## Caveats
+
+- It can't see native UI (system alerts, permission prompts, native sheets) or
+  overlap. Finish a flow with one real UI check or screenshot from agent-device.
+- `fill` skips the keyboard: autocorrect and native-only input behaviour need
+  one real typing step from agent-device.
+- Swipe and drag gestures need agent-device, unless the control is screen-reader
+  operable: `press` sends its `activate` accessibility action (see
+  [references/screen.md](references/screen.md)).
+- With several apps on one Metro, pass `--device`.

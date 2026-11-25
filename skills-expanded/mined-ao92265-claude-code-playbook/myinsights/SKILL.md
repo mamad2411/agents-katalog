@@ -1,0 +1,80 @@
+---
+disable-model-invocation: true
+name: myinsights
+description: >-
+  Generate a MERGED, all-logins Claude Code insights report — the /insights equivalent that covers your
+  ENTIRE local session corpus (every account you've logged in as on this machine), not the built-in's
+  small sample. Quantitative rollups from all session-meta + a qualitative narrative synthesized from
+  the local facets, rendered as a self-contained HTML report. Use when the user says "myinsights",
+  "insights across both accounts", "full insights", "all my sessions", "merged insights", "usage report
+  for everything", or invokes /myinsights. Do NOT use for the built-in per-account /insights (that's a
+  native command) or for account/config status (that's /account-status).
+---
+
+# myinsights
+
+The built-in `/insights` samples a subset of sessions and reflects the currently-logged-in view. This produces a report over the **whole local corpus, merged across every login**, because `/login` overwrites only identity (keychain token + `~/.claude.json`), never `~/.claude/projects/**` or `~/.claude/usage-data/**` — all logins' sessions already coexist locally.
+
+**Honesty guardrails (must survive into the report):**
+- Sessions on disk carry **no account tag** → the report is *merged*, it cannot split work vs personal. State this.
+- Quantitative stats cover **all** session-meta; the qualitative narrative is grounded in the available **facets** (a subset). Don't imply the narrative saw every session.
+
+## Steps
+
+1. **Extract substrate** (deterministic, read-only) into a scratch dir:
+   ```bash
+   OUT=/tmp/myinsights && python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/myinsights/harvest_local.py" && python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/myinsights/gather_all.py" "$OUT"
+   ```
+   Writes `$OUT/quant.json` (rollups: sessions, tokens, commits/pushes, durations, top tools, languages, error categories, by-hour, project areas) and `$OUT/facets_compact.json` (trimmed qualitative facets). Honours `CLAUDE_CONFIG_DIR`.
+
+2. **Synthesize the narrative** — read `$OUT/facets_compact.json` + `$OUT/quant.json` and produce a JSON object at **full /insights depth** (a deep Opus agent, effort high). Ground every claim in the data; cite counts; full-corpus claims use n=sessions framing, sampled claims use n=facets; say "insufficient data" rather than invent. Save to `$OUT/narrative.json`. Exact schema (the renderer degrades gracefully if a block is missing, but aim for all of it):
+   ```
+   headline: str
+   project_areas: [{name, session_count:int, description}]            # 5-6
+   interaction_style: {narrative, key_pattern}
+   what_works: {intro, impressive_workflows:[{title, description}]}    # 3
+   friction: {intro, categories:[{category, description, examples:[]}]} # 3, examples paraphrased from facets
+   suggestions: {
+     claude_md_additions:[{addition, why, prompt_scaffold}],           # 5  (prompt_scaffold = short "Add under a ## X section" hint)
+     features_to_try:[{feature, one_liner, why_for_you, example_code}], # 3
+     usage_patterns:[{title, suggestion, detail, copyable_prompt}]     # 3  (detail = 2-3 sentence grounded paragraph)
+   }
+   on_the_horizon: {intro, opportunities:[{title, whats_possible, how_to_try, copyable_prompt}]}  # 3
+   fun_ending: {headline, detail}
+   at_a_glance: {whats_working, whats_hindering, quick_wins, ambitious_workflows}
+   ```
+
+3. **Render**:
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/myinsights/render_myinsights.py" "$OUT/quant.json" "$OUT/narrative.json" "$(date '+%Y-%m-%d %H:%M')" "$OUT/report.html"
+   ```
+   Then call the `Artifact` tool on `$OUT/report.html`. Favicon `📊`, title "myinsights — all logins merged".
+   The renderer also computes a **deterministic ranked Scorecard** (9 factors scored 0–100 by disclosed formulas over `quant.json` + facet outcomes, graded A+→D, weighted into a composite) and styles the report on the Linear design system — both are automatic, no narrative input needed.
+
+## Leaderboard (opt-in — submitting DOES publish your scores)
+
+The report generation above makes **zero network calls**. Separately, there is an **opt-in** community leaderboard: submitting is an explicit, user-confirmed action that **publishes your pseudonymous scores publicly** via a PR to `<your-gh-user>/claude-code-leaderboard` (the author's personal GitHub repo — the board lives at https://<your-gh-user>.github.io/claude-code-leaderboard/). Nothing is ever sent without the confirmation step below.
+
+Local-only pieces:
+- `scorecard.py` — the 9-factor formulas as a shared module (`variant="report"` = the report's numbers; `variant="export"` = clamped to [0,100] for wire use).
+- `export_scores.py [quant.json] [scores.json]` — emits a **strict-allowlist** scores.json (schema/formula versions, corpus counts, 9 `{name,score,kind,w}` factors, composite, grade, skill_version — never evidence text, projects, hours, tokens, or anything else from quant.json) and maintains local snapshots under `$MYINSIGHTS_DATA_DIR` (default `~/.claude/myinsights-data/`) so personal-best deltas compute offline.
+- `leaderboard-mock.html` — a seeded, self-contained demo board (synthetic handles; most-improved deltas, not absolute grades).
+
+### Compete — one command, one confirm ("/myinsights submit")
+
+When the user says "submit my scores", "put me on the leaderboard", "compete", or "/myinsights submit", automate the WHOLE flow except one explicit confirmation:
+
+1. Ensure a handle: ask once (pseudonymous, lowercase `a-z0-9-`, 3–31 chars) and remember it in `$MYINSIGHTS_DATA_DIR/handle.txt` (default `~/.claude/myinsights-data/handle.txt`) for reuse.
+2. Run step 1 (gather) if quant.json is stale/missing, then `python3 "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/myinsights/export_scores.py"`.
+3. **Show the user the full scores.json payload + their delta and ask ONE explicit yes/no.** This preview is mandatory — never skip it, never submit silently, never schedule submissions. No yes → stop, delete nothing.
+4. On yes, do the git plumbing for them with `gh` (check `gh auth status` first):
+   `gh repo fork <your-gh-user>/claude-code-leaderboard --clone=false` (first time only), clone or update a scratch checkout of the fork, copy the payload to `scores/<handle>/<as_of>.json`, commit, push a branch, `gh pr create` against `<your-gh-user>/claude-code-leaderboard` with a one-line body. Print the PR URL. CI validates the allowlist; merge puts them on the board.
+5. "Delete me from the leaderboard" → same plumbing, PR that removes `scores/<handle>/`. No questions.
+
+Rules: the payload allowlist is enforced by `tests/test_payload_and_privacy.py` AND by the leaderboard repo's CI; the ONLY file that may be added to the fork is `scores/<handle>/<date>.json`; the board is a voluntary community game, never a performance instrument.
+
+## Rules
+- **Read-only.** Never write into `~/.claude/usage-data` or `projects`. No secrets emitted.
+- **Self-contained HTML** — inline CSS + SVG only (Artifact CSP blocks CDNs/fonts/remote images). Charts are hand-rolled SVG/CSS bars; body-only (no `<html>/<head>/<body>`).
+- **Numbers are honest** — the renderer reflects `quant.json` exactly. If a field is missing it shows "no data".
+- The narrative JSON schema is fixed (step 2 keys); the renderer degrades gracefully if any array is empty ("narrative pending").

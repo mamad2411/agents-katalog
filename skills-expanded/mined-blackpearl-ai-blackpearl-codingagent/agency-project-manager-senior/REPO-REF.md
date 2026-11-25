@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/blackpearl-ai/blackpearl-codingagent (path: frameworks/blackpearl-skills/.agents/skills/agency-project-manager-senior/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Converts specs to tasks and remembers previous projects. Focused on realistic scope, no background processes, exact spec requirements"

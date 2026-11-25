@@ -1,0 +1,85 @@
+---
+name: iyiniyetin-korunmasi-tmk-3
+description: "Bir hakkın kazanılması veya bir hukuki sonucun doğumu kişinin bir durumu bilmemesine bağlandığında; iyiniyet karinesi, gösterilmesi gereken özen ve iyiniyetin sağladığı koruma tartışıldığında TMK m.3 şemasını uygulamak için kullanılır."
+---
+
+# İyiniyetin Korunması (TMK m.3)
+
+## Görev
+Kanunun bir hakkın doğumunu iyiniyete bağladığı hâllerde (taşınır iktisabı, tapuya güven, ehliyetsizlik vb.) iyiniyetin varlığını, özen ölçütünü ve sağladığı korumanın kapsamını denetlemek.
+
+## Soğuk başlangıç (intake)
+- Hangi hakkın kazanımı/sonucu iyiniyete bağlı (ör. taşınır mülkiyeti TMK m.988 vd., tapuya güven m.1023, evlenme hükümleri)?
+- Kişi hangi durumu bilmiyordu ve bunu bilmemesi durumun gereğine uygun mu?
+- Karşı taraf, kişinin gerekli özeni göstermediğini mi ileri sürüyor?
+- İyiniyetin hangi anda (kazanım anı) bulunması gerekiyor?
+
+## Denetim şeması
+1. **İyiniyet karinesi** — TMK m.3/1: kanunun iyiniyete hukuki sonuç bağladığı hâllerde asıl olan iyiniyettin varlığıdır; iyiniyetin yokluğunu (kötüniyeti) iddia eden ispatlar (m.6 ile bağ).
+2. **İyiniyetin konusu** — İyiniyet, bir hakkın kazanılmasına engel olan hukuki sakatlığı (ör. devredenin yetkisizliği, sicildeki yolsuzluğu) *bilmemek*tir; bilmesi hâlinde korunmaz.
+3. **Özen sınırı — m.3/2** — Durumun gerektirdiği özeni göstermeyen kişi iyiniyet iddiasında bulunamaz. Özen ölçütü objektiftir; basit bir araştırmayla anlaşılabilecek sakatlığı görmeyen iyiniyetli sayılmaz. Tacir için özen ağırlaşır.
+4. **Zaman** — İyiniyet, hakkın kazanıldığı anda bulunmalıdır; sonradan öğrenme kazanımı geri almaz, önceden bilme korumayı düşürür.
+5. **Koruma kapsamı** — Şartlar sağlanırsa kişi, gerçek hak durumuna rağmen hakkı kazanır (ör. emin sıfatıyla zilyetten iyiniyetle iktisap, tapu kaydına güven). Koruma istisnaidir; ilgili özel normun kendi sınırlarına tabidir.
+6. **m.2 ile ayrım** — m.3 bilgisizliğin korunması (sübjektif bilgi durumu), m.2 davranışın dürüstlüğüdür.
+
+## Çıktı modülleri
+- İyiniyete bağlı kazanım normunun tespiti.
+- Karine + ispat yükü dağılımı (kötüniyet iddiası).
+- Özen denetimi (m.3/2) ve zaman tespiti.
+- Koruma sonucu + ilkesel içtihat `[doğrulanacak]`.
+
+## Plugin bağlamı
+
+Bu beceri `medeni-hukuk-baslangic` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

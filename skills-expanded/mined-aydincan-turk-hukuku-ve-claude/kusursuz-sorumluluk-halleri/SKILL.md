@@ -1,0 +1,84 @@
+---
+name: kusursuz-sorumluluk-halleri
+description: "Zarar bir çalışanın, hayvanın, yapının veya tehlikeli bir işletmenin faaliyetinden doğduğunda; failin kusuru ispatlanamasa bile sorumluluk kurulabilecek objektif sorumluluk normunu belirlemek için kullanılır."
+---
+
+# Kusursuz (Objektif) Sorumluluk Halleri
+
+## Görev
+Olaya uyan objektif sorumluluk normunu seçmek (hakkaniyet m.65, adam çalıştıran m.66, hayvan m.67-68, yapı maliki m.69-70, tehlike m.71) ve bu normun şartları ile kurtuluş imkânını denetlemek. Kusur aranmadığından dava, zarar görenin lehine ispat kolaylığı sağlar.
+
+## Soğuk başlangıç (intake)
+- Zarar kimin/neyin faaliyetinden doğdu (çalışan, hayvan, bina/eser, tehlikeli işletme)?
+- Sorumlu sıfatı kimde (işveren, hayvan bulunduran, yapı maliki, işletme sahibi)?
+- Failin kusuru ispatlanabilir mi, yoksa objektif sorumluluk mu daha güçlü?
+- Özel kanun rejimi var mı (KTK işleteni m.85, ürün, çevre)?
+
+## Denetim şeması
+1. **Adam çalıştıranın sorumluluğu (m.66).** İşveren, çalışanın işin görülmesi sırasında üçüncü kişiye verdiği zarardan kusursuz sorumludur. Kurtuluş kanıtı: işveren seçim, talimat, gözetim ve organizasyonda gerekli özeni gösterdiğini ispatlarsa sorumluluktan kurtulabilir.
+2. **Hayvan bulunduranın sorumluluğu (m.67-68).** Hayvanın verdiği zarardan bulunduran sorumludur; gerekli özeni gösterdiğini ispatlarsa kurtulur. Alıkoyma hakkı m.68'de düzenlidir.
+3. **Yapı malikinin sorumluluğu (m.69-70).** Bir binanın/yapı eserinin yapım bozukluğu veya bakım eksikliğinden doğan zarardan malik kusursuz sorumludur; intifa/kira hakkı sahibine rücu mümkündür.
+4. **Tehlike sorumluluğu (m.71).** Önemli ölçüde tehlike arz eden işletmenin faaliyetinden doğan zarardan işletme sahibi ve işleten kusursuz/kurtuluşsuz sorumludur; tipik tehlike gerçekleşmişse sorumluluk kaçınılmazdır.
+5. **Hakkaniyet sorumluluğu (m.65).** Ayırt etme gücü bulunmayanın verdiği zararda hakkaniyet gerektiriyorsa tazminata hükmedilebilir.
+6. **Ara sonuç ve rücu.** İlliyet ve sorumlu sıfatı zarar görence; kurtuluş kanıtı sorumluca ispatlanır. Birden çok sorumlu varsa müteselsil sorumluluk (m.61) ve iç ilişkide rücu (m.62) belirlenir.
+
+## Çıktı modülleri
+- Norm seçim notu (uygulanacak madde + sorumlu sıfatı).
+- Kurtuluş kanıtı/şart kontrol listesi.
+- Müteselsil sorumluluk ve rücu haritası.
+
+## Plugin bağlamı
+
+Bu beceri `haksiz-fiil-tazminat` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

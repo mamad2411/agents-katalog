@@ -1,0 +1,116 @@
+---
+name: insight-assess
+description: >
+  Structured decision evaluation — pros/cons, impact assessment, quality analysis, recommendation. Trigger when the user runs /assess or asks for evaluation, comparison, or impact analysis of an approach, decision, option, or implementation. Optional methods: decision tree, SWOT/TOWS, and impact versus effort. Use insight-explore for divergent option generation, insight-critique for focused output review, and insight-adversarial for multi-POV stress testing.
+visibility: public
+self-improvable: true
+next-skills:
+  - skill: plan-create
+    phrase: "/plan-create"
+    why: "Turn the recommended option into a phased plan (if the verdict is PROCEED)"
+  - skill: insight-explore
+    phrase: "/insight-explore"
+    why: "Generate more options if none of the assessed ones fit"
+  - skill: insight-critique
+    phrase: "/insight-critique"
+    why: "Get a deeper review of a specific output before deciding"
+  - skill: prime-expand
+    phrase: "/prime-expand"
+    why: "When the decision target is vague — clarify intent (concrete question + named sources) before evaluating options"
+triggers:
+  - "/assess"
+  - "/insight-assess"
+  - "do a SWOT"
+  - "build a decision tree"
+  - "prioritize by impact versus effort"
+---
+
+# /assess
+
+Structured evaluation of an approach, decision, or implementation — assess viability across multiple dimensions and deliver a clear recommendation.
+
+> **Structured execution spec:** [`protocol.yon`](protocol.yon). Read it for the canonical rules and step sequence; this file is explanation. The two must stay in sync — if you edit one, update the other and refresh the `@STAMP` date.
+
+> **Decision Support Protocol — convergent evaluation.** `/insight-explore` generates alternatives (divergent). `/insight-assess` evaluates them (convergent). `/insight-critique` reviews outputs (reactive). Three complementary tools.
+
+**Evidence throughout the assessment.** For decision-changing claims, trace support to original observations and count repetitions of the same upstream evidence once; distinguish new evidence from repetition. Preserve material contradictions, unresolved disagreement and unknown source dependence. Do not require a source quota or treat model agreement as independent evidence.
+
+## Phase 1 — Frame the Decision
+
+Identify what is being assessed: a specific approach, a decision between options, an implementation pattern, or an architectural direction.
+
+Load relevant context — files, docs, KIs, skills. Define what we are optimizing for and the constraints.
+
+**Gate:** cannot assess without a clear subject. If the decision cannot be framed, ask for clarification before proceeding.
+
+## Phase 2 — Dimensional Analysis
+
+Evaluate across all relevant dimensions. Skip dimensions that don't apply. For software decisions, retain the performance, code quality, developer experience and maintainability checks below. For other domains, use decision-relevant criteria, evidence and constraints consistently across options; software checks still apply to software components.
+
+**Pros & cons** — concrete advantages and disadvantages. Cite actual code, dependencies, patterns, or relevant domain evidence. No vague generalizations. If comparing multiple options, do side-by-side.
+
+**Quality assessment** — score `STRONG` / `ADEQUATE` / `WEAK` with justification on:
+
+- **Performance** — bundle size, runtime overhead, N+1 queries, render cycles
+- **Code quality** — DRY violations, coupling, testability, readability
+- **Developer experience** — API ergonomics, debugging ease, onboarding friction
+- **Maintainability** — upgrade path, community support, lock-in risk
+
+**Impact assessment** — map and classify overall impact `LOW` / `MEDIUM` / `HIGH`:
+
+- **Blast radius** — packages/apps/files
+- **Migration effort** — if replacing something
+- **Breaking changes** — if any
+- **Learning curve** — for the team
+- **Future flexibility** — does this open or close doors?
+
+### Optional methods
+
+Use only a method the caller requests or the decision structure warrants. Read its reference when selected, then return to the existing alignment check and recommendation. Do not run all three by default.
+
+- Sequential choices with uncertainty: [decision tree](references/decision-tree.md).
+- Strategic situation and positioning: [SWOT / TOWS](references/swot-tows.md).
+- Candidate actions competing for capacity: [impact versus effort](references/impact-effort.md).
+
+All methods remain evaluation-only. Cite material evidence, label assumptions and unknowns, and do not invent scores or probabilities. Keep expected benefit (impact in prioritization) separate from change exposure (blast radius and disruption above). Apply the verdict to feasible options under the stated obligations and constraints; a benefit score cannot cancel mandatory work. When missing evidence prevents a defensible choice, use RECONSIDER and name what would resolve it rather than fabricate a rating or winner.
+
+## Phase 3 — Alignment Check
+
+- Does this align with repo coding standards (software), or the applicable domain constraints?
+- Does it follow existing patterns, or introduce a new one?
+- If new, is it justified?
+- Check relevant skills and KIs for prior art.
+
+## Phase 4 — Recommendation
+
+Structure:
+
+- **VERDICT** — one of: `PROCEED` / `PROCEED WITH CAVEATS` / `RECONSIDER` / `REJECT`
+- **RATIONALE** — 1–2 sentences
+- **CONDITIONS** — if `PROCEED WITH CAVEATS`: what must be addressed
+- **ALTERNATIVES** — if `RECONSIDER` / `REJECT`: what to do instead
+
+**Gate:** assessment is incomplete without a recommendation delivered to the user.
+
+## Rules
+
+- MUST be concrete and specific when listing pros/cons — cite actual code, libraries, patterns, or domain evidence.
+- MUST check performance, DX, and maintainability for software decisions — not just correctness; use relevant domain criteria otherwise.
+- MUST use consistent dimensions across all options when comparing.
+- MUST NOT make changes, write code, or execute — evaluation only.
+- MUST NOT hedge without a clear verdict — always commit to a recommendation.
+- SHOULD note caveats or conditions even if minor when recommending PROCEED.
+- SHOULD suggest concrete alternatives when recommending RECONSIDER.
+
+## Next Steps
+
+- `/plan-create` — if verdict is PROCEED
+- `/insight-explore` — if more options are needed before deciding
+- `/insight-critique` — if a deeper review of specific output is needed
+
+> **Human output.** This skill's handler-facing output obeys the human-output
+> contract (`human-output/SKILL.md`).
+
+> **Next skills.** On completion, run the Next Skills protocol (`next-skills/SKILL.md`): surface the `next-skills` recommendations from front-matter for the caller to pick. Offer only — never auto-invoke.
+
+> **Self-improvement.** On completion, run the Self-Improvement Protocol (`self-improve/SKILL.md`): apply its signal taxonomy and threshold to this run; surface any surviving proposal for handler approval. Conservative — silent otherwise. Never auto-apply.

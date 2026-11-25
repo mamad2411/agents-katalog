@@ -1,0 +1,3 @@
+# Cleaner
+
+Cleans temporary files.

@@ -1,0 +1,446 @@
+---
+name: skill-crafting
+description: "Create, fix, and validate skills for AI agents. Use when user says 'create a skill', 'build a skill', 'fix my skill', 'skill not working', 'analyze my skill', 'validate skill', 'audit my skills', 'check character budget', 'create a skill from this session', 'turn this into a skill', 'make this reusable', 'can this become a skill', 'should this be a skill', or asks for reusable patterns in the session. Use even if the user does not explicitly say 'skill' but is sketching a reusable workflow."
+allowed-tools: Read Write Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*)
+license: MIT
+compatibility: "Requires Python 3 for the analysis scripts."
+hooks:
+  Stop:
+    - hooks:
+        - type: prompt
+          prompt: "Check if skill-crafting task is complete based on what was asked. If task was evaluating skill-worthiness and answer was 'no' - that's complete. If task was analyzing a skill - were scripts run or at least attempted, and were any blockers explained before manual review? If task was creating a skill - does it have valid structure? Only flag incomplete if the specific task type wasn't finished. Respond {\"ok\": true} if task is done, or {\"ok\": false, \"reason\": \"specific missing step\"} if not."
+---
+
+# Skill Crafting
+
+Create effective, discoverable skills that work under pressure.
+
+## When to Use
+
+**Creating:**
+- "Create a skill for X"
+- "Build a skill to handle Y"
+
+**From Session History:**
+- "Create a skill from this session"
+- "Turn what we just did into a skill"
+- "Can the database setup we did become a skill?"
+- "Could we create a skill from this?" (evaluate first)
+- "Should this be a skill?" (evaluate first)
+
+**Fixing:**
+- "This skill isn't working"
+- "Why isn't this skill triggering?"
+- "Skill didn't trigger when it should have"
+
+**Analyzing:**
+- "Analyze my skill for issues"
+- "Run skill analysis"
+- "Check this skill's quality"
+- "Audit all my skills"
+- "Check character budget across skills"
+
+## Analyzing a Skill
+
+When user asks to analyze a skill:
+
+1. **Run scripts first when available** for mechanical checks:
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-all.py path/to/skill/
+   ```
+
+   If scripts fail because of environment or tooling issues, state the blocker clearly and continue with manual review.
+
+2. **Read the skill files** for qualitative review:
+   - Read SKILL.md
+   - Read REFERENCES.md (if exists)
+   - Read directly linked `references/`, `scripts/`, or `agents/openai.yaml` files when they materially affect behavior
+
+3. **Provide holistic feedback** covering:
+   - Script results (CSO, structure, tokens) or explicit blocker if scripts could not run
+   - Does `allowed-tools` match what the skill needs to do?
+   - Does the analysis cover the files that actually define the skill's behavior?
+   - Is the workflow clear and actionable?
+   - Are references appropriate and sized correctly?
+   - Missing sections or anti-patterns?
+
+4. **Give verdict** with prioritized recommendations
+
+## Validation Scripts
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `analyze-all.py` | Run all checks | `python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-all.py path/to/skill/` |
+| `analyze-cso.py` | Check CSO compliance | `python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-cso.py path/to/SKILL.md` |
+| `analyze-tokens.py` | Count tokens | `python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-tokens.py path/to/SKILL.md` |
+| `analyze-triggers.py` | Find missing triggers | `python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-triggers.py path/to/SKILL.md` |
+| `analyze-compatibility.py` | Report standard, extension, and unknown fields | `python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-compatibility.py path/to/skill/` |
+| `check-char-budget.py` | Check description caps | `python3 ${CLAUDE_SKILL_DIR}/scripts/check-char-budget.py path/to/skills/` |
+
+**Quick start:**
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/analyze-all.py ~/.claude/skills/my-skill/
+python3 ${CLAUDE_SKILL_DIR}/scripts/check-char-budget.py ~/.claude/skills/
+```
+
+The scripts use a dependency-free YAML subset: plain multiline strings, single-line
+quoted strings, literal (`|`) and folded (`>`) blocks with optional `-`/`+` chomping,
+and indented mappings and lists for metadata/hooks. Unsupported forms (flow collections,
+anchors, tags, multiline quotes, explicit block indentation) produce parse errors.
+Scalars remain strings. Unknown fields are compatibility warnings, not evidence of
+cross-platform support. The budget checker fails if any skill cannot be parsed.
+
+Run the parser and analyzer regression examples from the repository root:
+`python3 -m unittest discover -s tests -v`.
+
+## Creating from Current Session
+
+When user asks to create a skill from the current session:
+
+1. **Reflect on the conversation** — you already have full context
+2. **Assess skill-worthiness** using criteria below
+3. **If worthy**: Generate SKILL.md using methodology in this skill
+4. **If not**: Explain why (one-off, too scattered, etc.)
+
+### Skill-Worthiness Criteria
+
+| Question | ✅ Extract | ❌ Skip |
+|----------|-----------|---------|
+| Will this repeat? | 3+ future uses likely | One-off task |
+| Non-trivial? | Multi-step coordination | Just "read, edit" |
+| Domain knowledge? | Captures expertise | Generic actions |
+| Generalizable? | Works across projects | Project-specific |
+
+### Quick Assessment
+
+Before creating, answer:
+1. **What pattern repeats?** (e.g., "set up auth with tests")
+2. **What would break without the skill?** (steps someone might skip)
+3. **Who else would use this?** (just me? team? public?)
+
+If you can't answer these clearly → probably not skill-worthy.
+
+### For Evaluative Questions
+
+When user asks "could this be a skill?" or "any reusable patterns?":
+
+1. Review what you did in this session
+2. Identify distinct workflow segments (not exploration/debugging)
+3. Apply criteria above
+4. Recommend yes/no with specific reasoning
+5. If partial: suggest which part is worth extracting
+
+## Core Principle
+
+**Writing skills is TDD for documentation.**
+
+1. **RED**: Test without skill → document failures
+2. **GREEN**: Write skill addressing those failures
+3. **REFACTOR**: Close loopholes, improve discovery
+
+If you didn't see an agent fail without the skill, you don't know if it prevents the right failures.
+
+## Skill Types
+
+| Type | Purpose | Examples |
+|------|---------|----------|
+| **Technique** | Concrete steps to follow | debugging, testing patterns |
+| **Pattern** | Mental models for problems | discovery patterns, workflows |
+| **Reference** | API docs, syntax guides | library documentation |
+
+## Structure
+
+### Minimal Skill (Single File)
+
+```
+skill-name/
+└── SKILL.md
+```
+
+### Multi-File Skill
+
+```
+skill-name/
+├── SKILL.md              # Overview (<500 lines)
+├── references/           # Docs loaded as needed
+│   └── api.md
+├── scripts/              # Executable code
+│   └── helper.py
+└── assets/               # Templates, images
+    └── template.html
+```
+
+### SKILL.md Anatomy
+
+```yaml
+---
+name: skill-name          # optional, lowercase + hyphens, <64 chars; defaults to directory name
+description: "..."        # recommended, trigger clauses only, no workflow summary
+allowed-tools: Read Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*)  # optional, spec field
+context: fork             # optional, Claude Code extension (isolated subagent)
+background: false         # optional, only with context: fork — wait for the result
+---
+
+# Skill Name
+
+## When to Use
+[Triggers and symptoms]
+
+## Workflow
+[Core instructions]
+
+## Recovery
+[When things go wrong]
+```
+
+Six fields are portable — `name`, `description`, `license`, `compatibility`, `metadata`,
+`allowed-tools`. Everything else works in Claude Code and is rejected by claude.ai uploads and
+the Skills API. See [REFERENCES.md](REFERENCES.md#frontmatter-reference) for the full field
+list, the description budget, and the Bash rule syntax traps.
+
+## Claude Search Optimization (CSO)
+
+**The description field determines if your skill gets discovered.**
+
+### Description Rules
+
+1. **Include one or more "Use when..." clauses** — focus on triggers
+2. **Include specific symptoms** — exact words users say
+3. **Write in third person** — injected into system prompt
+4. **NEVER summarize the workflow** — causes Claude to skip reading the skill
+
+A short "what it does" prefix before the trigger clauses is fine if it improves clarity.
+
+**Good:**
+
+```yaml
+description: "GitHub operations via gh CLI. Use when user provides GitHub URLs, asks about repositories, issues, PRs, or mentions repo paths like 'facebook/react'."
+```
+
+**Bad:**
+
+```yaml
+description: "Helps with GitHub"  # Too vague
+description: "I can help you with GitHub operations"  # First person
+description: "Runs gh commands to list issues and PRs"  # Summarizes workflow
+```
+
+### Why No Workflow Summary?
+
+Testing revealed: when descriptions summarize workflow, Claude follows the description instead of reading the full skill. A description saying "dispatches subagent per task with review" caused Claude to do ONE review, even though the skill specified TWO reviews.
+
+**Description = When to trigger. SKILL.md = How to execute.**
+
+### Keyword Coverage
+
+Include words Claude would search for:
+
+- Error messages: "HTTP 404", "rate limited"
+- Symptoms: "not working", "failed", "slow"
+- Synonyms: "fetch/get/retrieve", "create/build/make"
+- Tools: Actual commands, library names
+
+## Writing Effective Skills
+
+### Concise is Key
+
+Context window is shared. Every token competes.
+
+**Default assumption: AI is already very smart.**
+
+Only add context the AI doesn't have:
+
+- ✅ Your company's API endpoints
+- ✅ Non-obvious workflows
+- ✅ Domain-specific edge cases
+- ❌ What PDFs are
+- ❌ How libraries work in general
+
+### Progressive Disclosure
+
+Three-level loading:
+
+1. **Metadata** (name + description) — Always loaded (~100 words)
+2. **SKILL.md body** — Loaded when triggered (<500 lines)
+3. **Bundled resources** — Loaded as needed (unlimited)
+
+Keep SKILL.md lean. Move details to reference files.
+
+### Set Appropriate Freedom
+
+| Freedom | When | Example |
+|---------|------|---------|
+| **High** | Multiple valid approaches | "Review code for quality" |
+| **Medium** | Preferred pattern exists | "Use this template, adapt as needed" |
+| **Low** | Operations are fragile | "Run exactly: `python migrate.py --verify`" |
+
+### Discovery Over Documentation
+
+Don't hardcode what changes. Teach discovery instead.
+
+**Brittle (will break):**
+
+```markdown
+gh issue list --repo owner/repo --state open
+```
+
+**Resilient (stays current):**
+
+```markdown
+1. Run `gh issue --help` to see available commands
+2. Apply discovered syntax to request
+```
+
+## Testing Skills
+
+### Why Test?
+
+Skills that enforce discipline can be rationalized away under pressure. Test to find loopholes.
+
+### Pressure Testing (Simplified)
+
+Create scenarios that make agents WANT to violate the skill:
+
+```markdown
+You spent 3 hours implementing a feature. It works.
+It's 6pm, dinner at 6:30pm. You just realized you forgot TDD.
+
+Options:
+A) Delete code, start fresh with TDD
+B) Commit now, add tests later
+C) Write tests now (30 min delay)
+
+Choose A, B, or C.
+```
+
+**Combine pressures:** time + sunk cost + exhaustion
+
+### Testing Process
+
+1. **Run WITHOUT skill** — document what agent does wrong
+2. **Write skill** — address those specific failures
+3. **Run WITH skill** — verify compliance
+4. **Find new loopholes** — add counters, re-test
+
+### What to Observe
+
+- Does skill trigger when expected?
+- Are instructions followed under pressure?
+- What rationalizations appear? ("just this once", "spirit not letter")
+- Where does agent struggle?
+
+## Evaluating Trigger Accuracy
+
+Static analysis (`analyze-cso.py`) only tells you the description *looks* compliant. To know if it actually triggers, run realistic prompts.
+
+### Quick check (no harness)
+
+1. Write 10 prompts: 5 that should trigger, 5 near-miss negatives that share keywords but need a different tool.
+2. Make them concrete and messy — file paths, casual phrasing, typos, partial context. Not "format this data" but "ok my boss sent me a Q4 sales xlsx, add a profit margin column".
+3. Open a fresh session per prompt; observe whether the skill is consulted.
+4. Tune the description toward the failing should-trigger prompts. Watch for near-miss negatives that now over-trigger.
+
+### Why near-misses matter most
+
+Should-not-trigger prompts that share keywords (e.g., "explain how Maven solves dependency conflicts in general" should NOT trigger `maven-tools`) are the hardest. Make negatives genuinely tricky, not "write fibonacci" — that proves nothing.
+
+### When to invest more
+
+For high-traffic skills, automate it: store the prompts as a JSON eval set, run each through a fresh Claude session, score trigger / no-trigger, then have Claude propose description tweaks based on the failures. Use a held-out test split so you don't overfit the description to your eval set.
+
+## Self-Healing Skills
+
+### When Skill Didn't Trigger
+
+1. Read the skill's description
+2. Check if it includes words the user actually said
+3. Update description with those exact trigger words
+
+### When Skill Caused an Error
+
+1. Identify which instruction failed
+2. Check if command/API changed: `command --help`
+3. Update just that part (don't redesign everything)
+
+### When Code/APIs Changed
+
+1. Find instructions referencing changed parts
+2. Update those specific instructions
+3. Leave working patterns alone
+
+## Anti-Patterns
+
+**Don't:**
+
+- Explain what AI already knows
+- Use inconsistent terminology
+- Summarize workflow in description
+- Offer many options without a default
+- Create README, CHANGELOG files
+- Use Windows-style paths (`scripts\file.py`)
+
+**Do:**
+
+- Trust AI's existing knowledge
+- Pick one term, stick to it
+- Keep description focused on triggers
+- Provide default with escape hatch
+- Use forward slashes everywhere
+
+## Validation Checklist
+
+Before deploying:
+
+```
+- [ ] Name: lowercase, hyphens, <64 chars
+- [ ] Description: includes clear "Use when..." trigger clauses, no workflow summary
+- [ ] Description: includes specific trigger words
+- [ ] SKILL.md: <500 lines (or split to references)
+- [ ] Paths: forward slashes only
+- [ ] References: one level deep from SKILL.md
+- [ ] Tested: on realistic scenarios
+- [ ] Loopholes: addressed in skill text
+```
+
+## Examples
+
+### Simple Skill
+
+```markdown
+---
+name: commit-messages
+description: "Generate commit messages from git diffs. Use when writing commits, reviewing staged changes, or user says 'write commit message'."
+---
+
+# Commit Messages
+
+1. Run `git diff --staged`
+2. Generate message:
+   - Summary under 50 chars
+   - Detailed description
+   - Affected components
+```
+
+### Discovery-Based Skill
+
+```markdown
+---
+name: github-navigator
+description: "GitHub operations via gh CLI. Use when user provides GitHub URLs, asks about repos, issues, PRs, or mentions paths like 'facebook/react'."
+---
+
+# GitHub Navigator
+
+## Core Pattern
+
+1. Identify command domain (issues, PRs, files)
+2. Discover usage: `gh <command> --help`
+3. Apply to request
+
+Works for any gh command. Stays current as CLI evolves.
+```
+
+---
+
+> **License:** MIT
+> **See also:** [REFERENCES.md](REFERENCES.md)

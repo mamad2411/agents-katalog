@@ -1,0 +1,93 @@
+---
+name: laya-pilot
+description: Run browser regression tests from user-provided Excel test cases for enterprise admin applications, preserving their steps and expected results and producing reports and failure evidence. Use for executing existing workbooks, providing a case template with examples, and analyzing regression runs. Case generation is optional and requires a user request. API access is the default; local model downloads require an explicit user request.
+---
+
+# LayaPilot
+
+主要功能是执行用户已有的 Excel 测试用例做浏览器回归：读取用例，按原步骤和预期执行，输出报告与失败证据。本目录包含 skill 入口、运行代码、依赖清单和使用说明，克隆仓库或解压分发 ZIP 后均可直接安装，无需先构建。demo、开发测试和仓库维护文件仅在源码仓库中提供，不包含在交付包内。
+
+## 两个用户入口
+
+| 功能               | 输入与入口                                   | 工作流                                                      | 输出                                                                    |
+| ------------------ | -------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 执行用例（主功能） | 用户现有或 LayaPilot 生成的 Excel；`--excel` | 自动识别格式 → 解析/校验 → 按步骤和预期执行 → 汇总报告      | JSON、Markdown 与浏览器证据；普通用例另有 CSV，结构化用例另有结果 Excel |
+| 生成用例（按需）   | 测试地址和允许的范围；`--mode generate`      | 观察页面 → 选择支持的测试 → 实际执行和断言 → 导出已验证用例 | 可执行 Excel、全部尝试结果表格和证据                                    |
+
+用户不需要区分普通 Excel 执行与结构化回放：`--excel` 根据隐藏计划或生成标记自动选择内部执行器；结构化计划校验失败就报错，不降级到普通解析。新生成文件移除隐藏计划后也会拒绝执行。旧 `--mode execute --case-file` 保留兼容，日常使用统一的 `--excel`。
+
+每次任务通过 `--excel` 提供执行输入；`--case-file` 在生成时是输出，不自动充当模板。`--inspect` 是执行前检查，`--headless` 和 API/本地模型是运行选项。详细步骤见 [references/workflows.md](references/workflows.md)。
+
+## 收到地址时先区分任务
+
+用户只提供地址，或说“测试一下这个页面”但未说明目的，且当前对话也未明确时，先问：
+
+> 你希望根据这个页面生成测试用例，还是执行已有的 Excel 测试用例？执行已有用例需要提供 Excel 文件或路径。
+
+等待选择后再进入对应流程，不因缺少 Excel 自动生成用例。生成是从页面探索、实际验证后导出新用例；执行是按已有 Excel 的步骤和预期运行并报告结果。选择执行但缺少文件时，只补齐 Excel；选择生成时，确认页面范围与允许的操作后使用生成流程，无须索要回归 Excel。
+
+用户要求“先出用例、审核后执行”时，使用 [审核草稿流程](references/review-plan.md)，不要调用会实际操作页面的 `--mode generate`。根据已提供的需求和页面资料整理未验证草稿，通过 `--mode plan --plan-source ...` 离线输出。缺少的输入值、业务规则记为 `pending`，不猜测、不把控件可见替代原预期。没有获得页面观察授权时不自行打开或探索页面；离线计划入口本身始终不访问页面。
+
+展示草稿、未覆盖范围、是否写入及 SHA-256 后等待用户审核。只有用户已明确批准该版本及范围，才使用 `--mode reviewed --review-plan ... --approved-hash ...` 执行；收到修订要求先更新草稿并重新检查，不能自动批准新摘要。当前对话已明确批准且内容未变时直接沿用授权，无须再次询问。仅要求草稿时交付后停止，不自动执行。此流程不代表自动遍历全系统菜单或已验证业务覆盖。
+
+用户已在本次请求或当前对话中明确“生成”或“执行”时，沿用已确认的意图，不重复询问；后续补充地址也不重新选择模式。
+
+## 用户没有用例模板时
+
+用户索要模板或表示没有模板时，直接提供内置的 [Excel 用例模板](assets/test-cases-template.xlsx)：复制到用户工作目录的新文件，给出文件链接及 [填写说明](references/case-template.md)，不覆盖用户已有文件或修改 skill 内的模板。模板提供用例编号、名称、前置条件、测试数据、步骤和预期结果六列，预填三条编号为 `DEMO-001` 至 `DEMO-003` 的示例用例，名称标注“【示例】”。说明这些用例对应源码 demo 的客户页面，用户应先修改或删除示例再用于自己的系统；执行器会正常读取这些行，不会自动跳过。步骤和预期结果必填，填写后再通过 `--excel ... --inspect` 检查。
+
+没有用例与没有模板需要区分：用户希望 AI 从页面生成用例时，直接使用生成流程，无须先填模板；已有 Excel 也无需转换成本模板。此模板用于手工编写后执行的普通 Excel，不作为生成模式的 `--template-excel` 参数。
+
+## 主流程：已有用例回归
+
+1. 从当前任务获取 Excel 和目标地址，通过 `--excel`、`--url` 传入；登录方式可复用 `.env.local` 中的配置。用户要求回归却未提供用例时，先补齐用例文件；没有模板时提供内置模板，不自动改成从页面生成用例。
+2. 使用 `scripts/run.mjs --excel ... --inspect` 自动识别工作簿并检查解析、计划校验、用例数与导入警告。普通 Excel 的 `diagnostics` 和 `compilation` 分别指出缺失数据、待页面定位、缺少业务判定依据及原预期到子断言的映射；按原行和用例说明需补充的信息，不因此删选用例或把业务预期改成控件可见。默认包含全部读取到的用例；未识别的工作表或步骤要明确报告，不能算作已覆盖。
+3. 执行这些现有用例；常用无头回归命令为 `scripts/run.mjs --excel ... --url ... --headless`。按原用例保留数据、步骤和预期；只有用户明确要求修订时才修改原用例。登录前检查已配置的 `authState` 和登录后唯一标记 `authCheck`，优先复用并验证已有登录态；失效后再登录。
+4. 读取本轮目录的 `summary.md` 与 `results.json`，先转述 `index.html` 顶部的可靠性结论及原因（如阻断、未验证预期、页面或接口错误），再按用例给出结果、失败步骤与截图路径（`cases/<编号>-<名称>/`），并提供 `index.html` 路径供用户打开。目录说明见 [references/reports.md](references/reports.md)。原始工作簿保持不变。
+
+只有用户明确要求生成或补充新用例时，才进入 `--mode generate`。生成完成后仍使用 `--excel` 执行输出工作簿。
+
+## 工作入口
+
+- 查询版本变更、升级兼容性与已知范围：读取 [references/changelog.md](references/changelog.md)。
+- 用户要求录制浏览器操作生成用例或回放录制：读取 [references/recording.md](references/recording.md)，使用本包的 `scripts/run.mjs record|replay|export-excel|report`，不要调用系统中的 `laya` 命令（它是独立安装，配置和版本可能与本 skill 不同）。
+
+- 仅解读已有报告：读取用户指定运行目录的 `summary.md`、`results.json` 和 `cases/` 中的截图，目录结构和可靠性结论见 [references/reports.md](references/reports.md)；无须安装依赖、配置 API 或重新测试。
+- 安装、检查环境或配置模型：按需读取 [references/setup.md](references/setup.md)。
+- 执行已有用例回归、登录和结果解释：读取 [references/workflows.md](references/workflows.md) 的主流程；按需查看其中的生成流程和内部格式说明。
+
+## 环境与默认行为
+
+1. 以本 `SKILL.md` 所在目录作为 skill 目录。调用本包的 `scripts/setup.mjs` 和 `scripts/run.mjs`，使用脚本绝对路径，保持用户工作目录。从用户接收的配置和工作簿路径先相对于用户工作目录解析。
+2. 需要 Node.js 20+（含 npm）、Python 3.10+（含 venv/pip）、Playwright Chromium、Python openpyxl。`setup.mjs` 安装包内固定版本的 Playwright、浏览器及私有 Python 环境；系统 Node/Python 缺失时先按安装说明处理。API 模式无需显卡或本地模型。
+3. 安装脚本只在 skill 根目录创建 `.env.local`，已有文件保留。此文件只保存 API 和可选登录配置；Excel、URL、操作范围与输出位置等从当前任务获取并通过命令行传入，不写入长期配置。高级参数按需查看 [references/setup.md](references/setup.md#高级参数)。不读取旧 JSON 配置，也不借用工作目录中无关项目的配置。默认通过 API 调用模型，默认模型名 `laya-decision` 可被显式配置覆盖。配置 `LAYA_API_BASE`、`LAYA_API_MODEL`、`LAYA_API_KEY`；密钥通过环境变量或 `.env.local` 提供，不放进命令行、JSON 配置或回复。启动时的 `CONFIG` 显示实际配置来源和模型，秘密只显示是否存在。
+4. 未收到用户明确要求时，不安装本地 Laya，不下载模型权重，也不因 API 故障改用本地模型。用户明确要求本地运行后，才使用 `setup.mjs --local-model` 安装并下载模型，并在测试时传 `--provider local`。配置文件或继承的环境变量不会自动切换到本地模式。
+   用户说“本机的”可能指本机已有的 API 配置，不等于选择本地推理；含义不明时保持 API 默认值并补齐服务地址和模型配置。
+5. 用户已有 Excel 按支持的步骤、预期结果等表头解析，无须转换成生成器的 17 列模板。生成新用例时才使用内置 17 列格式；用户明确指定自定义生成模板时才传 `--template-excel`。
+
+首次安装（下面脚本路径相对于 skill 目录，执行时换成实际绝对路径）：
+
+```bash
+node scripts/setup.mjs
+node scripts/setup.mjs --check
+```
+
+先引导用户配置 API，再开始需要模型的测试。检查已有 Excel 使用 `scripts/run.mjs --excel ... --inspect`，不需要 API 凭据、浏览器启动或模型权重。
+
+## 确认任务范围
+
+从当前任务说明或工作簿确认目标模块与操作范围，登录方式可复用本地配置。仅解读报告或检查 Excel 时不要求目标 URL；缺少会阻止当前任务的信息时，只询问必要信息。
+
+用户要求记住登录时，使用现有 `.auth` 功能：在 skill 根目录下按站点和账号选取独立文件，将 `TEST_AUTH_STATE` 和登录后唯一的 `TEST_AUTH_CHECK` 保存到 `.env.local`，验证下一次新浏览器的 `authStatus` 为 `reused`。依赖 sessionStorage 的系统另设 `TEST_AUTH_SESSION_STORAGE=true`。保存登录态即可，不把密码写进长期记忆；详细参数见 [references/workflows.md](references/workflows.md)。
+
+执行入口默认只读。对业务页面的新增、修改和删除，使用用户指定的测试环境和授权范围；已有明确授权就加 `--allow-write` 继续。范围不明时先用 `--inspect` 核对现有用例中的操作，补齐所需范围信息。不要用生成器的只读页面检查替代用户要求的回归。
+
+## 执行与交付
+
+- 所有测试通过 `scripts/run.mjs` 启动，保留现有页面断言、用例数据和工作簿完整性校验。生成文件的 `__laya_steps__` 隐藏页不一致时停止，不绕过校验或改预期来制造通过。
+- `--excel` 默认执行所有读取到的用例，不按历史结果或用例类型筛选。只有用户明确指定部分编号时才使用 `--cases`；目前仅普通 Excel 支持编号筛选，结构化计划需完整执行，不支持时应明确报错。
+- 输出默认保存到用户当前工作目录下的新 `runs/laya-pilot/` 目录；生成文件使用新的 `generated-cases/laya-pilot-*.xlsx` 文件名。需要指定位置时用 `--out` 和 `--case-file`。
+- 读取本轮实际报告，分别说明通过、失败、不适用、阻断和未执行情况，提供实际存在的用例、结果表格、报告和失败证据路径。Excel 解析成功、只读检查成功与完整业务测试成功要明确区分。
+- 如有 `pendingWrite` 或 `retainedRecord`，先核对 `logs/checkpoint.json` 与证据再决定后续操作，不盲目重复保存、删除或清理。进度文件不支持自动断点续跑。
+- 无标签图标不能按位置猜测；先读取未识别控件诊断与截图，仅在有可核实语义时使用显式绑定，规则见 [references/control-bindings.md](references/control-bindings.md)。
+- API 失败时说明连接、响应或协议问题；本包调用 HTTPS Chat Completions 接口，模型必须返回本项目要求的候选决策 JSON，细节见安装说明。不会自动更换服务或模型。

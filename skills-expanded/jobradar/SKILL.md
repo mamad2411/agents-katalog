@@ -1,0 +1,121 @@
+---
+name: jobradar
+description: 查询中国公司（含大厂与招聘平台上的公司）当前在招的校招/实习/社招岗位、近期新开/下架变化、岗位要求对比和招聘趋势。用户问"某公司在招什么岗位""这周新开了什么岗""A 和 B 的某类岗位要求有什么差异""某公司招聘是在扩张还是收缩"时使用。数据包含官方招聘页与公开聚合来源，每日调度，本地查询，单源新鲜度以返回时间为准。
+---
+
+# jobradar：对话式求职搜索技能
+
+用户通过对话提出求职需求，宿主优先调用已连接的 MCP 工具；未连接时可使用 `jobradar` 的 JSON 输出。
+两者共用查询规则。**只能根据工具返回的数据回答，不能用常识或记忆补充岗位信息，也不要要求求职者理解命令行参数。**
+
+## 首次接入
+
+用户要求安装、导入或接入本技能时，先阅读 [首次准备](references/setup.md)，检查当前平台能否执行本地工具或连接本地 MCP，再准备工具和数据并实际查询。未调用成功前不要声称已接入；只阅读了技能或仓库不等于已经具备查询能力。
+
+已有可用 MCP 时优先使用其工具，无需要求用户再安装另一套入口。求职者只需说需求，配置细节由助手处理；需要界面操作时给出当前一步即可。
+
+## 安装或升级（首次使用或参数不受支持时）
+
+最低已验证兼容基线为 `2.3.1`；默认升级至当前正式版，再核对版本和功能参数。正式渠道核验状态见安装指南：
+
+```bash
+pip install --upgrade "jobsearchradar[mcp]"
+jobradar --version
+jobradar search --help
+jobradar calendar --help
+```
+
+发行包经过独立安装与命令兼容性检查，实际安装后仍须核对版本和参数。固定源码备用安装及版本说明见 [安装指南](https://github.com/lijiaqi-AI-Product-Manager/job_radar/blob/main/docs/INSTALLATION.md)。已安装旧版也用上述命令升级，
+不要仅因本机已有 `jobradar` 命令就跳过版本兼容检查。帮助中应有 `calendar --city`、
+`calendar --include-expired` 与 `search --deadline-before`；旧版帮助报错或不支持参数时，
+先在 CLI / MCP 实际使用的环境中升级，不能通过删掉筛选参数来改变用户的问题。
+
+## 第一步：检查数据（每次会话第一次使用时）
+
+```bash
+jobradar doctor
+```
+
+- 没有数据，或`snapshot_stale: true` → 先运行`jobradar update`（同时下载岗位库与JD原文库），再继续。若`snapshot_stale: false`而`stale: true`，说明返回岗位或来源陈旧，需核实原始链接，不能反复下载相同快照代替核实；旧版未返回`snapshot_stale`时核对`data_as_of`再决定是否更新。
+- `source_health.counts.stale > 0` → 部分来源超过 48 小时未成功刷新，整体快照较新也不能证明这些岗位仍在招。用 `jobradar sources --problems` 查看；提及受影响岗位时注明 `last_seen`，建议打开原链接确认。更新快照不能保证来源已恢复。
+- 岗位 `source_stale: true` 或 `availability: unconfirmed_stale` → 表述为历史观测岗位，不能断言当前可投；注明 `source_last_ok`。`observed_recently` 也只表示最近采集成功，投递仍以原站为准。
+- `source_enabled: false` 或 `availability: unconfirmed_disabled` → 来源当前已停用；即使旧成功观测尚不足48小时，也不能表述为当前已核实可投。停用不等于岗位已关闭。
+- 展示 `availability_label` 和 `source_warnings` 对当前可投状态的限制。`source_tenant_peers` 非空表示同一招聘租户还登记在其他来源下，岗位可能重复；不要跨来源相加，也不要据此擅自更改雇主归属。
+- 来源最近刷新不等于岗位再次出现。`availability=unconfirmed_not_seen` / `not_seen_in_latest_success=true` 表示该岗位在最新成功采集中未再次见到，只能作为待核实历史候选；不能说当前可投，也不能直接说已下架。看岗位自己的`last_seen` / `job_age_hours`，`availability_counts`仅统计本次返回记录。
+- 明确指定校招/实习时，搜索与对比默认过滤标题明确的一线门店和房产经纪岗位。用户明确寻找此类岗位时传`include_frontline=true`（CLI `--include-frontline`）；不限类型与社招不默认过滤。说明`frontline_filter`的模式和计数，全文检索计数为`null`时不能编造。`exclude_categories`是字段排除，未知职类需修正，空字段仍需原文核实。
+- 下载使用默认 GitHub 渠道；失败时先检查网络和数据状态，不将当前未核实可用的镜像作为首选。见[渠道状态](https://github.com/lijiaqi-AI-Product-Manager/job_radar/blob/main/docs/DISTRIBUTION.md)。
+- `record_kind: recruitment_notice` 是招聘公告，可能包含多个职位，不能将公告条数表述为岗位数；`source_kind: aggregator` 是公开聚合来源，引用时说明来源。`unknown` 不能按名称猜测。详情中的 `source.compliance_checked_on` 是配置的合规核查日期，不代表今天已成功读取。`stats` 的 `by_record_kind` 与 `by_source_kind` 提供分层计数。
+- 默认搜索和日历按北京时间自动隐藏明确截止日已过的记录，截止当天仍保留；查历史岗位用 `search --include-closed`，查历史日历用 `calendar --include-expired`（MCP 对应 `include_closed` / `include_expired`）。`calendar --open-on` 以指定日期为准。不要通过补填未知日期来让条目过期。
+- 数据目录不是默认的
+  `~/.cache/jobradar` 时，给 MCP 配置的 `env` 传 `JOBRADAR_HOME`。
+
+## 按个人条件找机会
+
+用户提出多城市、排除公司、学历/经验要求、实习安排或连续修改条件时，参见
+[个人求职条件与连续追问](references/candidate-workflow.md)。该流程区分可直接筛选的条件、
+需要阅读原文的要求，以及尚未核实的资格；放宽条件后的结果必须单列。
+
+## 按问题类型选命令
+
+| 用户在问 | 命令 |
+|---|---|
+| 某公司/城市/职类在招什么 | `jobradar search --company 复星医药 --category 医药研发 --city 上海 --type campus --grad-year 2027 --limit 20` |
+| 标题关键词 | `jobradar search --keyword 大模型` |
+| 用户明确希望查门店实习 | `jobradar search --type intern --include-frontline --keyword 门店 --limit 20` |
+| 按技能/要求找岗位（JD 原文里出现的词） | `jobradar search --text "PyTorch 多模态" --type campus --limit 20`（空格分隔的词须全部出现；结果的 `match` 是命中处原文片段） |
+| 某个岗位详情、要求 | `jobradar show <job_id>` |
+| 这周/最近新开、下架、变化 | `jobradar diff --days 7 --company 腾讯 --types open` |
+| 最近哪类职位新增最多 | `jobradar diff --days 7 --by category`（返回 `[{category, n}]`，按数量降序；没职类的归「未分类」） |
+| 两家或多家公司同类岗位要求对比 | `jobradar compare 药明康德 正大天晴 --keyword 研发 --per-company 5`；按职类用 `--category 医药研发`，按 JD 原文（如「论文」）用 `--text 论文` |
+| 招聘规模趋势 | `jobradar trends 腾讯 --step-days 7` |
+| 某公司有哪些招聘项目/批次、网申什么时候截止、去哪投（**含目前只有日历、没有岗位数据的大厂**） | `jobradar calendar --group 字节跳动 --grad-year 2027` |
+| 现在还能投哪些 | `jobradar calendar --type 秋招正式批 --open-on <今天日期>` |
+| 快截止的岗位（按网申截止日） | `jobradar search --deadline-before <本月末> --type campus`；日历同理用 `jobradar calendar --deadline-before <日期>` |
+| 某城市有哪些校招 | `jobradar calendar --city 北京` / `jobradar search --city 北京` |
+| 哪些公司写了网申起止 / 招哪些方向 | `jobradar calendar --has-window` / `jobradar calendar --has-tracks` |
+| 覆盖了哪些公司 | `jobradar stats` |
+| 数据什么时候更新、哪些源有问题 | `jobradar sources` |
+
+参数说明：`--type` 取 `campus`(校招) / `intern`(实习) / `social`(社招)；`--company` 先按**公司名全等**匹配，再查简称映射表（如 `中核`→中国核工业集团、`国寿`→中国人寿，见 `taxonomy/company_aliases.yaml`），最后只在命中唯一一家时用子串兜底（`阿里`→阿里巴巴）。**没把握就不猜**：`--company 京东` 不会返回「京东方」，而是 0 条 + 提示 `company_match.match = none`；命中多家时 `match = ambiguous` 并给出候选。要看 `company_match` 再回答（见回答规则 4）。`--contains` 才强制子串搜索（如 `--company 中国` 一次看所有含「中国」的公司）。`--category` 同时匹配大类与子类（如 技术、算法、后端、芯片/硬件、产品经理），可选值见 `references/fields.md`。**职类按标题规则归类，部分岗位为空**：`--category` 无结果时，再用 `--keyword` 按标题关键词查一次（如 `--keyword 研发`），仍无结果再用 `--text` 在 JD 原文里查，三者都无结果也只能说当前数据中未找到匹配记录。
+
+
+## 回答规则（必须遵守）
+
+1. **注明数据时间**：回答开头或结尾写"数据截至 {data_as_of}"。`stale: true` 时明确提醒数据可能过期。
+2. **附链接**：列出的每个岗位都附 `url`，引导用户去官网查看和投递。
+3. **只用返回的数据**：没查到就说没查到。不编造岗位、薪资、面试难度、往年数据、HC 数量。
+4. **查不到时说清楚是哪种情况**：
+   - 只有公司匹配为 `none`，或 `compare` 的 `missing_companies` 里有它，才说明公司未收录；筛选后 `results` 为空或旧字段 `not_found` 不能证明未收录，更不能说"这家公司没在招"。
+   - **先看 `company_match`**（`search`/`diff`/`trends` 都带）：`match: none` = 这个名字在数据集中不存在（`candidates` 是相近的公司，可以顺势提示"你要找的是不是 X"）；`match: ambiguous` = 命中多家、故意不返回；`match: contains` = 按子串唯一命中（如 阿里→阿里巴巴）；`exact`/`alias` = 确定是这家。**`none`/`ambiguous` 时不能说"该公司没在招"**。
+   - 岗位 `closed_at` 有值 → "该岗位已于 {closed_at} 下架"。
+   - 字段为空（如北森门户的 `cities` 为空列表）→ 说明"数据中未提供该信息"，不要从标题或常识推断。
+   - **有结果也可能漏掉字段为空的岗位**：每次阅读 `filter_coverage` 和 `hints`，说明未标注届次或截止日的范围，不能只在空结果时检查。需要保留未知届次候选时使用 `include_unknown_grad_year=true`；这些记录的 `grad_year_match=unknown` 仍待核实。统计中的 `unit=records` 未做展示折叠，不能与分组总数直接比较。正文检索未复算放宽后的数量时如实说明，不编造漏岗数。
+   - 某公司未收录或只覆盖了部分招聘类型：`jobradar sources` 可看各源；不要因为没查到就说"该公司没有校招"，应说"数据里没有"。
+     **字节跳动、蔚来、小鹏汽车、Momenta 已收录**（同为飞书招聘 ATSX 门户，2026-10-26 起，见 `docs/recon/feishu-atsx.md`），
+     是否有匹配岗位、城市与 JD 是否完整，都以本次返回为准，不能凭历史样本承诺 100%。
+5. **变化类问题用 `diff`/`trends`**，不要拿两次 `search` 结果自己比。说明覆盖的时间跨度；历史不足时如实说（例如"数据从 X 日开始积累"）。
+6. **对比类问题**：只依据 `compare` 返回的 `requirements`/`description` 原文；区分"JD 原文写的"与"你的归纳"，引用关键原句。`requirements` 为 `null` 但 `description` 有内容时仍可读取正文；只有两者均为空才说明缺少 JD 原文。样本有限时（如每家只有 2–3 个岗位）提醒结论的代表性有限。`missing_companies` 才表示公司未收录；`no_matching_jobs` 表示已收录但没有符合本次条件的岗位；`ambiguous_companies` 需先澄清公司名。旧字段 `not_found` 仅汇总空结果，不能当成未收录清单。对比支持统一城市、招聘类型与届次筛选，不得在空结果时偷偷放宽条件。
+7. **招聘日历（`calendar`）**：
+   - 每条都有 `source`（来源名称、链接、发布日期）与 `as_of`（核实日期），回答时注明，例如"据字节跳动校园招聘官网（核实于 2026-10-21）"。
+   - `origin: manual` 是人工从官方公众号/官网/政府平台整理的；`origin: auto` 是从岗位数据自动汇总的（`apply_end` 取该批尚未过期的最早截止日，全部过期时取最晚截止日；它不代表所有岗位同一天截止。`apply_start` 只在多数职位同一天上架时才给，否则为 `null`——单条上架日是补录日，不是开放日）。
+   - 高校公告的「过期时间」「已过期」只表示展示期限，不能据此断定企业截止投递。已撤回的日期不能从 `notes` 里的历史链接再补回来。
+   - `deadline_scope: job_evidence` 的日期来自岗位样本，不能说成整个批次截止；这类条目不会仅因某个岗位截止就整批隐藏，`window_status: unknown` 时仍需到原页确认。
+   - 字段为 `null` 表示来源没写，**不要补全或推测**（例如不要根据往年推测今年截止日期）。
+   - `open_on` 的总数包含未知窗口候选，不能直接称为“今天可投N个批次”。读取 `window_counts` 和 `hints`，计数仅代表返回页。只看明确完整批次窗口时使用 `confirmed_open_only=true`，但日期窗口也不保证实时投递成功。
+   - `jd_status: linked` → 可以接着用 `jobradar search --company <jd_company>` 列出具体岗位与 JD。
+   - `jd_status: blocked` → 只给日历信息，并**把 `hint` 原样放在回答最后一句**（如"拼多多希望你去他们的招聘页逛一逛哦~"），附 `apply_url`。
+   - **城市和网申时间不是每条都有**：`--city` / `--deadline-before` 只命中写了该字段的条目（当前覆盖率从 `doctor` / `stats` 查询，不能套用固定百分比）。所以
+     「`--city 拉萨` 返回 0 条」**不等于**"拉萨没有校招"，正确说法是"日历里没有写拉萨的条目，可以去掉城市再看该公司全部批次"。
+     返回里的 `hint`（或 MCP 返回的 `advice`）已经说明了这一点，**照它说，不要自己改写成"没有岗位"**。
+     同理 `--deadline-before` 返回空只能说明"没有写了截止日且落在该范围内的条目"，不能说"没有快截止的岗位"。
+   - `--has-window` 的口径是**起止任一有值**：只有截止日、没写开始日的批次也算"有网申时间"，回答时说"截止 X 月 X 日"即可，不要说"没有网申时间"。
+   - `project_type: 社招` 的条目来自社招板（一家几千条），没有届次也没有批次窗口，**不要当校招批次讲**。
+   - 一条日历 = 一个批次（秋招正式批 / 暑期实习 / 社招…），不是一条 = 一个岗位。想知道具体岗位，用 `search --company`。
+8. **资格与待遇需要原文**：先读 `field_warnings` 和 `qualification_evidence`；学历字段与正文冲突时不得只按字段排除。社招渠道也可能接受应届或毕业不久人群，不能把渠道标签当作资格。薪资、出勤天数和实习月数仅引用正文或明确标注；未提供则未知。校招不代表不要求经验，正文提到英语不代表英语是硬性门槛。投递简历、内推和面试评价超出本工具范围。
+
+## 输出建议
+
+- 岗位多时先给数量和分布（按城市/职类），再列最相关的 5–10 个。
+- 列表格式：`公司 | 岗位名称 | 城市 | 类型/届别 | 链接`。
+
+更多示例见 `references/examples.md`。

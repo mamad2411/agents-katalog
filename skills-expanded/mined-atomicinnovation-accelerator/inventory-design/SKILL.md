@@ -1,0 +1,377 @@
+---
+name: inventory-design
+description: Generate a structured design inventory for a frontend source —
+  tokens, components, screens, and features — by crawling it with code analysis,
+  live Playwright inspection, or both. Use when you need to capture a snapshot of
+  a current or target design surface before running analyse-design-gaps. Produces
+  a dated artifact directory with an inventory.md and screenshots/. Re-running
+  for the same source-id supersedes the prior snapshot without losing it.
+argument-hint: "[source-id] [location] [--crawler code|runtime|hybrid] [--allow-internal] [--allow-insecure-scheme]"
+disable-model-invocation: true
+allowed-tools:
+  - Bash(accelerator config *)
+  - Bash(accelerator design *)
+  - Bash(accelerator corpus metadata derive *)
+  - Bash(accelerator corpus frontmatter validate *)
+---
+
+# Inventory Design
+
+!`accelerator config context --skill inventory-design --fail-safe`
+!`accelerator config agents --fail-safe`
+
+If no "Agent Names" section appears above, use these defaults:
+accelerator:reviewer, accelerator:codebase-locator,
+accelerator:codebase-analyser, accelerator:codebase-pattern-finder,
+accelerator:documents-locator, accelerator:documents-analyser,
+accelerator:web-search-researcher, accelerator:browser-locator,
+accelerator:browser-analyser.
+
+**Design inventories directory**: !`accelerator config path research_design_inventories --fail-safe`
+
+You are tasked with crawling a design source and producing a structured
+`design-inventory` artifact. The artifact captures the design tokens,
+components, screens, and features of the source so a downstream
+`analyse-design-gaps` run can compute a structured diff between two
+snapshots.
+
+## Crawler Modes
+
+| Mode      | Description                                                                                                                                                                                 | Requires Playwright runtime |
+|-----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------|
+| `code`    | Static analysis of source files only. Reads tokens from config files (Tailwind, CSS custom properties, design-token JSON), components from JSX/TSX/Vue/Svelte, screens from routing config. | No                          |
+| `runtime` | Live browser inspection only. Navigates each screen, captures computed styles and state via Playwright.                                                                                     | Yes                         |
+| `hybrid`  | Code-static as ground truth for tokens and components; runtime fills in screen states and screenshots. Default when the source is a code repo.                                              | Yes                         |
+
+**Default selection**: if `--crawler` is not specified, the skill selects:
+- `hybrid` — when the location is a code-repo path (auto-downgrades to `code` if Playwright is unavailable; see Steps 3–5)
+- `runtime` — when the location is an `https://` URL
+
+## Steps
+
+### 1. Validate Arguments
+
+Run:
+```bash
+accelerator design validate-source \
+  "<location>" ${allow_internal_flag} ${allow_insecure_scheme_flag}
+```
+
+where `allow_internal_flag` is `--allow-internal` if the user passed that flag (otherwise
+omit it), and `allow_insecure_scheme_flag` is `--allow-insecure-scheme` if the user passed
+that flag (otherwise omit it).
+
+If it exits non-zero, report the error to the user and stop. Do not create any
+artifact directory.
+
+By default, `https://` URLs to public hosts and `http://localhost` /
+`http://127.0.0.1` are accepted without any flag. Other internal hosts
+(RFC1918, link-local, other loopback IPs) require `--allow-internal` — on either
+scheme. `--allow-internal` subsumes `--allow-insecure-scheme` for internal hosts:
+a user accepting internal-host SSRF risk has already accepted the strictly-greater
+concern. Plain `http://` to a non-localhost public host requires
+`--allow-insecure-scheme` (NOT `--allow-internal`, which would be a misleading flag
+name for that case).
+
+**Source-id format**: `source-id` must match `^[a-z0-9][a-z0-9-]*$` (kebab-case,
+lowercase, no leading hyphen, no spaces). If it does not, report a clear error
+naming the offending characters and stop.
+
+### 2. Resolve Auth Mode
+
+Run:
+```bash
+accelerator design resolve-auth
+```
+
+Capture the output (`header`, `form`, or `none`). If it exits non-zero, report
+the error to the user and stop.
+
+**Header mode requires two env vars.** `header` mode needs **both**
+`ACCELERATOR_BROWSER_AUTH_HEADER` (the bearer pair, e.g.
+`Authorization: Bearer <token>`) and `ACCELERATOR_BROWSER_LOCATION` (the crawl's
+`[location]`, which keys the allowlist). `resolve-auth` refuses a header set
+without a location loudly, so this cannot be missed silently.
+
+**Auth-header origin allowlist (security-critical)**: in `header` mode the
+daemon injects `ACCELERATOR_BROWSER_AUTH_HEADER` **only** on requests whose
+origin (scheme+host+port) matches the declared `ACCELERATOR_BROWSER_LOCATION`
+origin, and strips it on every cross-origin request. The strip is enforced in
+the daemon's `route()` handler in code, not by the crawler's link discipline, so
+a followed off-site link, an OAuth redirect, or a cross-origin subresource is
+reached without the header.
+
+> [!WARNING]
+> **Redirect caveat.** The header keys to the declared `[location]` origin, so a
+> `[location]` that redirects to a *different* origin (e.g.
+> `http://app.example.com` → `https://app.example.com`, an apex→www hop, or an
+> SSO bounce) loads the redirected page **unauthenticated** — its gated content
+> is captured as if logged out and silently missing from the inventory. Set
+> `ACCELERATOR_BROWSER_LOCATION` to the canonical post-redirect URL
+> (`https://app.example.com`), not the pre-redirect one.
+
+**Auth-walled route handling**: when auth mode is `none` and a route appears to
+require authentication, skip it and record it in `Crawl Notes` with the message:
+
+> `inventory-design: skipped <url> (appears auth-walled). Set both
+> ACCELERATOR_BROWSER_AUTH_HEADER and ACCELERATOR_BROWSER_LOCATION (a header
+> without a location is refused), or
+> ACCELERATOR_BROWSER_USERNAME / _PASSWORD / _LOGIN_URL, to crawl
+> authenticated routes.`
+
+Do not fabricate observations for auth-walled screens.
+
+### 3. Provisional Crawler-Mode Resolution
+
+Determine the provisional crawler mode from the CLI flag and defaults:
+
+- Explicit `--crawler code` → `code` (skip Steps 4–6)
+- Explicit `--crawler runtime` → `runtime` (proceed to Step 4)
+- Explicit `--crawler hybrid` → `hybrid` (proceed to Step 4)
+- No flag, location is a code-repo path → `hybrid` (proceed to Step 4)
+- No flag, location is an `https://` URL → `runtime` (proceed to Step 4)
+
+### 4. Resolve the Playwright Runtime
+
+Only if provisional mode is `runtime` or `hybrid`.
+
+The vendored Playwright runtime — the driver bundle and the browser — is
+materialised on demand by the executor; there is no bootstrap script to run. On
+a warm cache this is instant; on a cold cache the first runtime command fetches
+the artifacts (a few hundred MB), which can take time on a slow connection.
+Resolution, liveness and any host-level downgrade are all confirmed by the
+single `executor ping` in Step 5.
+
+### 5. Confirm the Runtime and Executor
+
+Only if provisional mode is `runtime` or `hybrid`, run:
+```bash
+accelerator design executor ping
+```
+
+This drives the executor's availability check in order — platform
+probe, runtime materialisation, browser resolution — then launches the daemon
+and probes it. Interpret the outcome:
+
+- **`{"ok":true,...}` on stdout (exit 0)** → the runtime and executor are
+  healthy; proceed to Step 6.
+- **`{"error":"downgrade","reason":"<enum>"}` on stderr (exit 3)** → the runtime
+  is unavailable on this host. Extract `<enum>`.
+  - If provisional mode was `hybrid`: downgrade to `code`. Print the downgrade
+    notice (see below) and record it in `Crawl Notes`. Then skip to Step 7.
+  - If provisional mode was `runtime`: hard-fail with the reason and stop.
+- **Any other error or non-zero exit** → treat as `executor-ping-failed` and
+  apply the same hybrid/runtime handling.
+
+**Downgrade notice**: run: 
+```
+accelerator design notify-downgrade --from <mode> --to code --reason <enum>
+```
+and print its stdout **before the crawl starts** (not only in Crawl Notes).
+
+### 6. Finalize Crawler Mode
+
+The crawler mode is now finalised. Use what survived Steps 3–5:
+- If Step 3 set `code`, use `code`.
+- If Steps 4–5 succeeded for `runtime` or `hybrid`, use that mode.
+- If downgrade occurred in Steps 4 or 5, use `code`.
+
+### 7. Compute Next Sequence Number
+
+Scan all `*-{source-id}/inventory.md` files under the design inventories root.
+Read each frontmatter `sequence` field. Take `max + 1`, starting at 1 if none
+exist. This is the sequence number for the new inventory.
+
+### 8. Spawn Agents in Parallel
+
+Based on the chosen crawler mode:
+
+**`code` mode**: spawn `{codebase locator agent}` and `{codebase analyser agent}`
+in parallel to discover and extract:
+- Design tokens (Tailwind config, CSS custom properties, design-token JSON, theme files)
+- Component inventory (JSX/TSX/Vue/Svelte files, named exports, prop signatures)
+- Routing config (React Router, Next.js pages/app, Vue Router)
+- Feature flags and conditional blocks
+
+**`runtime` mode**: spawn `{browser locator agent}` to enumerate routes/screens,
+then spawn `{browser analyser agent}` for each screen group in parallel.
+
+**`hybrid` mode**: spawn both code and browser agents in parallel. Use code-static
+output as ground truth for tokens and component names; use runtime output for
+screen states, computed styles, and screenshots.
+
+**Forward the allowances to the browser agents (security-relevant)**: when
+spawning `{browser locator agent}` or `{browser analyser agent}`, tell each to
+substitute `{allow-flags}` in its executor calls with exactly the allowance
+flags this invocation received — the same `${allow_internal_flag}` /
+`${allow_insecure_scheme_flag}` values passed to `validate-source` in Step 1.
+The executor injects them into every forwarded request so the daemon classifies
+each `navigate` and each `links` destination under them. Omitting this would let
+a legitimate `--allow-internal` crawl pass the front door and then be refused
+mid-crawl.
+
+**Crawl bounds** (enforced regardless of crawler mode):
+- **Page cap**: at most 50 distinct routes per crawl. On cap hit, write the
+  inventory with `status: incomplete` and list unreached routes in `Crawl Notes`.
+- **Wall-clock timeout**: 5 minutes total per crawl. Same handling.
+- **Screenshot byte budget**: 50 MB per crawl. When exhausted, skip remaining
+  screenshots and record which screens have no visual capture in `Crawl Notes`.
+  The crawl continues until another bound fires; the inventory is written with
+  `screenshots_incomplete: true` in frontmatter.
+
+**Screenshot masking**: the executor automatically masks `[type=password]`,
+`[autocomplete*=token]`, and `[data-secret]` selectors in screenshots. Never
+attempt to read or expose the values of masked fields.
+
+**URL scrubbing**: strip query strings from any URL written into the inventory
+body (screen routes, references). Document this reduction in `Crawl Notes`.
+
+**Auth-header origin allowlist (security-critical)**: in `header` mode the
+daemon's `route()` handler injects `ACCELERATOR_BROWSER_AUTH_HEADER` only on
+requests whose origin matches the declared `ACCELERATOR_BROWSER_LOCATION` origin
+and strips it on every cross-origin request. This boundary is enforced in the
+daemon in code, so the browser agents rely on it rather than performing or
+policing manual header injection themselves.
+
+### 9. Synthesise
+
+Compile agent findings into the five inventory categories:
+
+1. **Design tokens** — colour, typography, spacing, radius, shadow (with token names and computed values)
+2. **Component catalogue** — name, variants, props summary, usage count
+3. **Screen inventory** — route, observed states (loading/empty/error/success), screenshot paths
+4. **Feature catalogue** — named features, activation mechanism (route, flag, interaction)
+5. **Information architecture** — navigation structure, primary user flows
+
+### 10. Generate Metadata
+
+Run:
+```bash
+accelerator corpus metadata derive --filename-timestamp-format compact-time
+```
+
+### 11. Populate frontmatter and write artifact (atomic)
+
+Build the inventory under a sibling temporary directory:
+```
+<design_inventories>/.YYYY-MM-DD-HHMMSS-{source-id}.tmp/
+  inventory.md
+  screenshots/
+```
+
+Use the `design-inventory` template:
+```
+!`accelerator config template design-inventory --fail-safe`
+```
+
+Before writing `inventory.md`, **substitute** every field below with
+the indicated value, using the helper output captured in Step 10
+(`Current Date/Time (UTC):`, `Current Revision:`, `Repository Name:`):
+
+- `type:` ← `design-inventory`
+- `id:` ← the inventory directory name (e.g.
+  `YYYY-MM-DD-HHMMSS-{source-id}`), always quoted as a YAML string
+- `title:` ← `Design Inventory: {source-id}`
+- `date:` ← the `Current Date/Time (UTC):` value
+- `author:` ← the author resolved per the standard chain (config →
+  VCS user → prompt)
+- `producer:` ← `inventory-design`
+- `status:` ← `draft`
+- `revision:` ← the `Current Revision:` value (omit when the source
+  is not a code repository — the helper omits the line itself in
+  that case)
+- `repository:` ← the `Repository Name:` value (same omission rule)
+- `last_updated:` ← the same `Current Date/Time (UTC):` value
+- `last_updated_by:` ← the same value resolved for `author`
+- `schema_version:` ← `1` (bare integer)
+
+Optional linkage keys are omit-by-default (ADR-0040): the template shows
+each as `""`/`[]`, but write a key into the artifact **only** when it has
+a value, and omit it entirely otherwise (do not carry the empty
+placeholder through).
+
+- `parent:` ← the work item this inventory supports, as a typed-linkage
+  ref (`"work-item:NNNN"`). Fill when the inventory has an owning work
+  item; otherwise omit the key.
+- `relates_to:` ← list of typed-linkage refs to related artifacts
+  (`["design-inventory:NNNN", ...]`). Fill when relationships are
+  explicit; otherwise omit the key.
+
+The domain fields (`source`, `source_kind`, `source_location`,
+`crawler`, `sequence`, `screenshots_incomplete`) are filled from
+the values resolved in earlier steps.
+
+**Pre-write secret scrubber**: before moving the tmp directory to its final name,
+run:
+```bash
+accelerator design scrub-secrets "<tmp_dir>/inventory.md"
+```
+If it exits non-zero, delete the tmp directory and report the error. Do not write
+the artifact. Do not print the value of any environment variable in the error
+message.
+
+Move the tmp directory to its final name:
+```
+<design_inventories>/YYYY-MM-DD-HHMMSS-{source-id}/
+```
+
+Both the directory glob and the resolver explicitly skip leading-dot directories,
+so an in-progress `.tmp/` is invisible to readers.
+
+**Supersede prior inventories**: after the new directory is in place, glob
+`*-{source-id}/` under the inventory root (excluding leading-dot names). Exclude
+the just-written directory. For each remaining directory where `inventory.md` has
+`status: draft` or `status: accepted`, set `status: superseded`. This step is
+idempotent; if it fails partway through, the new directory is already
+authoritative (the resolver uses `sequence` as its primary tiebreaker).
+
+**Validate the frontmatter**: after the inventory is at its final path, run
+
+```bash
+accelerator corpus frontmatter validate \
+  --file <design_inventories>/YYYY-MM-DD-HHMMSS-{source-id}/inventory.md
+```
+
+If it exits non-zero, the document violates the canonical frontmatter
+standard; report the emitted violation and fix the frontmatter before
+completing.
+
+### 12. Cleanup
+
+If a Playwright daemon was started (Steps 4–5 succeeded), stop it:
+```bash
+accelerator design executor daemon-stop
+```
+
+This is belt-and-braces — the browser agents also call `accelerator design executor
+daemon-stop` as their final
+action. Running it here ensures cleanup even if an agent exits abnormally.
+
+### 13. Present Summary
+
+Report:
+- The artifact path
+- Source-id, location, crawler mode used
+- Count of tokens, components, screens, and features discovered
+- Any crawl bounds that fired (cap, timeout, screenshot budget)
+- Any auth-walled routes that were skipped
+- Whether a prior inventory was superseded
+
+Suggest next steps:
+- Run `/accelerator:inventory-design <target-source-id> <target-location>` for the
+  target design surface if not already done
+- Run `/accelerator:analyse-design-gaps <current-source-id> <target-source-id>` to
+  compute the gap
+
+## Important Guidelines
+
+- Never fabricate observations. Record only what agents actually found.
+- If a partial crawl fires a bound, write what was found and mark the inventory
+  `status: incomplete` — do not silently drop data.
+- Do not expose env-var values in any output, log, or artifact body.
+- The `sequence` field is the resolver's primary tiebreaker. Always compute it
+  by reading existing inventories before writing.
+- The `.tmp/` → final directory rename is atomic on POSIX filesystems. Do not
+  write directly to the final directory name.
+
+!`accelerator config instructions inventory-design --fail-safe`

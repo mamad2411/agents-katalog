@@ -1,0 +1,46 @@
+---
+name: observability-slo-and-alerting
+description: Define and operate SLIs, SLOs, error budgets, dashboards, alerts, telemetry correlation, and deployment verification. Use when onboarding a service, changing monitoring, tuning alerts, reviewing reliability, diagnosing a production issue, or deciding whether release velocity must be reduced.
+---
+
+# Observability, SLO, and Alerting
+
+Measure user-visible outcomes, not merely process liveness. Alerts must be actionable, attributable, and linked to an owner and runbook.
+
+Reference basis: [Google SRE error-budget policy](https://sre.google/workbook/error-budget-policy/) for release/reliability decisions, and [OpenTelemetry log correlation](https://opentelemetry.io/docs/specs/otel/logs/) for connecting logs, traces, and metrics through shared execution and resource context.
+
+## 1. Service reliability contract
+
+For each production service, declare owner, users/journey, critical dependencies, SLI source, SLO target/window, error-budget policy, alert thresholds, dashboard, and runbook. Choose SLIs that reflect the service: availability, latency, correctness, freshness, saturation, or successful asynchronous delivery.
+
+An SLO without a measurable query, owner, and response policy is documentation, not an operational control. Use error-budget consumption to decide release velocity, canary progression, and reliability work priority.
+
+## 2. Telemetry design
+
+- Emit metrics, logs, and traces with consistent service, environment, revision/digest, region, and instance/resource identity.
+- Propagate trace context and include trace/span identifiers in logs where supported. Do not put credentials, raw personal data, database connection strings, or high-cardinality unbounded values in labels.
+- Keep a dashboard for golden signals and dependencies: traffic, errors, latency, saturation, resource capacity, background-job freshness, DNS/TLS expiry where relevant, and deploy/change markers.
+
+## 3. Alert policy
+
+| Severity | Meaning | Required response |
+| --- | --- | --- |
+| Page | Active or imminent user/data/security impact | On-call acknowledgement, incident path, runbook |
+| Ticket | Action needed but not urgent | Owner, due date, trend/watch query |
+| Info | Context or audit event | No human interruption by default |
+
+Every page needs an owner, escalation path, symptom, impact threshold, dashboard link, runbook, and a clear resolve condition. Test alert routing and silence expiry. Avoid alerts that only report a known deployment or lack a response action.
+
+## 4. Deploy and incident verification
+
+Before a production rollout, define the baseline and success/error signals. During rollout, compare the promoted revision with baseline SLI, logs/traces, and dependency health. After rollout, record the observation window and rollback threshold. A deployment is not successful because the workflow exited zero; it must meet the declared service health criteria.
+
+Review noisy, missing, and stale alerts after incidents. Link material incidents to SLO/error-budget impact and corrective work.
+
+### Canary metric acceptance
+
+- Query the configured backend from the release controller's network and authentication context. Check scrape health and freshness, then run the actual canary query with the deployed labels, template parameters and time window. A successful query for `up` or a constant only establishes scrape health or API reachability.
+- Verify that stored series identify the environment, route or service, and primary versus candidate. Use a distinct label for the scrape target so it does not overwrite the application's backend identity. For Prometheus-compatible scraping, compare raw exposition with stored labels and check for a renamed `exported_service` when a target `service` label collides. Confirm the stored identity maps to the intended backend before changing the query. [Prometheus scrape configuration](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config)
+- Verify a positive candidate request count and a finite result from the configured error-rate query. Set a minimum sample count appropriate to the service and window. Missing, stale, ambiguous or insufficient samples, and a zero denominator, must block advancement. Exercise these conditions and the configured failure threshold in SIT before relying on automated promotion. Record the request sample, query result, weight and outcome. [Flagger metrics analysis](https://docs.flagger.app/usage/metrics)
+
+An independently released monitoring service may upgrade in place under the engineering [UI/API/DB release policy](../../engineering-standards/multi-environment-delivery-and-release/SKILL.md#按变更类别选择发布方式) when it neither owns business/billing state nor participates in business accounting or shares its persistent storage. Update only that monitoring unit's immutable pin; validate collection freshness, ingest/query continuity, dashboards, and alerts against baseline. Retain a recoverable backup and restore procedure for monitoring storage affected by the upgrade. Reverting the artifact alone does not reverse stored-data changes. Business databases, billing collectors/ledgers, and SQL schema transitions cannot use this monitoring exception.

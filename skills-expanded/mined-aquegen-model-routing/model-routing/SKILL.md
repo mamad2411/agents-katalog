@@ -1,0 +1,550 @@
+---
+name: model-routing
+description: Pick the agent, model tier and effort for a subagent dispatch that is already decided. Use when dispatching implementation, review, exploration or test-run work to a subagent, or when the user asks about token economy / cost optimization. It never decides whether to dispatch.
+---
+
+# Model Routing
+
+A dispatched subagent runs on the cheapest tier and effort that hold the
+quality its role needs, instead of inheriting the session model. The
+main-session model cannot be switched by Claude - routing works through
+the `model` param of the Agent tool and the agents bundled with this
+plugin.
+
+**Routing makes a dispatch cheaper; it does not make dispatching cheap.**
+A subagent starts empty, so everything it reads is a cache write, while
+the main session pays cache read - 12.5x less, 25x on Opus 5.5 and
+Sonnet 5.5, 50x on Fable and Mythos 5.2 and 5.1 - for context it already holds. That penalty is paid whether or not the tier is routed down, so the
+rules below only pay off on work that was going to be delegated anyway.
+On one wide-reading session, three runs: doing it inline cost $1.36 and
+delegating with the tier routed down $1.68, both measured; delegating at
+the session tier comes to $2.01, which is those same measured subagent
+tokens repriced at the higher tier rather than a run of its own. Route
+every dispatch - roughly a sixth off work already leaving the session -
+and do not manufacture dispatches to collect it. Whether work leaves the
+session is decided by the user, repo policies and other skills; nothing
+below is a reason to dispatch, only a rule for what a dispatch runs on.
+
+## Tiers
+
+Think in tiers, not model names - names rot, tiers do not:
+
+- **strongest** - the main-session model the user picked (Fable, Opus,
+  whatever their plan offers). Highest reasoning quality, highest cost.
+- **mid** - one step down (e.g. Opus when the session runs Fable, Sonnet
+  when the session runs Opus).
+- **cheap** - Sonnet/Haiku class. Mechanical work.
+
+## Effort, not just tier
+
+Model tier is one knob; reasoning effort is the second, and it moves cost
+as hard as tier does. The same model at `low` effort can cost a fraction
+of `max` and still clear a task that was never hard - a strong model
+thinking lightly often beats a weaker model thinking hard. Pick both:
+which model, and how hard it thinks.
+
+The full ladder is `low / medium / high / xhigh / max`. What runs when
+nothing sets a level is Claude Code's per-model default: `high` on every
+model that supports effort, except `medium` on Fable 5.2, Opus 5.5, Sonnet 5.5 and
+Haiku 5.5 and `xhigh` on Opus 4.7. The API's own default can differ (it runs
+Opus 4.7, Sonnet 5.5 and Fable 5.2 at `high`), but a session's effort is what Claude
+Code sends. Levels are saved per model under `modelSettings`, and a
+top-level `effortLevel` in the user settings file no longer reaches Opus
+5.5 or any model released after it, Sonnet 5.5 and Fable 5.2 included - so a session
+that ran Opus 5, Sonnet 5 or Fable 5.1 at a saved level starts its successor at
+`medium` until a level is chosen for that model.
+Which levels exist at all is a per-model list rather than a version
+cutoff, and setting a level the model does not support runs the highest
+supported level at or below it (`xhigh` is absent on the 4.6 generation).
+The recommendation moves with the generation: Anthropic reports Opus 5.5
+at `medium` matching or exceeding Opus 5 at `high` on coding and knowledge work, and `low`
+close to it on several coding evals, while at any given level it thinks
+more per turn than Opus 5 did - a level carried over buys more depth and
+costs more tokens than it used to. Re-sweep effort on your own evals
+after a model change instead of carrying old settings across generations. This plugin tunes for cost: pins sit at the lowest level
+the task shape allows and step up on evidence (a weak result retries
+one step up). That deliberate step down, wherever the task allows one,
+is where the effort savings come from - measured against the level the
+dispatch would otherwise inherit from the session, which is what a pin
+actually replaces.
+
+Effort is not only thinking depth - it shapes every token in the
+response, tool calls included. At lower effort the model folds
+operations into fewer tool calls and skips preamble, so a cheap pin
+saves twice: less reasoning AND fewer round trips. Anthropic's own
+example use case for `low` is subagents.
+
+- **low** - mechanical or well-scoped work: exploration, renames, running
+  tests, reading a diff for a known-shape change.
+- **medium** - normal implementation: real logic, but the approach is
+  already clear. It is also where Sonnet 5.5 is told to start agentic
+  coding and multistep tool use on well-specified tasks, moving to
+  `high` for harder or longer ones. A dispatch can raise it: the Agent
+  call takes an `effort` param for a non-fork subagent.
+  Sonnet 5.5's levels are recalibrated against Sonnet 5 - the same name
+  buys a different amount of thinking than it did, and Anthropic does not
+  say in which direction, so re-sweep rather than carry a level over.
+  Note what an effort pin is measured against: the level the dispatch
+  would otherwise INHERIT from the session, not the pinned model's own
+  default. So `implementer` at `medium` still steps down from a session
+  running `high` or above - a Fable 5.1 session at its default, say - and
+  buys nothing on a session already at `medium`, which is now the Claude
+  Code default for Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 sessions. The three
+  haiku agents' pins are live on the Anthropic API, where `haiku` is
+  Haiku 5.5 with the full ladder. On Claude Platform on AWS, Bedrock,
+  Google Cloud and Foundry `haiku` is still Haiku 4.5, which has no effort
+  knob at all, so there the pins document intent and cost nothing.
+- **high** - genuinely hard reasoning: architecture, subtle debugging,
+  high-risk final review, anything where a wrong approach is expensive
+  to unwind.
+- **xhigh** - long-horizon agentic or coding work (multi-hour runs, token
+  budgets in the millions) that genuinely earns the extra reasoning. In
+  this plugin that is a session-level or Workflow `effort` choice, never
+  an agent pin. The top two levels also change what a model does after
+  the work is done: at `xhigh` and `max` Sonnet 5.5 starts its own rounds
+  of review and verification and launches reviewer subagents where the
+  harness offers them. Anthropic measured a system-prompt instruction
+  against that - stop and report once the checks pass, no self-started
+  review rounds, no reviewer subagents unless asked - cutting session
+  cost by about a third at `max` with no quality change (less frequent,
+  not gone). Two rules follow. Routine work belongs at `high` or below,
+  where this is rare. And on a session running `xhigh` or `max`, review
+  what the plan, the user, a skill or a repo policy asked for - on `reviewer` when a finished diff
+  is reviewed, on `verifier` when batched output is gated - and do not open a second
+  round on top of it because the level invites one. A round is the
+  review, the fixes it asked for, and a check that each finding is fixed;
+  that check belongs to the same round. A fresh review of the whole diff
+  is a second one, opened only when the plan, the user, a skill or a repo
+  policy asks for it.
+- **max** - exceptional frontier-grade problems only, not a routine level
+  anywhere in this table.
+
+Match effort to task difficulty, not to tier - most work is a
+`low`/`medium` task in disguise. Where effort is set: the bundled agents
+pin theirs in frontmatter (`effort:` field - overrides the session level
+for that agent); Workflow scripts take an `effort` option per `agent()`
+call; an Agent dispatch takes an `effort` param for a non-fork subagent,
+and without one a pinned agent runs its pin and an unpinned one inherits
+the session effort. `model=opus` alone changes the model, not the effort.
+Vary effort across workloads, not inside one conversation: changing the
+top-level effort value between requests invalidates the cached prompt
+prefix, so per-agent pins and per-`agent()` opts - each with its own
+context - are the cache-safe way to differ. (The API has a per-message
+effort change in beta that keeps the cache, on Fable and Mythos 5.2 and 5.1,
+Opus 5, Opus 5.5 and Sonnet 5.5; nothing documents Claude Code's
+`/effort` using it, so inside a session assume the rule above holds.)
+
+## Routing table
+
+Each row carries a default effort - the second knob, tuned to the task,
+not the tier. For the bundled agents the effort is pinned in their
+frontmatter; the column documents it rather than asking the caller to
+set it. For unpinned rows it is the target level, passed as the Agent
+`effort` param or a Workflow `effort` opt.
+
+Rows say what a dispatch of that kind runs on, not that the kind should be
+dispatched:
+
+| Dispatched task | Agent / model | Effort |
+|-----------------|---------------|--------|
+| Codebase exploration ("where is X", "how does Y work") | `scout` (sonnet) | low |
+| Breadth sweeps: enumerate, list, trace a chain end to end | `surveyor` (haiku) | medium |
+| Implementing a plan task or spec, multi-file and cross-layer included | `implementer` (sonnet) | medium |
+| Implementation touching security, money, data migrations or concurrency, or a retry after a weak sonnet result | `implementer` with `model=opus` | medium (pinned) |
+| Trivial mechanical tasks: renames, boilerplate, mirrored constants | sonnet | low |
+| Per-task review and scoped re-review inside a plan loop (Superpowers SDD) | `task-reviewer` (sonnet) | high |
+| Final/whole-branch, high-risk or pre-PR review of implemented work | `reviewer` (opus) | high |
+| Deciding whether external review findings (bots, human reviewers) are real; the brief asks for a verdict per finding. `task-reviewer` findings inside a plan loop stay on the loop's own path | `reviewer` (opus); only confirmed findings go to `implementer` | high |
+| Run tests/builds/linters, report failures | `test-runner` (haiku) | low |
+| Sanity-check another agent's diff against its task | `verifier` (haiku) | medium |
+| Playwright/E2E scenarios, failure interpretation | `e2e-runner` (sonnet) | medium |
+| Fresh external context, knowledge-cutoff gap (new APIs, recent releases) | mid-tier agent with web access | medium |
+
+## Why these tiers and efforts
+
+The assignments are not arbitrary - each follows from where a model tier
+actually earns its cost:
+
+- **Exploration -> sonnet/low.** Finding where code lives and tracing a
+  path is retrieval, not reasoning. A cheap model at low effort reads and
+  reports as well as an expensive one; the cost is in the file volume,
+  which stays in the subagent regardless of tier.
+- **Ordinary implementation -> sonnet/medium.** Sonnet 5.5 is sold as
+  the best combination of speed and intelligence, and Anthropic still
+  points at an Opus model for the hardest long-horizon work - which is
+  the split this table has always drawn. It stays permanently priced at
+  $2/$10 against Opus 5.5's $4/$20, so for work whose approach the plan
+  already decided, the margin does not change the outcome and sonnet
+  stays the value default. Medium effort because the agent executes, it
+  does not design - and medium is where Sonnet 5.5's own guidance starts
+  well-specified agentic coding.
+- **Opus implementation only on narrow triggers, still at the agent's
+  pinned medium.** Escalate from sonnet when the change touches security,
+  money, data migrations or concurrency, or when a sonnet attempt came
+  back weak. Multi-file or cross-layer work alone stays on sonnet, as
+  Superpowers' own model selection has it ("standard model"): over 30
+  days of one user's transcripts the earlier opus triggers, led by multi-file, sent 232
+  of 316 explicit implementer dispatches to opus, $6,072 of opus
+  implementer spend against $529 on sonnet. Ambiguity is NOT an escalation trigger but a
+  stop sign: implementer rejects ambiguous tasks by contract, so an
+  unclear task or root cause gets clarified first; a dispatch, if one was
+  asked for, carries the well-defined task.
+  Opus 5 was a step-change over Opus 4.8 at unchanged
+  price, and Opus 5.5 is stronger again at 20% less ($4/$20, cache reads
+  60% less), so the opus tier buys strictly more per dollar than when
+  this table was tuned. That holds on every session model, Fable
+  included - see the fable-to-opus bullet below.
+- **Opus 5.5 to Sonnet 5.5 is a flat 50% off.** Both read cache at 0.05x
+  of their own input, so every token type halves: the scout eval profile
+  (74k written, 451k re-read, 6k out) costs $0.2901 on sonnet against
+  $0.5802 on opus, whatever the mix.
+- **Review -> opus/high.** Review is one cheap pass guarding against
+  expensive misses, so it stays on the strongest tier at high effort.
+  Anthropic reports Opus 5.5 at `medium` matching or exceeding Opus 5 at
+  `high` on coding, but on `evals/reviewer-seeded-bugs` medium and high
+  both found 12/12 planted defects and medium was not cheaper (warm runs
+  $0.159 against $0.150 mean): four planted bugs cannot tell the levels
+  apart, so the pin stays high until a harder case does. The
+  per-task reviews and scoped re-reviews of a plan loop are the
+  exception: Superpowers SDD scales their model to the diff with a
+  mid-tier floor, so they go to `task-reviewer` (sonnet/high) rather than
+  to `reviewer` with `model=sonnet`, which undercuts its pin. Final, whole-branch, high-risk and
+  pre-PR review stays on `reviewer`.
+- **Tests / verification -> haiku.** Running a command and summarizing
+  output is mechanical: `test-runner` stays at low effort, and the value
+  is keeping raw output out of the main context, not the model doing it.
+  `verifier` and `surveyor` pin `medium`, because the Haiku 5.5 docs say
+  at `low` it "is more likely to skip a search, stop early, or skip a
+  check" - the failure these two agents exist to prevent.
+- **Effort tracks task shape, not tier** (levels: the ladder above). A
+  strong model at low effort beats a weak model at high effort for a
+  fraction of the cost. On the Opus 5 generation this is amplified:
+  low/medium punch well above their weight - when a dispatch feels too
+  expensive, step the EFFORT down before the tier - on a Workflow stage,
+  or by choosing an agent pinned lower; when a result is too
+  shallow, step effort up before tier up - the Agent `effort` param or a Workflow `effort` opt.
+- **The fable-to-opus price gap is exactly the sticker.** The documented
+  ~30% token inflation is measured against models from BEFORE Opus 4.7,
+  which is the generation whose tokenizer Fable 5 uses - it is not a gap
+  between Fable and opus, and the model table lists the same token
+  density for both. So budget the fable-to-opus gap as the sticker -
+  2x on base input, cache writes and output for Fable 5.2 against Opus 5.5
+  ($8/$40 vs $4/$20; 2.5x for Fable 5.1 at $10/$50). Cache reads cost the
+  same on Fable 5.2 and Opus 5.5 ($0.20/MTok), so a cache-heavy subagent
+  saves little by stepping from fable to opus - the saving is in fresh
+  input, cache writes and output; Fable 5.1 reads at $0.25. `/model-routing:stats` names any agent
+  and model pair that ran below the session tier yet priced above it -
+  the evidence to revisit this on if a later model moves the rates.
+  Where the inflation does bite is any comparison against a Sonnet
+  4.6-era baseline: re-pricing today's token counts at yesterday's rates
+  understates the difference.
+- **Step effort DOWN on Fable before stepping the tier down.** The
+  documented guidance for Fable 5.2 is `high` for hard coding, research
+  and long unattended runs, `medium` for interactive coding and everyday
+  work, `low` for well-specified tasks and fast subagents, and `xhigh`
+  only where a gain has been measured - lower effort on Fable still
+  performs well (5.2 at `low` sat close to 5.1 at higher levels). Claude
+  Code starts a Fable 5.2 session at `medium`, Fable 5.1 at `high`. At
+  lower levels Fable 5.2 is more likely to stop a long task early. So effort is
+  a real control on a fable session and not a rounding error: a routine
+  phase left at the default pays top-tier rates for depth it did not
+  need. It does not replace the tier decision for work that is dispatched
+  anyway. Sweep Workflow `effort` opts the same way.
+- **A refusal is a redirect, not a weak result.** Fable 5.2, Fable 5.1, Fable 5,
+  Opus 5.5, Opus 5, Sonnet 5.5 and Haiku 5.5 ship safety classifiers that can
+  decline a request outright rather than answer it badly - Sonnet 5.5
+  included, which makes it the most common dispatch this can happen to,
+  while Haiku 4.5 and Sonnet 5 carry no documented categories. A declined dispatch is the one failure the
+  escalation ladder below does not fix, and a step up no longer reliably
+  clears it: Opus 5.5 runs cybersecurity and biology classifiers like
+  Fable 5.1's, and both it and Sonnet 5.5 add a `reasoning_extraction`
+  category whose declines a fallback model does not retry at all. Haiku
+  5.5 runs `cyber`, `bio`, `frontier_llm` and `general_harms` classifiers
+  with no server-side fallback. Which classifier
+  fired is API-level and invisible from inside a dispatch, so do not
+  re-dispatch a declined request on opus by reflex - hand it back to the
+  main session to rephrase or drop.
+
+Research backing: task-type routing outperforms complexity-score routing
+(RouteLLM, ICLR 2025); benchmark tier gaps confirm sonnet as the
+implementation default with opus reserved for the margin cases - a margin
+the Opus 5 launch widened at unchanged opus pricing and Opus 5.5 widened
+again at a lower one, which is why the escalation bar above sits lower
+than benchmarks alone would suggest.
+
+Model names in agent pins are FAMILY aliases (opus, sonnet, haiku), not
+versions - on the Anthropic API the harness resolves them to the current
+model of each family, while the cloud platforms lag (`sonnet` is Sonnet
+4.6 on Claude Platform on AWS and Sonnet 4.5 on Bedrock, Google Cloud and
+Foundry, `haiku` is Haiku 4.5 on all four, and `opus` is Opus 4.6 on
+Foundry, where the 5.5 price figures above do not hold at all) -
+so a generation jump (Opus 5 -> Opus 5.5, then Sonnet 5 -> Sonnet 5.5 on
+2026-09-28) upgrades `reviewer`, every sonnet-pinned agent and every
+`model=opus` escalation automatically, with no plugin change. Prices,
+effort defaults and every rule derived from them do NOT follow the alias:
+the stats price table, the per-model effort defaults and the cost-driven
+exceptions above need a check on every launch. Verify what actually ran
+with `/model-routing:stats`.
+
+## Rules
+
+- This skill adds no dispatches; whether to dispatch is decided outside it.
+  Weigh that knowing a subagent dispatch has a fixed overhead (system
+  prompt, file re-reads as cache writes, report) that the main session does
+  not pay for context it already holds.
+- When a test or build run is dispatched, `test-runner` takes it and only
+  its compact report comes back.
+- When exploration is dispatched, conclusions and file:line refs come back,
+  file dumps stay in the subagent.
+- Three exploration routes, told apart by what has to come back rather
+  than by how the question is phrased. Unverified candidates to look at
+  next ("which files mention X"): the harness's built-in Explore agent,
+  dispatched with `model=haiku` - since Claude Code 2.1.198 a bare Explore
+  inherits the session model, capped at opus on the Claude API, and no
+  longer runs haiku on its own. A complete list or an ordering, verified
+  by following the code ("every stage in order", "everything that imports
+  X"): `surveyor`. A judgement about behaviour ("how does Y work", "does
+  this retry"): `scout`. "Which files import X" and "which files mention
+  X" look alike and are not: one is answered by grep and may be wrong at
+  the edges, the other has to be right.
+- Split exploration by what the question demands, not by what it costs.
+  Enumerating and tracing - list these stages in order, which files import
+  X, where does this chain end - is breadth, and breadth runs correctly a
+  tier down: that is `surveyor` (haiku). Working out what code actually
+  does - does this loop retry, what does this function return for that
+  input - is not breadth, and the cheap tier fails it in a way that looks
+  confident: that is `scout` (sonnet). Both halves are measured in `evals/`,
+  on one generated fixture at three runs each: on a twelve-stage tracing
+  question Haiku 4.5 answered correctly every run at a third of sonnet's
+  price; on a question whose code contains an obvious wrong answer, it took the
+  bait once in three runs while sonnet took it in none. Three runs on one
+  fixture cannot pin a failure rate, and the reason to keep judgement on
+  sonnet is not the rate but the asymmetry: a cheap right answer saves
+  cents, while a cheap wrong one arrives looking identical and sends the
+  main session back to read the files itself. That recovery was not
+  measured; it does not need to be, to be worth avoiding. Reach for the
+  pinned agent rather than overriding `scout` downward - the floor rule
+  below is not a formality.
+- Sizing advice for a caller that is splitting work into `implementer` dispatches (the caller owns the split): one plan task with its own verification step or acceptance criterion is one `implementer` dispatch; batch only small edits that touch the same files and share one check. Both are visible at dispatch time, unlike how long a run will take. Each subagent re-reads files from scratch, so ten one-line edits as ten agents cost more than one agent with ten edits. The other end costs more: every turn re-reads the agent's whole context, so a run's volume grows with turns times context. Over 30 days of one user's subagent transcripts (421 `implementer` runs: 232 on Opus 5.5, 180 on Sonnet 5.5, 9 on other models), the heaviest tenth processed 61% of implementer input volume and 60% of implementer cost at API list prices. Those runs took 118-777 turns, their context peaked at 285k-967k tokens, and 98% of their input was cache reads. A median Opus 5.5 run took 73 turns and peaked near 200k. Judged by task description, about half of the fifteen heaviest were multi-task batches or whole review-fix lists and the rest single plan tasks too big for one run. The saving from splitting is a prediction: each fresh agent pays the file re-read and a new cache write again.
+  - Review-fix lists: group findings by shared root cause or shared files, one group per agent. Never split one defect or invariant across agents.
+  - Run the agents of one change one at a time, or in parallel only when they touch disjoint files.
+  - Put the previous agent's "What was changed" list into the next agent's brief, so its decisions and naming carry over.
+  - A finished agent does not take the next task. SendMessage continues unfinished or stuck work only.
+  - A single plan task that needs hundreds of turns is a planning problem: split it in the plan before dispatching.
+- A text-only end of turn does not by itself mean the task is finished. On
+  long multi-part work these models end a turn with a progress update
+  rather than a tool call, and a caller that reads that as completion
+  stops there. Keep the parts in a list the agent reports against - the
+  task description is where it starts, the agent's Open items line is
+  where it comes back - and when a turn ends with items left and no
+  blocker named, send one short message naming them (SendMessage where
+  the harness offers it, otherwise a fresh dispatch carrying both what is
+  already done and what is left, so the new agent does not redo it). An escalation block is always a blocker named; an Open items
+  entry counts as one only where it says what prevents progress, since
+  "implement B, test C" is unfinished work rather than a blocker. Such a
+  return is a continuation, not a weak result - continue it at the same
+  tier rather than climbing one. Stop after two or three continuations
+  and take it to the main session, the same place a second failure goes,
+  so a run that is genuinely stuck ends instead of looping. And if
+  something the agent started is still running - a background command, a
+  nested agent - wait for it and feed the output back before calling the
+  task done.
+- Subagents cannot see the conversation. Write self-contained task
+  descriptions: goal, files, constraints, verification commands.
+- Repo-specific policies override this table (e.g. "unit tests only,
+  never integration tests").
+- Review is one cheap pass; missed bugs are expensive. A dispatched
+  review of a high-risk diff goes to `reviewer`, never below the lower of
+  its pin and the session model.
+- When batched implementer output needs a gate before it is accepted, that
+  gate is `verifier`. It answers one question for pennies: is this diff the task that was
+  asked? Scope creep, missing pieces, and obvious breakage get caught
+  before the main session builds on a wrong diff or a `reviewer` pass
+  burns opus tokens on work that missed the point. It duplicates the main
+  session reading the full diff itself - the read IS the verification. The verifier gates ANOTHER agent's
+  cheap-tier diff and is not the agent for the main session's own work; a
+  review of that work, when the user, a skill or a repo policy asks for
+  one, goes to `reviewer`.
+- Advise before the work, not only after it fails. The escalation rules
+  below are reactive - they fire on a stuck agent or a weak result. When
+  implementation work is dispatched with no approved plan behind it, the
+  cheaper move is proactive: brief the cheap-tier agent "return the plan
+  only, do not edit" and check the plan in the main session - already the strongest model in the loop -
+  before it writes code. Anthropic measures this as the advisor strategy,
+  "faster, lower-cost worker models to call more intelligent models to
+  check their plan and evaluate their work", and reports Sonnet 5 with a
+  Fable 5 advisor within 10% of Fable 5's SWE-bench Pro score at 63% of the
+  price of using Fable 5 for the whole task. One short turn beats finding
+  the wrong approach in a finished diff. With a plan already approved -
+  written in the main session or by a planning skill - that check has
+  happened, so the dispatch goes straight to implementation. The harness also ships this pattern as a built-in tool - see `advisorModel` under Complementary settings.
+- Escalate, don't guess. When a subagent is stuck on the *approach* (not
+  just missing a fact), it should package its state - what it tried, why
+  each attempt failed, the candidate directions it sees - and hand it back
+  for a main-session decision. A strong model advising a stuck subagent is
+  cheaper than that subagent thrashing at the wrong approach. After
+  deciding, continue the SAME agent (SendMessage, when the harness offers
+  it) with the direction - a fresh dispatch would pay the file re-read again
+  and lose what the agent learned. This applies to unfinished work only: a
+  finished agent does not take the next task. When SendMessage is not available,
+  re-dispatch with the packaged state (what was tried, why it failed, the
+  chosen direction) so the new agent starts from the decision, not from
+  zero.
+- When the user re-asks a question a subagent answered or calls its
+  answer shallow and the work is dispatched again, it goes one step up - a higher tier, or higher effort via the Agent `effort` param or a Workflow opt - never at the
+  same level that just failed.
+- The escalation ladder generalizes: any failed or visibly weak subagent
+  RESULT (wrong answer, broken diff, report that dodges the question),
+  when the caller re-dispatches it, goes exactly one step up - next tier via the Agent `model` param, or
+  the same tier at higher effort when the miss looks like shallow thinking
+  rather than missing capability (the Agent `effort` param or a Workflow opt raises it). One step, not a leap to the top: most
+  failures clear one tier up, and jumping straight to the strongest model
+  forfeits the middle tier's price. A second failure at the higher step
+  means the task was mis-scoped, not under-powered - stop climbing and
+  take it to the main session. Distinguish this from the stuck-on-approach
+  handback above: stuck agents hand back BEFORE producing a result and
+  continue via SendMessage; failed results re-dispatch fresh one tier up,
+  because the failed attempt's context is part of the problem. One case
+  is not on this ladder at all: a `stop_reason: "refusal"` is a
+  classifier declining rather than a model falling short, and it has its
+  own retry path - see the Fable caveats above.
+- Against a manual override, the same pin is a FLOOR, and undercutting it is
+  not a saving. The two readings do not conflict because they answer different
+  questions: the ceiling asks what the session should pay, the floor asks what
+  the role needs. The pin states
+  how much reasoning the role needs, so `reviewer` dispatched with
+  `model=haiku` is a weaker review rather than a cheaper one, and it still
+  counts as "cheaper than the session" in every cost figure - which is exactly
+  why it is easy to do and hard to notice. The floor is the lower of the pin
+  and the session model, so capping at a cheaper session stays correct, and a
+  dispatch whose session model cannot be read is left unjudged rather than
+  guessed at. When
+  the cheap tier genuinely fits the work, pick an agent pinned for it
+  (`test-runner`, `verifier`, `task-reviewer` for a sonnet-tier review)
+  instead of overriding a role agent downward; the
+  dispatch report lists below-pin dispatches in their own section.
+- Against the session model, a pin is a ceiling. A pin says "this task never
+  needs more than X"; the session model says what the user is willing to pay.
+  When a pin sits above the session model, cap the dispatch at the
+  session model via the Agent `model` param - on a sonnet session,
+  implementer and reviewer run on sonnet. This cap is behavioral, not
+  mechanical: the harness applies frontmatter pins regardless of session
+  tier, so a bare dispatch of an opus-pinned agent on a sonnet session
+  RUNS opus. Passing the param is what enforces the ceiling; the dispatch
+  report's above-tier section shows every time it was missed.
+- Unpinned agents silently inherit the session model. The bundled agents
+  pin their tier in frontmatter, but general-purpose, Explore-style, and
+  custom agent types have no pin - dispatched bare on a strong session,
+  they run the whole errand at top-tier prices. Make the tier a conscious
+  choice per dispatch: mechanical or exploratory work gets an explicit
+  `model` (sonnet, haiku for trivial sweeps); staying on the session tier
+  is right when the task genuinely needs that reasoning - the user picked
+  a strong session model precisely so the hard dispatches could use it.
+  The failure mode this rule kills is *accidental* inheritance, not
+  top-tier usage.
+- The same rule applies inside Workflow scripts, where it is easiest to
+  forget and where the fan-out multiplies it - a 50-agent workflow with
+  one forgotten `model` opt costs more than every other routing decision
+  in the session combined. See **Workflows** below for the full set.
+- Switching /model is the other way to put a whole phase (pure
+  implementation) on a cheaper tier. When that switch happens, it belongs
+  between phases rather than mid-task: a thinking block is bound to the model that
+  wrote it, and the families no longer read each other's - Sonnet 5.5
+  reads Sonnet 5, Opus 4.8 and Haiku 4.5 blocks but not Opus 5, Opus 5.5
+  or any Fable one, and no other model reads Sonnet 5.5's; Opus 5.5 and
+  Sonnet 5.5 both read Haiku 5.5's. The API drops what
+  the new model cannot read, unbilled and without an error, so the turns
+  after a switch run without the reasoning that led to them. A dispatch
+  does not have this problem: a subagent starts empty either way.
+
+## Workflows
+
+Dynamic workflows are the other place routing happens: a script the
+runtime executes, spawning subagents per stage. The rules below are
+what changes cost there.
+
+- **Boundary.** Workflows are for breadth - auditing many files for one
+  issue, a migration across hundreds of files, cross-checking research,
+  looping until a check passes. A workflow run can cost substantially
+  more than working the same task in conversation.
+- **Per-stage routing.** Every `agent()` call without `model`/`effort`
+  opts inherits the session model at session effort, multiplied by the
+  fan-out. Mechanical stages get an explicit cheap model and
+  `effort: low`; a haiku search stage that has to be complete gets
+  `medium`, for the same reason `surveyor` does; a tier up only where the
+  stage earns it. Precedence:
+  the script opt wins, then a frontmatter pin, then the
+  `CLAUDE_CODE_SUBAGENT_MODEL` env var, then the session model - unless
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is set, which ignores the opt and
+  the pin and runs the env var (or the session model if it is unset).
+- **Granularity is saved progress.** On resume, completed agents return
+  cached results - but replay follows start order: caching stops at the
+  first agent that did not finish, and every agent that started after it
+  runs again even if it completed. Stopping mid fan-out is therefore
+  expensive, and many small agents survive a pause better than one long
+  one. Resume works only within the same Claude Code session - quit and
+  the run starts from scratch.
+- **Size guideline first.** The Dynamic workflow size setting in
+  `/config` defaults to `medium` (under 15 agents) as of Claude Code
+  2.1.219; older versions defaulted to `unrestricted`. Choosing a value
+  (`small` <5, `medium` <15, `large` <50) targets a fan-out before a run
+  starts - it is advice, not a cap, so a prompt that calls for a
+  different scale still overrides it. Cheapest lever available, but pick
+  the direction deliberately: actively choosing a value also moves the
+  `Large workflow` warning to that agent count, so `small` warns earlier
+  and `large` warns later, at 50. The warning tracks the choice, not the
+  value - an untouched setting keeps the warning at 25 even though its
+  value is `medium`.
+- **Thresholds and limits.** A run is flagged `Large workflow` above 25
+  agents or a projected 1.5M tokens; a configured size guideline
+  replaces the 25-agent threshold, and ultracode sessions suppress the
+  warning entirely. The runtime caps a run at 16 concurrent agents and
+  1000 agents total.
+- **Time is a third knob, next to tier and effort.** Opus 5.5 pays close
+  attention to elapsed time, and Anthropic's guidance for a lead agent
+  delegating to subagents is to feed it one: either a budget line at the
+  end of each message (`elapsed 340s / 1200s`) or, where no sensible
+  budget exists, the sentence "Time matters here: do not spend time that
+  can be avoided, and the earlier a correct result is obtained, the
+  better." In their evaluations of small agent teams both signals made
+  teams finish sooner than a single agent, with a budget keeping answer
+  quality comparable. It is not a cheaper effort level in disguise:
+  lowering effort cuts the work itself, while a budget mostly keeps more
+  agents running in parallel. Three caveats before reaching for it. The
+  clock comes from the harness, not the agent: a Workflow script or a
+  hook has to append the line, and a plain Agent dispatch has nowhere to
+  put one, so there only the sentence is available. The budget is
+  advisory - keep your own timeout if you need a hard stop. And under
+  time pressure the model searches and verifies a little less, so the
+  checks that were planned stay where they were - `verifier` on batched
+  implementer diffs, `reviewer` on the code, the main session on a
+  high-risk diff, whichever of them the run already had. A budget buys
+  pace, it does not waive any of them. The measurement behind all of
+  this is on Opus 5.5; whether the same signals move a sonnet or haiku
+  stage is untested here.
+- **Permissions.** Workflow subagents always run in `acceptEdits` and
+  inherit the allowlist regardless of the session's permission mode -
+  file edits are auto-approved. A broad allowlist therefore applies to
+  every agent in the fan-out, not just the one you would have watched.
+
+Under ultracode (not a sixth effort level but a mode: `xhigh` plus
+automatic workflow planning), these rules still apply - fan-out is
+already consented to, so the savings come from making each node cheap.
+
+## Complementary settings
+
+- `fallbackModel` in settings.json: `["opus", "sonnet"]` - the harness
+  falls back down the tier ladder when the primary model is unavailable
+  or its quota is exhausted. On the Anthropic API Opus 4.7+ and Sonnet 5+ run a native 1M window, so the bare aliases need no `[1m]` suffix; Claude Code skips a fallback with a smaller window than the primary's during compaction, which is where a 200K entry (an Opus/Sonnet 4.6 pin, or an alias on a cloud platform that still resolves to one) silently drops out. A fallback also crosses a model boundary, so any thinking block the fallback model cannot read is dropped for the turns that run on it (see the /model rule above). Which way a pair goes is per model, not per tier - Sonnet 5.5 reads Opus 4.8's blocks, while neither Opus 5.5 nor Fable reads Sonnet 5.5's - so the requests succeed either way and the reasoning carries over only where the pair allows it.
+- `/advisor`, the `advisorModel` setting, or `--advisor`: a server-side tool that consults a stronger model at decision points - before committing to an approach, on a recurring error, before declaring a task done. Claude chooses when to call it, and the advisor receives the FULL conversation, so unlike a subagent it needs no state packaging and has no fresh-context blind spot. This is the advisor strategy above, productized. What to know before enabling it:
+  - The advisor must be at least as capable as the main model, and the accepted list is per model rather than per tier. An Opus 5 or Opus 5.5 session accepts Fable or Opus 5 and later (the API refuses Opus 4.7/4.8, Sonnet is rejected); an Opus 4.7/4.8 session accepts Fable, Opus 4.7+ or Sonnet 5.5; a Sonnet 5.5 session accepts Fable, Mythos, Opus 5, Opus 5.5 or Sonnet 5.5 itself, and rejects the Opus 4.7/4.8 and Sonnet 5 advisors a Sonnet 5 session still accepts; a Fable 5.2 session accepts only Fable 5.2 or Mythos 5.2, and every session model accepts a Fable 5.2 advisor (it returns its advice encrypted). A saved advisor that was valid on Sonnet 5 therefore starts failing on Sonnet 5.5 with a 400 rather than quietly running without one.
+  - Fable as advisor needs Fable access and, on plans that bill Fable to usage credits, the one-time consent from `/model fable`. Before that consent a saved `"fable"` sends requests without the advisor.
+  - Subagents inherit the configured advisor and re-run the pairing check against their own model. A sonnet `implementer` with an opus advisor is exactly the pairing the advisor strategy measures, applied automatically.
+  - Cost scales with conversation length, not task size: each call re-reads the whole transcript at the advisor's rates and is never cached. It does not appear in `/model-routing:stats` - a server tool is not an Agent dispatch - so `/usage` is where it lands.
+  - Anthropic API only (not Bedrock, Claude Platform on AWS, Google Cloud's Agent Platform, or Microsoft Foundry). Experimental. `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` disables it entirely.
+- `/model opusplan`: built-in two-tier hybrid (Opus plans, Sonnet
+  executes) - a good lazy default for sessions that do not need the
+  strongest tier.
+- Output-token reducers (terser-output skills like ponytail/caveman) cut
+  ~15-20% on top of routing - orthogonal to tier and effort. They trim
+  what the model emits; routing decides who emits it. Use together.

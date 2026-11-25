@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/accessible-web-dev/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build WCAG 2.1 AA compliant web applications for University of Sheffield. Covers semantic HTML, ARIA patterns, form accessibility, keyboard navigation, color contrast, alt text, captions, and automate

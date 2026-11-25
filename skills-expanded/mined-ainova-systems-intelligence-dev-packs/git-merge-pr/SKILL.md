@@ -1,0 +1,47 @@
+---
+name: git-merge-pr
+description: "Merges an accepted pull request behind guard checks, then syncs the base branch and cleans up. Runs only on the owner's accept - merge timing is not the model's call."
+argument-hint: "[pr number] [--skip-factors]"
+---
+
+# Merge the PR
+
+Take an accepted, merge-ready PR across the finish line. Deliberately non-diagnostic: it fixes nothing - if any guard fails it STOPS and names the companion skill. Fail-fast applies to every step: an error, an unexpected state, or `gh` opening an interactive prompt means stop, surface the exact output, act no further.
+
+## Guards (STOP on any failure)
+
+1. `git branch --show-current` - never a protected branch.
+2. `git status --short` prints nothing - never merge with uncommitted local work.
+3. `git rev-parse HEAD` equals `git rev-parse @{u}` - the reviewed commit must equal local HEAD; unpushed work goes through `git-commit-push` first.
+4. Open PR for THIS branch: `gh pr list --head <branch> --state open --json number,headRefName --jq '.[0]'`. An explicit pr-number argument must have `headRefName == <current branch>` - otherwise refuse: never merge a PR that is not the current branch's.
+5. CI green on HEAD (`git-finalize-pr` > CI green) - anything else: hand off to `git-finalize-pr`.
+6. Zero unresolved review threads (GraphQL `reviewThreads.isResolved`) - unresolved: hand off to `git-complete-pr`.
+7. No conflict with the base by the trial merge `git-finalize-pr` > CI green defines - a conflict: the profile `conflict_skill` (default `git-resolve-conflicts`). Then `gh pr view <pr> --json mergeStateStatus,reviewDecision` - `BLOCKED` / `BEHIND`: report and stop.
+8. **Labels** (`gh pr view <pr> --json labels`), per `git-workflow` > autonomous PR labels. A PR carrying no state label is human-driven and skips the state check below; the factor check applies to every PR.
+   - state must be `ai:completed`. `ai:processing` means a run still holds it: report and stop, because the holder is the only actor that may finish it and a claim nobody is behind is the owner's to clear (`git-workflow`) - never `git-finalize-pr`, which refuses a claim it did not write. `ai:manual` / `ai:failed` mean the run ended needing the owner, so they need the owner's decision and not a re-run; act on that decision, then the PR goes back through `git-finalize-pr`.
+   - every factor profile `pr_success_factors` declares (default `ai:verified, ai:reviewed`) must be present AND **fresh at HEAD**, read as `git-pr-labels` > Reading freshness - the steps and body digests included, since the body can be rewritten without the head moving. Missing or stale: name the stage that must run (`git-verify-pr` / `git-review-pr`) and stop - unless the owner passed `--skip-factors`, which waives every missing or stale factor for this merge and nothing else; the report names each one waived. A stale factor is the dangerous case, because the label looks green while nothing has judged this commit.
+
+## Steps
+
+1. Merge per profile `merge_method` (default squash): `gh pr merge <pr> --squash --subject "<PR title> (#<n>)" --body "" --match-head-commit <the guarded HEAD>` (or `--merge` / `--rebase`), so the forge refuses a push that landed after the guards. A squash left to the forge's default message joins every commit's body, so a claim the pull request later retracted, or a trailer a commit carried, would land on the base. Delete the remote branch per profile `delete_remote_branch` (default: keep - do not pass `--delete-branch`).
+2. Confirm it landed: `gh pr view <pr> --json state,mergedAt,mergeCommit` - `state != "MERGED"` means STOP. Record the merge commit SHA.
+3. Sync the base: `git switch <base> && git pull --ff-only && git fetch --prune`. Confirm the merge commit is on the base before any local deletion.
+4. Delete the local branch per profile `delete_local_branch` (default: true), only after steps 2-3 confirmed the merge. The authoritative "merged" signal is the confirmed PR `state == MERGED`, not git ancestry: a `squash` or `rebase` merge rewrites the commits, so the feature branch is NOT an ancestor of the base and `git branch -d` refuses with "not fully merged". Use `-d` after a `merge`-method merge; use `-D` after `squash` / `rebase` - safe precisely because the merge was confirmed first.
+5. **Post-merge hook (optional).** If profile `post_merge` is set, run it now (e.g. regenerate committed generated outputs so the base is not left stale) - on failure STOP and report; never leave the base half-updated.
+6. **Spec close (optional, spec-driven projects).** If a spec/plan drove this change, close it now so its status and docs reflect the merge - hand off to `spec-close`. Projects without the spec pack skip this step.
+7. Report: merge commit SHA, base state, cleanup done, factors waived by `--skip-factors` (if any), post-merge hook result (if any), spec closed (if any).
+
+## Verify
+
+- PR state `MERGED`; the base contains the merge commit; local branch gone; clean tree on the base.
+- Every declared factor was fresh at the merged head, or the report names it as waived by `--skip-factors`.
+
+## Scope / hand-off
+
+- CI, fixes and the judging stages - `git-finalize-pr`; threads and the outcome - `git-complete-pr`; conflicts - the profile `conflict_skill` (default `git-resolve-conflicts`); cutting a release - `git-create-release`.
+
+## Constraints
+
+- Never force, retry blindly, or work around an unexpected `gh` result.
+- The only destructive action (local branch delete) runs only after the merge is confirmed landed.
+- This skill runs only after the owner's explicit accept. `--skip-factors` is the owner's word in this run too - never inferred from an accept, a green pipeline, or an earlier merge.

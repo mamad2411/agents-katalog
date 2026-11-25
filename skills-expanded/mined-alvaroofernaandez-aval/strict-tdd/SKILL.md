@@ -1,0 +1,108 @@
+---
+name: strict-tdd
+description: >
+  The full strict-TDD contract: RED/GREEN/REFACTOR discipline, per-layer scope
+  (backend, frontend, infra), the setup-first rule for projects with no runner,
+  the [tdd-gate] pre-flight block, why after-the-fact tests are forbidden. Invoke when starting any feature, bug fix or
+  behavioural refactor, or when a project has no test runner configured yet.
+---
+
+## Strict TDD (MANDATORY for ALL projects — frontend AND backend)
+
+This rule is **STRICT** and **BLOCKING** across every project, every language, every layer. There is no "TDD only when the project supports it" — if a project doesn't support TDD yet, you set it up first, then write code.
+
+### Iron law
+
+For ANY new feature, bug fix, refactor with behavioral changes, or any code touching logic:
+
+1. **RED** — write the failing test first. The test MUST fail for the right reason (assertion failure, not import error).
+2. **GREEN** — write the minimum code that makes the test pass. Nothing more.
+3. **REFACTOR** — clean up while keeping the test green.
+
+Never invert this order. Never write the implementation first and "add tests later". "Later" never comes; this is non-negotiable.
+
+### Scope (no exceptions)
+
+- **Backend**: APIs, services, domain logic, data access, jobs, scripts → unit + integration tests via the project's runner (pytest, jest, vitest, go test, etc.).
+- **Frontend**: components, hooks, stores, utilities, page logic → unit/component tests via the project's runner (vitest + RTL, jest + RTL, etc.). E2E with Playwright for critical user flows.
+- **Infra/Scripts**: if logic is non-trivial, write tests. If truly one-shot and disposable, document why no test exists.
+
+### Setup-first rule
+
+If a project has no test runner configured, your FIRST commit in that project is to bootstrap one (install deps, add config, write one passing smoke test). Only then do you start the requested work — RED → GREEN → REFACTOR.
+
+### Pre-flight check (emit before any implementation)
+
+Before writing implementation code, emit a `[tdd-gate]` block:
+
+```
+[tdd-gate]
+Runner: <pytest | vitest | jest | go test | …>
+RED test: <path/to/test_file::test_name — what it asserts and why it must fail now>
+```
+
+If you cannot fill this block honestly, you are not allowed to write implementation code yet.
+
+### After-the-fact tests are forbidden
+
+Writing the code first and then "covering it with tests" is NOT TDD. It is regression testing of code you already trust — which means you skipped the design feedback that TDD provides. Do not do this. If you catch yourself doing it, STOP, delete the implementation, and restart from RED.
+
+## Testing checklist
+
+The iron law says when to write a test. This is how to write a good one, in any language.
+
+### Levels
+
+Test at the lowest level that catches the regression, and assert through the public interface (output, exit code, return value, files written), not private helpers.
+
+| What you verify | Level |
+| --- | --- |
+| A parser, planner, mapping, renderer | Unit, pure, scratch in the framework's temp dir |
+| A command or handler's behaviour | In process: call the entry function with args, input and output streams, env |
+| Process startup: argv, exit code, PATH | One real-process smoke test per entry point (spawn the built binary or script once) |
+| Repository rules: budgets, boundaries, docs | A repo-level guard test |
+| Real browsers, terminals, services | e2e behind a tag or marker, kept out of the default run |
+
+If a command cannot be tested in process, that is a design finding: make the entry point take its args, streams and env instead of reading globals, then test it directly.
+
+### Assert identity, not text
+
+- Errors: assert the error's identity, never its message. Go: `errors.Is` for sentinels, `errors.As` for typed errors. TS/JS: `instanceof` or an error `code`. Python: `pytest.raises(SpecificError)` or a `.code`. If the code returns only a string, add a sentinel, class or code first (RED), then assert it.
+- User-facing text is pinned in one place (a single messages test or snapshot). Logic tests assert data, not sentences, so rewording a message breaks one test, not forty.
+- One reason to fail per test. Prefer in-memory fakes that behave like the real thing over mocks that assert call order.
+
+```go
+if !errors.Is(err, ErrNotFound) { t.Fatalf("want ErrNotFound, got %v", err) }
+```
+```ts
+await expect(load("x")).rejects.toMatchObject({ code: "NOT_FOUND" });
+```
+```python
+with pytest.raises(NotFoundError): load("x")
+```
+
+### Determinism
+
+- No fixed sleeps. Inject a fake clock, or poll a condition with a deadline and fail with the last observed state. `sleep(100)` is a guess that is wrong on a loaded machine.
+- Scratch only in the framework's temp dir (`t.TempDir()`, `tmp_path`, `fs.mkdtemp` under `os.tmpdir()` cleaned in teardown). Never write into the repo, `$HOME` or a fixed `/tmp` name; set env through the framework's scoped helper (`t.Setenv`, `monkeypatch`, `vi.stubEnv`).
+- Goldens are regenerated by a flag, never by hand; mask times, durations, absolute paths and versions before comparing.
+
+### Flake protocol
+
+1. Reproduce by repeating it: `go test -race -count=20 -run '^TestX$'`, `pytest --count=20 -k x`, `vitest --repeat 20`.
+2. Run it alone and serially, then with the whole package. A test that passes alone but fails in parallel is a finding (shared env, ports, files, globals), not noise.
+3. Find the mechanism. Often the code has a real race: make it deterministic (hold an event back, a fake that answers late) to get a RED that fails every run, then fix the code.
+4. Never loosen an assertion, add a sleep or retry blindly until it passes.
+
+### Differential check
+
+Before finishing a change to a command, compare it with the base commit. Build the base in a separate worktree, run both builds with the same args and the same throwaway home and fixtures, and diff stdout, stderr and exit code. A sibling command that shares code you touched must behave as before. Every difference you did not intend is a regression: fix it and pin it with a test. Committed tests never read git history; this check is a one-off you run.
+
+### Output contract
+
+When you report a test run, state:
+
+- **What ran:** the exact command, exit code, pass, fail and skip counts.
+- **What did not run, and why:** a tag not set, a missing tool, another OS. Skipped is not passed.
+- **Failures:** the test name and the output tail, not a paraphrase.
+- **TDD evidence:** the RED line (the failing assertion) and the GREEN output for each rule, plus the differential result.

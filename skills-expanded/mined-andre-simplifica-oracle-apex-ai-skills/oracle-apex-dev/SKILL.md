@@ -1,0 +1,99 @@
+---
+name: oracle-apex-dev
+description: Use for version-gated Oracle APEX 24.2+ development involving Page Designer, SQLcl, Object Browser, SQL/PLSQL, REST integrations, jobs, regions, reports, Dynamic Actions, contextual help, runtime validation, internal APIs, security guardrails, and local project standards.
+---
+
+# Oracle APEX DEV
+
+Generic skill for working with supported Oracle APEX releases from 24.2 onward in a pragmatic, traceable, and low-risk way.
+
+## Layers
+
+Always separate:
+
+- **APEX core**: workflow, SQLcl, Page Designer, Object Browser, PL/SQL, runtime validation, read-only exports, guardrails, and risk criteria.
+- **Project profile**: standards for the current application. This should live in the consuming project at `.oracle-apex-ai/project-profile.md`.
+- **Learned application patterns**: catalog of example pages, regions, templates, buttons, menus, breadcrumbs, dialogs, and packages. This should live in the consuming project at `.oracle-apex-ai/app-patterns.md` and `.oracle-apex-ai/page-patterns/`.
+
+Do not put conventions from one specific application into this skill core.
+
+## Before Implementing
+
+1. Read current repository instructions (`AGENTS.md`, `CLAUDE.md`, `README`, or equivalent), if present.
+2. Read `.oracle-apex-ai/project-profile.md`, if present.
+3. When the request involves a new screen, visual flow, or UI pattern, read `.oracle-apex-ai/app-patterns.md` and the referenced example pages.
+4. Confirm environment, app id, workspace, schema, and the configured SQLcl connection before technical execution. Before query, compile, import, or export, verify both `USER` and `SERVICE_NAME`; do not continue on a plausible-but-unconfirmed connection.
+5. Inspect `.oracle-apex-ai/installation-manifest.json` and the object-lock section of the project profile.
+6. Confirm the live APEX version and run the managed compatibility validator before using any version-specific API or export behavior.
+7. If essential context is missing, state the limitation and ask or perform read-only inspection.
+
+## Essential Rules
+
+- Do not invent tables, columns, packages, procedures, APIs, pages, or business rules.
+- Use Page Designer for focused visual and functional APEX page changes.
+- Use SQLcl for queries, validation, PL/SQL compilation, metadata inspection, and read-only exports.
+- Use Object Browser as a fallback when SQLcl is unavailable or when the project requires the Builder UI.
+- Do not edit versioned APEX exports as the default implementation path; use them as functional reference.
+- Do not generate or refresh an official APEX/database export unless the user explicitly requests publication/export.
+- When changing versioned PL/SQL for implementation, bug fix, or test work, compile in DEV and validate errors unless the user or environment blocks it.
+- In a shared DEV schema, use `oracle-apex-object-lock` before editing or compiling every supported versioned database object. Acquire before editing, assert immediately before compilation, renew when needed, and release at closeout.
+- Treat one `PACKAGE` lock as covering both its specification and body.
+- Put table/structural DDL and reviewed DML in the two configured pending files before applying them. Never put APEX components or standalone package/view/trigger/routine/type/synonym source in pending.
+- When the user asks only for a plan, review, explanation, or direction, do not change the database without explicit authorization.
+- Runtime validation is required for any visual or functional screen change.
+- User-visible text must use business language and must not expose internal technical names.
+- Never store credentials, tokens, wallets, passwords, or secrets in versioned files.
+- Treat vibe coding as context-driven engineering: inspect first, follow standards, make small changes, validate runtime, and report risk clearly.
+- For destructive, security-sensitive, or production-affecting work, stop and follow the high-risk reference before acting.
+
+## Routing
+
+- **Project profile**: read `.oracle-apex-ai/project-profile.md`; if it does not exist, use [project-profile.md](references/project-profile.md) to guide creation.
+- **Learned patterns**: read [apex-pattern-learning.md](references/apex-pattern-learning.md) and `.oracle-apex-ai/app-patterns.md`.
+- **Page Designer**: follow [page-designer.md](references/page-designer.md).
+- **Dynamic Content and package-owned UI**: follow [dynamic-content-regions.md](references/dynamic-content-regions.md) for branded/non-standard layouts, filters, dashboard actions, exports, and reusable `RETURN CLOB` regions.
+- **SQLcl**: follow [sqlcl.md](references/sqlcl.md).
+- **Repeatable target checks**: use [target-preflight.md](references/target-preflight.md) to generate a read-only identity check for the same SQLcl session; generation does not connect or authorize the following operation.
+- **SQL/PLSQL standards**: follow [sql-plsql-standards.md](references/sql-plsql-standards.md) before writing or reviewing database code.
+- **REST integrations**: follow [rest-integrations.md](references/rest-integrations.md) before creating, changing, or debugging outbound APIs, OAuth, webhooks, or OpenAPI-backed flows.
+- **APEX debugging**: follow [apex-debugging.md](references/apex-debugging.md) for runtime errors, Session State, Dynamic Actions, AJAX, upload/import flows, and generic APEX errors.
+- **Background jobs**: follow [background-jobs.md](references/background-jobs.md) for APEX Automations, DBMS_SCHEDULER, queues, retries, and long-running processes.
+- **Destructive operations**: follow [destructive-operations.md](references/destructive-operations.md) before any DDL, mass DML, APEX import, drop, truncate, scheduler enablement, session kill, grants, or production change.
+- **Security and permissions**: follow [security-and-permissions.md](references/security-and-permissions.md) for authentication, authorization, credentials, public pages, ORDS/REST privileges, grants, ACLs, and sensitive data.
+- **Object Browser**: follow [object-browser.md](references/object-browser.md).
+- **Internal APEX APIs**: follow [apex-internal-apis.md](references/apex-internal-apis.md) when the change is repeatable, multi-page, or safer through a controlled script.
+- **Version gates**: follow [apex-version-compatibility.md](references/apex-version-compatibility.md) before version-specific work.
+- **APEX 26.1 public APIs**: only after the `>= 26.1` gate, read [apex-26-1-public-apis.md](references/apex-26-1-public-apis.md).
+- **Runtime**: follow [runtime-validation.md](references/runtime-validation.md).
+- **Help and user text**: follow [help-and-ux.md](references/help-and-ux.md), then apply the local project profile.
+- **Shared DEV objects**: route to `oracle-apex-object-lock` before editing, compiling, replacing, or testing a supported object.
+- **Official baseline or release export**: route to `oracle-apex-export`; daily implementation does not imply publication.
+
+## Standard Flow
+
+1. Understand the request and locate the page/module/object.
+2. Read the local project profile and relevant learned patterns.
+3. Classify the task: read-only, small adjustment, repeatable change, new/complex screen, PL/SQL backend, REST/API, background job, debugging, security-sensitive, or destructive/high-risk.
+4. Inspect the repository and/or APEX metadata before changing anything.
+5. For supported database objects in shared DEV, refresh Git, inspect locks, and acquire the required locks.
+6. Choose the route: Page Designer, SQLcl, Object Browser, or controlled script.
+7. Apply changes in small, validatable units.
+8. Assert owned locks immediately before each shared DEV compilation, then save the page and/or compile objects.
+9. Validate runtime behavior in the application.
+10. Create or update the configured pending DDL/DML files when applicable; keep APEX and standalone object source out.
+11. Release owned locks and verify task lock residue.
+12. When the user declares a reusable standard, inspect its real example and record it in project-owned profile/pattern files before relying on it for later pages.
+13. Generate an official export only when explicitly requested.
+14. If the project uses Git and local rules allow it, commit/push only the current task scope.
+
+## Required Closeout
+
+For PL/SQL/database-object tasks, clearly report:
+
+- `Object-lock runtime: INSTALLED | ABSENT | PARTIAL | INCOMPATIBLE | NOT_CHECKED`
+- `Locks acquired/released: ...`
+- `Objects compiled in DEV: ...`
+- `Objects not applied to the database; repository only: ...`
+- `No database objects changed.`
+
+For screen tasks, report whether runtime validation was completed or why it was not possible.

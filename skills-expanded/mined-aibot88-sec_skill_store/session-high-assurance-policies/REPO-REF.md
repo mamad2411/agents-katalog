@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/session-high-assurance-policies/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Enforce step-up authentication for sensitive pages/objects using High Assurance session level and login flow policies. NOT for initial MFA enrollment UX."

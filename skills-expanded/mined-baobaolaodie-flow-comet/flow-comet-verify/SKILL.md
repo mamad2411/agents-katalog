@@ -1,0 +1,176 @@
+---
+name: flow-comet-verify
+description: "Use only when explicitly invoked as /flow-comet-verify or routed by the flow-comet entry/runtime to the verify Node; complete Verify for flow-comet. Do not use for ordinary standalone tasks or as the workflow entry."
+---
+
+# Verify
+
+## Node Goal
+
+Complete the `verify` Node for `flow-comet`.
+
+Responsibility: 集成验证 + UAT + 失败诊断（自动重试 ≤ 3 次，第 4 次失败暂停）。生成 UAT.md（TEST.md 前置已有）。
+
+This node performs the final integration verification: running all automated tests, type checks, and builds, then guiding the human through UAT scripts from TEST.md. It produces UAT.md with pass/fail results for each item. If failures occur, it diagnoses root causes, generates fix tasks, and auto-retries ≤ 3 times (machine-counted verifyFailures); on the 4th failure it must pause and ask the user「继续修 / 停止」. This node is the final quality gate before archiving.
+
+## Guidance
+
+### 必填段清单（结构+存在级）
+
+| 文件（模板 = `flow-kit/templates/<DOC>.md`） | 左栏 · 无条件段（模板 H2，缺席 / 空正文 = BLOCKED） | 右栏 · 条件段（**标题必须在场**，正文可写 `N/A`）/ 增量段（按登记位置） |
+|------|------|------|
+| `TEST.md` | `## 验证命令`（本仓登记的**增量段**，必填，位置不限但标题后必须紧跟代码块）——exit verify 真实执行其中的命令并计数失败 | `TEST.md` 的 5 轮 H2 与结构子段**在本出口**按登记表骨架校验（`flowkit.verify.v1` 的 artifacts 含 TEST.md；UAT 未登记 → 跳过）。verify 的**模板声明**为空集，但结构校验来自节点 `outputSchemas`，不来自模板声明 |
+| `UAT.md` | **仅存在性**——guard 只查 `.specs/<change-id>/UAT.md` 在场（UAT 无上游模板，不校验段名与段序） | `## 验收结果` 等段：格式与内容由 UAT 执行与 review 把关，guard 不判段名 |
+
+> **注意**：flow-kit 的 TEST 模板**不含 `## 验证命令` 段**——该段是 flow-comet 登记的增量段（exit verify 会真实执行其中的命令并计数失败）。使用 `flow-kit/templates/TEST.md` 填写后，**必须按上方右栏补写 `## 验证命令` 段**，否则 exit verify 会被 BLOCKED。**排版约束**：`## 验证命令` 标题后必须**紧跟**代码块（` ``` `），标题与代码块之间**不得插入任何说明行**（如 blockquote 说明——guard 正则要求标题后直接是代码块）；段名可带括号后缀。UAT.md 同理：flow-kit 无独立 UAT 模板（UAT 脚本格式见 5-test.md 1.2 节），本出口只查文件在场——`## 验收结果` 段按惯例填写，格式由 UAT 执行与 review 把关。
+
+guard 校验见 workflow-guard.mjs 的 verify 出口门禁（`## 验证命令` 增量段真实执行 + 失败计数 + LESSONS 条目形态与条目区）；UAT.md 只查存在性，「填得好不好」由 review 与 UAT 执行把关。
+
+> **模板权威**：本节点产出工件的段形 = **上游模板 + 本仓登记的增量段**——唯一权威 = `flow-kit/templates/**`（段与正文），条件段 / 结构子段 / 增量段与指纹由 `../flow-comet/reference/artifact-templates.json` 登记；`.specs/archive/**` 是历史证据、**不是模板来源**——不得以「上一轮就是这么写的」对齐段形。
+
+本节点零模板：只有 `READ PROMPT:`（`7-integration`），没有 `READ TEMPLATE:`。
+
+### Prerequisites
+
+- `.specs/<change-id>/REVIEW.md` must exist (from review node).
+- All Critical items from REVIEW.md must be resolved (fixed or explicitly accepted).
+- `.specs/<change-id>/TEST.md` must exist with UAT scripts.
+- `.specs/<change-id>/REQUIREMENT.md` must exist for AC reference.
+
+### Steps
+
+1. **Run full automation**: Execute all automated checks and paste real output:
+   - Full unit tests: `pytest tests/ -q` (or equivalent).
+   - Integration/e2e tests: if available.
+   - Type check: `tsc --noEmit` / `mypy` / equivalent.
+   - Build: `npm run build` / `vite build` / equivalent.
+   - Any failure -> immediately enter failure diagnosis (step 3).
+
+2. **Guide human UAT**: Read TEST.md UAT scripts one by one. For each UAT item:
+   - Present the scenario, preconditions, steps, and expected results.
+   - Ask user: "Pass / Fail / Describe issue".
+   - Record result in `.specs/<change-id>/UAT.md`.
+
+3. **Failure diagnosis**: For any failure (automated test or UAT):
+   - Switch to "Diagnose sub-role" — identify root cause, not symptom.
+   - Produce fix-plan: append to TASK.md 的 `## Fix 任务` 段 as numbered fix tasks with full 7 fields and verify command — 禁止文件尾追加.
+   - Follow the「修复回路状态机路径」section below: home back to execute, run its four exit gates, then return to verify.
+   - Re-run verification after fix, then run verify's own exit gates.
+
+4. **Auto-retry limit (R2.6)**: verify 失败自动重试 ≤ 3 次（机器计数 verifyFailures）；第 4 次失败必须暂停问用户「继续修 / 停止」。Do not auto-retry beyond 3 times.
+
+5. **LESSONS nomination**: Before archiving, scan all `*-SUMMARY.md` "decisions and deviations" sections and any `*-PROGRESS.md` "excluded solutions" sections. 判据（三条判据 + 不提名兜底 + 编号续接与插入位置 + superseded 状态更新）见 `flow-comet-integration` 册的「LESSONS 提名」段——该段是判据的**单一权威**，本册不复述、以该册为准；提名结果按该册写回 `.specs/LESSONS.md`。
+
+The full verification protocol, UAT format, and failure diagnosis are in:
+- `flow-kit/prompts/7-integration.md` (INTEGRATION phase, verification + UAT sections)
+- `flow-kit/prompts/5-test.md` (TEST phase, for UAT script format)
+
+### Completion reasoning
+
+This node is truly done when:
+- All automated checks pass with real output pasted.
+- All UAT items have pass/fail recorded in `.specs/<change-id>/UAT.md`.
+- verify 失败自动重试 ≤ 3 次（机器计数 verifyFailures），第 4 次失败已暂停问用户。
+- All failures have been diagnosed and fix tasks generated.
+- LESSONS have been nominated from SUMMARY.md files.
+
+### Red flags
+
+- **Agent thought**: "Tests passed last time, no need to run again." **Actual risk**: Claiming pass without pasting real output (R4.4 violation) means failures go undetected. Must run and paste.
+- **Agent thought**: "This UAT item is similar to the last one, marking pass." **Actual risk**: UAT must be executed by the human, not assumed. Each item needs explicit human confirmation.
+- **Agent thought**: "Auto-retry 4th time, maybe it'll work now." **Actual risk**: On the 4th failure (R2.6 violation), the problem is likely systematic, not transient. Must pause and ask the user「继续修 / 停止」.
+- **Agent thought**: "Fix the failure directly, no need for a fix task." **Actual risk**: Bypassing the fix-task -> execute -> re-verify cycle means the fix is not properly tracked or tested. Must go through the proper loop.
+
+## 修复回路状态机路径
+
+verify 失败或发现缺陷后的修复必须回到 `execute` 节点生命周期内完成——**禁止驻留源节点「顺手修完」**（会被 BLOCKED）。要点：
+
+1. **追加 Fix 任务**：把修复任务（完整任务字段）追加到 `.specs/<change-id>/TASK.md` 的 `## Fix 任务` 段内，**禁止文件尾追加**；任务集修订须在 `entry` 之前完成。
+2. **受控归位 execute**：跑 `workflow-state next` 或 `workflow-guard entry execute` 触发受控归位（审计行 `FIX-BATCH: 归位`；`next` 同时输出 `NODE: execute`）；用 `status` 确认 `stateCurrentNode` 已是 `execute` 再开工，未归位不得硬开工。
+3. **跑完 execute 四类出口**：`record execute` → `exit execute --apply`——全任务 done / 逐任务 SUMMARY 完备 / 6 维自查 + 自检方法声明 / 任务集签名一致，任一缺失即 BLOCKED；通过后引擎把当前节点推回 verify。
+4. **回源节点跑出口**：回到源节点后跑该节点出口门禁（`entry <源节点>` → `exit <源节点> --apply`），通过后继续 verify → archive 的正常路由，必要时进入下一轮 Fix 闭环。
+5. **禁止绕过**：驻留源节点不归位、顺手改完后直接跑源节点 exit 收场会被 BLOCKED；不得用跳过归位或出口门禁的手段（含手动改写 `.flow-comet/flow-comet-state.json`）替代本路径。
+
+**何时读完整规格**：要核对完整判据——Fix 任务与任务集签名的时序、受控归位的完整判定条件、`FIX-BATCH` / `RETURN` 审计行三态语义与回源节点的回程豁免、绕过的失败面与恢复指引——读 `../flow-comet/reference/fix-loop.md`（**当你 verify 失败、要开修复回路把工作退回 execute 生命周期时读它**）。
+
+## Entry Check
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-guard.mjs entry verify
+```
+
+## Skill Implementation
+
+Load `flow-comet-verify` for this Node. Operation: `require`.
+
+The verify node loads `flow-comet-integration` for the verification protocol. It runs all automated checks (tests, type check, build), guides the human through UAT scripts from TEST.md, performs failure diagnosis with ≤3 auto-retries (4th failure pauses for human decision), and produces UAT.md. It also nominates lessons from SUMMARY.md files before the archive step.
+
+## Required Skill Calls
+
+| Skill | Enforcement | Reason |
+|-------|-------------|--------|
+| `flow-comet-integration` | Required for verification protocol | Provides automation execution, UAT guidance, failure diagnosis, LESSONS nomination |
+
+Load `flow-comet-integration` during this Node and record completed check `required-skill:verify.flow-comet-integration`. Reason: 集成验证 + UAT + LESSONS 提名
+
+**加载声明（阶段层 · 双步硬规则）**：本节点技能已由入口路由经 Skill 工具加载（你正在阅读的就是它）；本节点 Required Skill Calls 的加载与声明同样不可跳过：
+
+1. **用 Skill 工具加载** `flow-comet-integration`（本节点 Required Skill Call）。**不得跳过**——只读取 SKILL.md 文件不叫加载；真正让 flow-comet-integration 指令生效的是 Skill 工具把它注入本次会话。
+2. 加载完成后**立即**运行声明命令（节点退出与证据记录会核对声明标记；声明如实记录加载动作，不等于产出证明）：
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-state.mjs skill-load verify flow-comet-integration --prompt flow-kit/prompts/7-integration.md
+```
+
+> **零模板节点省略 `--templates`**：verify 的产出物模板映射为空（UAT.md 无上游模板；TEST.md 的结构校验在 verify 出口（本节点），review 只做 5 轮完整性过程检查），命令**不带** `--templates`——省略即视为空集，与节点映射一致并通过；不要「为保险」补一个模板名（多写会与映射不一致而被拦）。
+
+> **跑 skill-load 声明命令 ≠ 加载**：声明只把“哪次会话加载了哪个 skill、按哪份协议工作”写进状态供 exit/record 核对；真正加载只有第 1 步的 Skill 工具能做。
+
+## Augmentations
+
+This Node has no declared augmentations.
+
+## Output Schemas
+
+Schema: `flowkit.verify.v1`
+
+| Schema ID | Artifact Kind | Required | Path |
+|-----------|--------------|----------|------|
+| `uat-doc` | file | yes | `.specs/<change-id>/UAT.md` |
+| `test-doc` | file | yes | `.specs/<change-id>/TEST.md` (must already exist) |
+| `lessons-updated` | file | conditional | `.specs/LESSONS.md` (if new lessons nominated；无合格条目时扫描本身即完成，不新增条目) |
+
+Evidence: `verification-result` (required)
+
+## Evidence Record
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-state.mjs record verify '{"summary":"All automation passed, N UAT items verified (X pass, Y fail), Z lessons nominated"}'
+```
+
+## Guardrails
+
+| Guardrail ID | Label | Validation Type |
+|--------------|-------|-----------------|
+| `verify-evidence` | UAT.md exists | artifact-exists |
+| `automation-passed` | All automated checks pass (real output) | 执行纪律（review 把关），guard 不校验 |
+| `retry-limit` | No more than 3 auto-retries（机器计数 verifyFailures，第 4 次 BLOCKED） | process-check |
+| `lessons-nominated` | LESSONS.md 条目形态与条目区合规（完成提名扫描；仅当有合格条目时更新——无合格条目不强制新增，避免噪音条目） | 结构级（guard 强制：本出口校验 `.specs/LESSONS.md` 的条目写 `### L-NNN`、位于条目区、编号升序——违反即 BLOCKED（同一形态一个判级））；「是否有合格条目」由执行者把关，归档时另以 `evidence.lessonsNomination` 核对 |
+
+## Exit Check
+
+```bash
+node .claude/skills/flow-comet/scripts/workflow-guard.mjs exit verify --apply
+```
+
+If the script prints `SKILL: flow-comet-archive`, load that Skill next.
+
+## Recovery
+
+1. Re-run entry check to confirm workflow state.
+2. Read `.specs/<change-id>/UAT.md` — check which items have results.
+3. If UAT.md exists with all items passing, verification is done.
+4. If UAT.md has failures, check if fix tasks were generated in TASK.md.
+5. If fix tasks exist but have not gone through the execute lifecycle, follow the「修复回路状态机路径」section below: home back to execute, run its four exit gates, then return to verify and run verify's exit gates.
+6. Count previous auto-retries (from UAT.md / machine-counted verifyFailures) to enforce R2.6 limit.
+7. Resume from the first incomplete verification step.

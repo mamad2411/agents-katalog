@@ -1,0 +1,79 @@
+---
+name: intuitive-refactor
+description: Execute a selected cleanup seam after its target and scope are known; use reduce-entropy for discovery.
+---
+
+# Intuitive Refactor
+
+Use `$intuitive-refactor` to make selected cleanup canonical: delete stale
+surfaces, merge duplicate concepts, move behavior to the right owner, update
+callers/tests/docs, and prove the behavior still holds.
+
+This is a compact runtime router for mutation work. `$intuitive-reduce-entropy`
+owns unknown-target discovery and cleanup candidate ranking; return here only
+after the user names a target or selects a candidate packet.
+
+## Route
+
+| Need | Read |
+| --- | --- |
+| Route selection, scope gate, severity guide, evidence ladder | [Mode router](references/mode-router.md) |
+| Repeated cleanup, oversized modules, stale surfaces, deletion/owner-move ratchets | [Ratchet mode](references/ratchet-mode.md) |
+| Long-running ratchet overlay, active capsule, selected-slice loop, or repo-wide maintenance goal | [Ratchet campaign](references/ratchet-campaign.md) and [durable run](../_shared/references/durable-run.md) |
+| Diff-scoped reuse/quality/efficiency review after implementation | [Changed code review](references/changed-code-review.md) |
+| Detailed workflow, templates, command naming, persistent-state examples | [Detailed guidance](references/detailed-guidance.md) |
+
+If multiple routes match, load the narrowest reference first and add the next
+one only when the work crosses that boundary.
+
+## Operating Rule
+
+Start from a target and a stop condition, not from "make it cleaner."
+
+- Known seam/module/API/stale surface: gate or execute a bounded refactor slice.
+- Unknown repo-wide cleanup or deletion/merge discovery: route to
+  `$intuitive-reduce-entropy` first. Use its selected-candidate packet as this
+  skill's discovery source.
+- Repeated cleanup or "keep going": run ratchet route, add the campaign overlay
+  only for long-lived/resumed work, execute only selected clear P1/P2 slices,
+  and park uncertain decisions.
+- Periodic whole-repo architecture maintenance: add the campaign overlay's
+  repo-wide maintenance goal loop, alternate fresh reduce-entropy handoffs with
+  execution of every clear queue item, and stop only after saturation
+  deduplicates parked and low-value registries.
+- Changed-code cleanup: stay diff-scoped; report findings first and fix only
+  when authorized by the user or approved flow.
+
+Prefer the organized future at `HEAD` over compatibility shims. Preserve
+compatibility only when an external contract, artifact reader, or explicit
+migration requirement makes it necessary.
+
+For every slice, prefer concept reduction over code motion:
+
+1. Delete stale or unreachable surfaces.
+2. Merge duplicate concepts, wrappers, registries, fixtures, or owners.
+3. Move behavior to an existing canonical owner and update callers.
+4. Create a new owner only when the architecture lacks a true home.
+5. Extract helpers only around a named ownership boundary.
+
+Reject slices that only make a file smaller, add vague modules, preserve stale
+aliases indefinitely, or lack focused proof.
+
+## Slice Loop
+
+Run one vertical slice at a time, naming the route only when another owner
+could plausibly fit:
+
+1. Orient from the smallest context that can prove the target and owner.
+2. Classify findings as P0, P1, P2, or Parked.
+3. Record the architecture claim and expected value metrics in the gate.
+4. Update code, callers, tests, docs, and stale surfaces together.
+5. Verify with the smallest sufficient evidence ladder.
+6. Checkpoint what changed, what stayed parked, and what proof passed. With the
+   campaign overlay, commit verified implementation slices by default; the
+   detailed skip rules live in [ratchet campaign](references/ratchet-campaign.md).
+
+Stop when the accepted checklist is complete and remaining candidates are
+parked, polish, public-contract migrations, or design decisions. With the
+campaign overlay, stop only after the selected-slice or repo-wide maintenance
+saturation rule in [ratchet campaign](references/ratchet-campaign.md) is met.

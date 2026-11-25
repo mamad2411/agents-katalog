@@ -1,0 +1,121 @@
+---
+name: java-cohesion-coupling
+description: >
+  Cohesion and coupling in Java at class, package and module level: cohesion types
+  (functional, communicational, temporal, logical), coupling types in real code,
+  afferent/efferent coupling and instability, package dependency graphs, and JPMS module
+  boundaries as enforced coupling limits. Use when a small change fans out across packages,
+  when a package cycle appears, when deciding which package or module a class belongs in, or
+  when reviewing package architecture. Principle framing lives in java-solid; inverting a
+  specific dependency edge in java-dependency-inversion.
+---
+
+# Java Cohesion and Coupling
+
+## Purpose
+
+Coupling decides the blast radius of a change; cohesion decides whether a package
+is one thing or several sharing a directory. This skill turns both into package-level
+review work on the _real_ dependency graph. The failure modes it exists to prevent:
+restructuring packages by aesthetics or by metric thresholds, and filing findings
+from numbers alone without an observed cost or explicit boundary requirement.
+
+For a review, deliver findings and justified corrections; apply code changes only when the
+request includes implementation. Choosing package boundaries does not itself authorize a
+module migration or a public API break.
+
+## Workflow
+
+Inspect compiler release/toolchains, resolved dependencies, production artifacts, module
+descriptors and supported launch configuration first. References use JDK 25; establish the
+project's target separately from its build and deployment evidence. If the target is unknown,
+state that gap and keep version-sensitive recommendations conditional. JPMS requires Java 9+,
+and the example's `List.copyOf` requires Java 10+. Use a compatible analyzer and the target versions; do not
+introduce modules, upgrade Java or add tools as an incidental cleanup.
+Reuse current scoped graphs and accepted constraints. Ask only for missing ownership,
+consumer or policy information that could change the decision; a small edge review need not
+inventory the whole application.
+
+1. **Build the real graph.** `jdeps -verbose:class -filter:none` over the compiled classes, plus
+   the `requires` edges under JPMS. Bytecode references are a static dependency projection;
+   source-only annotations can disappear, and constant inlining can erase field-level usage
+   even when a class edge remains.
+   Imports can be unused and miss reflection, services, resources, schemas and shared
+   infrastructure. The architecture diagram remains a hypothesis, and runtime/semantic
+   edges need separate evidence.
+2. **Find strongly connected components first.** A package cycle prevents a topological ordering
+   of those packages, but they can compile together in one artifact. Separate build/module
+   constraints and migration costs require their own evidence; a cycle does not prove lockstep
+   releases or changes. Treat the component as one candidate, identify its actual edges, and
+   break it when the benefit exceeds compatibility and ownership costs.
+3. **Classify the suspicious edges.** What kind of coupling does each carry —
+   content, common, control, stamp, data? The kind informs the correction.
+4. **Choose a proportionate response.** Retain an adequate boundary or prevent new forbidden
+   edges when that meets the objective. For a harmful edge, consider moving a misplaced class or inverting the dependency
+   (that mechanic is the java-dependency-inversion skill), or merging packages that always change
+   together and were never independently releasable concepts. Edge count alone does not choose.
+5. **Corroborate with metrics.** Afferent/efferent
+   counts and instability support a case built from the graph and the change
+   history; a metric can direct investigation but cannot establish a defect by itself.
+6. **Verify.** Recompute affected static and declared graphs, exercise relevant runtime/service-loading paths, and
+   confirm the motivating change or policy is easier to enforce. Inversion may add an interface
+   edge while removing the harmful concrete edge, so "fewer packages" is not the universal test.
+
+## Rules
+
+- Depend in the direction of stability. An expensive edge can run
+  from a widely-depended-on contract into a structurally unstable package. Martin's
+  instability metric describes dependency shape, not empirical volatility; corroborate it
+  with change history and contract compatibility before calling the target volatile.
+- Repeated changes required by the same rule or contract are stronger cohesion evidence than
+  conceptual similarity. Inspect representative diffs and their reasons: formatting, generated
+  output and batched releases can make unrelated classes change together. Balance verified
+  common closure with reuse, ownership, release and dependency direction. Classes that merely share a noun do not
+  automatically belong together — `util`, `common` and `helpers` often group by category and
+  accrete dependants from everywhere.
+- A package's exported surface is its coupling budget. Under JPMS, an unexported
+  package is not accessible to ordinary code in other modules. `exports`, qualified exports,
+  `opens`, services, reflection flags and command-line `--add-exports/--add-opens` create
+  distinct edges, so unexported is strong encapsulation under the supported launch contract,
+  not metaphysical isolation. The module system rejects cyclic `requires`.
+- Package-name hierarchy grants no access: `shop.stock.internal` is a different package from
+  `shop.stock`, and exporting or opening the latter does not include the former. Before a move,
+  check package-private and protected access and the exact module directives. Do not widen
+  visibility merely to make the relocation compile; reconsider the boundary or an intentional
+  narrow API. See the relocation checks in `references/dependency-graphs.md`.
+- Temporal cohesion in lifecycle code — init, shutdown, migration ordering — is
+  unavoidable and not a finding. Flag it only when unrelated business logic hides
+  inside the lifecycle sequence.
+- A stateless leaf utility can be highly cohesive (`Hex`, one numerical transform) or a logical
+  junk drawer. Judge whether its functions change for one reason. It becomes suspicious when
+  unrelated domain vocabulary, mutable state or dependencies accumulate.
+- Metrics are evidence, never verdicts. A threshold ("Ce is too high") can open an
+  investigation; a finding needs a violated boundary, credible failure/change cost, or an
+  explicit preventive architecture objective.
+
+## Deliverable and completion
+
+For each finding, report the actual edge and artifact/command that exposes it, observed
+change cost or violated policy, proposed move and compatibility checks. If compiled artifacts,
+dependencies or history are unavailable, label the graph incomplete and the migration benefit
+conditional; do not claim an absent edge or measured improvement from source inspection alone.
+Stop when the scoped boundary decision and affected contracts are supported, or name the
+specific evidence or migration work still missing. Keeping the current structure is a valid result.
+
+For dependency inversion, pass the observed edge, contract owner and caller constraints to
+java-dependency-inversion; expect a justified port and wiring decision. For a published move,
+pass old signatures, consumers and release constraints to java-api-design; expect a compatibility
+plan. If unavailable, state those contracts and checks locally and keep unverified migration
+claims conditional.
+
+## References
+
+- [Coupling and cohesion taxonomy](references/taxonomy.md) — each type translated
+  to what it looks like in Java, with detection heuristics and false positives.
+  Read when classifying an edge or judging a package.
+- [Reading the dependency graph](references/dependency-graphs.md) — cycle-breaking
+  and edge selection, with a worked package-level example. Read when working a
+  real graph.
+- [Metrics and their limits](references/metrics-and-limits.md) — Ca, Ce,
+  instability, interpreting change history, what they can and cannot see, and when not to apply
+  this skill at all. Read before citing a metric or co-change evidence in a finding.

@@ -1,0 +1,96 @@
+---
+name: artur-release
+description: Run a production release of AI Workflow to the Arthur tenant (Blazity/ai-workflow-arthur) end to end - prepare notes, sync snapshot, validate, deploy, publish tag. Use when asked to "release to Arthur", "zrob release na arthura", ship a new Artur version, or debug a failing Artur release workflow.
+---
+
+# Artur release playbook
+
+> **The Arthur pilot ended on 2026-09-22 and no tenant release is planned** ([docs/plans/2026-09-18-integrations.md](../../../docs/plans/2026-09-18-integrations.md), row R1). Do not dispatch any release workflow without the owner's explicit decision. `integrations/arthur` (the tracing provider) stays in the product; only the tenant release is gone. The procedure below is kept for that decision.
+
+Releases AI Workflow from `Blazity/ai-workflow` (source) to `Blazity/ai-workflow-arthur` (client deployment repo). Everything is automated by four GitHub Actions workflows; the human (Filip) makes exactly two decisions, each of which is an approval plus a merge.
+
+## Authority and references
+
+This skill documents the release procedure; it does not grant authority. Before any dispatch, merge, deployment, rollback, production change, or Jira update, use the authority rules in [docs/delivery-gates.md](../../../docs/delivery-gates.md) and obtain explicit maintainer approval for that action.
+
+The authoritative Artur documents are [the release contract](../../../docs/releases/artur/README.md), [the upgrade preflight](../../../docs/releases/artur/upgrade-preflight.md), [the rehearsal procedure](../../../docs/releases/artur/rehearsals/README.md), and [the delivery gates](../../../docs/delivery-gates.md).
+
+## How the pipeline works
+
+1. **Prepare Artur Release** (`prepare-artur-release.yml`, source repo, manual dispatch): generates `docs/releases/artur/<version>.md` from the commit range and opens a docs-only PR authored by the GitHub App.
+2. Merging that notes PR (with a formal GitHub **Approve**) triggers **Sync Approved Artur Release** (`sync-artur-release.yml`): builds a complete code snapshot at the pinned source SHA and opens a snapshot PR in the arthur repo, preserving arthur-owned `.github/` and `renovate.json`.
+3. **Validate Artur Release** runs on that PR (uses trusted scripts from the PR base). Drift guard blocks if arthur has application commits not present in source.
+4. Merging the snapshot PR deploys production via the GitHub-Vercel integration and triggers **Publish Artur Release**: waits for both Vercel deployments, smoke-tests production, then creates tag `artur-vX`, a GitHub Release with the shareable notes, and `release-manifest.json`.
+
+Versioning is calendar-based: `YYYY.MM.PATCH` (e.g. `2026.08.1`). The baseline for the next release resolves automatically from the newest `artur-v*` tag; `previous_ref` is only needed for a first release.
+
+## Standard release, step by step
+
+```bash
+# 1. Confirm scope: what merged into source main since the last release target
+git fetch origin main && git log <last-target-sha>..origin/main --oneline --first-parent
+
+# 2. Dry run (no branch/PR created; artifact only). Confirms the derived range.
+gh workflow run prepare-artur-release.yml --repo Blazity/ai-workflow \
+  -f version=<VERSION> -f dry_run=true
+# watch: gh run list/watch; then download artifact "artur-release-<VERSION>"
+# and check the frontmatter previousSourceCommit/targetSourceCommit.
+
+# 3. Real run - opens the notes PR (authored by the bot).
+gh workflow run prepare-artur-release.yml --repo Blazity/ai-workflow \
+  -f version=<VERSION> -f dry_run=false
+
+# 4. Improve the notes INSIDE that PR (see "Notes contract" below), push to its branch.
+
+# 5. Filip formally APPROVES the PR in GitHub UI and merges it (merge commit).
+#    Sync then runs automatically and opens the snapshot PR in ai-workflow-arthur.
+
+# 6. Check the snapshot PR: "Validate Artur release snapshot" must PASS and the
+#    body's Drift report must say "none". Vercel preview checks show as skipped
+#    (preview builds are intentionally disabled via Ignored Build Step).
+
+# 7. Filip merges the snapshot PR = production GO. Publish runs automatically.
+
+# 8. Verify (all must hold):
+curl -s -o /dev/null -w "%{http_code}" https://ai-workflow-arthur.vercel.app/health          # 200
+curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $CRON_SECRET" https://ai-workflow-arthur.vercel.app/cron/poll  # 200  <- proves env validation boots; /health alone does NOT (401 without the secret)
+curl -s -o /dev/null -w "%{http_code}" https://ai-workflow-arthur-dashboard.vercel.app/      # 3xx/200
+gh release view artur-v<VERSION> --repo Blazity/ai-workflow-arthur                            # tag + notes + manifest asset
+# manifest sourceCommit must equal the approved source SHA, destinationCommit the arthur merge SHA.
+
+# 9. Record the release in Jira (links to both PRs, run, tag, SHAs, smoke results).
+```
+
+## Notes contract (the validator is strict)
+
+The generated file has three machine-checked zones:
+
+- **Frontmatter** (`version`, `previousSourceCommit`, `targetSourceCommit`, `repository`): never touch.
+- **Shareable section** between `<!-- shareable:start/end -->`: exactly these headings in order: `# AI Workflow — <version>`, `## Highlights`, `## What's new`, `## Improvements and fixes`, `## Do you need to do anything?`, `## Known limitations`. `###` subheadings are allowed. Every line starting with `- ` MUST be immediately followed by `  <!-- sources: N[,N] -->` where each N is a non-internal PR from the scope list, and every non-internal scope PR must be covered by at least one bullet. Prose paragraphs need no sources - use prose for themes whose PRs the classifier marks internal.
+- **`## Exact release scope`**: generated by the classifier from PR titles (feat:/fix: prefixes). Categories MUST stay exactly as generated - `validate-source` recomputes them and fails on any mismatch. Do not re-categorize by hand.
+
+Other hard rules:
+- The notes PR must be authored by the bot (prepare does this) so Filip can approve it - GitHub forbids approving your own PR.
+- Edit notes ONLY inside the prepare PR before merge. After merge the content is frozen against the commit that added the file; post-merge edits require delete + re-add via a fresh approved PR (painful - avoid).
+- The em dash in `# AI Workflow — <version>` and in scope lines is required by the validator; leave it.
+
+## Failure modes seen in production (and their fixes)
+
+- **"Release-note pull request has no approved review"**: the notes PR was merged without a formal Approve. If the merged content is final (nothing else to change): approve the ALREADY-MERGED PR (`gh pr review <n> --approve` works post-merge as long as the approver is not the author) and re-dispatch sync with `-f version=<VERSION>` - no git surgery needed. Only when the content also has to change: delete the notes file from main in one commit, re-add it in a NEW bot-authored PR, approve, merge. Squash merges of the notes PR are fine - the validator accepts them.
+- **Worker production build fails on `drizzle-kit migrate`**: check for journal/bookkeeping divergence. Root cause pattern: a hotfix migration applied directly in the arthur repo records a DIFFERENT journal `when` than the same migration in source; drizzle compares only the newest `created_at`, so it skips older unapplied migrations and re-applies the hotfix. Repair = one-time SQL on the production DB (apply skipped migrations, INSERT their bookkeeping rows, UPDATE the hotfix row's created_at to the source journal value), then `vercel redeploy <failed-deployment-url>`. **Prevention: any hotfix migration shipped to arthur must copy the source journal entry 1:1 (same `when`).**
+- **Publish failed or needs a re-run**: it has `workflow_dispatch` with `before`/`after` inputs (base and merge SHA of the release push): `gh workflow run publish-artur-release.yml --repo Blazity/ai-workflow-arthur -f before=<base> -f after=<merge>`. Tag/observe/manifest all target `after`.
+- **`vercel redeploy` after a failed prod build**: rebuilds the same commit; on success Vercel also updates the commit status that publish's observe step polls.
+- **Env validation crashes the whole worker** (`FUNCTION_INVOCATION_FAILED` on most routes while `/health` still returns 200): a core variable in `apps/worker/src/infra/runtime-env.ts` is missing or malformed, or a retired variable is still set. An incomplete provider credential set does not crash the worker: the provider's card on the Integrations page reads Failing and names the missing value. Always curl `/cron/poll` after env changes plus redeploy, and check the Integrations cards - `/health` does not exercise env validation.
+- **Drift guard blocks sync**: arthur main has an application commit not in source. Never commit app code directly to arthur; backport to source first (patch-identical), or the guard must legitimately flag it.
+
+## Configuration reference (already in place)
+
+- GitHub App "Blazity AI-workflow" (ID 3632887, org-wide install) is the release bot; secrets `RELEASE_BOT_APP_ID`/`RELEASE_BOT_APP_PRIVATE_KEY` are repo-level in BOTH repos.
+- Source repo variable: `ARTUR_INITIAL_BASE_SHA` (only relevant before the first tag existed).
+- Arthur repo variables: `ARTUR_WORKER_URL`, `ARTUR_DASHBOARD_URL`.
+- Vercel: preview builds disabled on both arthur projects (`commandForIgnoringBuildStep: test "$VERCEL_ENV" != "production"`); worker build runs DB migrations against production Neon.
+- New feature switches default off. Change them on the Settings page; run-scoped changes take effect on the next run.
+
+## Division of responsibility
+
+Agent: prepare notes, verify every gate, and collect evidence. A maintainer grants and performs any dispatch, merge, deployment, rollback, production change, or Jira update required by the runbook.

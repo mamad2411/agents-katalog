@@ -1,0 +1,283 @@
+---
+name: tandem
+version: 41
+description: >
+  Use before the first tandem_* call in a session — including a lone status
+  check — or when the user asks about Tandem document editing or iterating on
+  text collaboratively. Covers being woken while idle so the user's comments
+  and chat reach you between turns, plus annotation strategy, editing
+  workflow, and tool usage patterns for the Tandem collaborative editor.
+---
+
+# Tandem — Collaborative Document Editor
+
+Tandem lets you annotate and edit documents alongside the user in real time. The user sees your changes in the editor; you interact via the tandem_* MCP tool suite.
+
+## Hard Rules
+
+These prevent the most common failures.
+
+1. **Resolve before mutating.** Call `tandem_resolveRange` (or `tandem_search`) to get offsets before calling `tandem_edit` or `tandem_comment`. Never compute offsets by counting characters in previously-read text — they go stale when the user edits, and they are not characters: offsets are **UTF-16 code units**, so every emoji or other non-BMP character in the document puts a hand-count off by one more, even on text you just read. An offset that lands between the two halves of a surrogate pair is refused with `INVALID_RANGE` and `details.reason: "surrogate"`. If a `tandem_resolveRange` result has `ambiguous: true` (`totalCount` > 1), its range is only the first or requested match: do not edit or comment on it until you have disambiguated with a longer string or an explicit `occurrence` and read the returned text in context. Matching is substring matching, so a short string can hit inside a longer string.
+2. **Pass `textSnapshot`.** Include the matched text as `textSnapshot` on mutations and annotations. If the text moved, the server returns `RANGE_MOVED` with relocated coordinates instead of corrupting the document. The one exception is a point insertion (`from === to`), which carries none — a zero-length range matches no text, so a `textSnapshot` there is refused with `INVALID_ARGUMENT`. Before reusing a *stored* annotation's `textSnapshot` as a range guard elsewhere, check `textSnapshotTruncated` — a truncated snapshot (capped at 200 chars) resolves a shorter span than the annotation actually covers.
+3. **Use `tandem_getTextContent` for document reads.** Use `getTextContent({ section: "Section Name" })` for targeted reads. The `section` parameter is case-insensitive.
+4. **`tandem_edit` cannot create paragraphs, and newline handling is format-dependent.** In Markdown, a newline in `newText` becomes a literal soft-wrapped break, not a paragraph break. In a plaintext-adapted document (`.txt`), a literal newline is refused with `INVALID_ARGUMENT`. For multi-paragraph changes, use multiple `tandem_edit` calls, or reach for `tandem_appendContent` (Markdown-only, appends at the document end) or `tandem_editList` (Markdown only, list-shape changes) when they fit.
+5. **Write each paragraph as one continuous line and let the editor's own soft-wrap handle display — don't insert a mid-paragraph line break.** Tandem soft-wraps prose to the pane width, so there's nothing to gain by hard-wrapping generated text. A manual line break in the middle of a paragraph is exactly the literal-character case Rule 4 above warns about: it reads as its own visual break in the editor, and in a plaintext-adapted document is the shape Rule 4's `INVALID_ARGUMENT` refusal exists to prevent. Paragraph *boundaries* are made the way Rule 4 says — a separate `tandem_edit` per paragraph, or `tandem_appendContent` — never with a `\n` inside `newText`.
+6. **Never edit a Tandem-open file with `Edit`/`Write` on your own initiative.** You already know what's open from `tandem_status`/`tandem_listDocuments` — read it once this session if you haven't, before editing any file on disk. An out-of-band edit bypasses Tandem's self-write suppression, so the watcher sees a genuine unexplained external change: if the session holds unsaved edits, `tandem_save` later answers `EXTERNAL_CONFLICT` (the user resolves it via the editor's Keep/Reload banner — `tandem_open({ force: true })` also clears it, but destructively: it throws away the session's unsaved edits and reloads from disk, and any annotation whose text the disk version changed or removed comes back degraded — so never call it on your own initiative, ask the user first); a clean session instead silently reloads from disk with annotations re-anchored, with no error at all. Treat every out-of-band edit as unsafe. This is a different scope from "Absence of the toolset means stop" below — that one covers a session with no `tandem_*` tools at all; this one covers a file that *is* open, with the real tools available.
+7. **A sub-agent must never call `tandem_checkInbox`.** In a multi-agent workflow (see [Multi-Model Workflow](https://github.com/bloknayrb/tandem/blob/master/docs/workflows.md#multi-model-workflow)), only the orchestrator polls. A sub-agent's poll no longer hides items from an orchestrator that has already polled — each caller's `cursor` is its own (only a `"start"` poll skips what another caller has already acknowledged) — but the sub-agent would be handed the same comments and chat and act on or answer them a second time, and its acknowledgement stamps the user's chat read. **The watch is orchestrator-only for the same reason** — see "Getting Woken While Idle".
+8. **A document can be read-only, and Word files don't open at all.** A document is read-only when it is an upload, carries an explicit `readOnly` flag, or has a format with no way back to disk — `.html` opens read-only for exactly that reason. When it is, `tandem_edit` returns `READ_ONLY` and annotations are the right surface. `tandem_save` on such a document answers `saved: false` with a `reason`; only the session is written. Word (`.docx`) files aren't supported in this version of Tandem: `tandem_open` refuses them with a message saying so. Pass that on, and suggest the user save a copy from Word as `.txt` to edit it, or as `.html` to review it read-only.
+
+## Workflow
+
+Standard workflow:
+
+1. `tandem_status` — check for already-open documents (sessions restore automatically) and read `mode` (see "Collaboration Mode"). Opening or creating one instead — `tandem_open`, or `tandem_scratchpad` for an ephemeral draft tab — reaches the same `wakeUrl` (see "Getting Woken While Idle"), so a task that starts by creating a document does not need a separate status call *to arm a watch*. It substitutes for nothing else in this step: neither response carries `mode`, and neither tells you what else is already open.
+2. `tandem_getOutline` — understand document structure
+3. `tandem_status({ text: "Working on [section]...", focusParagraph: N })` — show progress (use `index` from outline)
+4. `tandem_getTextContent({ section: "..." })` — read one section at a time
+5. Annotate or edit as needed (see annotation guide below) — **not before you know `mode`.** If no response this session has carried `mode`, call `tandem_checkInbox` now and read it from there.
+6. `tandem_checkInbox` — check for user messages and actions (orchestrator only in a multi-agent workflow)
+7. Repeat steps 3-6 for each section
+8. `tandem_save` — persist edits to disk when done
+
+## Authoring a New Document
+
+When you write a document wholesale (create the file on disk yourself, then open it in Tandem), pass `authoredBy: "claude"` to `tandem_open`:
+
+```
+tandem_open({ filePath: "/abs/path/draft.md", authoredBy: "claude" })
+```
+
+This attributes the document's text to Claude so the editor shows authorship correctly — otherwise a wholesale-written document looks unattributed, because authorship is normally stamped only by `tandem_edit`. The flag is idempotent (safe to re-pass on re-open) and only ever stamps Claude authorship — it never forges user attribution. Authorship is not durably persisted across server restarts, so if you re-open a document you created in an earlier session and want it re-attributed, pass `authoredBy: "claude"` again.
+
+## Annotation Guide
+
+Choose the right type for each finding:
+
+- **`tandem_comment`** — Observation or question. Use for any finding that needs explanation or a text replacement.
+- **`tandem_comment` with `suggestedText`** — Specific text replacement. **Prefer when you can provide replacement text** — the user gets one-click accept/reject. Cannot create new paragraphs. Pass replacement text as `suggestedText`; the comment text explains the reason.
+
+**The cards you may act on are the ones you wrote.** `tandem_editAnnotation` and `tandem_annotationReply` refuse a user-authored annotation with `NOT_OWNED` — the user's card is the user's text, and answering inside their thread is not your seat at it. Respond with `tandem_reply` (chat) or a fresh `tandem_comment` on the text you mean.
+
+**Accepting your own work is the user's decision, never yours.** `tandem_resolveAnnotation({ action: "accept" })` on your own annotation returns `ACCEPT_REFUSED`, as does accepting anything carrying `suggestedText` (an MCP accept flips a status and applies no text — only the user's accept in the editor writes the replacement). Accept on a user-authored comment with no `suggestedText` is permitted — but it records a decision on the user's own card, so do it only when they asked you to. What you *may* always do is **withdraw**: `action: "dismiss"` on your own annotation is how you take back a finding you no longer stand behind. Say so in chat when you do. A record you resolved is stamped `resolvedBy: "claude"` and is deliberately kept out of `userResponses`, so you will never read your own withdrawal back as the user agreeing with you.
+
+**Note annotations** (`type: "note"`) are user-personal — `tandem_checkInbox` does not surface them to you. Don't act on notes unless the user explicitly mentions one in chat. The user's highlights are theirs too; there is no tool for creating a highlight.
+
+**User comments.** When scanning `tandem_checkInbox` or `tandem_getAnnotations`, user-authored `type: "comment"` annotations are the ones you should respond to, in chat or with a comment of your own (see above). `tandem_annotationReply` is for continuing *your own* threads — it keeps the reply on the thread rather than only in chat — and besides any parent you did not write it also refuses a resolved, note (ADR-027), highlight or private (non-outbound) one; fall back to `tandem_reply` for those. A reply may also carry `suggestedText`: a refined replacement proposed over the **parent's** range — the user accepts it in the editor, and doing so supersedes the parent's original proposal.
+
+**Before responding, check whether you already did.** None of `tandem_reply`, `tandem_comment`, or `tandem_annotationReply` is idempotent — sending the same answer twice leaves two chat bubbles or two annotation cards saying the same thing, which the user sees. A chat acknowledgement followed by the result (see Collaboration Etiquette) is the expected pair, not a duplicate. Your own memory of the conversation is the primary check: if you recognize the comment's text, you have probably already answered it.
+
+`alreadyPushed: true` is a weak secondary hint, not a verdict. It means the server handed the item to a real-time consumer — not that the consumer's host showed it to you, and not that you saw it. It is also dropped once the event leaves the channel buffer, so its absence proves nothing either. Never skip a comment on the strength of this flag alone. To check for a prior *annotation* reply, read the thread via `tandem_getAnnotations`; a prior `tandem_reply` is a chat message and won't appear there.
+
+## Collaboration Mode
+
+Check `mode` from `tandem_status` or `tandem_checkInbox` and adapt:
+
+- **Tandem** (`"tandem"`, default) — Full collaboration. Annotate freely and react to selections and document changes.
+- **Solo** (`"solo"`) — The user wants to write undisturbed. Only respond when the user sends a chat message. Do not proactively annotate or react to document activity.
+
+**Knowing `mode` is a precondition for annotating, not a nicety.** `tandem_open` and `tandem_scratchpad` do not return it, so a session that began by opening or creating a document has not seen it yet — read it from a read-mode `tandem_status` or your first `tandem_checkInbox` before your first annotation or proactive reaction. Solo is enforced on what reaches *you*: the server holds the user's comments and replies until they switch back. It is **not** enforced on what you write — an annotation you create in Solo appears in the user's editor exactly as it would in Tandem, so the hold is yours to keep.
+
+## Reacting to Document Events
+
+Selections are **not** sent as standalone events. Instead, when the user sends a chat message, any buffered selection is attached as a `selection` field on the `chat:message` payload. This gives you context about what text the user was looking at when they wrote their message. When polling via `tandem_checkInbox`, the most recent non-empty selection shows up under `activity.selectedText` (including one made by clicking an annotation card or chat anchor); it is not cleared when focus moves to chat. `activity.selectionAt` is when the user last made that selection; a remote edit that shifts the selected span **or changes its length** updates the offsets and `selectedText` without re-stamping the time. If the text at that selection has changed since the user made it — for instance you edited a document in a background tab — `selectedText` and `selectionAt` are `null` rather than whatever now sits at the old offsets. Use `tandem_reply` for any document-context reaction (chat messages, question annotations); reserve terminal output for non-document work the user explicitly requests. In Solo mode, hold reactions until the user sends a chat message.
+
+## Collaboration Etiquette
+
+- Check `tandem_getActivity()` before annotating near the user's cursor. If `isTyping` is true, wait for typing to stop before annotating that area. `cursor` is a flat text offset (UTF-16 code units), the same system as annotation ranges — only a document change triggers a write, and the last one publishes wherever the caret is by then, so treat it as a proximity hint, never as a range endpoint for `tandem_edit` or `tandem_comment`.
+- Use `tandem_status({ text: "..." })` to show what you're working on — the user may see it in the editor status bar (it is hidden while Tandem's own launched Claude is running, because Tandem can't tell which session set it).
+- **Call `tandem_checkInbox` every 2-3 tool calls** (orchestrator only in a multi-agent workflow), not just at the end of a task. You cannot tell from your side whether real-time push is reaching you — the channel is often not connected, and Tandem can only tell you when *nothing at all* is subscribed, not whether the thing that is subscribed reaches you — so steady polling is the reliable path, always. **Always pass back the `cursor` your previous poll returned** (`"start"` on your first poll this session), unchanged — never invent or edit one. Passing it acknowledges what that poll returned; until you do, those items come back on every poll, so a lost response loses nothing. It's cheap: with the cursor, repeat polls return only what you have not acknowledged, so frequent calls don't double-report. An item that also went out as a real-time push carries `alreadyPushed: true` and still appears — the server can't confirm a push reached you, so it shows you everything rather than risk dropping it. See "User comments" above before acting on a flagged item twice. When in doubt, poll — unless Tandem is refusing its AI features (a licence refusal; see Error Recovery).
+- If `tandem_checkInbox` returns `localModelAnswersChat: true`, the user has set Tandem's chat to be answered by a local model on their computer and Tandem hands you nothing meanwhile: do what its status line says (finish the step you are on, take no new work from Tandem, keep any wake watch running); a later poll stops carrying it once chat is answered by Claude again.
+- A comment or reply marked `byLocalModel: true` in `tandem_getAnnotations` was written by the user's local model, not by you earlier; the mark is a hint, not proof.
+- Reply to chat messages with `tandem_reply`, not annotations.
+- **Acknowledge a chat request before doing the work.** The user sees nothing in chat until you reply, and the work can take minutes. So when a chat message asks for work, first send a one-line `tandem_reply` saying what you are about to do, with `replyTo` set to that message's `id` (a channel event's `message_id`) and `inProgress: true` — the editor then shows the user it is in progress. When you finish, reply again with the result, same `replyTo`, no `inProgress`. If several messages arrived together, use the latest one's `id`. If a single reply fully answers the message, just answer it (no `inProgress`).
+
+## Getting Woken While Idle
+
+Polling is the reliable path and stays the authority on what you see. But between your turns nothing polls, so a comment the user leaves while you sit idle waits until your next turn — which may never come.
+
+**In a multi-agent workflow, only the orchestrator arms a watch.** A sub-agent must not: Hard Rule 7 forbids it the `tandem_checkInbox` call a wake exists to trigger, so its watch could only wake it into a poll that hands it the orchestrator's items. Everything below is addressed to the session that polls.
+
+In a **hand-started session**, arm one watch on the **first** `tandem_*` response that carries a `wakeUrl`. Read `wakeUrl` from that response — read-mode `tandem_status`, `tandem_open` and `tandem_scratchpad` all return it — and if your host offers a `Monitor` tool, arm then and there. If none of your first few Tandem calls returned one, make a single read-mode `tandem_status` call to fetch it; one such call, not one per turn. **Arm it at most once per session on your own, never keep more than one watch live at a time, and re-arm only as "Re-arming" below allows — a later response carrying `wakeUrl` is not a second invitation. Do not use Tandem's process-global subscriber count to decide whether this session is covered.** Other sessions and inert channel shims appear in that count, and the plugin monitor triggered by this skill can attach after your first Tandem call, so the count is stale by construction.
+
+**How to tell which you are.** A session Tandem launched is told so in the turn that started it, and told again on every wake: that turn says Tandem is already waking you directly and that you must not arm a watch. If any turn in this conversation says that, you are not hand-started — do not arm. If you can see the start of this conversation and nothing says it, you are hand-started. **If you cannot see the start — it was compacted or summarised away — do not arm.** Absence proves nothing there: the turn that would have told you is exactly what a compaction drops, and it is also where your own record of having already armed went. A session that has run long enough to compact passed this trigger's moment long ago, so declining costs it almost nothing: keep polling, and if the user asks you to watch, arm then — that request is the recovery.
+
+If the Monitor tool is absent or the attempt fails, say so once and stop trying. The tool is enabled per account, and on Bedrock, Vertex or Foundry, or with telemetry or nonessential traffic turned off, it also needs Claude Code 2.1.310 or later; Tandem's server cannot see whether you have it. On Windows, the built-in Monitor tool additionally requires Git Bash. The plugin monitor shares the same per-account feature gate (and the same version floor on those setups), so it cannot help when that gate is off. But the plugin monitor does not require Git Bash on Windows and can fall back to PowerShell, so it can help when Git Bash is the missing precondition. Tell the user that the channel shim is the setup that does not need Monitor (`tandem setup --apply --with-channel-shim`), then keep polling. Asking Claude to watch is recovery. Whenever the user asks, whether the first-use attempt was skipped or a watch has since ended, make the same attempt as "Re-arming" below describes; "stop trying" never outlasts a fresh request.
+
+**Read the URL from Tandem's own response, don't assume it.** `wakeUrl` is the live address of the wake stream, reported by the server that is running it, and comes back on read-mode `tandem_status`, `tandem_open` and `tandem_scratchpad`. It is usually `ws://127.0.0.1:3479/api/wake`, but the port is configurable and guessing it is a *silent* failure: you would open a socket to whatever unrelated service holds 3479 and sit there believing you were armed. If `wakeUrl` is absent, this Tandem has no wake transport and there is nothing to arm — keep polling.
+
+```
+Monitor({ ws: { url: <the wakeUrl Tandem returned> }, description: "Tandem wake", timeout_ms: 1800000 })
+```
+
+Use exactly that `description`. Every event from this watch carries it as a label (`Monitor event: "Tandem wake"`), and that label is how you tell this watch apart from any other monitor. `timeout_ms: 1800000` (30 minutes) is the longest deadline an interactive session allows. If you were started with a single prompt (`claude -p`), watches cap at 10 minutes, so use `timeout_ms: 600000`. No watch lasts forever any more.
+
+**Re-arming.** The bound is one live watch at a time. Exactly two things let you arm again after your first arm:
+
+1. **An expiry notice for your watch.** Claude Code ends every watch at its deadline and sends one final event for it. **An ordinary wake carries the same `Tandem wake` label, so only an event whose text says `[Monitor expired …]` is an expiry.** When an expiry names your `Tandem wake` watch, arm it again with the same call. The new watch replaces the one that expired, so you still have one. An expiry notice overrides "if you cannot see the start, do not arm", because only a session that armed a watch receives one.
+2. **The user asking you to watch.** This is how a watch comes back after a Tandem restart closed the socket, or after a compaction. You cannot always tell whether an older watch is still live, so do not try to. Arm, and if every wake then arrives twice, the stand-down below removes the extra one.
+
+Either way, re-read `wakeUrl` with one read-mode `tandem_status` if it is not in view, or if Tandem restarted since you last read it. Guessing it is the silent failure described above.
+
+Nothing else is a reason to arm again:
+- a wake
+- a socket close (`[WebSocket closed: …]`, which is what a Tandem restart looks like)
+- a failed arm
+- an event from any other monitor, including the Tandem plugin's own
+
+After a socket close, say once that the watch ended and keep polling.
+
+**A close whose text carries `LICENSE_REQUIRED` is Tandem turning its AI features off,** not a restart. Say once that the watch ended for that reason and that Tandem's **Settings → License** says why; the close does not say which case it is, so do not guess. Poll as Error Recovery says for a licence refusal, not every 2-3 calls. It is not a reason to arm again. If the user then asks you to watch, make one read-mode `tandem_status` first: if it is refused, relay that instead of arming; if it succeeds, arm as usual.
+
+Two more limits:
+- **A turn saying Tandem launched you or wakes you directly wins.** If one is in view, do not re-arm. Stand down as below.
+- **If the re-arm itself fails, say so once and stop trying.** Keep polling.
+
+Before you arm, know these:
+
+- **Do not arm one if Tandem launched you.** A launcher-spawned session is already woken directly on its input, and the wake turn says so explicitly. A second watch double-wakes every message. This is the same test as "How to tell which you are" above, restated where you are about to act on it.
+- **A wake tells you *that* something happened, never *what*.** Frames carry an id, a type and a timestamp — no message text, by design. Always call `tandem_checkInbox` to find out what actually arrived. Answering from the notification is how the same item gets replied to twice: the inbox never marks it seen, so it comes back.
+- **Wakes are best-effort and can be dropped.** A burst of activity is rate-limited by the host, so some notifications never arrive even though every event reached the server. This is exactly why the point above matters — the inbox has all of them; the wake stream may not. Keep polling every 2-3 tool calls regardless (orchestrator only in a multi-agent workflow), except while Tandem is refusing its AI features (see Error Recovery).
+- **If every wake arrives twice, you are the second consumer — stand down.** A subscriber count of zero at the moment you check is not a promise it stays zero. If the user has the Tandem plugin installed, dispatching this skill is what starts its monitor, and that takes some seconds to connect — so a count you read in your first tool call can be stale by the time your watch is open. Nothing on Tandem's side can tell the two apart; doubled wakes are the signal. Stop your watch with `TaskStop` and keep polling, rather than leaving both running. If both are your own `Tandem wake` watches, stop one of them: the older if you can identify it, otherwise either one. Never re-arm, on your own initiative, a watch you stood down; only the user asking you to watch brings one back. No item is lost either way: the inbox de-duplicates, so the cost is a wasted turn, not a duplicate reply.
+
+- **A later turn telling you Tandem wakes you directly retracts your watch.** If you armed one and a turn then arrives saying Tandem is already waking you directly and not to arm, that turn is right and your watch is the duplicate — stop it with `TaskStop` and say so. The one-live-watch bound is about never running two at once; it never bars you from standing one down. A watch retracted this way is never re-armed, not even when asked: a launched session is already woken on its input.
+
+If `ws` is unavailable, the equivalent stream is `GET /api/events?filter=wake` on the same host and port as `wakeUrl` (so `ws://127.0.0.1:3479/api/wake` → `http://127.0.0.1:3479/api/events?filter=wake`), which is payload-free in the same way. It needs a shell with `curl` — fine on macOS and Linux, absent on a stock Windows install.
+
+## Review Workflow
+
+1. `tandem_open` the document.
+2. Annotate with findings (comment, comment with suggestedText) — after you know `mode`; in Solo, hold them and tell the user you are holding them.
+3. `tandem_exportAnnotations` — generate a review summary the user can share. `heldFromExport` counts withheld Solo-held *annotations* (absent, not zero, when none are withheld) but not withheld *replies* on an otherwise-visible comment — a floor, not a total.
+
+Then pick an ending, and say which one you're doing:
+
+- **Leave it to the user.** Annotations stay in the session and never reach the file.
+- **`tandem_save`** — writes your edits back to the file now (an open `.md` or `.txt` file you can edit also auto-saves periodically). On a read-only document it answers `saved: false` with a `reason` instead.
+
+Tandem snapshots the file's bytes before its first write each run, so a save is reversible: `tandem_restoreBackup` with no `backup` lists snapshots, and with `backup` set restores one in place (annotations preserved and re-anchored). If something else changed the file on disk meanwhile, the save is refused and a conflict banner asks the user to keep or reload — `tandem_save` reports that instead of claiming a save that didn't happen.
+
+## When the tandem_* Tools Are Absent
+
+**If this session has no `tandem_*` tools at all, do not work around it — read this.** Claude Code
+connects to Tandem's MCP server once, at session start, so the whole toolset is missing whenever
+that connection was not made. There is no failing tool call to read, because there is no tool.
+There may still be a failure reported for the Tandem server itself, and that is worth one look.
+
+**Four causes, and they take different fixes.** Read the server's failure first (below the hard
+rule). Without a licence refusal or a missing Node.js, step 2 is almost always the right one, and
+step 3 tells you when it was not, without guessing.
+
+**1. Do not edit the target file by any other means.** Not `Edit`, not `Write`, not "I'll just make
+the change directly," and do not offer to. The user asked for their document in Tandem: an edit
+made outside it is invisible in the editor, unreviewable, and looks like success. **Absence of the
+toolset means stop.** This holds even when the file is right there and the change is trivial.
+
+**First, read the failure Claude Code reports for the Tandem server.** If it carries the code
+`-32003` (Claude Code lists it as `<server name> (-32003): "…"`, for example `tandem (-32003): "…"`),
+or its message begins with one of the two sentences quoted under "Licence refusal" below, Tandem *is*
+running and has turned its AI features off. Skip steps 2 and 3 and follow "Licence refusal".
+
+**If that failure names `npx` (`command not found`, `is not recognized`, `ENOENT`, or exit code
+`127`), or a notice in this session says the Tandem plugin's monitor failed with exit 127, or this
+skill was loaded from the Tandem plugin (its name is `tandem:tandem`) and the failure reads `Failed
+to spawn process: No such file or directory`,** Tandem may well be running: the Tandem plugin starts
+through `npx` (Tandem's own setup never does), and Claude Code could not find Node.js. Skip steps 2
+and 3 and say:
+
+> Claude Code couldn't start the Tandem plugin because Node.js isn't on the PATH it was started
+> with. Install Node.js 22.12.0 or newer, then restart Claude Code, starting `claude` from a
+> terminal rather than a desktop icon. If you use only the Tandem desktop app, you can instead run
+> `claude plugin uninstall tandem@tandem-editor`, connect through Tandem's **Settings → AI
+> Assistant** (it needs no separate Node.js), and restart Claude Code.
+
+A `-32000` saying Tandem's upstream is unreachable is the opposite case: the plugin started and
+Tandem did not answer. That is step 2.
+
+Anything else, or no message at all: step 2. Claude Code often shows only a line saying it skipped
+the connection because of a recent cached failure, which could be either cause. **If this skill was
+loaded from the Tandem plugin (its name is `tandem:tandem`) and that is all you have,** give step 2's
+message and add one sentence: "If Tandem is already running, the plugin itself may not have
+started: it needs Node.js 22.12.0 or newer on the PATH Claude Code was started with." If running
+`/mcp` then reports `-32003`, follow "Licence refusal".
+
+**2. Tandem is not running (the common cause). Tell the user, in these terms:**
+
+> Tandem server not running. Start the desktop app or run `tandem start`, then run `/mcp` to
+> reconnect this session.
+
+Say all three parts. Naming Tandem without naming the remedy leaves the user guessing, and the
+remedy has a second half people miss: **launching Tandem does not repair a session already
+running.** Connection state is fixed at session start, so `/mcp` is required.
+
+**3. If the tools are still absent after that, Tandem was never configured for this client.** One
+exception first: if this skill was loaded from the Tandem plugin (its name is `tandem:tandem`) and
+Tandem is running, the plugin *is* the configuration and it did not start. Say that the plugin starts
+through `npx`, so Node.js 22.12.0 or newer must be on the PATH Claude Code was started with and npm
+must be able to reach its registry; offer the desktop-app alternative from the Node.js message above,
+and do not suggest `tandem setup --apply`. Otherwise: the skill installs on any `tandem setup --apply`, including runs that wrote no MCP config at all, so it
+can be loaded in a session whose `~/.claude.json` has no `mcpServers.tandem` entry to resolve. Step
+2 cannot fix that — there is nothing to reconnect to. Say:
+
+> Tandem isn't set up for Claude Code on this machine. Run `tandem setup --apply`, or open Tandem
+> and use **Settings → AI Assistant**, then restart Claude Code.
+
+**Licence refusal (`-32003`).** Tandem is running but has turned its AI features off. "The message"
+is the error text without the code (quoted at connection time, bare mid-session). At connection time Claude Code may cut it short with
+`…`; Tandem's **Settings → License** shows it in full. Relay it rather than paraphrasing, and act on
+how it begins:
+
+- **"Tandem is unlicensed, so its AI features are turned off"** → relay the message, which already says why and gives the purchase link. Add what it may leave out: the key is activated in Tandem's **Settings → License**, then, if the message asks to reconnect, tell the user to run `/mcp` in Claude Code. Never invent a purchase link.
+- **"Tandem's AI features are off because your license could not be verified"** → the user's license is installed but did not verify, and they most likely paid for it. Relay the message's own fix: a reissue, an update, or entering the key again in **Settings → License**. If the quote ends in `…`, part of its fix may be missing: say that **Settings → License** shows the whole message. If this was reported when the session connected, add that once it is fixed they run `/mcp` in Claude Code to reconnect. Never tell them to buy a license, and never say they lack a license.
+- **Any other message** → say only that Tandem's AI features are off and that Tandem's **Settings → License** says why. Do not guess which case it is.
+
+The hard rule above applies here too: do not edit the file another way, or offer to.
+
+Those four are the whole set. Do not invent a fifth — there is no per-chat connector toggle to
+enable and no MCP setting to hand-edit.
+
+**Do not go looking for the tools first.** No amount of `ToolSearch`, connector listing, or plugin
+listing will surface a server that never connected; it only adds latency before the user hears
+anything. One check is enough, and the answer is conclusive.
+
+When Tandem is reached through its stdio bridge (the Tandem plugin connects this way), a `-32000`
+error means the bridge lost Tandem or a request through it failed: treat it as step 2. A licence
+refusal stays `-32003`.
+
+## Error Recovery
+
+- **`RANGE_MOVED`** — Text shifted since you read it. The response includes `resolvedFrom`/`resolvedTo` — use those coordinates for your next call.
+- **`RANGE_GONE`** — The text was deleted. Re-read the section with `tandem_getTextContent` and re-assess.
+- **`INVALID_RANGE`** — The range was refused. Read `details.reason` when it is present: `out-of-bounds` (negative, or past the end — `to === length` is fine), `inverted` (`from > to`), `empty`, `surrogate` (the offset falls inside an emoji — move it to either side of the character), `non-integer`, or `unresolvable`. **`empty` does NOT mean "point ranges are refused"**: `tandem_edit({ from: n, to: n, newText: "X" })` inserts at `n` and is the only way to insert mid-document — `empty` there means you also passed an empty `newText`, which is a no-op. Two rules go with a point insertion: **omit `textSnapshot`** — the standing "always pass it" advice does not apply, because a zero-length range matches no text, so the snapshot always looks stale and the `RANGE_MOVED` retry would replace text you meant to keep; the call is refused with `INVALID_ARGUMENT`. And `from: 0` answers `INVALID_RANGE` with no `reason` on a document that starts with a heading, since offset 0 sits inside the `# ` prefix. For `tandem_comment`, `from === to` is `empty` on its own, since an annotation needs a span to anchor to. With **no** `reason` the cause is heading markup (e.g. `## `) or a pattern that was not found — target text content only, not the heading prefix. `tandem_resolveRange` gives you offsets that are correct by construction.
+- **`INVALID_ARGUMENT` with `details.reason: "ambiguous-document"`** — You called `tandem_resolveAnnotation`, `tandem_removeAnnotation`, `tandem_editAnnotation` or `tandem_annotationReply` without `documentId`, and that annotation id is in more than one open document (the same imported comment open in two files). Nothing was changed. Retry with the `documentId` of the item you meant — `details.documentIds` lists the candidates, and the inbox item you are acting on carries its own.
+- **`READ_ONLY`** — The document is read-only (an upload, an explicit `readOnly` flag, or an `.html`, which opens read-only because no save path exists for it), so `tandem_edit`, `tandem_editList`, `tandem_appendContent` and the other content mutators refuse it. Use annotations instead.
+- **`FORMAT_ERROR`** — Usually the operation doesn't apply to this document's format: `tandem_appendContent` on a non-Markdown document, or a `tandem_editList` op the format cannot carry. It is also the fallback for a failed `tandem_save` or `tandem_open` that no more specific code covers, so read `details.errorCode` when it is present: `VERIFY_BLOCKED` means the save was refused before touching the file, and its message says why.
+- **`INVALID_PATH`** — The path was refused: a relative path (pass an absolute one), a UNC path, or `tandem_restoreBackup` on an upload or scratchpad, which has no on-disk location.
+- **`EXTERNAL_CONFLICT`** — `tandem_save` refused because the file changed on disk since it was opened, usually from an out-of-band `Edit`/`Write` (see Hard Rule 6). The user resolves it via the editor's Keep/Reload banner; `tandem_open({ force: true })` also clears it, but destructively, and only on the user's say-so — never call it yourself to route around a conflict.
+- **A tool error that begins with one of the two sentences quoted under "Licence refusal", or that carries `-32003` or names `LICENSE_REQUIRED`** — Tandem stopped admitting its AI features mid-session, for a licence reason. Mid-session the error usually arrives as the bare message, with no code, so match on how it begins. Tell the user once, with the same three branches as "Licence refusal" above; when the error is JSON (a `tandem_reply` failing with `Reply failed (403): {…}`), branch on which of the two quoted sentences it contains. Do not edit the file another way, or offer to. While it lasts, suspend the every-2-3-calls inbox poll: make at most one read-mode `tandem_status` per user turn to see whether it has healed, and resume normal polling on the first success. Repeat the explanation only if the message changes. Once the user activates, the next call works again by itself within about a minute; no `/mcp` is needed unless the message asks you to reconnect. A line from Tandem's monitor (`Tandem: …`) or a `license_refused` channel event saying the same thing is this refusal too: tell the user once if you have not already. It is not a wake, and not a reason to poll or arm. If it carries neither quoted sentence (for example `Tandem: LICENSE_REQUIRED`), use the "any other message" branch.
+- **`NO_DOCUMENT`** — No document is open, or the `documentId` you passed doesn't match one. Check `tandem_listDocuments` for what's actually open, and open a file with `tandem_open` when the user's request needs one. The error is not a reason to open something the user didn't ask for. `tandem_checkInbox`, `tandem_reply` and `tandem_open` work with no document open, and the inbox still delivers chat then: when it reads no document (none open, or a `documentId` naming one that isn't open), its `summary` opens with a sentence saying so and the comment, reply and activity fields are empty. Tabs open with none active still returns their comments and replies; only `activity` is empty then. So a user can ask you to open a file before any tab exists.
+
+## Session Handoff
+
+When starting a new Claude session with Tandem already running:
+
+1. `tandem_status()` — check `openDocuments` array for restored sessions
+2. `tandem_listDocuments()` — see all open docs with details
+3. `tandem_getOutline()` — orient on the active document
+4. `tandem_getAnnotations()` — see what was already reviewed
+5. Continue where the previous session left off
+
+## Multi-Document
+
+When multiple documents are open, always pass `documentId` explicitly — omitting it targets the active document, which may have changed since your last call. **The one exception is `tandem_checkInbox`: call it with no `documentId`**, which polls every open document. Each comment, response and reply it returns carries its own `documentId`, and the summary names the files when any came from a document other than the active one — pass that item's `documentId` to whatever you call next, because a range from one document applied to another lands on the wrong text. Use `tandem_listDocuments` to see what's available. Cross-reference by reading both docs via `tandem_getTextContent({ documentId: "..." })` and annotating the relevant one.
+
+## Project Context Discovery
+
+Tandem auto-launches you in a single working directory (the user's home by default, or whatever they configured under Settings → AI Assistant → Claude working directory). The document the user opens may live elsewhere — a different project, a different repo. When you're working on a file outside your launch cwd:
+
+1. **Read `<docDir>/CLAUDE.md`** if it exists — it's the project's own playbook.
+2. **Walk up** the directory tree from `<docDir>` looking for `CLAUDE.md`, `.claude/`, `README.md`, or `package.json`/`Cargo.toml`/`pyproject.toml` to identify the project root.
+3. **Surface a relaunch nudge** when you detect project-scoped Claude tools you can't load mid-session:
+   - `.claude/skills/`, `.claude/agents/`, `.claude/hooks/`, or a `.mcp.json` you haven't loaded
+   - Tell the user: *"I see project-specific Claude tools at `<path>`. I can't load them in this session — open the command palette and run `Relaunch Claude in this folder` if you'd like me to pick them up."*
+
+The user is in control: relaunch ends the current conversation, so only suggest it when the project-scoped tools materially change what you can help with.

@@ -1,0 +1,174 @@
+---
+name: html-design-system
+description: >
+  Decides which design system to build (extend an existing design, adopt a reference
+  system like Carbon/Material/Fluent/Polaris, or create a new direction) and builds a
+  COMPLETE HTML/CSS design system: DTCG 2025.10 tokens with light/dark/high-contrast
+  themes and up to 539 components (controls, navigation, data, overlays, feedback, app
+  patterns, plus 18 opt-in scopes: marketing, AI chat, commerce, email, video/live/music/podcast, reading,
+  messaging, billing, analytics, ERP, calendar, maps, social, mobile), each with every state,
+  WCAG 2.2 AA accessibility and a docs page, plus
+  Storybook, DESIGN.md, llms.txt, MCP, npm packaging and CI. Ports it to mobile (SwiftUI,
+  Compose, Flutter, React Native) from a measured spec with snapshot checks, and builds
+  icon sets. Safe in existing projects. Use whenever the
+  user wants to create, audit, extend, finish or document a design system, UI kit,
+  component library, style guide, Storybook or design tokens, even if they only say
+  "build our components" or "we need consistent UI".
+license: MIT
+argument-hint: "[new|extend <path>|adopt <system>|audit <path>|resume] [core|standard|enterprise]"
+hooks:
+  PostToolUse:
+    - matcher: "Write|Edit|MultiEdit"
+      hooks:
+        - type: command
+          command: 'd="${CLAUDE_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/html-design-system}}"; [ -f "$d/scripts/ds.py" ] || exit 0; python3 "$d/scripts/ds.py" hook-post-edit'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'd="${CLAUDE_SKILL_DIR:-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/html-design-system}}"; [ -f "$d/scripts/ds.py" ] || exit 0; python3 "$d/scripts/ds.py" hook-stop'
+---
+
+# HTML Design System
+
+Build a complete, accessible, token-driven HTML/CSS design system — and first, decide *which* design system it should be.
+
+**Current state:** !`python3 "${CLAUDE_SKILL_DIR}/scripts/ds.py" status 2>/dev/null || echo "status unavailable — run ds status manually"`
+(If that line shows a raw command, your tool doesn't expand it: run `ds status` yourself.)
+
+**Arguments:** `$ARGUMENTS` (mode and/or tier; empty means: discover, then ask)
+
+## Why this skill is structured the way it is
+
+A design system fails in two ways: it looks wrong for the product (wrong *direction*), or it has holes — a missing invalid state, a modal with no focus return, a dark theme where muted text is illegible (incomplete *coverage*). The direction is a judgment call, so it gets an explicit decision phase with research companions. Coverage is mechanical, so it's enforced by a machine-readable manifest (`assets/manifest.json`, 539 components across 42 categories, 3 tiers and 19 scopes — `product` app UI always; opt-in `marketing`, `ai`, `commerce`, `email`, `playback`, `video`, `live`, `music`, `podcast`, `reading`, `messaging`, `billing`, `analytics`, `erp`, `calendar`, `maps`, `social`, `mobile`) plus scripts and hooks that tell you exactly what's missing. Trust the tools for coverage and spend your thinking on quality.
+
+## Toolkit
+
+`<skill-dir>` = the directory containing this SKILL.md (Claude Code exposes it as `${CLAUDE_SKILL_DIR}`). `ds` = the `ds` command (Homebrew or the installer put it on PATH). If `command -v ds` finds nothing, it can't run, or it rejects a command listed here (an older install), use `python3 <skill-dir>/scripts/ds.py` instead: same commands (Python 3.8+, stdlib only):
+
+| Command | Does |
+|---|---|
+| `ds detect [project]` | Read an existing project (stack, monorepo, styles, tokens, Storybook, CI, git state) and propose a safe location + sync targets. Writes nothing |
+| `ds audit [repo] [--url URL] [--json]` | Inventory colors, spacing, fonts, radii, shadows, custom properties, Tailwind usage and component files of a codebase **or a live site**; suggests DTCG primitives |
+| `ds init <dir> --name N --tier T --scopes product,… [--project P] [--adopt]` | Scaffold the system (tokens, themes, base CSS, docs chrome, page template, config, scope tokens) |
+| `ds sync <dir>` | Copy built CSS/tokens/js into the host project's own folders (runs after every build when configured) |
+| `ds migrate-colors <dir>` | Convert legacy hex-string color tokens to DTCG 2025.10 color objects |
+| `ds palette <hex> [--primary] [--brand B] --dir D` | OKLCH ramp (50–950) from one color; maps primary/link/focus/selected per theme by measured contrast; `--brand` writes a white-label override |
+| `ds scale type\|space --dir D` | Utopia fluid type and space scales as `clamp()` tokens |
+| `ds export <dir> --target …` | Tailwind v4, shadcn, Figma Variables (with aliases), iOS, Android, Compose, Flutter — `references/adapters.md` |
+| `ds icons <svg-dir> <dir> [--platforms all]` | Optimized SVG sprite (`currentColor`) + gallery + native icon components (SwiftUI, Compose, Flutter, RN) |
+| `ds icons-add <names> --set lucide\|tabler\|phosphor\|heroicons\|material-symbols --dir D` | Fetch icons from a library at a pinned version, record the license, rebuild |
+| `ds icons-style [svg-dir] --dir D` / `icons-lint <svg…> --dir D` | Measure the icon style (or derive it from tokens) → `icons/style.json`; check new or hand-drawn icons against it (`references/icons.md`) |
+| `ds mobile spec <dir>` | `dist/mobile/spec.json`: tokens per theme + measured web boxes + @3x reference PNGs (Playwright; `--tokens-only` without) |
+| `ds mobile scaffold <dir> --target swiftui,compose,flutter,react-native,maui,web-mobile\|all [--out app]` | Native theme + 10 core components + snapshot tests + `FIDELITY.md`, calibrated by the measurements |
+| `ds mobile verify <dir> --native <pngs>` / `mobile lint <src>` | Diff native snapshots against the web references (exit 1 on drift); catch raw colors, magic numbers, fixed fonts, hover, small targets, foreign icons (`references/mobile.md`) |
+| `ds build <dir>` | Tokens → `dist/tokens.css`; bundle `dist/ds.css`; regenerate `index.html` with coverage |
+| `ds check <dir> [--strict]` | Token validity, required groups/themes, contrast pairs in every theme, CSS/HTML lint |
+| `ds coverage <dir>` / `plan <dir>` | What's missing per component / ordered build queue grouped by file |
+| `ds phase <dir> <phase>` | Record phase: discover → decide → plan → build → done |
+| `ds serve <dir>` | Preview the docs site at http://127.0.0.1:8000 (no dependencies) |
+| `ds storybook <dir> [--renderer server]` | Standalone Storybook: one story per demo, token catalog, theme/density/RTL/motion toolbar, axe on every story. `--renderer server` = `@storybook/server`, so PHP/Python/Ruby/Java/.NET backends render their own templates (`ds serve` is the reference backend) |
+| `ds design-md <dir>` | `DESIGN.md` in Google's format (YAML token front matter + ordered sections; `npx @google/design.md lint`) + `ACCESSIBILITY.md` statement |
+| `ds llms <dir>` / `mcp <dir>` | `llms.txt` + Markdown per component + `dist/ds-index.json`; a stdlib MCP server so any agent can query components, tokens and DESIGN.md |
+| `ds email <dir>` | Render email templates with literal token values (light + dark) and check client safety |
+| `ds playwright <dir>` | Visual regression + axe + keyboard-focus suite for every page × theme (free, local) |
+| `ds taste [path] [--strict]` | Lint for the generic "AI look": purple gradients, glass, buzzwords, emoji UI, placeholder copy, vague CTAs (`references/taste.md`) |
+| `ds package <dir>` / `ci <dir> --provider github\|gitlab` | npm exports for CSS/tokens/js; pipeline: check → Storybook to Pages → idempotent publish |
+
+**Hooks (active while this skill is loaded):** after every Write/Edit of a file inside a design system (or a native file in an app scaffolded with `mobile scaffold --out`), `hook-post-edit` lints it, rebuilds tokens when token JSON changes, and tells you which demos/doc sections that page still lacks. When phase is `build`, `hook-stop` blocks ending the turn while components are incomplete (once per turn — if you genuinely need the user, set phase to `plan` first). To keep hooks on outside this skill, see the README's project-hook snippet.
+**No hooks in your tool** (Cursor, Copilot, Gemini, Codex, …)? Do their job by hand: run `ds check <dir>` after each file you finish, and `ds coverage <dir>` before you end any turn during the build phase — if it isn't complete, keep building.
+
+**Global flags:** `--dry-run` prints every planned write; `--force-all` is the only way to overwrite files you created or edited.
+
+## Working inside an existing project — don't break anything
+Every write goes through an ownership ledger (`<ds>/.ds-owned.json`): ds **never overwrites a file it didn't create, or one you edited after it created it**. Files that belong to the project (`package.json`, `.gitignore`, `.gitlab-ci.yml`, an existing `.storybook/`) are never edited — ds prints the exact snippet to merge instead. So:
+1. Run `ds detect <project>` first and follow its plan: the system lives in **one self-contained folder** at a non-conflicting location (`packages/design-system` in monorepos, `resources/design-system` in Laravel, …); `init` refuses an occupied folder unless `--adopt`.
+2. `ds init <location> --project <project> --dry-run`, review, then run it for real. It records the stack and `project.sync` targets (e.g. `resources/css/design-system/ds.css`, `static/design-system/`, `wwwroot/css/design-system/`).
+3. Apps consume the system the way their stack expects: `ds sync` copies built files into the app's own folders (after every build), or monorepo apps add the package as a workspace dependency. Existing Storybooks get the system via composition (`refs`), not by editing their config.
+4. If the project already has tokens/Tailwind/shadcn, that's **extend** mode — map them into tokens instead of inventing new ones.
+5. Recommend committing or stashing first when `detect` reports uncommitted changes, so every change is reviewable.
+
+## Workflow
+
+### Phase 0 — Discover (what exists?)
+1. Read the status line above. If a system exists, `resume`: run `ds plan <dir>` and jump to the matching phase. In an existing project, run `ds detect` (section above) before anything else.
+2. Look for design sources: existing CSS/Tailwind/theme files, a component folder, Figma URLs, brand guides.
+   - Run `ds audit <repo>` on any existing UI code, or `ds audit --url <site>` when the brand lives on a live website.
+   - For a sizable codebase, run **/graphify** on the UI directory to find shared theme/component hubs and duplicates.
+   - Figma link → Figma MCP `get_variable_defs` / `get_design_context`.
+3. Summarize findings in 5–10 lines: what exists, how consistent it is, what's duplicated.
+
+### Phase 1 — Decide (which design system?)
+Read `references/decision-guide.md`. Choose **extend**, **adopt** (name the reference system) or **new**; hybrids allowed.
+- Ask the user only what discovery couldn't answer (one AskUserQuestion round: product/users, assets, tier, extra targets). If the user asked for "complete", the tier is `enterprise`. Scopes (`--scopes product,…`): add `marketing` for a public website/landing pages/pricing/blog; `ai` for assistants, chat or agents; `commerce` for stores and checkout; `email` when the product sends email; `video`/`live`/`music`/`podcast` for media products (the base `playback` scope is added automatically; `live` also adds `video`); `reading` for books, comics and articles; `messaging` for person-to-person chat, channels, calls and a support widget; `billing` for in-app subscriptions and payments; `analytics` for reports and metrics; `erp` for back-office records; `calendar` for scheduling; `maps` for location; `social` for profiles and following; `mobile` for phone-first apps (swipe actions, action and draggable sheets, pull to refresh, swipe pages, pinch zoom). Landing pages of consumer scopes need `marketing` too.
+- For a new or re-skinned direction, invoke **/ui-ux-pro-max** and run its `--design-system` generator with the product context; deep-dive color/typography/ux domains as needed.
+- `ds init <project>/design-system --name "<Name>" --tier <tier>`, then fill `ds.config.json` `brief`, `direction` and an ADR in `decisions`. `ds phase <dir> decide`.
+
+### Phase 2 — Foundations (tokens)
+Read `references/tokens.md`. Colors are DTCG 2025.10 objects (`{colorSpace, components, hex}`; OKLCH and display-p3 render natively — legacy hex strings: `ds migrate-colors`). Generate the brand ramp with `ds palette <hex> --name <name> --dir <ds> --primary` (it maps primary/link/focus/selected per theme by measured contrast; repeat with `--brand` for white-label brands) and fluid scales with `ds scale type|space`. Replace the remaining neutral starter values in `tokens/primitive.json`, `semantic.json`, `themes/*.json` with the chosen direction (extend mode: map existing values; keep their old names in `$description`). Add contrast pairs for any new fg/bg combinations. Run `ds build` and `ds check` until there are no token errors. Also decide here: fonts (self-hosted, subsets — `references/packaging.md`), motion personality/bans/moments (`references/motion.md` → `ds.config.json → motion`), and the style allocation if the direction mixes looks. Wire the theme runtime (`js/theme.js`, no-flash snippet). Write the voice and tone decisions (`references/content.md`) into `principles`.
+
+### Phase 3 — Plan
+Run `ds plan <dir>` and present the plan with **/plan** (plan mode) for approval: direction summary, token highlights, tier and component count, build order, which categories go to subagents, extra targets (Tailwind/shadcn via /ui-styling, Figma). Building 100+ files without sign-off on direction is the expensive mistake to avoid. After approval: `ds phase <dir> build`.
+
+### Phase 4 — Build
+Read `references/component-contract.md` (Definition of Done) once, and the matching `references/components/<category>.md` before each category.
+1. **Reference implementation first, in the main thread:** `typography`, `stack`, `grid`, `icon`, then `button` and `form-field` + `text-field`, then `js/lib/` shared behaviors (roving focus, dismiss, position, hotkey, live region). These set conventions (class naming, demo layout, state-freezing classes, token usage, `init(root)` modules) that every other page copies.
+2. **Fan out the rest** by category with parallel subagents using `references/builder-brief.md` (one subagent per category; patterns last because they compose everything). If subagents aren't available, continue serially in plan order.
+3. Native first, minimal JS — apply **/ponytail** to *how* things are built, never to *what* is built: the manifest is the requirement. Component CSS goes in `@layer components`; dialogs and popovers open via invoker commands (`commandfor`/`command`); anchor positioning places floating surfaces (`references/css-architecture.md`).
+4. If `targets` includes Tailwind/shadcn, use **/ui-styling** to generate the adapter from the semantic tokens. For React/Vue/Svelte/Angular/Web Components adapters follow `component-contract.md` §7 (folder anatomy, layers, API conventions; test → component → story).
+Keep going until `ds coverage` is complete — hook messages tell you what's left after each edit.
+
+### Phase 5 — Verify
+- `ds check <dir> --strict` passes (no token errors, no lint, full coverage).
+- Accessibility: run /accesslint `audit_html` on pages when available; otherwise walk the contract §5 checklist for each category.
+- Visual: if a browser tool exists, screenshot representative pages in light/dark/high-contrast, compact density, RTL, and 320px width.
+- `ds taste <dir> --strict` (no generic AI look) and /ponytail-review over `css/` and `js/`.
+- Automated tests: `ds playwright <dir>` (visual regression + axe + keyboard focus for every page × theme), Storybook a11y on every story, unit tests for framework adapters (`references/testing.md`).
+
+### Phase 6 — Document & ship
+`ds build` (regenerates `index.html` with live coverage), `ds design-md` (the contract + `ACCESSIBILITY.md`), `ds llms` / `ds mcp` (so other agents can use the system), `ds storybook` (the independent workbench — `references/storybook.md`; for backend stacks pick strategy A server bridge, B web components, or C native tool such as Lookbook/Blast/Blazing Story per §4), `ds export` for Tailwind/shadcn/Figma/native targets (`references/adapters.md`), `ds icons` for the icon sprite (`icons-add` / `icons-style` / `icons-lint` per `references/icons.md`), and when it will be consumed by other repos `ds package` + `ds ci` (`references/packaging.md`). Write the system `README.md`, `CHANGELOG.md` (+ migration notes), `CONTRIBUTING.md` and principles per `references/governance.md`. **Mobile apps** (the brief lists iOS/Android/Flutter/React Native, or the user asks to port the system): follow `references/mobile.md`: never hand-translate CSS; `ds mobile spec` → `mobile scaffold --target …` → build the remaining components from `spec.json` → `mobile lint` → snapshot tests → `mobile verify` until it passes. Optionally run **/graphify** on the design system to produce a component↔token map for the docs. Then `ds phase <dir> done` and report: direction + rationale, tier, coverage numbers, check results, how to consume, and known gaps.
+
+## Output layout
+
+```
+design-system/
+├── ds.config.json            brief, direction, tier, phase, ADRs, contrast pairs
+├── tokens/                   primitive / semantic / component JSON, themes/, components/<file>.json
+├── dist/tokens.css, ds.css   generated — never edit
+├── css/base.css              reset + focus + sr-only + reduced motion
+├── css/components/*.css, css/patterns/*.css
+├── js/theme.js, js/lib/*.js  theme runtime + shared behaviors; js/<file>.js only where native HTML can't
+├── components/*.html, patterns/*.html   one docs page per manifest file
+├── docs/                     docs chrome + page template
+├── index.html                generated catalog with coverage
+├── DESIGN.md                 generated contract
+├── dist/tokens.json, tokens.scss   build-time tokens (media queries, JS)
+├── .storybook/, stories/, package.json   generated workbench (`ds storybook`)
+└── tools/ds/                 vendored ds for CI (`ds ci`)
+```
+
+## References (read when the phase calls for it)
+- `references/decision-guide.md` — extend vs adopt vs new; reference systems; brief questions; ADRs
+- `references/tokens.md` — tiers, DTCG format, naming, direction → tokens, themes/density/RTL, contrast
+- `references/component-contract.md` — Definition of Done: markup convention, state matrix, CSS rules, native-first JS, a11y, docs
+- `references/components/{foundations,actions,forms,navigation,data-display,overlays-feedback,patterns}.md` — per-component specs
+- `references/components/marketing.md` — marketing sections & pages (hero, pricing, testimonials, FAQ, footers, landing/pricing/blog/legal pages), performance, SEO and consent rules
+- `references/builder-brief.md` — subagent prompt for parallel category builds
+- `references/companion-skills.md` — when to use /graphify, /ui-ux-pro-max, /plan, /ponytail, /ui-styling and others, with fallbacks
+- `references/components/{ai,commerce,email}.md` — opt-in scopes (AI chat UI, commerce, HTML email) · `references/email-build.md`
+- `references/components/{playback,video,live,music,podcast,reading,messaging,billing,analytics,erp,calendar,maps,social,mobile}.md` — opt-in scopes (media playback, video, live, music, podcast, reading, messaging, billing, analytics, ERP, calendar, maps, social)
+- `references/css-architecture.md` — cascade layers, @scope, invoker commands, anchor positioning, progressive-enhancement matrix with Baseline status
+- `references/conventions.md` — elevation pairs, state layers, appearances, tone × variant, input widths, data-state hooks, density
+- `references/performance.md` — INP budget, content-visibility, font loading
+- `references/motion.md` — motion vocabulary, bans, reduced-motion (media query + `data-reduced-motion`)
+- `references/storybook.md` — docs site, generated Storybook, framework Storybooks (React/Vue/Svelte/Angular/WC), backend stacks (PHP, Python, Ruby, Java, .NET, Rust, Go, Elixir), alternatives
+- `references/testing.md` — Storybook a11y, Playwright + axe per page/theme, unit tests for adapters
+- `references/packaging.md` — npm exports, fonts, framework library builds, release/versioning
+- `references/governance.md` — DESIGN.md, accessibility law (EAA/EN 301 549, ADA Title II), versioning, migration guides, deprecation, adapters
+- `references/adapters.md` — Tailwind, shadcn, Figma, iOS/Android/Compose/Flutter exports, multi-brand
+- `references/mobile.md` — web → native migration without drift: fidelity contract, spec/scaffold/verify loop, conversion tables, anti-patterns
+- `references/icons.md` — icon sets, licenses, the style contract, drawing icons from scratch, native icon components
+- `references/content.md` — voice and tone, errors, empty states, CTAs, inclusive language, i18n, Intl formatting
+- `references/imagery.md` — images, dark-mode images, illustration, icons, dataviz colors, print
+- `references/taste.md` — the generic-AI-look rules and what to do instead
+- `examples/fleetline/` (repository only) — a complete core-tier system built with this skill, to copy conventions from
+- `assets/manifest.json` — the full component taxonomy (id, tier, file, required demos, ARIA pattern, native element)

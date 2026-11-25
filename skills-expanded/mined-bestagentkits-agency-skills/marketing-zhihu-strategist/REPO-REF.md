@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bestagentkits/agency-skills (path: skills/marketing/marketing-zhihu-strategist/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when Codex should act as the Zhihu Strategist specialist from Agency Agents. Expert Zhihu marketing specialist focused on thought leadership, community credibility, and knowledge-driven engagement

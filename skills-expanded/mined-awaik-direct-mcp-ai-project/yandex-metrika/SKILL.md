@@ -1,0 +1,154 @@
+---
+name: yandex-metrika
+description: "Анализировать Яндекс Метрику и AppMetrica и безопасно управлять целями через LidFly MCP v3. Использовать для счётчиков, целей, UTM, CPA, конверсий, страниц, сравнений с точным counter_id и без client_login, а также установок и событий мобильных приложений."
+---
+
+# Yandex Metrika
+
+Use for counters, goal reads and safe goal create/update/delete, traffic sources, UTM, Direct reports, CPA, conversion health, popular pages, ecommerce, and period comparisons.
+
+## Scope
+
+- For mobile applications (installs, app events, tracking partners, Direct app campaigns) read [appmetrica](references/appmetrica.md).
+- Metrika uses `counter_id`; it does not use `client_login`.
+- If counter/project is unclear, call `get_provider_context({ provider: "yandex", query? })` and use returned Metrika scope.
+- If a Пространство is selected, prefer counters linked as provider entities to `workspace_project_id`.
+- Do not rely on a local project brief or cached context as the only counter/goal source; verify live counters and goals when access exists.
+
+## Read Workflow
+
+1. `search_tools({ provider: "yandex", query: "metrika ..." })`.
+2. `get_tool_schema`.
+3. `call_tool` for `metrika_get_counters`, `metrika_get_counter`, `metrika_get_goals`, reports.
+4. Use explicit date ranges, attribution, dimensions, and goal ids. If the user does not choose attribution, pass `lastsign`; do not leave the model implicit.
+
+## Attribution Contract
+
+- LidFly's default for Metrika reports is `lastsign`. Every report answer must name the data source, attribution model, whether it was explicit or default, and whether it is single-device, cross-device, or automatic.
+- Supported Metrika values are `first`, `last`, `lastsign`, `last_yandex_direct_click`, `cross_device_first`, `cross_device_last`, `cross_device_last_significant`, `cross_device_last_yandex_direct_click`, and `automatic`.
+- Since 2026-06-25 Yandex resolves legacy `first` to `cross_device_first`, `lastsign` to `cross_device_last_significant`, and both Direct-click variants to `automatic`. Keep the requested key in the call and report the provider-effective model shown by the tool methodology; do not describe legacy `lastsign` as currently single-device.
+- Prefer parameterized dimensions and filters such as `ym:s:<attribution>TrafficSource`. Never introduce a hardcoded `last*` dimension when the tool can use `<attribution>`.
+- Raw reports preserve an explicitly supplied fixed legacy dimension or filter. Do not rewrite it. Read the returned methodology warning before interpreting a request that mixes fixed models or fixed expressions with `<attribution>`.
+- A `preset` is expanded by Yandex and is opaque to LidFly's expression analyzer. The tool still sends the selected/default attribution for parameterized preset dimensions, but its methodology warns that fixed attribution expressions inside the preset cannot be verified locally.
+- `TrafficSource='ad'` means all paid advertising traffic, not only Yandex Direct. Direct-specific dimensions can still be empty for traffic from other ad systems.
+- Metrika and Direct use separate attribution enums. Compare effective models using the server methodology, never copy enum keys across APIs. Current Direct models are FCCD, LC, LSCCD and AUTO. Legacy Direct FC/LSC/LYDC/LYDCCD are normalized by the tool with an explicit requested → sent notice. Metrika keeps its own compatibility contract. Direct has no direct analogue for Metrika cross_device_last. Source: https://yandex.ru/dev/direct/doc/ru/spec (checked 2026-09-26).
+- To compare with Direct, call the existing `get_custom_report` with the same dates, timezone, goals, revenue metric, and matching Direct attribution. Direct supports `Revenue`, `PurchaseRevenue`, `Profit`, `GoalsRoi`, purchase variants, and `LSCCD`. `Profit` stays aggregate even when `goals` is supplied; calculate goal-specific profit from that goal's `Revenue - Cost`. Purchase metrics use the separate `purchase_goals` filter, not `goals`. If a configured report omits a field, do not replace it with zero or claim the API cannot return revenue.
+
+## Existing saved segments
+
+For an existing segment, resolve the counter and connection first. Use `metrika_get_segments` for API-created segments, `metrika_find_segments` for a name search across verified API/UI candidates, and `metrika_get_segment` immediately when the ID is known. Read the real expression and source; a matching name alone is insufficient. If `expression_complete=false`, do not claim equivalent conditions.
+
+Honor `coverage`, `limitation_code` and `retryable`. An empty API-only list or partial discovery never authorizes creating a replacement. Narrow `query` after a search limit; resolve access errors without trying another account or browser cookies. Interface GET support depends on the provider; native agency discovery may require a login unavailable in Metrika scope, while exact list/get remain usable.
+
+A saved Metrika segment, an Audience segment and a Direct retargeting condition are different objects. Use only a safe `goal_id` returned by the tool for legacy Direct writes; do not convert an unsafe string ID to a number. `is_retargeting=0` alone does not prevent reuse. Counter membership does not prove availability in a particular Direct account: read its condition's IsAvailable/Scope and verify the final setting.
+
+Sources checked 2026-10-02: [API list](https://yandex.ru/dev/metrika/ru/management/openapi/segment/getSegmentsForCounter), [exact GET](https://yandex.ru/dev/metrika/ru/management/openapi/segment/getSegment), [Live4 candidates](https://yandex.ru/dev/direct/doc/dg-v4/ru/live/GetRetargetingGoals). Interface GET and unscoped managed-login responses were observed in the dated repository investigation; they are not universal provider guarantees.
+
+## Goal Workflow
+
+- Read one goal with `metrika_get_goal`; read the list with `metrika_get_goals`.
+- Goal writes are `metrika_create_goal`, `metrika_update_goal`, and `metrika_delete_goal`. Before a write, resolve the exact counter. Owners may write without a project; members need a selected or sole granted project. A selected project strictly limits access to linked counters. Then call `get_tool_schema` for the selected tool.
+- Create has 13 goal variants. Update accepts only a partial `changes` object, reads the full current goal internally, and preserves unspecified fields; do not reconstruct a whole goal from prose. For type-specific changes, pass `settings.type` matching the stored goal type.
+- Delete is destructive. State the exact counter, goal id, and current goal name before confirmation.
+- State the counter, goal name, type, type-specific conditions or steps, price/favorite fields, and broad effects such as “all files” before confirmation.
+- Execute only through `call_write_tool`. In built-in chat, the exact sealed ChangeSet is confirmed by the user's next text or its server-issued confirmation action. Do not generate confirmation buttons yourself. External MCP uses its existing explicit-confirmation workflow. Never claim success before the tool result.
+- If preflight returns `reconnect_required`, stop the write and ask the user to reconnect Yandex. Read tools remain available.
+- Treat `operation_id` and `outcome` as authoritative. `deduplicated=true` means the exact goal already existed and no POST was sent; `updated=false` means the requested values already matched and no PUT was sent.
+- After `unknown` or `ambiguous`, never repeat the same goal write. Call top-level `get_write_operation_status({ operation_id })`; if ambiguity remains, require manual verification.
+- Successful create/update results include `goal_id`; reread it with `metrika_get_goal` when subsequent work depends on the exact saved state. After delete, reread `metrika_get_goals` if later work depends on absence.
+
+## Analysis
+
+- Name goals as "цель Название (id)", not bare ids.
+- Separate total conversions from target lead/order goals.
+- Compare periods with the same dates, timezone, goals, attribution, revenue metric, and filters.
+- For Direct-linked analysis, include campaign ids and UTM where possible.
+- To decide whether Direct traffic belongs to the selected account, compare `DirectClickOrder` and `DirectBannerGroup` IDs against campaigns/groups actually read in that account, then inspect its tracking configuration and UTM values. A UTM string alone does not prove ownership; `TrafficSource=ad` also includes other paid platforms. Account for `lastsign` attribution and repeat visits when reconciling counts. Sources: https://yandex.ru/support/metrica/ru/general/direct, https://yandex.ru/support/direct/ru/statistics/url-tags (checked 2026-09-26). If the IDs cannot be verified in the connected scope, state that ownership is unconfirmed.
+
+## Workspace
+
+Save analytics snapshots, documents, or decisions only with resolved `workspace_project_id`. Memory writes for a counter linked to several projects require the exact selected project; personal provider writes by its owner do not.
+
+## Google Export
+
+When the user asks to export a Metrika report to Google Sheets or Google Docs, keep this skill for counter scope and report reads, then hand the verified Google write and reread to `$export-ad-reports`.
+
+The export handoff applies only when this host exposes the skill and a Google write connector. If either is unavailable, state the exact missing capability and return the requested report as a draft; do not claim a saved Google file or silently switch to Workspace.
+
+## Logs exports
+
+Owners may create personal Logs API exports without a project. Members need a selected or sole granted project and its linked counter. A selected project always restricts the counter scope. Personal exports belong only to their owner; do not share the one-time download capability URL. Project memory and knowledge operations still require a project.
+
+
+## Основная цель и реальные заявки
+
+Для отчётов о заявках/CPA используй подтверждённый числовой `primary_conversion_goal_id` из metadata точного проекта. Если его нет, один раз выясни, какая цель означает отправленную заявку, проверь ID через `metrika_get_goals` и предложи сохранить его в проект с сохранением остальных metadata. Открытие формы и другие микроцели не называй заявками. В Директе передавай `get_campaign_stats.goals=[primary_conversion_goal_id]`; агрегат без goals означает достижения всех целей, включая микроцели. Не добавляй микроцели в стратегию без явного согласия. Прогнозы сопровождай источником; без истории — «оценка без данных» и диапазон. Применение и сохранение подтверждай по результатам записи, а не по обещанию модели.
+
+## Единицы и сопоставимость отчётов (2026-10-27)
+
+`goal<ID>reaches` — срабатывания цели, `visits` — целевые визиты, `users` — уникальные целевые посетители, `converted<currency>Revenue` — доход, а не обращения. Отдельно установи бизнес-смысл цели и подтверждение качества обращения. Без выбранного проекта используй явно подтверждённое решение беседы; не создавай проект молча.
+
+`TrafficSource='ad'` охватывает рекламный трафик разных систем и кабинетов. Делить расход выбранного кабинета Директа на эти достижения и называть результат его CPA нельзя без совпадающего scope. Нужны точные ID кампаний/групп (DirectClickOrder/DirectOrder/DirectBannerGroup), проверка их принадлежности, одинаковые даты, атрибуция, цели и полнота. Наличие такого поля само по себе не подтверждает принадлежность всех строк.
+
+403 access_denied при раскрытии целей означает ограничение доступа текущего OAuth-аккаунта к каталогу; оно не доказывает поломку тега и не требует замены счётчика. Использование целей в Директе возможно без доступа к счётчику при разрешении владельца. Источники проверены через Bridge8 2026-10-27: [метрики](https://yandex.ru/dev/metrika/ru/stat/metrics/advertising/conversions), [ошибки API](https://yandex.ru/dev/metrika/ru/intro/errors), [оптимизация без доступа](https://yandex.ru/support/direct/ru/statistics/metrika#access-to-goals).
+
+## Проверка формы и цели по отдельным звеньям
+
+Диагностика фиксирует охват и пять независимых звеньев: конфигурация цели в API → отправка события браузером на точный счётчик → приём заявки сайтом/CRM → достижение цели после её создания → атрибуция к нужной кампании. Проверенный один маршрут формы не подтверждает остальные. Нулевой отчёт в день создания не доказывает поломку: прошлые события автоматически не становятся достижениями новой цели.
+
+`multi` — мультицель с логикой «хотя бы одно условие»; `step` — последовательная воронка. Если `conditions_complete=false`, API не раскрыл достаточные настройки: сверяй условия в интерфейсе Метрики или отдельные action-цели, не угадывай событие по названию. `multi` и `action` в одном визите могут описывать одно обращение. Автоцели клика по телефону/email/мессенджеру подтверждают клик, а не состоявшийся звонок или принятую заявку. Источники: https://yandex.ru/support/metrica/ru/general/multi, https://yandex.ru/dev/metrika/ru/management/openapi/goal/editGoal (проверено через Bridge8 27.10.2026; snapshot unverified).
+
+Для имени, цены и избранности существующей автоцели или `multi` используй `metrika_update_goal.changes` без `settings`: сервер сохраняет исходные условия. Создание или изменение условий `multi` не поддерживается. `verification` подтверждает только перечисленные checked_invariants; это не доказательство приёма заявки или рекламной атрибуции. Исторический receipt подтверждает действие на свою дату, даже если текущее состояние нужно перечитать.
+
+
+## Проверка конкретного события и продолжение диагностики
+
+Сначала используй `verification_hint` и `conditions_complete` в ответе цели, затем
+сверь время теста с `time_zone_name` счётчика. Пустой timezone означает неизвестно.
+
+| Тип цели | Следующее наблюдение |
+| --- | --- |
+| `url` | `?_ym_debug=2`, Console: `PageView` с нужным counter_id и URL из conditions; для виртуальной страницы проверь отправленный hit. |
+| `action` | Events/Console: `reachGoal` с идентификатором из conditions и нужным counter_id при реальной отправке формы. |
+| `call`, `conditional_call` | Журнал коллтрекинга: переданный звонок, counter_id, длительность и условия. 34 секунды по телефону клиента не доказывают длительность, переданную интеграцией. |
+| `phone`, `email`, `messenger` | Events: клик по нужному элементу. Звонок, доставленная заявка и достижение цели проверяются отдельно. |
+| Неполные conditions | Сверь внутренние условия в интерфейсе Метрики; не угадывай механизм по названию. |
+
+После теста зафиксируй отдельно: что сообщил пользователь о доставке заявки,
+время и часовой пояс, тип события, что подтвердили отладчик/интеграция, какие
+достижения показал отчёт. При уточнении факта обновляй прежний ключ, открытый
+вопрос не записывай как отрицательный факт. Конфигурацию можно переиспользовать
+в пределах допустимого кэша; явное «перепроверь» требует свежих данных отчёта.
+
+Если после ожидания одна цель получила достижение, а другие остались на нуле,
+назови неизвестное звено для каждой цели и конкретное следующее наблюдение с
+исполнителем. Одно достижение без совпадения времени/события/источника нельзя
+приписывать тесту. Для URL-цели даже при одном достижении назови проверку
+`PageView`, counter_id и URL в Console отладчика: агрегат сам по себе не
+подтверждает событие именно проверяемой формы. Ноль достижений не доказывает,
+что событие не отправлялось или не попало в Метрику: до наблюдения в отладчике
+или журнале интеграции это неизвестное звено, а не установленная поломка.
+Сохрани незавершённый план рекламы в brief/open_proposal и
+объясни, какое решение по рекламе возможно сейчас, а какое зависит от проверки.
+Не завершай диагностику одним предложением снова ждать и не создавай расписание
+без поручения пользователя.
+
+Источники проверены через Bridge8 31.10.2026 (индексированные snapshots unverified):
+[проверка целей](https://yandex.ru/support/metrica/ru/general/check-goal),
+[цели по звонкам](https://yandex.ru/support/metrica/ru/general/call-goal),
+[поля счётчика](https://yandex.ru/dev/metrika/ru/management/openapi/counter/counter).
+
+
+## Продолжение аналитики при недоступном отчёте (2026-11-05)
+
+Сохраняй предмет задачи: конкретную кампанию, даты, выбранную цель, атрибуцию и обещанные срезы. Уже разрешённые чтения продолжай без дополнительного согласования; согласие на чтение не разрешает запись. Если бизнес-цель ещё неизвестна, дай короткую техническую диагностику доступных данных и задай один вопрос о результате бизнеса. Не делай этот вопрос условием любого анализа.
+
+Если клиент предлагает скриншот или выгрузку после отказа API, перечисли параметры отчёта: видимый фильтр нужной кампании, согласованный период вокруг события (например, 03–17.10 для всплеска 10.10), дни, отдельно сеть и устройство по задаче, показы, клики, CTR, расход и CPC. Для конверсий укажи точную цель и атрибуцию; клик по телефону не равен состоявшемуся звонку. Скриншот локализует вклад срезов и метрик, но не гарантирует объяснение причины: изменения настроек требуют истории изменений или другого подтверждения.
+
+Неготовый Reports-ответ не содержит статистики: повтор проверяет тот же запрос после указанного интервала. После исчерпанного ожидания объясни, что не получено, предложи повтор позже или альтернативный источник, сохранив scope. Источник протокола ожидания: https://yandex.ru/dev/direct/doc/ru/mode (Bridge8, проверено 05.11.2026). Это методика анализа, не основание создавать проект, расписание или менять кампанию.
+
+### Проверка учёта обращений перед оценкой бюджета
+
+Сначала сопоставь клики Директа и визиты счётчика за один период. При разрыве в разы проверь дату создания (create_time в metrika_get_counters / metrika_get_counter) и код на посадочных (read_website.details.metrika_counter_ids, если краулер передал поле). Назови покрытие: счётчик видит N визитов при M кликах; это сопоставление агрегатов, не доказательство соответствия каждого визита клику. Октябрьское ограничение атрибуции не объясняет многократный недобор общего числа визитов в ноябре. Источник: https://yandex.ru/support/direct/ru/troubleshooting/stat; проверено 2026-11-19.
+
+Перед выводом «расход есть, заявок нет» сверь цепочку: `CounterIds` кампании → домен посадочной страницы → счётчик, которому принадлежат цели стратегии → подтверждённые обращения. Цель другого счётчика не называй отсутствующей метрикой. `read_website.details.metrika_counter_ids = null` означает, что краулер не передал сведения о теге, а не что тега нет. Звонок по прямому номеру без коллтрекинга или подменного номера может не попасть в Метрику; ноль целей не доказывает ноль обращений. Укажи, какое звено проверено, и какое требует проверки события или сверки с CRM/журналом звонков. Источники: https://yandex.ru/dev/metrika/ru/stat/metrics/advertising/conversions и https://yandex.ru/support/metrica/ru/general/call-goal; проверено 2026-11-17 (контракт ответа краулера — direct-mcp).

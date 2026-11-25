@@ -1,0 +1,34 @@
+---
+name: spec-audit-docs
+description: "Audits documentation claims against the code and classifies each mismatch as drift or violation. Read-only by default."
+argument-hint: "[doc path or directory]"
+agent: spec-docs-writer
+context: fork
+background: false
+allowed-tools: Read, Grep, Glob, Bash
+---
+
+# Docs Sync Check
+
+Docs that contradict code are worse than none - readers and agents act on them. Read-only by default.
+
+## Steps
+
+1. Scope: the argument; else the primary docs (README, the docs tree, rules, feature docs, spec claims).
+2. Extract verifiable present-tense claims: commands, paths, endpoints, config keys, versions, architecture statements ("X calls Y", "all writes go through Z").
+3. Verify each against the repo: the command exists in the manifest? the path exists? the route matches the definitions? the boundary holds in the imports?
+4. Classify every extracted claim: **verified** (the repo matches - no further evidence needed) / **drift** (code moved on - fix the doc) / **violation** (the doc states the rule, the code broke it - fix the code or escalate; never silently rewrite the rule to match the violation) / **ambiguous** (owner call).
+5. Report (`dev-working-with-people`) ordered by reader impact (broken setup instructions first): doc location, the claim, the actual state with evidence, classification, suggested fix.
+6. Doc-side fixes are the owner's call (`dev-working-with-people`): the report ends with them and a recommendation, and the caller asks; an invocation that already asks for them applies them. Code-side fixes go through the normal flow.
+
+## Verify
+
+- Every claim extracted in step 2 carries a classification, and every non-verified one carries evidence on both sides (doc line + repo state).
+
+## Scope / hand-off
+
+- Post-execution doc updates - `spec-execute` Phase D; decisions - `spec-decision`.
+
+## Constraints
+- Intentions and roadmap lines are not checkable claims - skip them.
+- Generated docs - report drift against the generator's input; regenerate, never hand-edit the output.

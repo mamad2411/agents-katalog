@@ -1,0 +1,128 @@
+---
+name: legado-book-source-generator
+description: Use when 用户要求为任意网站生成书源、生成阅读书源、分析小说站点、生成 Legado/阅读规则。强制触发词：书源、生成书源、帮我生成、book source、legado、阅读书源、小说站点分析。如果用户给出了一个 URL 并要求生成或分析，必须加载此 skill。
+---
+
+# Legado 书源生成
+
+这是工具箱模式。先初始化，再按当前问题选择工具；不要把流程当成必须机械执行的长状态机。
+
+```powershell
+node "<skill-dir>/scripts/bsg.mjs" init <url> [--cwd <输出目录>] [--target legacy-json|community-js]
+node "<skill-dir>/scripts/bsg.mjs" toolbox
+node "<skill-dir>/scripts/bsg.mjs" status --run <run-dir>
+```
+
+## 先读哪些 reference
+
+- 常规流程：读 `references/workflow.md`。
+- 站点观察 / site-facts：读 `references/site-inspection.md` 和 `references/assessment-template.md`。
+- 生成规则：读 `references/legado-json-structure.md`、`references/official-rule-pack.json`、`references/legado-source-behavior.md`。
+- 验证失败回修：读 `references/failure-diagnosis.md`、`references/validation-policy.md`、`references/validator-integration.md`。
+- Android、模拟器、登录态、WebView/WebJs、入口反爬复核：必须先读 `references/android-probe-guide.md` 和 `references/policies.md`；需要判断 Probe 与阅读 App 差异时再读 `references/webview-behavior-matrix.md`。
+- 社区维护版 JavaScript 单文件书源：读 `references/community-app-mcp.md`，并从目标 App MCP 读取当前版本的 `legado://help/jsHelp`。
+
+## 常用工具
+
+- `status --run <run-dir>`：看当前阶段、`pendingUserAction`、`repairContext` 和下一步建议。
+- `check --run <run-dir>`：检查评估、登录、Android 决策是否缺证据。
+- `observe --run <run-dir> --phase <phase> --status <status> [--blocker <type>] [--render <type>] --note <evidence>`：Browser MCP 每确认一条链路就立即写入事实；入口验证码或正文签名/字体加密会关闭探查并返回 `record-assessment`。
+- `source inspect --run <run-dir>`：审计传统 JSON 目标的 `book-source.json` 风险字段。
+- `android --run <run-dir>`：Android 单入口；检查真机/模拟器和 Probe，必要时启动 Probe，运行 `mode=android` 验证并收敛报告。
+- `android --run <run-dir> --dump-cookie <file>`：显式导出 Probe 原始 Cookie 到本地文件，供人工核对或 validator 调试；默认输出不显示 Cookie 值。
+- `android-status`：只读诊断；检查 adb、真机/模拟器和 Android Probe。
+- `validate --run <run-dir> [--mode http|browser|android] [--keyword <中文关键词>] [--book-url <url>]`：运行 validator，写入 `validator-report.json`。`--book-url` 跳过搜索直接从详情页开始验证（对齐阅读 debug 模式的 URL 直接入口），用于搜索被反爬阻塞但需验证后续链路的场景。
+- `record-validation --run <run-dir> --status <status>`：把真实验证报告收敛成状态、能力矩阵和修复上下文。
+- `debug-bundle [--run <run-dir>]`：打包状态、报告、书源和会话导出，方便复盘。
+- `run --run <run-dir>`：可选的阶段助手；它会启动下一阶段，或自动记录当前目标的验证报告。
+- `app-mcp status [--url <mcp-url>] [--serial <adb-serial>]`：连接社区维护版阅读 App 的原生 MCP，检查协议、版本、工具和帮助资源；唯一在线 adb 设备会自动建立临时端口转发。
+- `app-mcp help-js [--url <mcp-url>] [--serial <adb-serial>]`：读取目标 App 当前版本的 `legado://help/jsHelp`；动态读取，不保存副本到 run。
+- `app-mcp validate-js --source <book-source.js> --keyword <关键词> [--report <file>] [--keep-source]`：通过目标 App 原生 MCP 保存、读回、调试并校验 JavaScript 单文件书源；默认验证后删除 App 内临时书源。
+
+## Windows / PowerShell 命令风险
+
+当前默认 shell 是 PowerShell。复制或手写命令时先确认语法属于 PowerShell，不要混用 bash、cmd 和 PowerShell。
+
+## 常见坑
+
+- 优先写一行命令。不要混用 bash 的 `\`、cmd 的 `^`、PowerShell 的反引号续行。
+- JSON 请求体优先用单引号包住：`-d '{"url":"https://example.com","timeout":60000}'`。复杂 JSON 用 `$body = @{ ... } | ConvertTo-Json -Depth 8`。
+- 路径必须加双引号，尤其是中文路径、空格路径和 `<skill-dir>`：`node "D:/.../scripts/bsg.mjs" ...`。
+- `Select-String` 没有 `-First`；先匹配再 `| Select-Object -First 3`。
+- `Select-Object -Index 40..80` 是错的；要先读数组再用 `$lines[40..80]`。
+- `ConvertFrom-Json` 只能吃纯 JSON；命令输出混有日志、提示词或乱码时，先保存/截取纯 JSON 再解析。
+- 不确定 shell 写法时，不要临时拼长命令；优先运行 `toolbox`、`android-status`、`android --run`、`validate --run` 这些封装命令。
+
+## 原则
+
+- **UA 完整性**：书源 `header` 的 UA 必须完整（含引擎名+版本号）。截断的 UA 会被反爬识别。详见 `references/legado-source-behavior.md`。
+- **验证码与登录态**：验证码触发时，如果站点有登录功能，先走登录路径再重试验证。只有登录后仍被拦才判定为站点固有限制。搜索仍被阻塞时用 `validate --book-url <url>` 跳过搜索验证后续链路。详见 `references/policies.md`。
+- **TLS 指纹**：validator 用 curl 发 HTTP 请求（非 OkHttp），避免 PC JVM 的 TLS 指纹被反爬识别。详见 `references/legado-source-behavior.md`。
+- **Browser MCP 前置**：生成任务开始前必须确认 Browser MCP 可用，并把浏览器打开目标站点作为第一项站点操作。未配置时，执行者先安装或配置；只有授权、客户端重启或更换支持浏览器工具的客户端需要本人操作时才暂停。通过页面、交互和网络请求完成四链路取证后，再填写站点事实并进入规则分析。
+
+## Android / WebView 快速配方
+
+遇到登录态、`webView:true`、`webJs`、CSR 正文、入口验证码/反爬复核，或用户已连接真机/模拟器时：
+
+1. 读 `references/android-probe-guide.md`。
+2. 运行 `node "<skill-dir>/scripts/bsg.mjs" android --run <run-dir>`。
+3. 按它返回的 `requiredUserAction`、`nextCommand` 或 `afterUserCommand` 继续；常规 Android 场景优先跟随这个入口，不自己临时拼 adb、Probe API 或 validator 子步骤。
+
+PC HTTP / Browser 只用于观察站点和辅助写规则。交付前如果 validator 结果不是 Android mode，`record-validation` 会先要求确认 Android 真机或模拟器可用性；用户明确没有设备后才允许降级记录，不能把 PC passed 写成 full pass。
+
+`android --run` 是默认收敛入口，不是所有 Android 问题的唯一调试手段。只有在它返回明确诊断、脚本失败需要定位环境问题、或用户要求调试 Probe/设备时，才展开底层 adb、Probe API 或 validator 子步骤；调试结束后仍回到 `android --run` / `record-validation` 收敛结果。
+
+如果 Probe 登录后自动 Cookie 判断和手机页面状态矛盾，先看 `android --login-completed` 的 `probeCookieEvidence`。仍不清楚时运行 `android --run <run-dir> --dump-cookie "runs/<slug>/cookies.json"`，人工核对域名和 Cookie 名；原始 Cookie 只用于本地调试，不要写进书源。
+
+## 最终审计
+
+交付前必须运行：
+
+```powershell
+node "<skill-dir>/scripts/bsg.mjs" deliver --run <run-dir>
+```
+
+传统 JSON 目标要求 `validator-report.json` 已收敛且过程产物对应当前 `book-source.json`；community JS 目标要求当前 run 的 `app-mcp-report.json` 已收敛且过程产物对应当前 `book-source.js`。缺什么让 `deliver` 返回 `nextCommand` / `correctiveAction`，不要自己补结论。
+
+`deliver` 是唯一最终审计。它通过之前，不要宣称书源“可用”、“正常阅读”、“full pass”。
+
+## 硬规则
+
+**0. `bsg.mjs deliver` 返回 ok 是任务完成的唯一标志。没有第三种状态。**
+
+本 skill 的 validator 是基于阅读书源规则语义的 JVM/Kotlin 兼容验证器，实现了传统 JSON 书源规则解析、JS/Rhino 执行、CSS/JSONPath/XPath/Regex 提取，以及 search → detail → toc → content 的主要验证链路。**传统 JSON 书源通过 validator + record-validation + deliver 代表规则层具有较强参考价值；纯 HTTP/SSR 站点通常可直接导入使用。** 涉及 Android WebView、登录态、CookieJar 持久化、付费/VIP、验证码、Cloudflare 的站点，必须以 `record-validation` 归一化后的状态和 `capability-matrix.json` 为准，不能由 AI 摘要自行改结论。
+
+JavaScript 单文件书源是另一种输出格式，不属于本地 validator 的验证范围。只有目标社区维护版阅读 App 的原生 MCP 能连接，并由 `app-mcp validate-js` 完成保存、读回、四链路调试和 App 校验时，才可记录为社区 App 验证通过；不能用 Browser MCP、HTTP 观察或本地 validator 结果替代。缺少 App MCP 时停止在配置用户动作，不降级为另一种验证结论。
+
+反过来：**绕过 deliver 直接交付书源文件，无论已经验证了多少链路、写了多完整的总结表格，都视为未完成。** 用户拿到此书源大概率用不了，必然回来要求返工——你只是把返工成本转嫁给了用户，不是完成了任务。传统 JSON 目标的 validator 复现了阅读书源规则引擎的核心语义，不存在"validator 过不了但阅读能用"的中间地带让你提前交差；过不了就是过不了，去修到过，或按 `record-validation` 返回的状态诚实停下。`needs_app_review` 只用于 validator 无法自动确认、且脚本已收敛为需 App 实测的硬边界；验证码、Cloudflare、登录失败、付费/VIP、规则错误、选择器为空、URL 错误都不是 `needs_app_review`。VIP/付费由脚本按证据收敛为 `degraded` 或失败，不能写成 full pass。
+
+交付前自检：如果当前准备"写个总结交付"而不是"运行 deliver"，停下来——这会制造返工。
+
+**1. `run-state.json` 由命令写入，禁止手动编辑。**
+
+**2. `requiredUserAction` 非 null 时停止自动操作。** 等用户确认后再运行 `resolve-user-action`。
+
+**3. 验证报告生成后不要靠猜测改结论。** validator 报告已经存在时，运行 `record-validation` 或 `run` 收敛状态。
+
+**4. 最终交付事实优先来自 Android。** 桌面 HTTP 或浏览器能看到内容，只能辅助写规则；Android 可用时 passed 必须来自 Android mode，没设备时先问用户并降级说明。
+
+## 红旗
+
+红旗不是穷举禁止动作，是三条判断原则——核心都是"**结论不能强过证据**"。冒出下列任一念头时，先用工具查证再继续：
+
+**A. 证据强度要匹配结论强度。** 未验证的不当已验证，弱证据不下强结论；用"需复核 / 工具限制"归类不能掩盖本可定位的规则错误或证据缺失。
+> 常见违反（举例，不限于）：必需链路失败就改用未验证的替代入口继续；`mode=android` 跑过但 `probe_unavailable`，仍当成 Android Probe 证据；规则错误或验证器缺证据，标成 `needs_app_review` / `validator_limitation` 蒙混。
+
+**B. 书源最终在阅读 App 跑，最高权威证据来自 Android / 真机。** 有该环境必须用它取证；没有就如实降级标注，不用低权威环境的"通过"冒充交付结论。
+> 常见违反（举例，不限于）：桌面浏览器能看到内容，就断言 Android WebView / 阅读 App 一定可用；Android 在线却未取得 Probe 证据就交付；没插手机 / 没开模拟器，就直接按 PC passed 交付。
+
+**C. 判定站点性质要用对证据类型，且探测动作本身可能改变站点状态。** 判 SSR/CSR 看 HTTP 原始响应（浏览器看到的是渲染后 DOM，会把 CSR 误判成 SSR）；反复探测同一反爬端点会累积触发风控，探测后才出现的验证码可能是探测副作用、不是站点固有行为。
+> 常见违反（举例，不限于）：为判断 SSR/CSR，默认用浏览器 evaluate / JS 自动探测搜索页或登录页；JS / 反复探测后出现验证码，就断言该站天然有验证码。
+
+## 输出
+
+- `outputs/<site-slug>/book-source.json` — 默认 `legacy-json` 交付物
+- `outputs/<site-slug>/book-source.js` — 显式 `community-js` 交付物
+- `runs/<site-slug>/` — 过程记录
+
+deliver 完成后必须运行 `validator-stop` 关闭 validator。

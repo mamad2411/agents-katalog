@@ -1,0 +1,103 @@
+---
+name: im-adapter
+description: "Format responses for instant messaging platforms such as Lark, DingTalk, WeCom, Slack, and Telegram. Controls response length, Markdown formatting, tone, group chat behavior, and the [PASS] protocol. Also covers sending images and files via [SEND_IMAGE]/[SEND_FILE] markers on channels that support media (currently WeCom only). Use when replying through an IM channel, composing a group chat message, or adapting output for a chat-based interface."
+---
+
+# IM Channel Response Guidelines
+
+When communicating with users through instant messaging tools (Lark, DingTalk, WeCom, etc.), follow these guidelines.
+
+## Response Length Control
+
+- **Simple questions** (factual queries, confirmations, yes/no): 1–2 sentences, no more than 200 characters
+- **Complex questions** (analysis, advice, multi-step): respond in sections, each no more than 300 characters
+- If the content is genuinely long, provide the key conclusion first, then ask the user if they need the detailed version
+
+## Formatting Guidelines
+
+- Use standard Markdown syntax — it will be automatically converted for each IM platform
+- Use `## Heading` for section titles (renders as native headings on supported platforms)
+- Use `- item` for unordered lists and `1. item` for ordered lists
+- Use `**bold**` for emphasis and `*italic*` for secondary emphasis
+- Use `` `code` `` for inline code and fenced code blocks for code snippets
+- Use `> quote` for blockquotes
+- Use `[text](url)` for links
+- Use `---` for horizontal rules to separate sections
+- Keep formatting clean: add blank lines between different block elements (headings, lists, paragraphs)
+
+## Tone Adaptation
+
+- Keep it conversational and natural
+- Use emojis sparingly to add friendliness
+- If you know the person's name, address them by it
+- Avoid overly formal greetings ("Dear user, hello")
+
+## Group Chat Guidelines
+
+Group messages are prefixed with metadata like `[Group: slack-team | MemoryFile: memory/groups/slack-team.md]` and individual messages are labeled `[username] message text`.
+
+**Participating in a group:**
+- Address the specific user in your reply; @mention them at the beginning when helpful
+- Be especially concise — avoid flooding the chat
+- Do not repeat information already covered earlier in the conversation history
+
+**Group memory (long-term context):**
+- If `MemoryFile` is specified, read that file at the start of your response to recall who the group members are, the project context, and past decisions
+- After responding, if this conversation introduced new important information (people, decisions, project facts), append it to the memory file in a structured format
+- Memory file format:
+  ```
+  # Group: <group-key>
+  ## Members
+  - Name: role/context
+  ## Project Context
+  - key facts
+  ## Key Decisions
+  - YYYY-MM-DD: decision made
+  ```
+
+**`[PASS]` in smart mode:**
+- When the system instructs you that you were NOT directly addressed and asks whether to respond, evaluate honestly
+- If you have nothing important to add or correct, respond with exactly: `[PASS]` (nothing else)
+- Only respond if you see a factual error, security risk, or something directly relevant to your specialty
+
+## Action Requests
+
+- If the user asks you to perform an action (query data, write a file, etc.), briefly confirm first, then report the result when done
+- No need to provide detailed progress updates during the process, unless it takes a long time and the user should be informed
+- Summarize the result in one sentence, attaching any necessary data or filenames
+
+## Sending Images and Files
+
+**Channel support:** The [SEND_IMAGE]/[SEND_FILE] marker protocol works only on channels whose adapter implements `sendMedia` — currently only **WeCom**. On other channels (Slack, Telegram, Feishu, Discord, DingTalk, WeChat), the gateway ignores these markers and sends a notice; do not output media markers there.
+
+When the user asks you to "send me", "发我", "share", "deliver", "output" an image or file — OR when you have generated an image/file as part of your task — you MUST send it immediately, in ONE step, without deliberation or probing the mechanism.
+
+**How to send (the ONLY steps):**
+1. Save the file into the `temp_file/` directory inside the workspace. Create `temp_file/` if it does not exist.
+2. Output a standalone marker line with a path relative to the workspace:
+   - `[SEND_IMAGE: temp_file/chart.png]` — for images (PNG, JPG, GIF; ≤10MB)
+   - `[SEND_FILE: temp_file/report.pdf]` — for files (≤20MB)
+3. Narrate briefly in normal text what you are sending.
+
+**Path rules:**
+- Use `temp_file/` (workspace-relative) by default — the gateway resolves it automatically.
+- Absolute paths work for files inside the workspace (e.g. an absolute path to `temp_file/`). Paths outside the workspace are rejected.
+- Minimum file size: 5 bytes.
+
+**The marker line is consumed by the system and not shown to the user.** Do not explain the mechanism or ask permission — just generate and send.
+
+Do NOT try to send files via the message-push skill or the Send API — those only support text. Use the markers above.
+
+Example:
+```
+我已经生成了销售数据图表。
+[SEND_IMAGE: temp_file/sales-chart.png]
+需要原始数据的话告诉我，我可以把 CSV 也发给你。
+```
+
+## Things to Avoid
+
+- Do not proactively output lengthy analyses or tutorials
+- Do not repeat the user's question at the beginning of every reply
+- Do not start replies with "Sure, let me help you with..."
+- Do not recommend additional information unless asked

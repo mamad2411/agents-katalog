@@ -1,0 +1,397 @@
+---
+description: 設計ドキュメントに対し、汎用的なソフトウェア設計原則に基づいてレビューを行う。
+name: issue-review-design
+---
+
+# Issue Review Design
+
+> **重要**: このスキルは実装/設計を行ったセッションとは **別のセッション** で実行することを推奨します。
+> 同一セッションで実行すると、実装時のバイアスがレビュー判断に影響する可能性があります。
+
+実装フェーズに入る前に、設計ドキュメントの品質を検証します。
+特定の実装詳細（How）に依存せず、要件（What）、制約（Constraints）、および利用者視点（UX）が明確に定義されているかを確認します。
+
+## いつ使うか
+
+| タイミング | このスキルを使用 |
+|-----------|-----------------|
+| 設計完了後、実装開始前 | ✅ 必須 |
+| 仕様変更時の再レビュー | ⚠️ 推奨 |
+
+**ワークフロー内の位置**: design → **review-design** → (fix → verify) → implement
+
+## 入力
+
+### ハーネス経由（コンテキスト変数）
+
+**常に注入される変数:**
+
+| 変数 | 型 | 説明 |
+|------|-----|------|
+| `issue_id` | str | 正規化済み Issue ID（GitHub 数値） |
+| `issue_ref` | str | 人間可読の Issue 参照（GitHub では `#<issue_id>`） |
+| `step_id` | str | 現在のステップ ID |
+
+**条件付きで注入される変数:**
+
+| 変数 | 型 | 条件 | 説明 |
+|------|-----|------|------|
+| `cycle_count` | int | サイクル内ステップのみ | 現在のイテレーション番号 |
+| `max_iterations` | int | サイクル内ステップのみ | サイクルの上限回数 |
+
+### 手動実行（スラッシュコマンド）
+
+```
+$ARGUMENTS = <issue_id>
+```
+
+### 解決ルール
+
+コンテキスト変数 `issue_id` が存在すればそちらを使用。
+なければ `$ARGUMENTS` の第1引数を `issue_id` として使用。
+
+`issue_ref` はハーネス経由ではプロンプトに自動注入される（`prompt.py` 側で provider 別に整形）。手動実行時は `issue_id` から `#<issue_id>` を導出する。
+
+## 前提知識の読み込み
+
+以下のドキュメントを Read ツールで読み込んでから作業を開始すること。
+
+1. **テスト規約**: `docs/dev/testing-convention.md`
+2. **コーディング規約**: `docs/reference/python/python-style.md`
+   - 必要に応じて `docs/reference/python/naming-conventions.md` /
+     `type-hints.md` / `docstring-style.md` / `error-handling.md` /
+     `logging.md` を追加読込
+3. **開発ワークフロー**: `docs/dev/development_workflow.md`
+
+## 共通ルール
+
+- [_shared/report-unrelated-issues.md](../_shared/report-unrelated-issues.md) — 作業中に発見した無関係な問題の報告ルール
+- [_shared/critical-decision-checklist.md](../_shared/critical-decision-checklist.md) — 人間の重要判断、AI の仮定、one-way door の分類と停止条件の正本。レビュー前に必ず読み込む
+
+## 実行手順
+
+### Step 1: Worktree 情報の取得
+
+[_shared/worktree-resolve.md](../_shared/worktree-resolve.md) の手順に従い、
+Worktree の絶対パスを取得すること。以降のステップではこのパスを使用する。
+
+### Step 1.5: 設計書の読み込み、一次情報・provenance の確認（Gate Check）
+
+1. **設計書の読み込み**:
+   ```bash
+   cat [worktree_dir]/draft/design/issue-[issue_id]-*.md
+   ```
+
+2. **一次情報の記載を確認**:
+
+設計書に以下が明記されているか確認：
+
+- [ ] **参照した一次情報の一覧**（公式ドキュメント、RFC、API仕様書、ライブラリのソースコード等）
+- [ ] **各一次情報へのURL/パス**（検証可能な形式）
+
+3. **重要判断 provenance を確認**:
+
+- [ ] `判断 / 方針 / 出典または仮定 / 設計で行った詳細化` の 4 要素がある
+- [ ] 人間決定の出典を検証できる
+- [ ] AI の仮定が人間決定と区別され、根拠と後段の検査先を持つ
+- [ ] 「該当なし」の場合も、その確認根拠がある
+
+#### Gate Check の判定順
+
+1. provenance と一次情報を Issue 本文・人間コメント・指定された source of truth に
+   突き合わせる
+2. one-way door の真の未決、または source of truth 間の未解決な矛盾があれば、
+   通常レビューへ進まず `ABORT`
+3. 人間決定は存在し、一次情報や provenance の記載・参照が不足している、または
+   設計が明示済み方針を上書き・弱化・格下げしているが元の決定へ戻せる場合は
+   `RETRY`（Changes Requested）
+
+`ABORT` の場合は `--verdict-step review-design --verdict-status ABORT` を付けたコメントに、
+未決の判断、競合する選択肢・情報源、再開条件を列挙して終了する。`RETRY` に流して
+`/issue-fix-design` に人間判断を補完させない。
+
+#### 一次情報または provenance の記載不備 → 早期リターン
+
+人間決定自体は確認できるが、設計書の一次情報または provenance の記載がない、または
+不十分な場合は、**レビュー本体に入らず**以下のコメントを投稿して終了する（この早期
+リターンは Changes Requested = `RETRY` 相当のため verdict マーカーを `RETRY` で付与する）。
+
+```bash
+kaji issue comment [issue_id] --commit \
+  --verdict-step review-design --verdict-status RETRY \
+  --body-file - <<'EOF'
+# 設計レビュー：一次情報 / provenance の記載が必要
+
+## 指摘事項
+
+設計書の**一次情報（Primary Sources）または重要判断 provenance の記載が不十分です**。
+
+設計レビューを行うには、以下を設計書に追記してください：
+
+### 必要な情報
+
+1. **参照した一次情報の一覧**
+   - 公式ドキュメント、RFC、API仕様書、ライブラリのソースコード等
+   - URLまたはファイルパスを明記
+
+2. **一次情報から得た根拠**
+   - 設計判断の裏付けとなる情報を引用または要約
+
+3. **重要判断 provenance**
+   - 判断 / 方針 / 出典または仮定 / 設計で行った詳細化
+   - AI の仮定には根拠と後段の検査先を明記
+
+### 例
+
+\`\`\`markdown
+## 参照情報（Primary Sources）
+
+| 情報源 | URL/パス | 根拠（引用/要約） |
+|--------|----------|------------------------|
+| Python公式ドキュメント | https://docs.python.org/... | 「〜を使用することで...」（該当箇所の引用） |
+| Pydantic 2 Migration | https://docs.pydantic.dev/... | 〜が推奨されている（要約） |
+\`\`\`
+
+## 判定
+
+❌ **Changes Requested** - 一次情報を追記後、再度レビューを依頼してください。
+
+### 次のステップ
+
+\`/issue-fix-design [issue_id]\` で一次情報を追記
+EOF
+```
+
+**この時点でレビュー終了。Step 2以降は実行しない。**
+
+---
+
+### Step 2: 設計レビュー（一次情報を参照）
+
+一次情報と重要判断 provenance が記載され、Gate Check で one-way door の真の未決が
+ない場合のみ、このステップに進みます。
+
+**重要**: レビュー時は設計書の記述だけでなく、**一次情報を実際に参照**して整合性を確認してください。
+
+#### レビュー時の一次情報活用
+
+1. **一次情報を取得**: 設計書に記載されたURLにアクセス、またはファイルを読み込んで確認
+2. **整合性チェック**: 設計内容が一次情報と矛盾していないか検証
+3. **最新性チェック**: 一次情報が古くなっていないか（deprecatedなAPI等）確認
+
+#### 一次情報にアクセスできない場合
+
+一次情報にアクセスできない場合は **Changes Requested** として設計者に対応を求めてください。
+
+対応方法は `issue-design` の「一次情報のアクセス可能性ルール」を参照：
+- 公開URL → そのまま記載
+- ログイン必須/有償 → ダウンロードしてリポジトリ配置、または該当箇所を引用
+- 社内限定/NDA → 使用不可、公開版または引用で代替
+
+#### type の取得と観点の重み付け
+
+Issue ラベルから `type:*` ラベルを **配列として** 取得し、共通観点の重み付けを調整する:
+
+```bash
+kaji issue view [issue_id] --json labels --jq '[.labels[].name] | map(select(startswith("type:")))'
+```
+
+**cardinality チェック（先に判定）**:
+
+- **配列要素数が 2 以上** → 複数 type ラベルが付与されている。設計レビューに入らず、`/issue-review-ready` への差し戻しを Must Fix として投稿する（observation: 複数 type ラベル付与）。Changes Requested で停止する
+- **配列が空** → type ラベル未付与。設計レビューに入らず、`/issue-review-ready` への差し戻しを Must Fix として投稿する（observation: type ラベル未付与）
+- **配列要素数が 1** → その要素を採用し、以下の判定に進む
+
+**type 値による分岐**:
+
+1. **canonical（`type:feature` / `type:bug` / `type:refactor` / `type:docs`）** → 対応する重み付けを適用
+2. **canonical 外（`type:test` / `type:chore` / `type:perf` / `type:security` など）** → `type:feature` と同等に扱う（フォールバック規則）
+
+**type 別重み付け（共通観点 1〜5 に対する強調度）**:
+
+| 観点 | feat | bug | refactor | docs |
+|------|:----:|:---:|:--------:|:----:|
+| 1. 抽象化と責務の分離 | **高**（IF 設計が中心） | 中 | **高**（責務再編が主題） | — |
+| 2. インターフェース設計 | **高**（使用例・命名・idiom 必須） | 低（IF 原則不変） | 中（IF 不変の確認） | — |
+| 3. 信頼性とエッジケース | 高（新規ロジックのエラー系） | **高**（OB/EB 整合・同根の漏れ） | 低（振る舞い非変更） | — |
+| 4. 検証可能性（テスト戦略） | **高**（S/M/L 網羅） | **高**（再現テスト必須） | **高**（safety net・bridging test） | — |
+| 5. 影響ドキュメント | 高 | 中 | 中 | **高**（docs-only なら主題） |
+
+**type 固有の追加観点**:
+
+- **feat**: 代替案の検討がある / ユースケースが具体的 / 使用例が実装前に提示されている
+- **bug**: OB と EB が 1 次情報で裏付けられている / 再現手順が最小 / 根本原因が「なぜ」まで書かれている / 同根の他の壊れ箇所が調査済み
+- **refactor**: ベースライン計測コマンドが明記 / 改善指標が測定可能 / 公開 IF 不変の宣言がある / safety net テストの方針が明確
+- **docs**: type=docs は基本的に `/i-doc-review` の守備範囲。dev workflow の review-design に来るのは誤経路 → `/i-doc-update` への差し戻しを検討
+
+> **重み付けの運用**: 上表で「高」にあたる観点で不足があれば Must Fix として CR 判定。「低」は Should Fix に留める。type に関係しない観点（共通）の指摘は従来通り Must / Should を内容に応じて判断する。
+
+#### 重要判断 audit
+
+`_shared/critical-decision-checklist.md` を正本として、一般的な設計品質レビューより先に
+次を独立検査する。
+
+1. Issue 本文、人間コメント、既存契約、指定された source of truth から人間決定を辿れるか
+2. 設計が人間決定の範囲内を詳細化しており、判断自体を上書き・弱化していないか
+3. source of truth を人間の確認なしに参考資料へ格下げしていないか
+4. AI の仮定が明示され、two-way door であり、根拠と後段の検査先を持つか
+5. 同正本の「one-way door になりやすい判断軸」を参照し、代表軸の未決を AI が
+   自己解釈で埋めていないか
+
+判定は次のとおり。
+
+- 真の未決や source of truth の矛盾 → `ABORT`
+- 決定は存在するが provenance の転記・参照が不十分、または明示済み方針から逸脱 → `RETRY`
+- 決定済み方針の詳細化と、検査可能な two-way door の仮定のみ → 通常レビューを継続
+
+#### レビュー基準
+
+以下の汎用的な原則に基づいてレビューしてください。
+
+1. **抽象化と責務の分離 (Abstraction & Scope)**:
+   - **What & Why**: 「何を作るか」と「なぜ作るか」が明確か？
+   - **No Implementation Details**: 特定の言語やライブラリの内部実装（How）に過度に踏み込んでいないか？（疑似コードはOK）
+   - **Constraints**: システムの制約条件（性能、セキュリティ、依存関係）が明記されているか？
+
+2. **インターフェース設計 (Interface Design)**:
+   - **Usage Sample**: 利用者が実際に使用する際のコード例やAPI定義が含まれているか？
+   - **Idiomatic**: そのインターフェースは、対象言語やプラットフォームの慣習（Idioms）に適合しているか？
+   - **Naming**: 直感的で意図が伝わる命名がなされているか？
+
+3. **信頼性とエッジケース (Reliability)**:
+   - **Source of Truth**: 一次情報の内容と設計が整合しているか？（コピペではなく理解に基づいているか）
+   - **Decision Provenance**: 人間決定の出典、AI の仮定、設計で行った詳細化が分離されているか？
+   - **No Downgrade**: 人間指定の source of truth が上書き・弱化・格下げされていないか？
+   - **Error Handling**: 正常系だけでなく、異常系（エラー、境界値）の挙動が定義されているか？
+   - **一次情報との乖離**: 一次情報に記載されているが設計で考慮されていない点はないか？
+
+4. **検証可能性 (Testability)**:
+   - テストケースの羅列ではなく、**「検証すべき観点」**が言語化されているか？
+   - **変更タイプに応じたテスト戦略チェック（`docs/dev/testing-convention.md` 準拠）**:
+     - [ ] 変更タイプ（実行時コード変更 / docs-only / metadata-only / packaging-only）が明示されているか
+     - [ ] 実行時コード変更なら Small / Medium / Large の検証観点が定義されているか
+     - [ ] 恒久テストを追加しない場合、その理由が「docs-only / metadata-only / packaging-only 変更」節の 4 条件に沿って示されているか
+     - [ ] スキップ時のエビデンス（既存テスト名、外部保証、確認内容）が記載されているか
+     - [ ] `uv pip install -e .` など副作用のある検証を行う場合、隔離方針が明記されているか
+     - [ ] 「長時間 acceptance の配置」小節があるか。対象（nested full workflow・外部 agent を含む dogfood・fresh 環境での反復 acceptance・1 回の所要見積が配置先 step の timeout の 25% 超の検証）がある場合、(a) 配置先 step の attempt 全体が timeout 内に収まる数値根拠（実装・検証・acceptance 実行回数上限 × 所要見積・報告時間・予備時間 R の合計 ≤ timeout）か、(b) 独立 acceptance step / 別 workflow への分離（分離先と証跡化場所）のいずれかがあるか。対象があるのにどちらもない設計は Changes Requested（`RETRY`）。対象なしの場合は「該当なし」の根拠があるか
+   - **原則として新規テストを要求する変更**（`testing-convention.md` の「実行時の振る舞いを変える変更」節参照）: ドメインロジック追加・条件分岐追加・データ変換仕様変更・API 契約変更・過去障害の再発防止。これらに該当する変更でテストを省略している場合は Changes Requested
+   - **不正当な省略理由**（「省略してはいけない理由」節に該当する場合は Changes Requested）:
+     - 「実行時間が長い」「Large テストはステージングで検証」など → サンプル期間等で短縮可能 / CI で再現できる構成にすること
+     - 「API キーがない」「DB が起動していない」など環境不備 → 修正可能な問題でありスキップ理由ではない
+     - 実行時コード変更に対し「Small テストで十分カバーされている」→ テストサイズごとに検証対象が異なる
+
+5. **影響ドキュメント**:
+   - 「影響ドキュメント」セクションが存在し、影響範囲が適切に評価されているか？
+
+### Step 2.5: 完了条件の段階確認
+
+Issue 本文に `## 完了条件` セクションがある場合、設計が完了条件を充足できる構造になっているか確認する。
+
+確認対象の例:
+- 設計書のテスト方針が完了条件の要求を満たしているか
+- 影響ドキュメントの評価が完了条件と整合しているか
+- 設計段階で対応すべき条件が漏れていないか
+
+確認結果は Step 3 の Issue コメントに含めて後段への証跡とする。
+
+### Step 3: レビュー結果のコメント
+
+レビュー結果をGitHub Issueにコメントします。
+
+**verdict マーカーの無条件付与（必須）**: レビュー結果コメントには **常に** `--verdict-step review-design --verdict-status <STATUS>` を付与する。`<STATUS>` は本 skill が返す status（`PASS` / `RETRY` / `ABORT`）に置換する。review-design は design 再入 BACK を発行しないが、マーカーの無条件付与により「review-design の Changes Requested コメントが `issue-design` Step 1.6 で design 再入 BACK と誤検出される」旧バグの再発経路を status 語彙レベルで構造的に排除する（ADR 008 決定 3。旧実装ではこの混同が誤検出源だった）。「BACK のときだけ付ける」条件付き出力は禁止。
+
+```bash
+kaji issue comment [issue_id] --commit \
+  --verdict-step review-design --verdict-status <STATUS> \
+  --body-file - <<'EOF'
+# 設計レビュー結果
+
+## 重要判断 audit
+
+- **人間決定の出典**: (確認した Issue 節、コメント、既存契約)
+- **AI の仮定**: (仮定、可逆性、後段の検査先。なければ「なし」)
+- **source of truth**: (指定と、上書き・格下げがないことの確認)
+- **one-way door**: (未決なし / 未決項目と停止理由)
+
+## 参照した一次情報
+
+（レビュー時に確認した一次情報とその確認結果）
+
+| 情報源 | 確認結果 |
+|--------|----------|
+| [URL] | ✅ 設計と整合 / ⚠️ 差異あり |
+
+## 概要
+
+(設計の明確さと、実装着手の可否判定)
+
+## 指摘事項 (Must Fix)
+
+- [ ] **項目**: 指摘内容
+  - (要件の欠落、論理的な矛盾、不明確なインターフェースなど)
+  - **一次情報との関連**: （該当する場合）
+
+## 改善提案 (Should Fix)
+
+- **項目**: 提案内容
+  - (より良い命名、将来性を考慮した構造の提案など)
+
+## 完了条件の段階確認
+
+設計段階の完了条件に対する充足判定:
+
+- [ ] (条件1): ✅ 設計書の○○で対応 / ❌ 不足（理由）
+- [ ] (条件2): ✅ / ❌
+
+## 判定
+
+[ ] Approve (実装着手可)
+[ ] Changes Requested (設計修正が必要)
+EOF
+```
+
+### Step 4: 完了報告
+
+以下の形式で報告してください:
+
+```
+## 設計レビュー完了
+
+| 項目 | 値 |
+|------|-----|
+| Issue | [issue_ref] |
+| 判定 | Approve / Changes Requested |
+
+### 次のステップ
+
+- Approve: `/issue-implement [issue_id]` で実装を開始
+- Changes Requested: `/issue-fix-design [issue_id]` で修正
+```
+
+## Verdict 出力
+
+実行完了後、以下の形式で verdict を出力すること:
+
+```
+---VERDICT---
+status: PASS
+reason: |
+  設計品質基準を満たしている
+evidence: |
+  重要判断 provenance と source of truth を Issue・一次情報に照合済み。AI 仮定は two-way door として後段の検査先が明記され、未決の one-way door はない。テスト戦略 S/M/L 網羅
+suggestion: |
+---END_VERDICT---
+```
+
+**重要**: verdict は **stdout にそのまま出力** すること。Issue コメントや Issue 本文更新とは別に、最終的な verdict ブロックは stdout に残す。
+
+### status の選択基準
+
+| status | 条件 |
+|--------|------|
+| PASS | Approve |
+| RETRY | 人間決定は存在するが provenance・一次情報の記載が不足、明示済み方針を上書き・弱化・格下げしているが復元可能、またはその他の Changes Requested |
+| ABORT | one-way door が人間未決、source of truth が未解決に矛盾、またはその他の重大な問題 |
+
+`ABORT` の `suggestion` には、人間が決める項目、競合する選択肢・情報源、再開条件を
+具体的に列挙する。

@@ -1,0 +1,173 @@
+---
+name: ad-commit
+description: 'Commit verified work as atomic Conventional Commits with sign-off. Use on "commit this", "stage and commit", "split this commit".'
+summary: Atomic Conventional Commits with DCO `Signed-off-by` sign-off. Four phases — scope intake, stage-split when concerns mix, draft message in Conventional Commits format, sign + write. Helper posture, not blocker.
+allowed-tools: Read, Bash
+---
+
+# /ad-commit
+
+Implements ADR-0023. Drafts atomic Conventional Commits with DCO `Signed-off-by` sign-off. Helper, not blocker — the senior engineer keeps decision authority.
+
+## Non-negotiables (read first)
+
+- **DCO `Signed-off-by` on every commit — never a `Co-Authored-By` trailer** (ADR-0023 §Decision 1: DCO only).
+- **Never bypass the hooks** — no `--no-verify`, no `--no-gpg-sign`. A failing hook stops the commit; fix the cause, don't skip it.
+
+## Not for
+
+- The user wants to open a PR after committing → continue with `/ad-pr` after this skill finishes.
+- The user wants to merge an open PR → `/ad-merge`.
+- The diff is unfinished work that should not land yet → say so; do not commit speculatively.
+
+## Phase 1 — Scope intake
+
+Read the working tree:
+
+```bash
+git status --short
+git diff --staged
+git diff
+```
+
+Classify concerns. Group changes by:
+
+- **Conventional Commits type** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `build:`, `ci:`, `perf:`, `style:`, `revert:`.
+- **Subsystem** — directory / module the file lives under.
+- **Causal relationship** — a mechanical rename and its callers are *one* concern; a `feat:` and an unrelated `fix:` are *two*.
+
+Decision:
+
+- **Single concern** → proceed to Phase 3 (no stage-split needed).
+- **Multiple concerns** → present a numbered list of detected concerns and ask the user to confirm the stage-split plan. Format:
+
+  ```
+  Detected 3 concerns:
+    1. feat(auth): add login flow (src/auth/, test/auth.test.js)
+    2. fix(cli): trim trailing newline (src/index.js)
+    3. docs(readme): refresh skill table (README.md)
+
+  Proceed concern-by-concern? (y/n, or "bundle them all into one commit")
+  ```
+
+When the user says "bundle them" or you are in genuine doubt about whether two changes are one concern or two, surface the call and proceed with their decision. Senior engineer keeps authority.
+
+## Phase 2 — Stage-split (when needed)
+
+For each concern, in user-confirmed order:
+
+1. **Stage exactly the files (or hunks) for this concern.** Use `git add <path>` for whole files. Use `git add -p <path>` when a file holds changes for two concerns and a hunk-level split is needed. **Never `git add -A` / `git add .` when concerns are mixed.**
+2. **Verify the stage.** Run `git diff --staged` and confirm only this concern's changes are present.
+3. **Draft + write the commit** (Phases 3 + 4 below).
+4. Repeat for the next concern.
+
+If a partial-file hunk split is too complex (interleaved changes, refactor + behavior in the same line), surface the call: either accept the bundled commit for that file or ask the user to split the file edit first.
+
+## Phase 3 — Draft message
+
+When `node .claude/skills/ad-project-state/scripts/project-state.mjs --process` configures a `path` for a record kind, pass `--dir <kind>=<path>` for it (kinds `research`, `adr`, `task`, `spec`). A date-named ADR has no number, so a citation such as ADR-0001 cannot resolve to it; cite it by its path.
+
+Apply [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) format:
+
+```
+<type>(<scope>?): <subject>
+
+<body — explains WHY when non-obvious; references task/ADR/issue>
+```
+
+Subject rules:
+
+- ≤72 chars.
+- Imperative mood: "add", "fix", "rename" — not "added" / "adds".
+- No trailing period.
+- Lowercase after the colon (except proper nouns, acronyms, filenames).
+- Scope is optional but recommended: `feat(auth):`, `fix(cli):`, `docs(readme):`.
+
+Body rules:
+
+- Explain **why** the change is needed when non-obvious. The diff already shows what.
+- Reference related work: `Closes task-0025`, `Per ADR-0023`, `Fixes #42`.
+- Wrap at ~72 chars. Blank line between paragraphs.
+- No trailing summary of what the diff shows. No marketing prose.
+
+Type guide: pick the type from the commit-type catalog in [references/conventional-commits.md](references/conventional-commits.md) — each valid type with its meaning and when to use it.
+
+Breaking changes: add `!` after the type/scope and a `BREAKING CHANGE:` footer paragraph.
+
+**Cited records.** When the draft cites a record (`GROUND-`, `RESEARCH-`, `PRISM-`, `ADR-`, `task-`/`Task`, `Spec`/`spec-` plus four digits), pipe the draft into the read-only probe from the repository root:
+
+```bash
+node .claude/skills/ad-commit/scripts/cited-records.mjs - <<'EOF'
+<draft message>
+EOF
+```
+
+If this skill was loaded from another base directory, substitute that base. Execute it; do not re-derive its git reads in prose. Its JSON lists each cited id with its `path` and one `state`; act on each before writing:
+
+- `in-head` — committed earlier; the draft may say the record preceded this work. When the report adds `pending`, the record also carries an uncommitted edit (an addendum, a correction) that did not precede it: `staged` means the edit lands in this commit, so say the edit is recorded alongside; `unstaged` means it is not in this commit at all, so stage it when it belongs to this concern or claim nothing about it. `staged-removal` means this commit deletes the record, so do not cite it as governing the work. A record renamed in the index reports its new path with `pending: staged`.
+- `staged` — lands in this same commit, so it was not recorded *before* the work: say "recorded alongside", never "before" or "grounded first".
+- `working-tree` — on disk but not staged, so it did not precede the work either: stage it when it belongs to this concern (then treat it as `staged`); otherwise drop any claim that it is part of this commit or came first.
+- `archived` — committed earlier and since removed from the tree (for example by `/ad-archive`); it did precede later work, but do not claim it still governs.
+- `not-found` — the id resolves nowhere: correct the id or remove the citation.
+
+The probe reports and never blocks; the wording stays your call.
+
+## Phase 4 — Sign + write
+
+Resolve identity:
+
+```bash
+git config user.name
+git config user.email
+```
+
+If either is unset, **stop and ask the user to configure them.** DCO sign-off requires real attribution; the skill will not invent it.
+
+Append the trailer (always last line, blank line before it):
+
+```
+Signed-off-by: <Name> <email>
+```
+
+Do **not** add a `Co-Authored-By:` trailer (ADR-0023 §Decision 1 — DCO only).
+
+Write the commit using a HEREDOC so multi-line body content is preserved verbatim:
+
+```bash
+git commit -m "$(cat <<'EOF'
+<type>(<scope>): <subject>
+
+<body paragraph 1>
+
+<body paragraph 2>
+
+Signed-off-by: <Name> <email>
+EOF
+)"
+```
+
+Do **not** pass `--no-verify` or `--no-gpg-sign`. Pre-commit and pre-push hooks run; failures surface and the skill stops so the user can fix the underlying issue.
+
+If a hook fails:
+
+- Investigate the underlying cause. Do not skip the hook.
+- Fix the issue, re-stage if needed, and run `git commit` again (create a new commit; do not amend unless the user explicitly asks).
+
+## Output contract
+
+The output is one or more atomic commits on the current branch. Each commit:
+
+- Single concern.
+- Conventional Commits format with valid type.
+- Subject imperative + ≤72 chars.
+- Body explains *why* when non-obvious; references task / ADR / issue when one exists.
+- `Signed-off-by: <Name> <email>` trailer.
+- No `Co-Authored-By` trailer.
+- No skipped hooks.
+
+## Next
+
+- After commits land: `/ad-pr` to open the PR with a uniform body shape.
+- After PR is open and CI is green: `/ad-merge` to evaluate and merge.
+- If the diff also surfaced a load-bearing refactor opportunity: `/ad-deepen` (ADR-0020 §4).
+- If a hook failure exposed a recurring drift: `/ad-drift`.

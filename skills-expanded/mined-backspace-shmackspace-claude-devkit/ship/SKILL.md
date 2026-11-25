@@ -1,0 +1,1718 @@
+---
+name: ship
+description: Execute an approved plan using unattended implementation and validation with worktree isolation.
+version: 3.9.0
+model: claude-opus-4-6
+---
+# /ship Workflow
+
+## Inputs
+- Plan file: $ARGUMENTS   # Full path, or bare plan name (e.g. "cross-repo-plan-support")
+
+## Output Rules
+- **Always print full absolute paths** for all artifact references (plan files, review files, audit logs). This makes paths clickable in terminals like Warp. Use the resolved `$PLANS_DIR` value, never relative paths.
+
+## Role
+You are the **work coordinator**. You dispatch work to agents and check their results.
+You do NOT write code, explore the codebase, or run tests yourself — agents do that.
+Your job: read the plan once, dispatch each step, check verdicts, gate progression.
+
+## Step 0 — Pre-flight checks
+
+Tool: `Bash` (git status, cleanup), `Glob` (agent checks) — **Run all checks in parallel in a single message**
+
+**Resolve devkit paths (MUST be first action in Step 0):**
+
+Tool: `Bash`
+
+```bash
+# --- Devkit Path Resolution ---
+DEVKIT_SCRIPTS="${CLAUDE_DEVKIT:-$HOME/.claude-devkit}/scripts"
+
+# Source path resolution helper
+if [ -f "$DEVKIT_SCRIPTS/resolve-project-dir.sh" ]; then
+  . "$DEVKIT_SCRIPTS/resolve-project-dir.sh"
+  DEVKIT_PROJECT_DIR_RESOLVED=$(resolve_devkit_project_dir) || {
+    echo "Failed to resolve project directory" >&2; exit 1
+  }
+elif [ -n "${DEVKIT_PROJECT_DIR:-}" ]; then
+  DEVKIT_PROJECT_DIR_RESOLVED="$DEVKIT_PROJECT_DIR"
+else
+  echo "WARNING: devkit is not installed. Using deprecated .devkit/ fallback." >&2
+  DEVKIT_PROJECT_DIR_RESOLVED=".devkit"
+fi
+
+PLANS_DIR="$DEVKIT_PROJECT_DIR_RESOLVED/plans"
+mkdir -p "$PLANS_DIR"
+echo "Plans directory: $PLANS_DIR"
+```
+
+**Resolve plan path (MUST be second action in Step 0):**
+
+If `$ARGUMENTS` (after removing any flags like `--security-override`) does not contain a `/` character,
+treat it as a bare plan name and resolve it to `$PLANS_DIR/<name>.md`. If the name already ends with
+`.md`, do not append it again. Verify the resolved file exists; if not, try without `.md` suffix removed
+(in case the user passed e.g. `feature.md`). If neither exists, halt with:
+"Plan not found: tried $PLANS_DIR/<name>.md"
+
+Examples:
+- `cross-repo-plan-support` → `$PLANS_DIR/cross-repo-plan-support.md`
+- `cross-repo-plan-support.md` → `$PLANS_DIR/cross-repo-plan-support.md`
+- `$PLANS_DIR/cross-repo-plan-support.md` → used as-is (contains `/`)
+- `/absolute/path/to/plan.md` → used as-is (contains `/`)
+
+After resolution, set `$PLAN_PATH` to the resolved absolute path for all subsequent steps.
+
+**Parse --security-override flag (MUST be third action in Step 0):**
+
+If `$ARGUMENTS` contains `--security-override`:
+- Extract the reason string (quoted text after `--security-override`)
+- Store as `$SECURITY_OVERRIDE_REASON`
+- Remove the flag and reason from `$ARGUMENTS` before using it as the plan path
+- After extraction, `$ARGUMENTS` contains ONLY the plan path for all subsequent steps
+- Log: "Security override active. Reason: $SECURITY_OVERRIDE_REASON"
+
+If `$ARGUMENTS` does not contain `--security-override`:
+- Set `$SECURITY_OVERRIDE_REASON` to empty
+
+**First: Generate a unique run ID for this invocation**
+
+Tool: `Bash`
+
+```bash
+RUN_ID=$(date +%Y%m%d-%H%M%S)-$(cat /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 6)
+echo "Ship run ID: $RUN_ID"
+```
+
+**Then: Clean up stale artifacts from previous runs**
+
+Tool: `Bash`
+
+```bash
+# Prune orphaned worktrees
+git worktree prune 2>/dev/null || true
+
+# Clean up orphaned tracking files from aborted runs
+for tracking_file in .ship-worktrees-*.tmp; do
+  [ -f "$tracking_file" ] || continue
+  ORPHANED=true
+  while IFS='|' read -r wt_path _rest; do
+    if git worktree list --porcelain | grep -q "^worktree $wt_path$"; then
+      ORPHANED=false
+      break
+    fi
+  done < "$tracking_file"
+  if $ORPHANED; then
+    rm -f "$tracking_file"
+    echo "Cleaned up orphaned tracking file: $tracking_file"
+  fi
+done
+
+# Clean up orphaned violation files
+rm -f .ship-violations-*.tmp
+```
+
+**Then: Initialize audit logging**
+
+Tool: `Bash`
+
+```bash
+# --- Audit Logging Setup ---
+AUDIT_LOG_DIR="$PLANS_DIR/audit-logs"
+mkdir -p "$AUDIT_LOG_DIR"
+AUDIT_LOG="$AUDIT_LOG_DIR/ship-${RUN_ID}.jsonl"
+STATE_FILE=".ship-audit-state-${RUN_ID}.json"
+
+# L3 (audited): generate HMAC key and persist to disk for post-run chain verification
+HMAC_KEY=""
+if [ "$SECURITY_MATURITY" = "audited" ]; then
+  HMAC_KEY=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-zA-Z0-9' | head -c 64 2>/dev/null || echo "")
+  if [ -n "$HMAC_KEY" ]; then
+    KEY_FILE=".ship-audit-key-${RUN_ID}"
+    printf '%s' "$HMAC_KEY" > "$KEY_FILE"
+    chmod 600 "$KEY_FILE"
+    echo "L3 HMAC key written to $KEY_FILE (mode 0600)"
+  else
+    echo "Warning: Could not generate L3 HMAC key (/dev/urandom unavailable)."
+  fi
+fi
+
+# Create state file for helper script
+python3 -c "
+import json
+state = {
+    'run_id': '${RUN_ID}',
+    'audit_log': '${AUDIT_LOG}',
+    'skill': 'ship',
+    'skill_version': '3.9.0',
+    'security_maturity': '${SECURITY_MATURITY}',
+    'hmac_key': '${HMAC_KEY}'
+}
+with open('${STATE_FILE}', 'w') as f:
+    json.dump(state, f)
+print('Audit state file created: ${STATE_FILE}')
+"
+
+# Emit run_start event
+OVERRIDE_ACTIVE="false"
+[ -n "${SECURITY_OVERRIDE_REASON:-}" ] && OVERRIDE_ACTIVE="true"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" "$STATE_FILE" \
+  "{\"event_type\":\"run_start\",\"plan_file\":\"${PLAN_PATH:-${ARGUMENTS:-unknown}}\",\"security_override_active\":${OVERRIDE_ACTIVE}}"
+
+# Emit step_start for step_0
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" "$STATE_FILE" \
+  '{"event_type":"step_start","step":"step_0_preflight","step_name":"Pre-flight checks","agent_type":"coordinator"}'
+
+echo "Audit log: $AUDIT_LOG"
+```
+
+**Then: Run validation checks in parallel:**
+
+1. `git status --porcelain` (Bash)
+2. Glob for `.claude/agents/coder*.md`
+3. Glob for `.claude/agents/code-reviewer*.md`
+4. Glob for `.claude/agents/qa-engineer*.md` or `.claude/agents/qa*.md`
+
+**Fail fast if any check fails:**
+- If git status is not empty: "❌ Working directory is not clean. Commit or stash changes before running /ship."
+- If no coder agent found: "❌ No coder agent found. Generate one using:\n  `python3 ~/workspaces/claude-devkit/generators/generate_agents.py . --type coder`"
+- If no code-reviewer agent found: "❌ No code-reviewer agent found. Generate one using:\n  `python3 ~/workspaces/claude-devkit/generators/generate_agents.py . --type code-reviewer`"
+- If no qa-engineer agent found: "❌ No qa-engineer agent found. Generate one using:\n  `python3 ~/workspaces/claude-devkit/generators/generate_agents.py . --type qa-engineer`"
+
+If **any** check fails, stop immediately and list all failures.
+
+**Security maturity level check:**
+
+Tool: `Bash`, `Read`
+
+Read `.claude/settings.local.json` (if exists), then `.claude/settings.json` (if exists). Extract the `security_maturity` field. Precedence: if `.claude/settings.local.json` provides a `security_maturity` value (even if that value is `"advisory"`), the project-level setting is not consulted. The fallback to `.claude/settings.json` only occurs when the local file is absent or does not contain the `security_maturity` key.
+
+**Note:** This block uses `python3 -c` for JSON parsing. Python 3 is available on all target platforms (macOS, Linux dev environments) and the `json` module handles edge cases (nested objects, whitespace, escaping) more reliably than regex-based alternatives. If `python3` is not available, the command silently fails and the maturity level defaults to `"advisory"` (L1) — the safe default. This is analogous to existing `/ship` pre-flight checks that use `git` and other CLI tools.
+
+```bash
+SECURITY_MATURITY="advisory"  # Default: L1
+LOCAL_SET=0  # Track source, not value, to preserve precedence when local sets "advisory"
+
+# Read local settings first (takes precedence)
+if [ -f ".claude/settings.local.json" ]; then
+  LOCAL_MATURITY=$(python3 -c "import json; d=json.load(open('.claude/settings.local.json')); print(d.get('security_maturity',''))" 2>/dev/null || echo "")
+  if [ -n "$LOCAL_MATURITY" ]; then
+    SECURITY_MATURITY="$LOCAL_MATURITY"
+    LOCAL_SET=1
+  fi
+fi
+
+# Only fall back to project settings if local did NOT provide a value
+if [ "$LOCAL_SET" -eq 0 ] && [ -f ".claude/settings.json" ]; then
+  PROJECT_MATURITY=$(python3 -c "import json; d=json.load(open('.claude/settings.json')); print(d.get('security_maturity',''))" 2>/dev/null || echo "")
+  [ -n "$PROJECT_MATURITY" ] && SECURITY_MATURITY="$PROJECT_MATURITY"
+fi
+
+# Validate value
+case "$SECURITY_MATURITY" in
+  advisory|enforced|audited) ;;
+  *) echo "Warning: Invalid security_maturity value '$SECURITY_MATURITY'. Defaulting to 'advisory'."
+     SECURITY_MATURITY="advisory" ;;
+esac
+
+echo "Security maturity level: $SECURITY_MATURITY"
+```
+
+If `$SECURITY_MATURITY` is `enforced` or `audited`:
+
+Tool: `Glob`
+
+Check for required security skills:
+- Glob `~/.claude/skills/secrets-scan/SKILL.md`
+- Glob `~/.claude/skills/secure-review/SKILL.md`
+- Glob `~/.claude/skills/dependency-audit/SKILL.md`
+
+If ANY are missing, stop immediately:
+"Security maturity level '$SECURITY_MATURITY' requires all security skills to be deployed.
+Missing skills:
+- [list missing skills]
+
+Deploy with:
+  cd ~/projects/claude-devkit && ./scripts/deploy.sh secrets-scan secure-review dependency-audit"
+
+**Secrets scan gate (pre-flight):**
+
+Tool: `Glob`
+
+Glob for `~/.claude/skills/secrets-scan/SKILL.md`
+
+**If found:**
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Prompt:
+"You are running a pre-commit secrets scan as part of the /ship pre-flight check.
+
+Read the secrets-scan skill definition at `~/.claude/skills/secrets-scan/SKILL.md`.
+Execute it with scope `all` against the current repository working directory.
+
+Report your verdict: PASS or BLOCKED.
+If BLOCKED, list the confirmed secret types and file locations (NO actual secret values).
+If PASS, report 'No secrets detected in working directory.'"
+
+**If secrets scan returns BLOCKED:**
+Secrets-scan BLOCKED blocks at ALL maturity levels (including L1). Committed secrets cannot be un-committed and require rotation.
+- If `--security-override` flag is set: Log override reason. Downgrade to PASS_WITH_NOTES. Continue.
+  Output: "Secrets scan BLOCKED — overridden: [reason]. Logged for audit trail."
+- If `--security-override` flag is NOT set: Stop workflow.
+  Output: "Secrets detected in working directory. Remove before shipping.
+  If this is a false positive, re-run with: /ship $ARGUMENTS --security-override \"reason\""
+
+**If not found:**
+- If L1 (advisory): Log: "Security note: secrets-scan skill not deployed. Consider deploying for pre-commit secret detection."
+- If L2/L3: Already caught by maturity level check above (will not reach here).
+
+**Emit security_decision event for secrets scan gate:**
+
+Tool: `Bash`
+
+```bash
+# Emit security_decision event for secrets scan result
+# Replace GATE_VERDICT and ACTION with actual values from above check:
+#   GATE_VERDICT: "PASS", "BLOCKED", or "not-run" (if skill not deployed)
+#   ACTION: "pass", "block", "override", or "skip" (if not deployed)
+#   EFFECTIVE_VERDICT: "PASS", "BLOCKED", or "PASS_WITH_NOTES" (if overridden)
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"security_decision\",\"step\":\"step_0_preflight\",\"gate\":\"secrets_scan\",\"gate_verdict\":\"${SECRETS_GATE_VERDICT:-not-run}\",\"action\":\"${SECRETS_ACTION:-skip}\",\"effective_verdict\":\"${SECRETS_EFFECTIVE_VERDICT:-PASS}\"}"
+```
+
+**Emit step_end for Step 0:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_0_preflight","step_name":"Pre-flight checks","agent_type":"coordinator"}'
+```
+
+## Step 1 — Coordinator reads plan
+
+**Emit step_start for Step 1:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_1_read_plan","step_name":"Coordinator reads plan","agent_type":"coordinator"}'
+```
+
+Tool: `Read` (direct — coordinator does this)
+
+Read the plan file at `$ARGUMENTS`. Extract:
+- **Files to modify/create** (from the Task Breakdown section)
+- **Test command** (from the Test Plan section)
+- **Acceptance criteria** (from the Acceptance Criteria section)
+
+**Validate plan structure:** Verify the plan contains all required sections:
+- Task Breakdown (required)
+- Test Plan (required)
+- Acceptance Criteria (required)
+- `## Status: APPROVED` marker (required)
+
+If any section is missing or plan is not approved, stop with:
+"Plan at `$ARGUMENTS` is incomplete or not approved. Required: Task Breakdown, Test Plan, Acceptance Criteria, and ## Status: APPROVED marker. Run `/architect` first."
+
+**Cross-repo plan target validation (conditional):**
+
+Check whether the plan contains a `targets:` field in its YAML frontmatter. If so, validate that the current working directory matches one of the listed targets:
+
+Tool: `Bash`
+
+```bash
+# Parse plan frontmatter for targets field via devkit_cli parser
+TARGETS_JSON=$(PLAN_PATH_ARG="$PLAN_PATH" SCRIPTS_ARG="$DEVKIT_SCRIPTS" python3 -c "
+import sys, json, os
+plan_path = os.environ['PLAN_PATH_ARG']
+scripts_dir = os.environ['SCRIPTS_ARG']
+sys.path.insert(0, scripts_dir)
+from devkit_cli import parse_plan_frontmatter
+content = open(plan_path).read()
+fm, err = parse_plan_frontmatter(content)
+if err or 'targets' not in fm:
+    sys.exit(0)
+print(json.dumps(fm['targets']))
+" 2>/dev/null || echo "")
+
+if [ -n "$TARGETS_JSON" ]; then
+  echo "Cross-repo plan detected."
+  MATCH_RESULT=$(echo "$TARGETS_JSON" | python3 -c "
+import json, os, sys
+targets = json.loads(sys.stdin.read())
+cwd = os.path.realpath(os.getcwd())
+match_role = None
+primary_name = None
+for t in targets:
+    path = os.path.expanduser(t.get('path', ''))
+    resolved = os.path.realpath(path) if path else ''
+    role = t.get('role', 'secondary')
+    if role == 'primary':
+        primary_name = os.path.basename(resolved)
+    if resolved == cwd:
+        match_role = role
+if match_role is None:
+    print('BLOCKED')
+elif match_role == 'secondary':
+    print('SECONDARY:' + (primary_name or 'unknown'))
+else:
+    print('PRIMARY')
+" 2>/dev/null)
+
+  case "$MATCH_RESULT" in
+    BLOCKED)
+      echo "ERROR: Current directory does not match any target in plan frontmatter."
+      exit 1
+      ;;
+    SECONDARY:*)
+      PRIMARY_NAME="${MATCH_RESULT#SECONDARY:}"
+      CWD_NAME=$(basename "$(pwd -P)")
+      echo "WARNING: This plan's primary target is $PRIMARY_NAME. Running against secondary target $CWD_NAME. Only work groups targeting this repo will be executed."
+      ;;
+    PRIMARY)
+      echo "CWD matches primary target."
+      ;;
+  esac
+fi
+```
+
+If CWD does not match any target: **BLOCK** the workflow with "Current directory does not match any target in plan frontmatter."
+
+If CWD matches a secondary target: log a warning and continue. Only work groups targeting this repo will be executed (see target filtering below).
+
+If `targets:` is not present in frontmatter (single-project plan): skip this check entirely (existing behavior unchanged).
+
+**Security requirements validation (conditional):**
+
+Check whether this plan contains a `## Security Requirements` section:
+
+Tool: `Grep` (direct -- coordinator does this)
+
+Search the plan text for the heading `## Security Requirements`.
+
+**If `## Security Requirements` section is found:**
+- Extract the section content (from `## Security Requirements` heading to the next `##` heading or end of file)
+- Retain the extracted content in coordinator context for use in Step 4d
+- Output: "Plan contains `## Security Requirements` section. Threat model context will be passed to /secure-review."
+
+**If `## Security Requirements` section is NOT found:**
+
+Check whether the plan's content contains security signals by scanning for the
+same keyword categories used by /architect Step 2 Stage 1 (Identity/Auth,
+Cryptography/Network, Data/Compliance, File/Process, Payment keywords) applied
+against the plan body text:
+
+**If security signals found in plan content:**
+- At L1 (advisory): Output warning: "This plan appears to involve security-sensitive functionality but does not contain a `## Security Requirements` section. Consider re-running `/architect` or adding the section manually. Continuing (L1 advisory)."
+- At L2/L3 (enforced/audited):
+  - If `--security-override` active: Output warning (same as L1) and log override. Continue.
+  - If no override: Stop workflow. Output: "This plan appears to involve security-sensitive functionality but does not contain a `## Security Requirements` section. Add the section or re-run `/architect`. To override: `/ship [plan-path] --security-override \"reason\"`"
+
+**If no security signals found in plan content:**
+- No output (plan is not security-sensitive, no check needed)
+
+Derive `[name]` from the plan filename (e.g. `$PLANS_DIR/feature-x.md` → `feature-x`).
+
+**Parse work groups (optional):** Look for a `## Work Groups` section inside the Task Breakdown. Format:
+
+```markdown
+### Work Group 1: [name]
+- file-a.ts
+- file-b.ts
+
+### Work Group 2: [name]
+- file-c.ts
+- file-d.ts
+
+### Shared Dependencies
+- src/types.ts (modify — implement before work groups)
+```
+
+If no `## Work Groups` section exists, treat the entire Task Breakdown as a single group. Derive the `scoped_files` list by extracting ALL files from the Task Breakdown section:
+- All files listed in the `### Files to Modify` table
+- All files listed in the `### Files to Create` table
+
+Store these as the `scoped_files` for the single implicit work group. This list is used in Step 3d (boundary validation) and Step 3e (merge).
+
+**Cross-repo work group target filtering (conditional):**
+
+If the plan has `targets:` frontmatter (cross-repo plan detected in the target validation above), filter work groups by the `**Target:**` annotation in each work group header:
+
+**Matching algorithm:**
+- The `**Target:** <name>` value is compared against `DEVKIT_TARGET_N_NAME` environment variables (the basename of each project directory, e.g., `cve-api`).
+- Comparison is **case-insensitive** (e.g., `**Target:** CVE-API` matches `DEVKIT_TARGET_0_NAME=cve-api`).
+- The current project's name is determined by matching `$CWD` against `DEVKIT_TARGET_N_PATH` values (same resolution as the target validation above).
+
+**Edge case behavior:**
+- **Unannotated work group** (no `**Target:**` line) in a multi-target plan: Treated as primary-target-only. Log a warning: "Work group N has no target annotation; treating as primary target only."
+- **Mismatched target name** (`**Target:** cve-apii` -- typo): The work group does not match any known target. It is skipped with a warning: "Work group N targets unknown project 'cve-apii'; skipping."
+- **No matching work groups**: If no work groups match the current project after filtering, log: "No work groups target this project (<name>). Nothing to execute." and exit with PASS (no work to do is not an error -- the user may be running `/ship` against secondary targets in sequence).
+
+After filtering, only matching work groups are passed to Steps 3b-3f for worktree creation and dispatch.
+
+If the plan does not have `targets:` frontmatter (single-project plan), skip this filtering entirely and process all work groups (existing behavior unchanged).
+
+**Run codebase scanner:**
+
+Tool: `Bash`
+
+```bash
+# Run codebase scanner (degrades gracefully if tree-sitter not installed)
+SCANNER_PYTHON="${HOME}/.claude-devkit/scanner-venv/bin/python3"
+SCANNER_SCRIPT="$DEVKIT_SCRIPTS/codebase-scanner.py"
+if [ -x "$SCANNER_PYTHON" ]; then
+  SCANNER_OUTPUT=$("$SCANNER_PYTHON" "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "")
+else
+  SCANNER_OUTPUT=$(python3 "$SCANNER_SCRIPT" --format summary --quiet 2>/dev/null || echo "")
+fi
+echo "$SCANNER_OUTPUT"
+
+# Emit scanner_invocation audit event
+if [ -n "$SCANNER_OUTPUT" ]; then
+  SCANNER_HASH=$(printf '%s' "$SCANNER_OUTPUT" | python3 -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())" 2>/dev/null || echo "unknown")
+  SCANNER_VERSION=$(python3 "$SCANNER_SCRIPT" --version 2>/dev/null | awk '{print $NF}' || echo "unknown")
+  SCANNER_FILE_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Files:\s*\K[0-9]+' 2>/dev/null || echo "0")
+  SCANNER_SYMBOL_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Symbols:\s*\K[0-9]+' 2>/dev/null || echo "0")
+  SCANNER_PARSER_MODE=$(printf '%s' "$SCANNER_OUTPUT" | grep -oP 'Parser:\s*\K\S+' 2>/dev/null || echo "unknown")
+  SCANNER_TOKEN_COUNT=$(printf '%s' "$SCANNER_OUTPUT" | wc -c | awk '{printf "%.0f", $1 / 4}')
+  bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+    "{\"event_type\":\"scanner_invocation\",\"scanner_version\":\"${SCANNER_VERSION}\",\"parser_mode\":\"${SCANNER_PARSER_MODE}\",\"file_count\":${SCANNER_FILE_COUNT},\"symbol_count\":${SCANNER_SYMBOL_COUNT},\"output_sha256\":\"${SCANNER_HASH}\",\"output_token_count\":${SCANNER_TOKEN_COUNT}}"
+fi
+```
+
+Include `$SCANNER_OUTPUT` in coder dispatch prompts (Step 3c) under the heading `### Codebase Structure (auto-generated)`. If scanner output is empty, include "Scanner not available. Coder should discover structure via file reads."
+
+**Emit step_end for Step 1:**
+
+Tool: `Bash`
+
+```bash
+# SEC_REQ_PRESENT: "true" if ## Security Requirements section was found in the plan, "false" otherwise
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"step_end\",\"step\":\"step_1_read_plan\",\"step_name\":\"Coordinator reads plan\",\"agent_type\":\"coordinator\",\"security_requirements_present\":${SEC_REQ_PRESENT:-false}}"
+```
+
+## Step 2 — Pattern Validation (warnings only)
+
+**Emit step_start for Step 2:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_2_pattern_validation","step_name":"Pattern validation","agent_type":"coordinator"}'
+```
+
+Validate the plan against project patterns before implementation. This step produces warnings but does NOT block the workflow.
+
+Tool: `Read` (direct — coordinator does this)
+
+**Read `./CLAUDE.md`** (if exists). Extract:
+- Directory structure conventions
+- Naming conventions (files, variables, components)
+- Required test patterns
+- Architecture patterns (module boundaries, dependency direction)
+- Technology stack constraints
+
+**Compare plan against patterns:**
+
+Check each file in the plan's Task Breakdown against CLAUDE.md conventions:
+
+1. **Directory placement:** Are new files placed in the correct directories per CLAUDE.md structure?
+2. **Naming conventions:** Do new file/component names follow established patterns?
+3. **Test requirements:** Does the plan include tests where CLAUDE.md requires them?
+4. **Architecture alignment:** Does the plan respect module boundaries and dependency rules?
+5. **Context metadata:** Does the plan contain a `<!-- Context Metadata` block? (If yes, verify `claude_md_exists` is `true` when a CLAUDE.md exists)
+
+**Output format:**
+
+If warnings found, output:
+
+    Pattern validation warnings (non-blocking):
+
+    1. [Warning description -- e.g., "New file src/utils/auth.ts -- CLAUDE.md places utilities in lib/"]
+    2. [Warning description]
+    ...
+
+    These warnings are informational. The workflow will continue.
+    To address these, revise the plan and re-run /ship.
+
+If no warnings, output:
+
+    Plan aligns with CLAUDE.md patterns.
+
+**If CLAUDE.md does not exist:**
+
+    No CLAUDE.md found. Skipping pattern validation.
+    Consider running /sync to generate project documentation.
+
+Continue to Step 3 regardless of warnings.
+
+**Emit step_end for Step 2:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_2_pattern_validation","step_name":"Pattern validation","agent_type":"coordinator"}'
+```
+
+## Step 3 — Implementation (with worktree isolation)
+
+Every implementation runs in isolated git worktrees, regardless of how many work groups
+the plan defines. This ensures concurrent sessions cannot interfere with the implementation.
+
+#### Step 3a — Shared Dependencies (conditional)
+
+**Trigger:** Plan contains `### Shared Dependencies` section. If no Shared Dependencies
+section exists, skip directly to Step 3b.
+
+**Emit step_start for Step 3a:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3a_shared_deps","step_name":"Shared dependencies","agent_type":"coder"}'
+```
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Implement shared files in main working directory with single coder agent:
+
+"You are implementing shared dependencies for a plan. Read the plan at `$ARGUMENTS`.
+Then read the `.claude/agents/` directory to find the coder agent that matches this work.
+
+**Your scope:** Shared Dependencies
+**Your files:**
+- [list files from Shared Dependencies section]
+
+Hard rules:
+- Only modify files listed in Shared Dependencies. Do not touch work group files.
+- Follow the plan exactly. These files will be used by all work groups.
+- If blocked, write `BLOCKED.md` in the project root and stop."
+
+Then commit to local history (temporary commit for worktree base):
+
+Tool: `Bash`
+
+Command:
+```bash
+git add <shared-files> && git commit -m "WIP: /ship shared dependencies for ${name}
+
+This is a temporary commit that will be squashed with the final implementation in Step 6.
+Created by: /ship skill v3.9.0"
+```
+
+**Emit step_end for Step 3a:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3a_shared_deps","step_name":"Shared dependencies","agent_type":"coder"}'
+```
+
+#### Step 3b — Create Worktrees
+
+**Emit step_start for Step 3b:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3b_create_worktrees","step_name":"Create worktrees","agent_type":"coordinator"}'
+```
+
+Tool: `Bash`
+
+For each work group (parsed in Step 1), create isolated worktree.
+
+**Coordinator instructions:**
+- Replace `${name}` with the plan name from Step 1 (e.g., "add-user-auth")
+- Replace `${wg_num}` with work group index (1, 2, 3, ...)
+- Replace `${wg_name}` with work group name from plan (e.g., "Authentication")
+- Replace `${scoped_files}` with space-separated file list from plan (e.g., "src/auth.ts src/middleware.ts")
+
+```bash
+# Create worktree with secure, unique path
+WORKTREE_PATH=$(mktemp -d /tmp/ship-XXXXXXXXXX)
+
+# These variables come from Step 1 plan parsing
+WG_NUM="${wg_num}"   # e.g., 1, 2, 3
+WG_NAME="${wg_name}" # e.g., "Authentication"
+SCOPED_FILES="${scoped_files}"  # e.g., "src/auth.ts src/middleware.ts"
+
+# Create worktree with error handling
+if ! git worktree add "$WORKTREE_PATH" -b "ship-wg${WG_NUM}-${RUN_ID}" HEAD 2>/dev/null; then
+  echo "❌ Failed to create worktree at $WORKTREE_PATH"
+  echo "Possible causes: path exists, disk full, git locked"
+  rm -f .ship-worktrees-${RUN_ID}.tmp
+  exit 1
+fi
+
+# Store worktree info (pipe-delimited: path|num|name|files)
+echo "$WORKTREE_PATH|$WG_NUM|$WG_NAME|$SCOPED_FILES" >> .ship-worktrees-${RUN_ID}.tmp
+```
+
+Using `mktemp -d` ensures:
+- The directory is created with 0700 permissions (not world-readable)
+- The path contains a random suffix, eliminating symlink/TOCTOU attacks
+- Kernel-guaranteed uniqueness, no PID or timestamp collisions
+
+**Validation:** After creating all worktrees, verify tracking file exists:
+
+```bash
+if [ ! -f .ship-worktrees-${RUN_ID}.tmp ] || [ ! -s .ship-worktrees-${RUN_ID}.tmp ]; then
+  echo "❌ No worktrees were created. Check Step 3b output."
+  exit 1
+fi
+```
+
+Output: "✓ Created worktree for Work Group ${wg_num}: ${wg_name} at $WORKTREE_PATH"
+
+**Emit step_end for Step 3b:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3b_create_worktrees","step_name":"Create worktrees","agent_type":"coordinator"}'
+```
+
+#### Step 3c — Dispatch Coders to Worktrees
+
+**Emit step_start for Step 3c:**
+
+Tool: `Bash`
+
+```bash
+# WG_COUNT = number of work groups dispatched
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"step_start\",\"step\":\"step_3c_dispatch_coders\",\"step_name\":\"Dispatch coders to worktrees\",\"agent_type\":\"coder\",\"work_groups\":${WG_COUNT:-1}}"
+```
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6` — **dispatch one coder per work group (parallel if multiple, single Task call if one group)**
+
+Each coder receives this prompt (scoped to its worktree):
+
+"You are implementing part of a plan in an isolated worktree. Read the plan at `$ARGUMENTS`.
+
+**CRITICAL: You are working in an isolated worktree at:**
+`{WORKTREE_PATH}`
+
+All file operations must use absolute paths within this worktree. The worktree is a complete copy of the repository with shared dependencies already applied.
+
+**Your scope:** Work Group N: [group-name]
+**Your files:**
+- [list files from this work group only]
+
+**File operation examples:**
+- Read: Read tool with {WORKTREE_PATH}/src/components/Button.tsx
+- Edit: Edit tool with {WORKTREE_PATH}/src/components/Button.tsx
+- Write: Write tool with {WORKTREE_PATH}/src/utils/helpers.ts
+
+Hard rules:
+- Only modify files listed in your scope within {WORKTREE_PATH}.
+- Do not access files outside your worktree.
+- Follow the plan exactly. Do not expand scope.
+- If blocked on something you cannot resolve, write `BLOCKED.md` at {WORKTREE_PATH}/BLOCKED.md and stop.
+
+**Learnings (optional):**
+If the file `.claude/learnings.md` exists, read the `## Coder Patterns` section before starting implementation. Apply any relevant learnings to avoid known recurring issues. Do not mention the learnings file in your output — just apply the patterns silently."
+
+**After all coders finish:**
+
+Tool: `Bash`
+
+Check for BLOCKED.md in any worktree:
+
+```bash
+while IFS='|' read -r wt_path wg_num wg_name scoped_files; do
+  if [ -f "$wt_path/BLOCKED.md" ]; then
+    echo "Implementation blocked in Work Group $wg_num. See worktree at $wt_path"
+    cat "$wt_path/BLOCKED.md"
+    exit 1
+  fi
+done < .ship-worktrees-${RUN_ID}.tmp
+```
+
+If any worktree has BLOCKED.md, stop workflow and output: "❌ Implementation blocked. See output above."
+
+**Emit step_end for Step 3c:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3c_dispatch_coders","step_name":"Dispatch coders to worktrees","agent_type":"coder"}'
+```
+
+#### Step 3d — File Boundary Validation
+
+**Emit step_start for Step 3d:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3d_boundary_validation","step_name":"File boundary validation","agent_type":"coordinator"}'
+```
+
+Tool: `Bash`
+
+For each worktree, verify agents only modified scoped files:
+
+```bash
+VIOLATIONS=""
+MAIN_DIR=$(pwd)
+
+while IFS='|' read -r wt_path wg_num wg_name scoped_files; do
+  cd "$wt_path"
+
+  # Get all modified files (working directory + index + committed)
+  # This catches Edit/Write tool changes even if not staged
+  MODIFIED=$(git status --porcelain | awk '{print $2}')
+  # Known limitation: awk '{print $2}' does not correctly handle renamed files
+  # (R old -> new captures only 'old') or file paths containing spaces.
+  # The merge step (3e) is the primary safety boundary — it copies only scoped files.
+  # Improving this parsing is deferred to a follow-up change.
+
+  # If nothing modified, check against HEAD~1 (for committed changes)
+  if [ -z "$MODIFIED" ] && git rev-parse HEAD~1 >/dev/null 2>&1; then
+    MODIFIED=$(git diff --name-only HEAD~1 HEAD)
+  fi
+
+  # Validate each modified file is in scoped files (exact match)
+  for file in $MODIFIED; do
+    FOUND=0
+
+    # Normalize paths (remove leading ./)
+    normalized_file=$(echo "$file" | sed 's|^\./||')
+
+    # Check against each scoped file (space-separated list)
+    for scoped in $scoped_files; do
+      normalized_scoped=$(echo "$scoped" | sed 's|^\./||')
+
+      if [ "$normalized_file" = "$normalized_scoped" ]; then
+        FOUND=1
+        break
+      fi
+    done
+
+    if [ $FOUND -eq 0 ]; then
+      VIOLATIONS="${VIOLATIONS}Work Group $wg_num ($wg_name) modified $file (not in scope: $scoped_files)\n"
+    fi
+  done
+
+  cd "$MAIN_DIR"
+done < .ship-worktrees-${RUN_ID}.tmp
+
+if [ -n "$VIOLATIONS" ]; then
+  echo -e "$VIOLATIONS" > .ship-violations-${RUN_ID}.tmp
+fi
+```
+
+**Verdict gate:**
+
+Read `.ship-violations-${RUN_ID}.tmp`. If exists and non-empty:
+
+Output:
+```
+❌ File boundary violations detected:
+
+[contents of .ship-violations-${RUN_ID}.tmp]
+
+Agents modified files outside their assigned scope. This is a critical error.
+Workflow stopped. Review agent behavior and retry.
+```
+
+**STOP workflow** — do not proceed to Step 3e.
+
+**Emit verdict event for boundary check:**
+
+Tool: `Bash`
+
+```bash
+# BOUNDARY_VERDICT: "PASS" if no violations, "BLOCKED" if violations detected
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_3d_boundary_validation\",\"verdict\":\"${BOUNDARY_VERDICT:-PASS}\",\"verdict_source\":\"boundary_check\",\"agent_type\":\"coordinator\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3d_boundary_validation","step_name":"File boundary validation","agent_type":"coordinator"}'
+```
+
+If no violations, continue to Step 3e.
+
+#### Step 3e — Merge Worktrees
+
+**Emit step_start for Step 3e:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3e_merge","step_name":"Merge worktrees","agent_type":"coordinator"}'
+```
+
+Tool: `Bash`
+
+For each worktree, copy scoped files to main working directory:
+
+```bash
+MAIN_DIR=$(pwd)
+
+while IFS='|' read -r wt_path wg_num wg_name scoped_files; do
+  echo "Merging Work Group $wg_num: $wg_name"
+
+  for file in $scoped_files; do
+    if [ -f "$wt_path/$file" ]; then
+      mkdir -p "$MAIN_DIR/$(dirname "$file")"
+      cp "$wt_path/$file" "$MAIN_DIR/$file"
+      echo "  ✓ Merged $file"
+    fi
+  done
+done < .ship-worktrees-${RUN_ID}.tmp
+
+# Post-merge validation: verify all scoped files exist in main directory
+while IFS='|' read -r wt_path wg_num wg_name scoped_files; do
+  for file in $scoped_files; do
+    if [ ! -f "$MAIN_DIR/$file" ]; then
+      echo "WARNING: Scoped file $file was not created by coder in worktree"
+    fi
+  done
+done < .ship-worktrees-${RUN_ID}.tmp
+```
+
+Post-merge validation emits warnings but does not block the workflow. A file may legitimately
+not need creation if it already existed in the main directory before the worktree was
+created (e.g., a file listed under "Files to Modify" that the coder chose not to change).
+The code review in Step 4 serves as the catch for genuinely missing files.
+
+Output: "✓ Merged N work groups (X files total)"
+
+**Emit file_modification event per work group, then step_end for Step 3e:**
+
+For each work group processed in the merge loop above, emit a `file_modification` event using the actual values from that iteration (`WG_NUM`, `WG_NAME`, and the list of scoped files as a JSON array):
+
+Tool: `Bash`
+
+```bash
+# Emit one file_modification event per work group using actual loop values.
+# Construct FILES_JSON as a JSON array of the scoped files for this work group.
+# Example (replace WG_NUM, WG_NAME, and FILES_JSON with actual values):
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"file_modification\",\"step\":\"step_3e_merge\",\"work_group\":${WG_NUM},\"work_group_name\":\"${WG_NAME}\",\"files_modified\":${FILES_JSON}}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3e_merge","step_name":"Merge worktrees","agent_type":"coordinator"}'
+```
+
+#### Step 3f — Cleanup Worktrees
+
+**Emit step_start for Step 3f:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_3f_cleanup","step_name":"Cleanup worktrees","agent_type":"coordinator"}'
+```
+
+Tool: `Bash`
+
+Remove all worktrees and temporary files:
+
+```bash
+CLEANUP_FAILURES=0
+
+while IFS='|' read -r wt_path wg_num wg_name scoped_files; do
+  if ! git worktree remove "$wt_path" --force 2>/dev/null; then
+    echo "⚠️  Failed to remove worktree: $wt_path"
+    CLEANUP_FAILURES=$((CLEANUP_FAILURES + 1))
+  else
+    echo "✓ Removed worktree for Work Group $wg_num"
+  fi
+done < .ship-worktrees-${RUN_ID}.tmp
+
+# Report cleanup failures but don't block workflow
+if [ $CLEANUP_FAILURES -gt 0 ]; then
+  echo "⚠️  $CLEANUP_FAILURES worktree(s) failed to clean up. Manual cleanup:"
+  echo "    git worktree prune"
+  echo "    rm -rf /tmp/ship-*"
+fi
+
+# Clean up tracking files
+rm -f .ship-worktrees-${RUN_ID}.tmp .ship-violations-${RUN_ID}.tmp
+```
+
+**Note:** Cleanup failures are logged but don't block the workflow. Orphaned worktrees can be cleaned manually with `git worktree prune` or automatically by the pre-flight check in Step 0.
+
+**Emit step_end for Step 3f:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_3f_cleanup","step_name":"Cleanup worktrees","agent_type":"coordinator"}'
+```
+
+## Step 4 — Parallel verification
+
+**Pre-step: Compute import graph for blast radius (runs before parallel dispatch):**
+
+Tool: `Bash`
+
+```bash
+# Extract import graph for files changed in this ship run, for blast radius assessment
+SCANNER_PYTHON="${HOME}/.claude-devkit/scanner-venv/bin/python3"
+SCANNER_SCRIPT="$DEVKIT_SCRIPTS/codebase-scanner.py"
+
+# Get list of changed files
+CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || echo "")
+
+IMPORT_GRAPH_DATA=""
+if [ -n "$CHANGED_FILES" ] && [ -f "$SCANNER_SCRIPT" ]; then
+  # Run scanner in JSON mode to get full import graph
+  if [ -x "$SCANNER_PYTHON" ]; then
+    SCANNER_JSON=$("$SCANNER_PYTHON" "$SCANNER_SCRIPT" --format json --quiet 2>/dev/null || echo "")
+  else
+    SCANNER_JSON=$(python3 "$SCANNER_SCRIPT" --format json --quiet 2>/dev/null || echo "")
+  fi
+
+  if [ -n "$SCANNER_JSON" ]; then
+    # Extract import edges where source_file is one of the changed files
+    IMPORT_GRAPH_DATA=$(SCANNER_JSON_VAR="$SCANNER_JSON" CHANGED_FILES_VAR="$CHANGED_FILES" \
+      python3 -c "
+import json, os
+scanner_json = os.environ.get('SCANNER_JSON_VAR', '')
+changed_files_str = os.environ.get('CHANGED_FILES_VAR', '')
+try:
+    data = json.loads(scanner_json)
+    changed = set(f.strip() for f in changed_files_str.splitlines() if f.strip())
+    imports = data.get('imports', [])
+    relevant = [i for i in imports if i.get('source_file', '') in changed]
+    if not relevant:
+        print('No import edges found for changed files.')
+    else:
+        lines = ['| Source File | Imports | Kind |', '|---|---|---|']
+        for imp in relevant:
+            lines.append(f\"| {imp.get('source_file','')} | {imp.get('target','')} | {imp.get('kind','')} |\")
+        print('\n'.join(lines))
+except Exception as e:
+    print(f'Import graph extraction failed: {e}')
+" 2>/dev/null || echo "Import graph unavailable.")
+  fi
+fi
+
+echo "Import graph data computed (${#IMPORT_GRAPH_DATA} chars)"
+```
+
+Retain `$IMPORT_GRAPH_DATA` in coordinator context for inclusion in the Step 4a code reviewer prompt.
+
+Tool: `Task` (code review, QA), `Bash` (tests) — **Run all three checks in parallel in a single message**
+
+Run these verification tasks in parallel (3 or 4 tasks depending on security skill deployment):
+
+### 4a — Code review
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Prompt:
+"You are reviewing code changes against a plan. Read the plan at `$ARGUMENTS`.
+Then read the `.claude/agents/` directory to find the code-reviewer agent.
+Follow that agent's review standards.
+
+Review all files listed in the plan's task breakdown. Compare the current file contents
+against the plan's requirements.
+
+**Import graph (blast radius):**
+
+The following import relationships were detected by the codebase scanner for files changed
+in this ship run. Use this data to assess blast radius — which other modules depend on
+the changed files and may be affected by this change.
+
+$IMPORT_GRAPH_DATA
+
+Write your review to `$PLANS_DIR/[name].code-review.md` with this structure:
+- **Verdict:** PASS / REVISION_NEEDED / FAIL
+- **Critical findings** (must fix — correctness, security, data loss)
+- **Major findings** (should fix — performance, maintainability, missing requirements)
+- **Minor findings** (optional — style, naming, minor improvements)
+- **Positives** (what was done well)
+
+A PASS verdict means no Critical or Major findings remain.
+
+**Learnings (optional):**
+If the file `.claude/learnings.md` exists, read the `## Coder Patterns > ### Missed by coders, caught by reviewers` section. Explicitly verify that none of these known coder mistakes are present in the implementation. If you find a known pattern, reference it in your findings.
+Also read `## Reviewer Patterns > ### Overcorrected` to avoid flagging known false positives."
+
+### 4b — Run tests
+
+Tool: `Bash` (direct — coordinator does this)
+
+Run the test command extracted from the plan in Step 1.
+
+If exit code is non-zero:
+- Write the test output to `$PLANS_DIR/[name].test-failure.log`
+
+### 4c — QA validation
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Prompt:
+"You are a QA engineer validating that an implementation meets its plan.
+Read the plan at `$ARGUMENTS`.
+Then read the `.claude/agents/` directory to find the qa-engineer agent.
+Follow that agent's validation standards.
+
+Check every acceptance criterion in the plan against the current code.
+Run any test commands from the plan if they haven't been run.
+
+Write `$PLANS_DIR/[name].qa-report.md` with:
+- **Verdict:** PASS / PASS_WITH_NOTES / FAIL
+- **Acceptance criteria coverage** (checklist: criterion → met/not met)
+- **Missing tests or edge cases**
+- **Notes** (for PASS_WITH_NOTES — non-blocking observations)
+
+**Learnings (optional):**
+If the file `.claude/learnings.md` exists, read the `## QA Patterns` and `## Test Patterns` sections. Verify that known recurring coverage gaps are addressed in this implementation. If you find a known gap, reference it in your report."
+
+### 4d — Secure review (conditional)
+
+Tool: `Glob`
+
+Glob for `~/.claude/skills/secure-review/SKILL.md`
+
+**If found:**
+
+**If security requirements content was extracted in Step 1 (plan has threat model):**
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Prompt:
+"You are running a semantic security review as part of the /ship verification step.
+
+Read the secure-review skill definition at `~/.claude/skills/secure-review/SKILL.md`.
+Execute its scanning workflow (vulnerability, data flow, auth/authz scans) against the
+files modified in this implementation.
+
+THREAT MODEL CONTEXT: The plan for this implementation includes a threat model.
+Cross-reference your findings against the following security requirements from the plan.
+Specifically:
+- Verify that each mitigation listed in the STRIDE analysis has been implemented in the code
+- Check whether any trust boundary identified in the plan lacks enforcement in the implementation
+- Flag any STRIDE category (Spoofing, Tampering, Repudiation, Information Disclosure, DoS,
+  Elevation of Privilege) where the plan identifies a threat but the code does not implement
+  the specified mitigation
+
+Plan Security Requirements:
+---
+[extracted security requirements content]
+---
+
+In your report, include a section '## Threat Model Coverage' that maps each plan-identified
+threat to its implementation status: IMPLEMENTED / PARTIALLY_IMPLEMENTED / NOT_IMPLEMENTED / NOT_APPLICABLE.
+Include evidence (file path and line reference) for each status.
+
+Scope: `changes` (uncommitted modifications in the working directory).
+
+Write your security review summary to `$PLANS_DIR/[name].secure-review.md` with the
+standard secure-review output format including verdict (PASS / PASS_WITH_NOTES / BLOCKED),
+severity-rated findings, and redacted secrets (if any).
+
+CRITICAL: Never include actual secret values in your report. Redact to first 4 / last 4 characters."
+
+**If no security requirements content was extracted in Step 1 (no threat model):**
+
+Use the existing prompt unchanged:
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-opus-4-6`
+
+Prompt:
+"You are running a semantic security review as part of the /ship verification step.
+
+Read the secure-review skill definition at `~/.claude/skills/secure-review/SKILL.md`.
+Execute its scanning workflow (vulnerability, data flow, auth/authz scans) against the
+files modified in this implementation.
+
+Scope: `changes` (uncommitted modifications in the working directory).
+
+Write your security review summary to `$PLANS_DIR/[name].secure-review.md` with the
+standard secure-review output format including verdict (PASS / PASS_WITH_NOTES / BLOCKED),
+severity-rated findings, and redacted secrets (if any).
+
+CRITICAL: Never include actual secret values in your report. Redact to first 4 / last 4 characters."
+
+**If not found:**
+- Log: "Security note: secure-review skill not deployed. Security code review skipped."
+- Set secure review verdict to "not-run"
+
+### Result evaluation
+
+Coordinator reads all outputs (three or four, depending on secure-review deployment) and evaluates.
+
+**The result evaluation matrix is maturity-level-aware:**
+
+**At L1 (advisory):**
+
+| Code Review | Tests | QA | Secure Review | Action |
+|---|---|---|---|---|
+| PASS | Pass (exit 0) | PASS or PASS_WITH_NOTES | PASS / PASS_WITH_NOTES / BLOCKED / not-run | Proceed to Step 6. If BLOCKED: log prominent warning ("Security review found critical issues"), auto-downgrade to PASS_WITH_NOTES. |
+| REVISION_NEEDED | Any | Any | Any | Enter Step 5 (revision loop) |
+| FAIL | Any | Any | Any | Stop workflow |
+| Any | Fail (non-zero) | Any | Any | Stop workflow |
+| PASS | Pass | FAIL | Any | Stop workflow |
+
+At L1, secure-review BLOCKED is reported but does not stop the workflow (parent plan L1 definition).
+
+**At L2/L3 (enforced/audited):**
+
+| Code Review | Tests | QA | Secure Review | Action |
+|---|---|---|---|---|
+| PASS | Pass (exit 0) | PASS or PASS_WITH_NOTES | PASS or PASS_WITH_NOTES or not-run | Proceed to Step 6 (commit) |
+| PASS | Pass (exit 0) | PASS or PASS_WITH_NOTES | BLOCKED | If --security-override: Proceed to Step 6 (log override). Else: Stop workflow. |
+| REVISION_NEEDED | Any | Any | Any (not BLOCKED) | Enter Step 5 (revision loop) |
+| REVISION_NEEDED | Any | Any | BLOCKED | Enter Step 5 (revision loop). Include security findings in coder instructions. Coders fix both code review and security issues. Re-run Step 4 after revision. |
+| FAIL | Any | Any | Any | Stop workflow |
+| Any | Fail (non-zero) | Any | Any | Stop workflow |
+| PASS | Pass | FAIL | Any | Stop workflow |
+| Any | Any | Any | BLOCKED (no override, revision loop exhausted) | Stop workflow |
+
+If stopping due to secure review BLOCKED (L2/L3, post-revision):
+- "Secure review BLOCKED after revision loop. See `$PLANS_DIR/[name].secure-review.md`. Fix security findings or re-run with --security-override."
+
+If proceeding with security override (L2/L3):
+- Log: "Secure review BLOCKED — overridden: [reason]. Proceeding with PASS_WITH_NOTES."
+
+If auto-downgrading at L1:
+- Log: "Secure review BLOCKED (L1 advisory — non-blocking). Review findings: `$PLANS_DIR/[name].secure-review.md`."
+
+**Emit retrospective per-substep audit events for Step 4 results:**
+
+The coordinator evaluates each substep's result sequentially below. For each substep, a `step_start`/`step_end` pair brackets the verdict emission. These are retrospective markers -- the parallel Tasks have already completed. The markers preserve the parent plan's per-substep identifiers (`step_4a`, `step_4b`, `step_4c`, `step_4d`) for timeline reconstruction.
+
+The coordinator MUST replace VERDICT variables with actual values from the result evaluation above.
+
+Tool: `Bash`
+
+```bash
+# Step 4a -- Code review retrospective markers
+# CODE_REVIEW_VERDICT: "PASS", "REVISION_NEEDED", or "FAIL"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_4a_code_review","step_name":"Code review (retrospective)","agent_type":"coordinator"}'
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_4a_code_review\",\"verdict\":\"${CODE_REVIEW_VERDICT}\",\"verdict_source\":\"code_review\",\"agent_type\":\"code-reviewer\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_4a_code_review","step_name":"Code review (retrospective)","agent_type":"coordinator"}'
+
+# Step 4b -- Tests retrospective markers
+# TEST_VERDICT: "PASS" or "FAIL"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_4b_tests","step_name":"Tests (retrospective)","agent_type":"coordinator"}'
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_4b_tests\",\"verdict\":\"${TEST_VERDICT}\",\"verdict_source\":\"tests\",\"agent_type\":\"coordinator\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_4b_tests","step_name":"Tests (retrospective)","agent_type":"coordinator"}'
+
+# Step 4c -- QA retrospective markers
+# QA_VERDICT: "PASS", "PASS_WITH_NOTES", or "FAIL"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_4c_qa","step_name":"QA (retrospective)","agent_type":"coordinator"}'
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"verdict\",\"step\":\"step_4c_qa\",\"verdict\":\"${QA_VERDICT}\",\"verdict_source\":\"qa\",\"agent_type\":\"qa-engineer\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_4c_qa","step_name":"QA (retrospective)","agent_type":"coordinator"}'
+
+# Step 4d -- Secure review retrospective markers (conditional: only if gate ran)
+# SECURE_REVIEW_GATE_VERDICT: "PASS", "PASS_WITH_NOTES", "BLOCKED", or "not-run"
+# SECURE_REVIEW_ACTION: "pass", "block", "override", or "skip"
+# SECURE_REVIEW_EFFECTIVE_VERDICT: "PASS", "PASS_WITH_NOTES", or "BLOCKED"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_4d_secure_review","step_name":"Secure review (retrospective)","agent_type":"coordinator"}'
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"security_decision\",\"step\":\"step_4d_secure_review\",\"gate\":\"secure_review\",\"gate_verdict\":\"${SECURE_REVIEW_GATE_VERDICT:-not-run}\",\"action\":\"${SECURE_REVIEW_ACTION:-skip}\",\"effective_verdict\":\"${SECURE_REVIEW_EFFECTIVE_VERDICT:-PASS}\"}"
+
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_4d_secure_review","step_name":"Secure review (retrospective)","agent_type":"coordinator"}'
+```
+
+If stopping, output appropriate message:
+- "Code review FAIL. See `$PLANS_DIR/[name].code-review.md`."
+- "Tests failed. See `$PLANS_DIR/[name].test-failure.log`."
+- "QA validation FAIL. See `$PLANS_DIR/[name].qa-report.md`."
+
+## Step 5 — Revision loop (conditional)
+
+**Trigger:** Step 4 code review verdict is `REVISION_NEEDED` (and no FAIL verdicts from any check).
+
+**If Step 4 all checks PASS:** skip to Step 6.
+
+**Emit step_start for Step 5 (only if Step 5 is executing):**
+
+These emit calls are conditional on Step 5 actually executing. If Step 4 code review returned PASS, skip this entire Step 5 section including these emit calls.
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_5_revision_loop","step_name":"Revision loop","agent_type":"coordinator"}'
+```
+
+### 5a — Coder fixes (with worktree isolation)
+
+Before re-creating worktrees, commit the current working directory state so that
+worktrees created from HEAD contain the first-pass implementation code:
+
+Tool: `Bash`
+
+**IMPORTANT:** The coordinator MUST enumerate the specific files from the plan's task breakdown and shared dependencies. Build the file list by concatenating: (1) shared dependency files committed in Step 2a, and (2) each work group's "Files modified" list from the plan being shipped. Use `git add <file1> <file2> ...` with explicit paths. Never use `git add -A` or `git add .` as this risks staging secrets, `.env` files, or other sensitive content that may have been created during implementation. After staging, run `git status --porcelain` and verify that only expected files are staged.
+
+```bash
+# Stage only files scoped by the plan's task breakdown.
+# The coordinator MUST construct this list from:
+#   1. Shared dependency files (from Step 2a)
+#   2. Each work group's "Files modified" list from the plan
+# Example: git add src/auth.ts src/auth.test.ts lib/helpers.ts
+# NEVER use git add -A or git add .
+git add $SHARED_DEP_FILES $WG1_FILES $WG2_FILES ...
+git commit -m "WIP: ship v3.9.0 first-pass implementation (pre-revision)"
+```
+
+This ensures revision-loop worktrees are based on the first-pass code, not the
+pre-implementation state. The coder can then read the code review feedback and
+apply targeted fixes to the existing implementation rather than re-implementing
+from scratch.
+
+Then proceed with the standard worktree workflow:
+
+- Re-create worktrees (Step 3b) — these now branch from the WIP commit containing first-pass code
+- Dispatch coders to worktrees (Step 3c) with modified prompt:
+  "Read the code review at `$PLANS_DIR/[name].code-review.md`.
+  Address all Critical and Major findings.
+
+  **IMPORTANT:** The code review references files in the main directory (e.g., src/Button.tsx).
+  You are working in an isolated worktree at {WORKTREE_PATH}.
+  Translate paths when reading/editing files:
+  - Code review mentions: src/Button.tsx
+  - You must access: {WORKTREE_PATH}/src/Button.tsx
+
+  Do not change anything else.
+  Read `.claude/agents/` to find the coder agent and follow its standards."
+- Validate file boundaries (Step 3d)
+- Merge worktrees (Step 3e) — including post-merge validation
+- Cleanup worktrees (Step 3f)
+
+### 5b — Re-verify in parallel
+
+Re-run Step 4 in its entirety (all three parallel checks: code review + tests + QA).
+
+Evaluate results using the same result matrix from Step 4.
+
+**Max 2 revision rounds total.** If still REVISION_NEEDED or FAIL after 2 rounds:
+stop the workflow. Output: "Code review did not converge after 2 rounds. See `$PLANS_DIR/[name].code-review.md`."
+
+**Emit step_end for Step 5 (only if Step 5 executed):**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_5_revision_loop","step_name":"Revision loop","agent_type":"coordinator"}'
+```
+
+**Note:** Yes, this re-runs tests and QA on code that may be revised. This is an acceptable tradeoff because:
+- Most implementations pass code review on the first try (parallelism saves time in the common case)
+- Re-running tests/QA is cheaper than sequential workflows
+
+## Step 6 — Commit gate
+
+**Emit step_start for Step 6:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_6_commit_gate","step_name":"Commit gate","agent_type":"coordinator"}'
+```
+
+Read `$PLANS_DIR/[name].qa-report.md`. Check the verdict.
+
+**If PASS or PASS_WITH_NOTES:**
+
+**Dependency audit gate (conditional):**
+
+Tool: `Glob`
+
+Glob for `~/.claude/skills/dependency-audit/SKILL.md`
+
+**If found:**
+
+Detect actual dependency changes by diffing manifest files against HEAD:
+
+Tool: `Bash`
+
+```bash
+# Check each known manifest file for dependency-section changes
+for manifest in package.json requirements.txt pyproject.toml Pipfile go.mod Cargo.toml pom.xml Gemfile; do
+  if [ -f "$manifest" ]; then
+    git diff HEAD -- "$manifest" 2>/dev/null
+  fi
+done
+```
+
+If any manifest file diff shows additions in dependency sections (new packages, version changes):
+
+**If dependency changes detected:**
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Prompt:
+"You are running a dependency audit as part of the /ship commit gate.
+
+Read the dependency-audit skill definition at `~/.claude/skills/dependency-audit/SKILL.md`.
+Execute it against the current project.
+
+Report your verdict: PASS, PASS_WITH_NOTES, INCOMPLETE, or BLOCKED.
+If BLOCKED, list the Critical CVE findings.
+Write your report to `$PLANS_DIR/[name].dependency-audit.md`."
+
+**If dependency audit returns BLOCKED:**
+- At L1 (advisory): Log prominent warning. Auto-downgrade to PASS_WITH_NOTES. Continue.
+  Output: "Dependency audit BLOCKED (L1 advisory — non-blocking). Review findings: `$PLANS_DIR/[name].dependency-audit.md`."
+- At L2/L3: If `--security-override`: Downgrade to PASS_WITH_NOTES. Log override reason. Else: Stop workflow.
+  Output: "Dependency audit BLOCKED. Critical vulnerabilities found. See `$PLANS_DIR/[name].dependency-audit.md`."
+
+**If dependency audit returns INCOMPLETE:**
+- Log: "Dependency audit INCOMPLETE — no scanner available for this ecosystem. Install the appropriate scanner for full CVE scanning."
+- Continue (INCOMPLETE does not block at any level).
+
+**If no dependency changes detected:** Skip dependency audit.
+- Log: "No dependency changes detected (manifest files unchanged vs HEAD). Skipping dependency audit."
+
+**If not found:**
+- Log: "Security note: dependency-audit skill not deployed. Dependency audit skipped."
+
+**Emit security_decision event for dependency audit gate:**
+
+Tool: `Bash`
+
+```bash
+# Emit security_decision event for dependency audit result
+# Replace DEP_GATE_VERDICT, DEP_ACTION, and DEP_EFFECTIVE_VERDICT with actual values:
+#   DEP_GATE_VERDICT: "PASS", "PASS_WITH_NOTES", "BLOCKED", "INCOMPLETE", or "not-run"
+#   DEP_ACTION: "pass", "block", "override", or "skip"
+#   DEP_EFFECTIVE_VERDICT: "PASS", "PASS_WITH_NOTES", or "BLOCKED"
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"security_decision\",\"step\":\"step_6_commit_gate\",\"gate\":\"dependency_audit\",\"gate_verdict\":\"${DEP_GATE_VERDICT:-not-run}\",\"action\":\"${DEP_ACTION:-skip}\",\"effective_verdict\":\"${DEP_EFFECTIVE_VERDICT:-PASS}\"}"
+```
+
+Execute the following finalization block ONLY if the commit gate verdict is PASS or PASS_WITH_NOTES (i.e., only if execution has reached this point on the PASS path):
+
+**Audit log verification and finalization (PASS path only):**
+
+Tool: `Bash`
+
+```bash
+# Audit log verification (non-blocking) and run_end emission
+if [ -f "$AUDIT_LOG" ]; then
+  EVENT_COUNT=$(wc -l < "$AUDIT_LOG" | tr -d ' ')
+  RUN_START_COUNT=$(grep -c '"event_type":"run_start"' "$AUDIT_LOG" 2>/dev/null || echo "0")
+
+  # Check 1: run_start exists
+  if [ "$RUN_START_COUNT" -eq 0 ]; then
+    echo "Warning: Audit log exists but missing run_start event."
+  fi
+
+  # Check 2: minimum event count (at least 5: run_start + at least 2 step pairs)
+  EXPECTED_MIN=5
+  if [ "$EVENT_COUNT" -lt "$EXPECTED_MIN" ]; then
+    echo "Warning: Audit log has only $EVENT_COUNT events (expected at least $EXPECTED_MIN)."
+  fi
+
+  # Check 3: security_decision events when security gates ran
+  SECRETS_SCAN_DEPLOYED=$(ls ~/.claude/skills/secrets-scan/SKILL.md 2>/dev/null && echo "yes" || echo "no")
+  SECURE_REVIEW_DEPLOYED=$(ls ~/.claude/skills/secure-review/SKILL.md 2>/dev/null && echo "yes" || echo "no")
+  DEP_AUDIT_DEPLOYED=$(ls ~/.claude/skills/dependency-audit/SKILL.md 2>/dev/null && echo "yes" || echo "no")
+
+  SECURITY_EVENTS=$(grep -c '"event_type":"security_decision"' "$AUDIT_LOG" 2>/dev/null || echo "0")
+
+  if [ "$SECRETS_SCAN_DEPLOYED" = "yes" ] || [ "$SECURE_REVIEW_DEPLOYED" = "yes" ] || [ "$DEP_AUDIT_DEPLOYED" = "yes" ]; then
+    if [ "$SECURITY_EVENTS" -eq 0 ]; then
+      echo "Warning: Security skills are deployed but no security_decision events found in audit log."
+    fi
+  fi
+
+  # Emit step_end for Step 6 (MUST be before state file deletion)
+  bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+    '{"event_type":"step_end","step":"step_6_commit_gate","step_name":"Commit gate","agent_type":"coordinator"}'
+
+  # Score computation (pre-run_end, non-blocking)
+  # All verdict, security_decision, and step events are already in the log at this point.
+  # run_score is emitted before run_end so it is included in L2/L3 committed logs.
+  SCORE_JSON=$(bash "$DEVKIT_SCRIPTS/compute-run-score.sh" "$AUDIT_LOG" 2>/dev/null)
+  if [ -n "$SCORE_JSON" ]; then
+    bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" "$SCORE_JSON"
+    echo "Run score computed and logged."
+  else
+    echo "Warning: Score computation returned empty output. Continuing without score."
+  fi
+
+  # Emit run_end
+  COMMIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+    "{\"event_type\":\"run_end\",\"outcome\":\"success\",\"commit_sha\":\"${COMMIT_SHA}\",\"plan_file\":\"${PLAN_PATH:-${ARGUMENTS:-unknown}}\"}"
+
+  # Stage audit log for commit at L2/L3
+  # Audit logs live at $PLANS_DIR/audit-logs/ (centralized, outside project repo).
+  # Copy into project's .devkit-audit-logs/ for git staging.
+  if [ "$SECURITY_MATURITY" = "enforced" ] || [ "$SECURITY_MATURITY" = "audited" ]; then
+    mkdir -p ".devkit-audit-logs"
+    cp -p "$AUDIT_LOG" ".devkit-audit-logs/"
+    git add --force ".devkit-audit-logs/ship-${RUN_ID}.jsonl"
+    echo "Audit log copied and staged for commit (${SECURITY_MATURITY} maturity)."
+
+    # Cleanup trap: remove staged copy if git commit fails
+    _audit_cleanup() {
+      if [ -f ".devkit-audit-logs/ship-${RUN_ID}.jsonl" ] && \
+         ! git diff --cached --name-only | grep -q "devkit-audit-logs/ship-${RUN_ID}"; then
+        rm -f ".devkit-audit-logs/ship-${RUN_ID}.jsonl"
+        rmdir ".devkit-audit-logs" 2>/dev/null || true
+      fi
+    }
+    trap _audit_cleanup EXIT
+
+    # L3: also stage key file
+    if [ "$SECURITY_MATURITY" = "audited" ]; then
+      KEY_FILE=".ship-audit-key-${RUN_ID}"
+      if [ -f "$KEY_FILE" ]; then
+        git add --force "$KEY_FILE"
+        echo "HMAC key file staged for commit (audited maturity)."
+      fi
+    fi
+  else
+    echo "Audit log available at $AUDIT_LOG (advisory maturity -- not committed)."
+  fi
+
+  # Do NOT delete state file here on PASS path -- Step 7 needs it for emit calls.
+  # State file cleanup happens at the end of Step 7.
+else
+  echo "Warning: Audit log not found at $AUDIT_LOG. Logging may have failed."
+fi
+```
+
+1. **If WIP commits exist from Step 3a and/or Step 5a:** Soft reset to squash them with the final commit
+   - Tool: `Bash`
+   - Count the number of WIP commits to squash (0, 1, or 2 depending on whether Step 3a shared deps and Step 5a pre-revision commits were created)
+   - **Branch protection:** The coordinator MUST verify the current branch is not `main` or `master` before executing `git reset --soft`. If running on a protected branch, the workflow stops with an error. This prevents accidental history rewriting on the default branch.
+   - Run the branch protection check first:
+     ```bash
+     # Branch protection check: refuse to rewrite history on main/master
+     CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "DETACHED")
+     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+         echo "ERROR: /ship is running on protected branch '$CURRENT_BRANCH'."
+         echo "Refusing to run 'git reset --soft' on a protected branch."
+         echo "Create a feature branch first: git checkout -b feature/<name>"
+         exit 1
+     fi
+     ```
+   - Command: `git reset --soft HEAD~N` (where N is the number of WIP commits)
+
+2. Stage changed files:
+   - Tool: `Bash`
+   - Command: `git add <files from plan task breakdown + shared deps>`
+
+3. Create commit with proper format:
+   - Tool: `Bash`
+   - Command:
+     ```bash
+     git commit -m "$(cat <<'EOF'
+     <imperative summary from plan goals>
+
+     <why this change was needed - one sentence from plan context>
+
+     Implements: $PLANS_DIR/[name].md
+
+     Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+     EOF
+     )"
+     ```
+   - If `--security-override` was used, append to commit message:
+     ```
+     Security-Override: $SECURITY_OVERRIDE_REASON
+     ```
+
+4. Clean up artifacts:
+   - Tool: `Bash`
+   - Command: `mkdir -p "$PLANS_DIR/archive/[name]" && mv "$PLANS_DIR/[name].code-review.md" "$PLANS_DIR/[name].qa-report.md" "$PLANS_DIR/archive/[name]/" && if [ -f "$PLANS_DIR/[name].feasibility.md" ]; then mv "$PLANS_DIR/[name].feasibility.md" "$PLANS_DIR/archive/[name]/"; fi`
+   - Then, archive test failure log if it exists:
+     ```bash
+     if [ -f "$PLANS_DIR/[name].test-failure.log" ]; then
+       mv "$PLANS_DIR/[name].test-failure.log" "$PLANS_DIR/archive/[name]/"
+     fi
+     ```
+   - Then, archive security review and dependency audit artifacts if they exist:
+     ```bash
+     if [ -f "$PLANS_DIR/[name].secure-review.md" ]; then
+       mv "$PLANS_DIR/[name].secure-review.md" "$PLANS_DIR/archive/[name]/"
+     fi
+     if [ -f "$PLANS_DIR/[name].dependency-audit.md" ]; then
+       mv "$PLANS_DIR/[name].dependency-audit.md" "$PLANS_DIR/archive/[name]/"
+     fi
+     ```
+   - Then, if this is a cross-repo plan (the target validation in Step 1 detected `targets:` frontmatter), clean up plan refs from all involved projects:
+     ```bash
+     # Cross-repo plan ref cleanup (conditional)
+     if [ "${DEVKIT_TARGET_COUNT:-1}" -gt 1 ] || [ -n "$TARGETS_JSON" ]; then
+       devkit plan archive "$DEVKIT_TARGET_0_PATH" "[name]" 2>/dev/null || \
+         echo "WARNING: Cross-repo plan ref cleanup failed. Refs can be rebuilt with: devkit plan sync"
+     fi
+     ```
+     If ref cleanup fails (e.g., secondary target unreachable), the archive proceeds with a warning. Ref cleanup failure is non-blocking.
+
+5. Output success message:
+   - "✅ Implementation complete and committed.
+   - QA report: `$PLANS_DIR/archive/[name]/[name].qa-report.md`
+   - **Next step:** Run `/sync` to update documentation."
+
+**If FAIL:**
+- Do NOT commit.
+- Do NOT run the finalization block above.
+
+Tool: `Bash`
+
+```bash
+# Emit step_end for Step 6 on FAIL path, then run_end, then cleanup.
+# The state file still exists because the finalization block (which contains cleanup) was skipped.
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_6_commit_gate","step_name":"Commit gate","agent_type":"coordinator"}'
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  "{\"event_type\":\"run_end\",\"outcome\":\"failure\",\"plan_file\":\"${PLAN_PATH:-${ARGUMENTS:-unknown}}\"}"
+rm -f ".ship-audit-state-${RUN_ID}.json"
+```
+
+- Output: "❌ QA validation failed. See `$PLANS_DIR/[name].qa-report.md`."
+- Stop the workflow.
+
+## Step 7 — Retro capture (post-commit, non-blocking)
+
+**Trigger:** Step 6 committed successfully (PASS or PASS_WITH_NOTES verdict).
+If Step 6 did not commit (FAIL), skip Step 7 entirely.
+
+**Emit step_start for Step 7:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_start","step":"step_7_retro","step_name":"Retro capture","agent_type":"coordinator"}'
+```
+
+**This step is non-blocking.** If it fails for any reason, log the error and report success from Step 6. The commit is already done — Step 7 is best-effort learning capture.
+
+Tool: `Task`, `subagent_type=general-purpose`, `model=claude-sonnet-4-6`
+
+Prompt:
+"You are extracting learnings from a completed /ship run.
+
+Read the archived review artifacts using glob-based discovery:
+- `$PLANS_DIR/archive/[name]/*.code-review.md`
+- `$PLANS_DIR/archive/[name]/*.qa-report.md`
+
+If any test failure logs exist, also read:
+- `$PLANS_DIR/archive/[name]/*.test-failure.log`
+
+Read each file in its entirety. Extract findings regardless of the specific section header format used. Look for issues by severity, positive observations, coverage gaps, and test failures regardless of how the document is structured.
+
+Read the existing learnings file (if it exists):
+- `.claude/learnings.md`
+
+**Your task:**
+
+1. From the code review, extract:
+   - Any Critical or Major findings (these are things the coder missed). Rate each: Critical / High / Medium / Low.
+   - Any Minor findings that represent a recurring pattern (check if similar issues exist in learnings.md)
+   - Positives are informational only — do not write them to learnings
+
+2. From the QA report, extract:
+   - Missing tests or edge cases. Rate each: Critical / High / Medium / Low.
+   - Acceptance criteria that were not fully met
+
+3. From test failures (if any), extract:
+   - Failure categories (what type of test failed and why). Rate each: Critical / High / Medium / Low.
+
+4. From the security review (if exists):
+   - Glob for `$PLANS_DIR/archive/[name]/*.secure-review.md`
+     (Note: the secure-review artifact is read from the archive directory because Step 6 moves it there before Step 7 runs.)
+   - If found, read the file and check for a `## Threat Model Coverage` section
+   - Any threat with `NOT_IMPLEMENTED` status is a threat model gap -- the plan identified
+     a risk but the implementation did not address it. Rate: High.
+   - Any Critical or High finding from the vulnerability/data-flow/auth scans that does NOT
+     correspond to a threat identified in the plan's STRIDE analysis is a reverse gap -- a real
+     risk the threat model missed. Rate: Medium.
+   - Place threat model gap findings under: `## Security Patterns > ### Threat model gaps`
+
+5. **Deduplication:** For each finding:
+   - Check if an existing learning in `.claude/learnings.md` describes the same underlying issue (same root cause, same actor, same category)
+   - If it does: update the date to today and append `[name]` to the `Seen in:` list using the Edit tool
+   - If it is a new issue: append as a new entry under the appropriate section
+
+6. **Write learnings:**
+   - If `.claude/learnings.md` does not exist, create it with the standard header and sections
+   - Use this format for each entry:
+     `- **[YYYY-MM-DD] [Pattern Title]** — [Description]. Seen in: [feature-list]. #category #tags`
+   - Place entries under the correct section based on source:
+     - Code review Critical/Major findings -> `## Coder Patterns > ### Missed by coders, caught by reviewers`
+     - QA missing coverage -> `## QA Patterns > ### Coverage gaps`
+     - Test failures -> `## Test Patterns > ### Common failures`
+     - Threat model gaps -> `## Security Patterns > ### Threat model gaps`
+   - Update the `Last updated:` timestamp in the header
+
+7. **Report** what you wrote (or that no new learnings were found) to stdout. Do NOT write any report files — just output a summary."
+
+**After Task completes:**
+
+Tool: `Bash`
+
+Auto-commit the learnings file if it was modified:
+```bash
+if git diff --name-only -- .claude/learnings.md | grep -q .; then
+  git add .claude/learnings.md
+  git commit -m "chore: update project learnings from /ship run"
+elif git ls-files --others --exclude-standard -- .claude/learnings.md | grep -q .; then
+  git add .claude/learnings.md
+  git commit -m "chore: add project learnings from /ship run"
+fi
+```
+
+If the commit fails, log the error but do not fail the step.
+
+If Task succeeded, output:
+"Retro capture complete. See `.claude/learnings.md` for updated project learnings."
+
+If Task failed, output:
+"Retro capture skipped (non-blocking). The commit from Step 6 is unaffected.
+Error: [Task error message]
+Run `/retro` manually to capture learnings."
+
+**Emit step_end for Step 7:**
+
+Tool: `Bash`
+
+```bash
+bash "$DEVKIT_SCRIPTS/emit-audit-event.sh" ".ship-audit-state-${RUN_ID}.json" \
+  '{"event_type":"step_end","step":"step_7_retro","step_name":"Retro capture","agent_type":"coordinator"}'
+
+# Final cleanup: remove audit state file (kept alive through Step 7 for event emission)
+rm -f ".ship-audit-state-${RUN_ID}.json"
+```

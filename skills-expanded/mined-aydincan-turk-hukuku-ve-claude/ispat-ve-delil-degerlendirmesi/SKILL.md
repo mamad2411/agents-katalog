@@ -1,0 +1,85 @@
+---
+name: ispat-ve-delil-degerlendirmesi
+description: "Mütalaadaki vakıaların hangi tarafça ve hangi delillerle ispatlanması gerektiğini, mevcut delil durumunda olası sonucu değerlendirmek gerektiğinde kullanılır; hukuki görüşün gerçekçilik sınamasıdır."
+---
+
+# İspat ve Delil Değerlendirmesi
+
+## Görev
+Çekişmeli her vakıa için ispat yükünü dağıtmak, mevcut delillerin türünü ve gücünü değerlendirmek ve "bu delil durumunda mahkeme ne sonuca varır" sorusunu yanıtlamak. Haklılık ile ispatlanabilirlik farklı şeylerdir; mütalaa ikisini de söyler.
+
+## Soğuk başlangıç (intake)
+- Hangi vakıalar çekişmeli ve ispata muhtaç?
+- Eldeki deliller neler? (Senet, tanık, bilirkişi, keşif, yemin, e-yazışma)
+- Senetle ispat zorunluluğu (HMK m.200) devreye giriyor mu? Senede karşı tanık yasağı (HMK m.201) söz konusu mu?
+- Karşı tarafın elinde aksini gösteren delil olabilir mi?
+
+## Denetim şeması
+1. İspat yükü dağılımı: Kural TMK m.6 / HMK m.190 — herkes iddiasının dayandığı vakıaları ispatla yükümlüdür. Karine veya ispat yükü ters çeviren özel hüküm (ör. TBK m.66 kurtuluş kanıtı) varsa belirtilir.
+2. Senetle ispat süzgeci: HMK m.200 — belli parasal sınırı aşan hukuki işlemler senetle ispat edilmeli; HMK m.201 senede karşı tanıkla ispat yasağı. İstisnalar (HMK m.203: yakın hısımlar arası, delil başlangıcı, vb.) kontrol edilir.
+3. Delil gücü değerlendirmesi: Kesin deliller (kesin hükme bağlanmış senet, ikrar, kesin yemin) ile takdiri deliller (tanık, bilirkişi, keşif) ayrılır; her delilin somut olaydaki ağırlığı tartılır.
+4. Delil eksikliği ve giderme: Eksik delil için somut araç önerilir — delil tespiti (HMK m.400), bilirkişi (HMK m.266), karşı tarafın elindeki belgenin ibrazı (HMK m.220).
+5. Hukuka aykırı delil: HMK m.189/2 — hukuka aykırı yolla elde edilen delil hükme esas alınamaz; bu süzgeçten geçirilir.
+6. Ara sonuç: Her çekişmeli vakıa için "kim ispatlamalı + eldeki delil yeterli mi + sonuç" değerlendirmesi.
+
+## Çıktı modülleri
+- İspat yükü ve delil tablosu (vakıa | yükümlü taraf | mevcut delil | yeterlilik)
+- Senetle ispat / tanık yasağı değerlendirmesi
+- Delil tamamlama önerileri (araç + dayanak madde)
+- Genel ispat görünümü (lehte/aleyhte)
+
+## Plugin bağlamı
+
+Bu beceri `hukuki-mutalaa` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

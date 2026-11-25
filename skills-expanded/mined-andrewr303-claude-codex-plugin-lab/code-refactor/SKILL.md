@@ -1,0 +1,78 @@
+---
+created: 2025-12-16
+modified: 2026-05-09
+reviewed: 2026-03-09
+allowed-tools: Task, TodoWrite
+args: <file-path|directory>
+argument-hint: <file-path|directory>
+description: Refactor toward pure functions, immutability, composition. Use when extracting pure functions, removing side effects, replacing loops with map/filter/reduce, or separating I/O.
+name: code-refactor
+---
+
+## When to Use This Skill
+
+| Use this skill when... | Use something else when... |
+|------------------------|---------------------------|
+| A file or directory has mixed side effects and business logic | Deduplicating code across files → `/avr-debug:dry-consolidation` |
+| Functions mutate state or parameters | Detecting code smells without fixing → `/avr-debug:code-antipatterns` |
+| Business logic is tangled with I/O or logging | Reviewing overall quality and architecture → `/avr-debug:code-review` |
+| Imperative loops can be replaced with map/filter/reduce | Large multi-phase refactor spanning 10+ files → `/workflow:checkpoint-refactor` |
+| Deep nesting obscures intent | |
+
+## Context
+
+- Target path: !`echo "$1"`
+
+## Parameters
+
+- `$1`: Required file path or directory to refactor
+
+## Your task
+
+**Delegate this task to the `agents-plugin:refactor` agent.**
+
+Use the Agent tool with `subagent_type: agents-plugin:refactor` to refactor the specified code. Pass all the context gathered above to the agent.
+
+The refactor agent should:
+
+1. **Identify refactoring opportunities** — look for these FP code smells:
+   - Side effects (mutation, I/O, logging) mixed into computation functions
+   - Parameters or external state mutated in place
+   - Imperative loops (`for`, `while`) that could be `map`, `filter`, `reduce`, or `flatMap`
+   - Shared mutable state accessed across functions
+   - Deep nesting where early returns or guard clauses would clarify intent
+   - Business logic entangled with I/O at call sites
+   - Duplicated transformation logic
+
+2. **Apply functional programming principles**:
+   - **Pure functions**: Extract computation into functions with no side effects — same input always produces same output
+   - **Immutability**: Replace in-place mutation with data transformations (`spread`, `map`, `Object.assign`, structural copies)
+   - **Composition**: Build complex behavior from small, focused, single-purpose functions
+   - **Higher-order functions**: Replace imperative loops with `map`, `filter`, `reduce`, `flatMap`, `find`
+   - **Explicit effects**: Push I/O, logging, and mutations to the outermost boundary; keep inner functions pure
+   - **Early returns / guard clauses**: Validate preconditions at the top, return early to avoid deep nesting
+   - **DRY / KISS**: Eliminate repetition; prefer the simplest shape that works
+
+3. **Preserve functionality**:
+   - Ensure all existing tests pass
+   - Maintain the external API contract
+   - No behavioral changes
+
+4. **Output the refactored code** with clear structure
+
+Provide the agent with:
+- The target file or directory path
+- The detected programming language
+- Any style guide examples from the project
+
+The agent has expertise in:
+- Behavior-preserving code transformations
+- Functional refactoring patterns
+- Code smell detection and remediation
+- Semantic code search for similar patterns
+
+## Related Skills
+
+- If complexity metrics needed before refactoring → `/avr-debug:code-complexity`
+- If duplicated code needs consolidation → `/avr-debug:dry-consolidation`
+- If linting standards not configured → set up the project's linter (then `/avr-debug:code-lint` auto-detects it)

@@ -1,0 +1,476 @@
+---
+name: hyperloom-custom-advanced
+description: Run an advanced configurable Hyperloom optimization session with explicit model, framework, workload, objective, and phase toggles. Use when the user wants more control than the fixed 3h or 12h demo presets.
+---
+
+# Hyperloom Custom Advanced Run
+
+Use this skill after `/hyperloom-setup` has prepared the current Hyperloom
+workspace. Setup writes `.env` with the run mode, target host, framework, LLM
+configuration, and `USER_DATA_PATH`; this skill reuses those values and asks
+only for the advanced workload choices that differ from the fixed demo presets.
+
+## Setup Configuration
+
+In the current Hyperloom workspace, load `.env` through the shared loader.
+Existing non-empty exports take precedence; do not ask the user to re-enter
+setup values that are already present. Repeat this preamble in each new execution
+shell, including inside Docker, before setup or runtime installation:
+
+```bash
+set -e
+export REPO_ROOT="$(pwd -P)"
+INSTALL_SH="${REPO_ROOT}/hyperloom/inference_optimizer/assets/install.sh"
+if [ ! -f "$INSTALL_SH" ]; then
+  INSTALL_SH="${REPO_ROOT}/src/hyperloom/inference_optimizer/assets/install.sh"
+fi
+. "${INSTALL_SH%/*}/runtime_env.sh"
+load_dotenv_no_clobber
+```
+
+When `HYPERLOOM_RUN_MODE=baremetal` or it is unset, run this demo directly in
+the current environment.
+
+When `HYPERLOOM_RUN_MODE=docker`, this skill owns the Docker setup. Use
+`HYPERLOOM_IMAGE` when it is set. Otherwise choose a recommended ROCm image for
+the selected framework. The image must already contain the framework; do not
+install the framework inside Docker.
+
+In docker mode:
+- If `hyperloom-setup` already ran, do **not** re-run setup on the host.
+- Read `HYPERLOOM_DOCKER_TARGET_HOST` from `.env` when present. If it names a
+  host different from `$(hostname)`, first SSH to that host and continue this
+  Docker setup there; do not start Docker on the login/current host.
+- Always run setup **inside the container** after `docker run`.
+- Pass `--install-framework none --yes` in the container because ROCm and the
+  framework must come from the image. Do **not** use `--skip-base-check`.
+- Do not run `python -m hyperloom optimize` on the host.
+
+### Prior workload cleanup (required)
+
+Before any replacement launch after a failed or abandoned demo run (`docker run`,
+`install.sh`, or a new/fresh `optimize`), follow **IR-1 — Prior workload cleanup
+gate** in `@${HYPERLOOM_SKILL_PATH}`. Run all probes on the **docker host**; never
+skip the user-approval step (#1314).
+
+Suggested Docker images:
+
+- `vllm`: `docker.io/vllm/vllm-openai-rocm:v0.34.0-rocm100`
+- `sglang` MI300X: `docker.io/lmsysorg/sglang-rocm:v0.5.23-rocm10-mi30x-20261111`
+- `sglang` MI355X: `docker.io/lmsysorg/sglang-rocm:v0.5.23-rocm10-mi35x-20261111`
+
+In Docker mode, start a long-running container on `HYPERLOOM_DOCKER_TARGET_HOST`
+(or the current host when it is unset) before running setup or optimize:
+
+```bash
+export REPO_ROOT="$(pwd -P)"
+docker run -d \
+  --name "${HYPERLOOM_CONTAINER_NAME:-hyperloom-local}" \
+  --shm-size "${HYPERLOOM_SHM_SIZE:-64g}" \
+  --entrypoint tail \
+  --device /dev/kfd \
+  --device /dev/dri \
+  --group-add video \
+  -v "$REPO_ROOT:$REPO_ROOT" \
+  "$HYPERLOOM_IMAGE" \
+  -f /dev/null
+```
+
+Mount the Hyperloom workspace at the same absolute path
+(`-v "$REPO_ROOT:$REPO_ROOT"`) so paths in `.env`, logs, and session artifacts
+stay valid. If `USER_DATA_PATH` or the selected model directory is outside the
+workspace, add matching `-v host_path:host_path` mounts before starting the
+container.
+
+Then run the setup backend inside the container:
+
+```bash
+docker exec -w "$REPO_ROOT" "${HYPERLOOM_CONTAINER_NAME:-hyperloom-local}" bash -lc \
+  'REPO_ROOT="$(pwd -P)"; PYTHONPATH="$REPO_ROOT" python3 -m hyperloom setup -- --install-framework none --yes'
+```
+
+After that, run all remaining commands for this demo inside the same container
+with `docker exec -w "$REPO_ROOT" ...`; do not run
+`python -m hyperloom optimize` on the host in Docker
+mode. When the demo is finished, ask the user whether to stop the container. If
+they say yes, run:
+
+```bash
+docker stop "${HYPERLOOM_CONTAINER_NAME:-hyperloom-local}"
+```
+
+## Advanced Configuration
+
+Before launch, load the `.env` file produced by `/hyperloom-setup`, including
+LLM API keys/base URLs, `FRAMEWORK`, `USER_DATA_PATH`, and `HF_TOKEN`. Do not
+copy secret values into the prompt, terminal output, reports, or logs. Do not
+modify `USER_DATA_PATH`.
+
+Use the agent's structured question UI when available. Do not continue until
+all required values are resolved.
+
+Collect these required values:
+
+- Model source:
+  - existing `MODEL_PATH`, when set;
+  - custom local path, which must contain `config.json`;
+  - Hugging Face repo id plus a local cache directory.
+- Framework: `sglang` or `vllm`. Prefer the existing
+  `FRAMEWORK` value when it is set; otherwise default to `sglang`.
+- Workload: `TP`, `EP`, `CONC`, `ISL`, `OSL`, `PRECISION`, and optional
+  `MAX_MODEL_LEN` / `PROFILE_OSL`.
+- Objective and budget: `MAX_HOURS` plus `TARGET_GAIN`.
+- Optional phase budget percentages for `PRELUDE`, `FRAMEWORK_AGENT`,
+  `KERNEL_AGENT`, `SWEEP`, and `CLOSE`.
+
+## Default Values
+
+Use these defaults when the user does not override a field. Always show the
+resolved values in the launch plan before starting the optimizer.
+
+- `FRAMEWORK`: existing `FRAMEWORK` from `.env` or shell, otherwise `sglang`.
+- `TP=1`.
+- `EP=1`.
+- `CONC=64`.
+- `ISL=1024`.
+- `OSL=1024`.
+- `PRECISION=bf16`.
+- `MAX_HOURS=8`, a medium-length full optimization default. The user may choose
+  a shorter smoke run such as `3`, or a long-horizon run such as `24`.
+- `TARGET_GAIN=30`.
+- `MAX_MODEL_LEN`: unset, so Hyperloom derives it from ISL/OSL and model
+  metadata.
+- `PROFILE_OSL`: unset, so Hyperloom uses its profile-phase default.
+- `MODEL_CLASS`: unset, so Hyperloom infers it from model metadata.
+- `GPU_TYPE`: unset, so Hyperloom auto-detects the target GPU.
+- `FRAMEWORK_VERSION`: unset, so Hyperloom auto-detects it when possible.
+- `COMPARE_AGAINST_GPU`: unset.
+- `SKIP_VARIANTS`: empty.
+- `SERVER_ARGS`: empty.
+- `REFERENCE_SCRIPT`: unset.
+- `CONC_SWEEP_CONCS`: unset, so Hyperloom uses its default sweep ladder.
+- `CONC_SWEEP_TOTAL_BUDGET_SEC`: unset, so Hyperloom uses its default total
+  sweep budget. This bounds the whole sweep, not a single benchmark spawn.
+- Phase budget percentages default to:
+  - `PHASE_BUDGET_PRELUDE_PCT=0.03`: startup, preflight, baseline setup, and
+    initial orchestration.
+  - `PHASE_BUDGET_FRAMEWORK_PCT=0.40`: the optimisation phase — serving-parameter
+    search and source/upstream landing, with benchmark validation.
+  - `PHASE_BUDGET_KERNEL_PCT=0.50`: kernel-agent TraceLens/GEAK/native-kernel
+    optimization work.
+  - `PHASE_BUDGET_SWEEP_PCT=0.05`: concurrency sweep and final throughput
+    validation around the best candidate.
+  - `PHASE_BUDGET_CLOSE_PCT=0.02`: final report, state closeout, and summary
+    generation.
+- Phase toggles default to enabled: kernel, framework agent, framework local
+  exploration, roofline, and concurrency sweep.
+
+Collect these optional advanced values:
+
+- Phase toggles: `--no-kernel`, `--no-framework-agent`,
+  `--no-framework-local-explore`, `--no-enable-conc-sweep`,
+  `--no-enable-roofline`.
+- Phase budget percentages:
+  `PHASE_BUDGET_PRELUDE_PCT`, `PHASE_BUDGET_FRAMEWORK_PCT`,
+  `PHASE_BUDGET_KERNEL_PCT`,
+  `PHASE_BUDGET_SWEEP_PCT`, and `PHASE_BUDGET_CLOSE_PCT`.
+  Explain what each phase does before asking. Accept only values where
+  `0 < pct <= 1`; leave a value unset to use the optimizer default.
+- Routing and baseline options: `--skip-variants`, `--server-args`,
+  `--reference-script`, `--model-class`, `--gpu-type`, `--framework-version`,
+  `--compare-against-gpu`.
+- Concurrency sweep: `--conc-sweep-concs` and `--conc-sweep-total-budget-sec`
+  (the total budget across the sweep).
+- Benchmark limits: `INFERENCE_OPTIMIZER_BENCHMARK_TIMEOUT_SEC` (default `7800`
+  seconds per actual spawn, including boot and accuracy) and
+  `INFERENCE_OPTIMIZER_BENCHMARK_SILENCE_TIMEOUT_SEC` (default `600` seconds,
+  armed only after real server readiness, not for scriptable workloads).
+  Both must be finite and positive; output never extends the hard deadline.
+  `--max-hours` and cancellation apply independently.
+
+Guardrails:
+
+- Do not rely on `.env` alone for `TP`, `CONC`, `ISL`, `OSL`, or `PRECISION`;
+  pass explicit CLI flags in the optimize command.
+- Omit `--gpu-type` unless the user explicitly chooses a hint; otherwise let
+  Hyperloom auto-detect from ROCm/system info.
+- `--no-framework-agent` skips the entire OPTIMIZE phase (PRELUDE goes straight
+  to KERNEL_AGENT), dropping both of its arms: upstream-PR landing and local
+  source authoring. Warn before applying it; combined with `--no-kernel` it
+  leaves only baseline and sweep validation.
+- `--no-framework-local-explore` keeps OPTIMIZE but drops only its local
+  authoring arm, so the phase exits after three empty upstream discoveries
+  instead of authoring a patch from live source. No effect under diff-only mode.
+- Phase budget percentages are caps, not guaranteed time usage. A phase may end
+  earlier, and disabled work phases have their share redistributed by the
+  optimizer.
+- There is no generic `--skip-stage` flag and no `--no-sweep` flag. Compose
+  phase behavior from the explicit flags above.
+
+## Model Resolution
+
+Before resolving or downloading any model, always ask the user which model path
+or Hugging Face repo to use. Present the currently resolved option when
+`MODEL_PATH` is already set, and always offer a custom local path. Do not
+continue until the user chooses one.
+
+Use this decision flow:
+
+- If the user chooses the existing `MODEL_PATH`, inspect that path and use it
+  only when it contains `config.json`; otherwise ask again for a valid path.
+- If the user provides a custom local path, export `MODEL_PATH` to that path and
+  require `config.json` before launch.
+- If the user provides a Hugging Face repo id, ask for a local cache path, set
+  `HF_REPO_ID` to the repo id, set `MODEL_PATH` to the cache path, and download
+  the repo there when `config.json` is not already present.
+
+Do not assume the Hugging Face CLI exists; resolve or download Hugging Face
+models with Python:
+
+```bash
+python -m pip install -U huggingface_hub
+export REPO_ROOT="$(pwd -P)"
+python - <<'PY'
+import os
+from pathlib import Path
+from huggingface_hub import snapshot_download
+
+target = Path(os.environ["MODEL_PATH"]).expanduser()
+repo_id = os.environ.get("HF_REPO_ID", "").strip()
+if (target / "config.json").is_file():
+    print(f"Using existing model at {target.resolve()}")
+elif repo_id:
+    snapshot_download(
+        repo_id=repo_id,
+        local_dir=str(target),
+    )
+    print(target.resolve())
+else:
+    raise SystemExit(f"MODEL_PATH does not contain config.json: {target}")
+PY
+```
+
+## Pre-launch Runtime Install
+
+Before the first `optimize` launch, run the full runtime installer in the same
+environment that will launch the optimizer. Preflight loads `kernel-agent.env.sh`
+before it can reach the later benchmark-client auto-install checks, so this
+step must happen before launching.
+
+For Docker mode, run this inside the container. For bare-metal mode, run it on
+the host:
+
+Use the [setup preamble](#setup-configuration) in this shell first, then run:
+
+```bash
+load_dotenv_no_clobber
+: "${USER_DATA_PATH:?USER_DATA_PATH missing}"
+export USER_DATA_PATH
+export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
+bash "$INSTALL_SH"
+```
+
+The optimizer's startup preflight loads `kernel-agent.env.sh` in process;
+do not source the generated file in the launch shell.
+
+## Launch Command Template
+
+Build the optimize command from the resolved values. Include optional flags only
+when the user selected them.
+
+```bash
+export RUN_TAG="$(basename "$MODEL_PATH")-custom-$(date +%Y%m%d_%H%M%S)"
+export RUN_DIR="${USER_DATA_PATH:?USER_DATA_PATH missing}/optimizer_runs"
+export RUN_LOG="$RUN_DIR/run_${RUN_TAG}.log"
+export PID_FILE="$RUN_DIR/run_${RUN_TAG}.pid"
+export LAUNCH_INFO_FILE="$RUN_DIR/launch_${RUN_TAG}.json"
+mkdir -p "$RUN_DIR"
+# $RUN_TAG is timestamped and cannot be recomputed, and under Claw the launch
+# and the health check are separate tool calls with separate shells. Persist the
+# run-scoped vars so the health-check block can source them. Session-scoped
+# filename, for the same WekaFS reason setup_env.sh must never be shared: set
+# $RUN_ENV yourself before launching if two non-Claw runs share a host, or the
+# second launch overwrites the first one's run vars and the health checks
+# reconcile the wrong pidfile.
+export RUN_ENV="$RUN_DIR/run_env_${CLAW_SESSION_ID:-$(hostname)}.sh"
+printf 'export RUN_TAG=%q RUN_DIR=%q RUN_LOG=%q PID_FILE=%q LAUNCH_INFO_FILE=%q\n' \
+  "$RUN_TAG" "$RUN_DIR" "$RUN_LOG" "$PID_FILE" "$LAUNCH_INFO_FILE" > "$RUN_ENV"
+
+export FRAMEWORK="${FRAMEWORK:-sglang}"
+export TP="${TP:-1}"
+export EP="${EP:-1}"
+export CONC="${CONC:-64}"
+export ISL="${ISL:-1024}"
+export OSL="${OSL:-1024}"
+export PRECISION="${PRECISION:-bf16}"
+export MAX_HOURS="${MAX_HOURS:-8}"
+export TARGET_GAIN="${TARGET_GAIN:-30}"
+export PHASE_BUDGET_PRELUDE_PCT="${PHASE_BUDGET_PRELUDE_PCT:-}"
+export PHASE_BUDGET_FRAMEWORK_PCT="${PHASE_BUDGET_FRAMEWORK_PCT:-}"
+export PHASE_BUDGET_KERNEL_PCT="${PHASE_BUDGET_KERNEL_PCT:-}"
+export PHASE_BUDGET_SWEEP_PCT="${PHASE_BUDGET_SWEEP_PCT:-}"
+export PHASE_BUDGET_CLOSE_PCT="${PHASE_BUDGET_CLOSE_PCT:-}"
+
+OPT_FLAGS=(
+  --model "$MODEL_PATH"
+  --framework "$FRAMEWORK"
+  --tp "$TP"
+  --ep "$EP"
+  --conc "$CONC"
+  --isl "$ISL"
+  --osl "$OSL"
+  --precision "$PRECISION"
+  --max-hours "$MAX_HOURS"
+  --tick-interval-sec 30
+  --launch-info-file "$LAUNCH_INFO_FILE"
+)
+
+[ -n "${TARGET_GAIN:-}" ] && OPT_FLAGS+=(--target-gain "$TARGET_GAIN")
+[ -n "${MAX_MODEL_LEN:-}" ] && OPT_FLAGS+=(--max-model-len "$MAX_MODEL_LEN")
+[ -n "${PROFILE_OSL:-}" ] && OPT_FLAGS+=(--profile-osl "$PROFILE_OSL")
+[ -n "${MODEL_CLASS:-}" ] && OPT_FLAGS+=(--model-class "$MODEL_CLASS")
+[ -n "${GPU_TYPE:-}" ] && OPT_FLAGS+=(--gpu-type "$GPU_TYPE")
+[ -n "${FRAMEWORK_VERSION:-}" ] && OPT_FLAGS+=(--framework-version "$FRAMEWORK_VERSION")
+[ -n "${COMPARE_AGAINST_GPU:-}" ] && OPT_FLAGS+=(--compare-against-gpu "$COMPARE_AGAINST_GPU")
+[ -n "${SKIP_VARIANTS:-}" ] && OPT_FLAGS+=(--skip-variants "$SKIP_VARIANTS")
+[ -n "${SERVER_ARGS:-}" ] && OPT_FLAGS+=(--server-args "$SERVER_ARGS")
+[ -n "${REFERENCE_SCRIPT:-}" ] && OPT_FLAGS+=(--reference-script "$REFERENCE_SCRIPT")
+[ -n "${CONC_SWEEP_CONCS:-}" ] && OPT_FLAGS+=(--conc-sweep-concs "$CONC_SWEEP_CONCS")
+[ -n "${CONC_SWEEP_TOTAL_BUDGET_SEC:-}" ] && OPT_FLAGS+=(--conc-sweep-total-budget-sec "$CONC_SWEEP_TOTAL_BUDGET_SEC")
+[ -n "${PHASE_BUDGET_PRELUDE_PCT:-}" ] && OPT_FLAGS+=(--phase-budget-prelude-pct "$PHASE_BUDGET_PRELUDE_PCT")
+[ -n "${PHASE_BUDGET_FRAMEWORK_PCT:-}" ] && OPT_FLAGS+=(--phase-budget-framework-pct "$PHASE_BUDGET_FRAMEWORK_PCT")
+[ -n "${PHASE_BUDGET_KERNEL_PCT:-}" ] && OPT_FLAGS+=(--phase-budget-kernel-pct "$PHASE_BUDGET_KERNEL_PCT")
+[ -n "${PHASE_BUDGET_SWEEP_PCT:-}" ] && OPT_FLAGS+=(--phase-budget-sweep-pct "$PHASE_BUDGET_SWEEP_PCT")
+[ -n "${PHASE_BUDGET_CLOSE_PCT:-}" ] && OPT_FLAGS+=(--phase-budget-close-pct "$PHASE_BUDGET_CLOSE_PCT")
+[ "${NO_KERNEL:-0}" = "1" ] && OPT_FLAGS+=(--no-kernel)
+[ "${NO_FRAMEWORK_AGENT:-0}" = "1" ] && OPT_FLAGS+=(--no-framework-agent)
+[ "${NO_FRAMEWORK_LOCAL_EXPLORE:-0}" = "1" ] && OPT_FLAGS+=(--no-framework-local-explore)
+[ "${NO_CONC_SWEEP:-0}" = "1" ] && OPT_FLAGS+=(--no-enable-conc-sweep)
+[ "${NO_ROOFLINE:-0}" = "1" ] && OPT_FLAGS+=(--no-enable-roofline)
+
+# Detach per the rule above: run_in_background=true when both conditions hold, or prefix
+# `setsid nohup` and append ` &` elsewhere. Either way $PID_FILE is reconciled
+# from the launch-info JSON in the health-check block below -- the tool returns
+# a shell_id, and $! is the setsid wrapper.
+python3 -m hyperloom optimize --verbose \
+  "${OPT_FLAGS[@]}" \
+  > "$RUN_LOG" 2>&1 < /dev/null
+```
+
+The health check is a **separate** block on purpose, and under Claw it must be a
+separate foreground tool call. Appending it to the launch block would put the
+`sleep 30` and every line it prints into the background too, where you would not
+see them without polling `bash_output`. The harness branch above therefore
+applies to the launch command only:
+
+```bash
+sleep 30
+# Separate shell under Claw, so re-source what the launch block exported.
+RUN_ENV="${RUN_ENV:-${USER_DATA_PATH:?USER_DATA_PATH missing}/optimizer_runs/run_env_${CLAW_SESSION_ID:-$(hostname)}.sh}"
+. "$RUN_ENV"
+read_json() { python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get(sys.argv[2],''))" "$1" "$2" 2>/dev/null; }
+REAL_PID="$(read_json "$LAUNCH_INFO_FILE" pid)"
+if [ -z "$REAL_PID" ]; then
+  # Best-effort only, and UNSAFE with concurrent sessions on this host: the
+  # pattern matches every optimizer running here and nothing ties a hit to this
+  # run. Take it only when unambiguous rather than `head -1`-ing a list, which
+  # would adopt another session's pid.
+  MATCHES="$(pgrep -f 'hyperloom optimize' || true)"
+  N_MATCHES="$(printf '%s\n' "$MATCHES" | grep -c . || true)"
+  if [ "$N_MATCHES" = "1" ]; then
+    REAL_PID="$MATCHES"
+  else
+    echo "ERROR: no .pid in $LAUNCH_INFO_FILE and pgrep is ambiguous" \
+         "($N_MATCHES matches); refusing to guess. Inspect $RUN_LOG." >&2
+  fi
+fi
+if [ -n "$REAL_PID" ]; then
+  echo "$REAL_PID" > "$PID_FILE"
+else
+  # A dead setsid `$!` wrapper is not the optimizer's identity. Leave the PID
+  # unknown rather than directing later health checks to an unrelated process.
+  rm -f "$PID_FILE"
+  echo "WARN: removed $PID_FILE (no authoritative pid)." >&2
+fi
+# Not `test -d /proc/$pid`: a zombie keeps its /proc entry and sandbox PID 1
+# does not reap, so that reports a dead optimizer as alive indefinitely.
+ps -o stat= -p "$REAL_PID" 2>/dev/null | grep -qv '^Z' \
+  && echo "optimizer_alive=true pid=$REAL_PID"
+
+SESSION_DIR="$(read_json "$LAUNCH_INFO_FILE" session_dir)"
+if [ -z "$SESSION_DIR" ]; then
+  echo "ERROR: no .session_dir in $LAUNCH_INFO_FILE; inspect HYPERLOOM_LAUNCH and $RUN_LOG" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+test -f "$SESSION_DIR/manifest.json" && echo "manifest_present=true session_dir=$SESSION_DIR"
+test -f "$SESSION_DIR/state.json" && echo "state_exists=true"
+```
+
+If adding quantization, critic, or research-lane flags, append only
+real flags accepted by
+`python3 -m hyperloom optimize --help`; do not invent
+aliases.
+
+Append subcommand flags to `OPT_FLAGS` only. Common flags such as `--verbose`
+(the one used above) go *after* the `optimize` subcommand; `hyperloom` accepts
+no flags before the command name and exits with its usage message.
+
+## User-visible Progress
+
+Keep the user informed with concise status updates throughout the run. Do not
+dump full debug logs into chat; report the important values and paths so the
+user can tell that work is progressing.
+
+Before launch, report the launch plan:
+
+- model path and whether it is an existing local model or a downloaded repo;
+- run mode (`baremetal` or `docker`) and target host/container when applicable;
+- framework, TP, EP, concurrency, ISL, OSL, precision, max hours, and objective;
+- phase budget percentages, showing defaults for unset values and user-selected
+  overrides for set values;
+- selected phase toggles and advanced flags;
+- `USER_DATA_PATH` and where runtime artifacts will be written.
+
+After the runtime install, report whether it succeeded and the path to
+`kernel-agent.env.sh`. After starting the optimizer, report:
+
+- optimizer PID;
+- run log path;
+- launch-info JSON path;
+- resolved session directory;
+- `state.json` path;
+- initial health check result.
+
+On each requested status check, read persisted state and print a short summary.
+Use platform-scheduled invocations if recurring checks are requested; do not
+start a background watchdog, hold a blocking polling connection, or auto-resume.
+Busy logs alone are not evidence of useful progress. Include:
+
+- process alive/stopped;
+- phase and `stop_reason`;
+- baseline throughput, current best throughput, and cumulative gain when present;
+- latest benchmark result or candidate decision when available;
+- the most relevant recent log lines, excluding secrets.
+
+When the run finishes, report the final status, final report path, best result,
+and the stop reason. Never print API keys, tokens, or custom header values.
+
+## Launch Requirements
+
+1. Run the pre-launch runtime install above; startup preflight loads the generated
+   runtime environment in process.
+2. Keep `PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"` in the launch shell so
+   critic subprocesses can import `hyperloom.agents` after
+   changing cwd.
+3. Run it detached the way the harness understands: if `$CLAW_SESSION_ID` is set and your bash tool takes a `run_in_background` parameter, hand the command to it with `run_in_background=true`; otherwise use `setsid nohup ... &`. See the Launch section of the packaged `hyperloom/inference_optimizer/SKILL.md` for why — a hand-detached run is invisible to Claw and its sandbox is reclaimed about fifteen minutes after the turn ends.
+4. Pass all required workload flags in the
+   `python -m hyperloom optimize` command. Do not rely
+   on `.env` alone for `TP`, `CONC`, `ISL`, `OSL`, or `PRECISION`.
+5. Report the session ID, log path, PID, and initial health check result.
+6. Inspect persisted state on requested status checks; report when work stops.
+7. After diagnosing an unexpected crash and obtaining explicit resume approval, only run
+   `optimize --resume-from "$SESSION_DIR"` against the same session dir. After
+   the first launch, never start a new `optimize`; that creates a new
+   `<UTC_ts>` session and is forbidden.
+8. If `stop_reason` in the current session `state.json` is final, stop and exit.

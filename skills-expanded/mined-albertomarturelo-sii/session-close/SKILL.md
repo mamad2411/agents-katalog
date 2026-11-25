@@ -1,0 +1,35 @@
+---
+name: session-close
+description: "Close a session: tick docs/ROADMAP.md in its own commit, fold corrections into CONVENTIONS.md, propose ADRs for informal decisions, and stage docs with the code. Invoke explicitly before ending every working session."
+disable-model-invocation: true
+metadata:
+  cfd-version: "0.4.0"
+  token-budget: "~500–1,000"
+---
+
+Before this session ends, do ALL of the following. Do not skip any step.
+
+1. **Update `docs/ROADMAP.md`** if a surface changed state: tick a row ✅
+   on merge, flip 🚧/🔒, add a row for a newly planned surface, and refresh
+   the ADR/issue columns. This is the versioned "are we there yet?" source
+   of truth — bookkeeping goes in its OWN commit, never bundled with feature
+   code. (`docs/CURRENT_STATUS.md` is no longer versioned — #79. If you keep
+   a local one, it is yours; do not commit it.)
+
+2. **If a convention was clarified or a pattern was corrected this
+   session**, update `docs/CONVENTIONS.md` accordingly — or
+   `docs/conventions/sii-wire.md` when it is an SII wire rule (transport,
+   parsing, session, write, pacing; ADR-033). Do NOT leave
+   corrections only in chat history — they'll be lost next session.
+
+3. **If a significant decision was made informally** (in chat, in a
+   review, in passing), propose creating an ADR via `/new-decision`
+   before closing.
+
+4. **Stage all `docs/` changes in the SAME commit/PR as the session's
+   code changes.** Context updates ship with code, not after.
+
+Do NOT close the session without completing step 1.
+
+After completion, output a one-paragraph session summary suitable for
+pasting into the PR description.

@@ -1,0 +1,114 @@
+---
+name: github-sync
+description: Review the session's git changes, summarize them for approval, then commit and push to GitHub. Trigger when the user runs /github-sync or says "sync to github", "commit and push", "push this session", "wrap up and push", "save this session to git". For commit-only (no push) or partial staging, do not use this skill.
+disable-model-invocation: true
+visibility: public
+self-improvable: true
+triggers:
+  - "/github-sync"
+  - "sync to github"
+  - "commit and push"
+  - "push this session"
+  - "wrap up and push"
+  - "save this session to git"
+next-skills:
+  - skill: insight-retro
+    phrase: "/insight-retro"
+    why: "After the push lands, run a retrospective on what shipped this session"
+  - skill: handoff
+    phrase: "/handoff"
+    why: "Hand the remaining work off to a fresh session now that committed state is the baseline"
+---
+
+# /github-sync — Cluster, Commit, and Push
+
+Review the session's git changes, cluster them into an ordered commit plan, get explicit approval over the exact full commit messages, then commit and push — staging only approved paths, with message-exactness and attribution-trailer checks before every push.
+
+> **Structured execution spec:** [`protocol.yon`](protocol.yon). Read it for the canonical rules and step sequence; this file is explanation. The two must stay in sync — if you edit one, update the other and refresh the `@STAMP` date.
+
+## Step 1 — Gather changes
+
+Run in parallel: `git diff --stat HEAD`, `git diff HEAD`, `git status`, `git log --oneline -5` (for commit-style reference). Resolve the actual push destination and the complete initial outgoing commit set, including older unpushed commits and their identities. If either cannot be determined, stop before commit or push.
+
+## Step 2 — Build the change assessment
+
+From the diff and conversation history, identify what changed and which changes are intended for sync. Cluster by intent, operation, app/package, and blast radius. Default to split commits when changes are meaningfully independent; use one commit only when changes are tightly coupled, and state why.
+
+Always route unrelated or unsafe-to-stage work into `Excluded Changes`: worktree/submodule dirty markers (`.claude/worktrees/*`), generated artifacts not requested for commit, unrelated local edits, ambiguous files, `.env` files, binaries, credentials, debug artifacts.
+
+## Step 3 — Propose an ordered commit plan
+
+Present the actual push destination and complete initial outgoing commit set alongside the proposed new commits in the complete ordered commit plan before asking for approval:
+
+```
+## Commit Plan
+
+Commit N: <message>
+Why this group:
+Files to stage:
+Verification:
+Full commit message:
+```text
+<exact subject>
+
+<exact body, if any>
+```
+
+Excluded Changes:
+- <path> — <reason>
+```
+
+Commit messages match recent repo style; subject lines concise (≤72 chars when practical); no unsolicited attribution trailer. The sole exception is a `Signed-off-by` line when current repository policy or CI explicitly requires DCO. In that case, read the configured commit identity, never invent one, and include the exact line in the `Full commit message` block for approval. The block is the exact message to be committed: if the commit will have a body or required DCO line, include every line; if it will be subject-only, show only the subject. Before asking for approval, scan every proposed full message block and STOP if it contains `Co-Authored-By`, `Generated-by`, `Assisted-by`, "generated with AI", assistant/tool attribution text, any similar attribution or ownership trailer, or a `Signed-off-by` line without an explicit repository DCO requirement. The `Verification` line states what was run, what should run before/after, or that this sync is message-only. Then ask:
+
+> Ready to commit and push this plan? Reply **yes** to proceed, or tell me what to change.
+
+## Step 4 — Wait for approval
+
+Do NOT proceed until the user explicitly says yes. Approval applies only to the exact plan shown, including the destination, initial outgoing commit identities, and exact full commit message blocks. Stop and ask for a revised plan if any drift appears before push: branch changes, changed files differ from the plan, new dirty files, commit order changes, any commit subject/body/trailer line changes, staged files mismatch, attribution text appears, or push fails.
+
+## Step 5 — Commit and push
+
+Once approved:
+
+1. For each commit in approved order, stage only the listed file paths — no blind `git add .`. Use a deletion-aware, path-limited form such as `git add -A -- <approved-paths>` so approved removals enter the index as well.
+   - When deriving staging paths from Git output, use unquoted or NUL-safe path output such as `git -c core.quotePath=false ls-files ...`; default quoted paths can break Unicode or space-containing paths when passed back to `git add`.
+   - Before staging byte-sealed evidence (for example, files covered by a SHA-256 manifest), inspect its effective attributes with `git check-attr -a -- <path>`. If text conversion would alter the declared bytes, STOP and request approval for a scoped `.gitattributes` correction. After staging, verify the declared hash against the staged blob before committing.
+2. Run `git diff --cached --name-status --no-renames`. Confirm the resulting logical path list exactly matches that commit's `Files to stage`. Normal name-status output may collapse an approved deletion/addition pair into one rename record, so it is display-only for this comparison.
+3. If it does not match, STOP. Unstage or revise only with explicit user approval.
+4. Commit with only the exact approved `Full commit message` block. Do not invent, shorten, expand, template, or append any subject, body, or trailer line that was not visible in the approved plan.
+5. Run the exact-message check: `git log -1 --format=%B`. Verify the message exactly matches the approved `Full commit message` block.
+6. Run the attribution-trailer check against the same output. Verify the message contains no co-author, generated-by, assisted-by, assistant/tool/AI attribution, or similar attribution or ownership trailer. A `Signed-off-by` line is clean only when repository policy requires DCO and that exact line appeared in the approved message.
+7. If the message differs or contains unsolicited attribution or an unapproved sign-off, STOP. Do not push. Remove it with `git commit --amend` using only the clean approved message, then rerun both checks. Allow at most one correction attempt already covered by the exact approved message and history scope. If either check still fails, stop with the hook output and actual committed message; do not push, bypass hooks or broaden the approved amendment.
+8. Run `git status --short --branch`. Confirm the remaining dirty state matches `Excluded Changes` plus expected post-commit state.
+9. Before pushing, recheck the actual destination and approved initial outgoing commit identities and history. The expected approved new commits extend that history and are not themselves drift. If the destination or initial history changed, any unexpected outgoing commit appears, or either cannot be established, stop and request a revised plan. After all approved commits are clean and the check passes, `git push`.
+
+If push fails, report the error and stop — do not retry automatically.
+
+## Step 6 — Confirm
+
+```
+Committed:
+- <short hash> — <subject>
+Pushed to: <branch> → <remote>
+Remaining unstaged changes: <none or list>
+Verification: <tests/builds run, or intentionally skipped>
+Done.
+```
+
+## Rules
+
+- NEVER commit without explicit user approval.
+- NEVER assume all dirty changes belong in one commit; NEVER use vague groups (`misc`, `updates`, `session changes`).
+- NEVER stage files not listed in the approved plan, or `.env` files, binaries, or debug artifacts.
+- NEVER commit a subject, body, or trailer line that was not shown in the approved `Full commit message` block.
+- NEVER force-push.
+- NEVER add `Co-Authored-By`, `Generated-by`, `Assisted-by`, assistant/tool/AI attribution, or similar attribution or ownership trailers. Add `Signed-off-by` only when current repository policy or CI explicitly requires DCO, using the configured commit identity and showing the exact line in the approved full message. Any unsolicited or unapproved trailer must be removed before push.
+- NEVER push a commit until the exact-message check confirms the committed message is byte-for-byte the approved full message and the attribution-trailer check confirms the message is clean.
+- Message-only verification is the default unless the user requested tests/builds or they were already part of the session.
+- If new dirty files appear, branch state changes, staged files mismatch, or the approved plan no longer matches reality: STOP and ask for a revised plan.
+- If there is no new commit to create, distinguish that from no outgoing commits. Report any existing outgoing history and its destination; a push-only request belongs to the existing partial-Git owner and still needs its exact destination/history authorization. Stop this commit-and-push flow without inventing a commit or pushing implicitly.
+
+> **Human output.** This skill's handler-facing output obeys the human-output
+> contract (`human-output/SKILL.md`).
+
+> **Self-improvement.** On completion, run the Self-Improvement Protocol (`self-improve/SKILL.md`): apply its signal taxonomy and threshold to this run; surface any surviving proposal for handler approval. Conservative — silent otherwise. Never auto-apply.

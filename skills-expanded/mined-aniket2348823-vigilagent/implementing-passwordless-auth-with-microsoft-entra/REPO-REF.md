@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aniket2348823/vigilagent (path: .agents/skills/implementing-passwordless-auth-with-microsoft-entra/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Implements passwordless authentication using Microsoft Entra ID with FIDO2 security keys, Windows Hello for

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/1695963547/openclaw-medical-skills (path: skills/bio-alignment-msa-parsing/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Parse and analyze multiple sequence alignments using Biopython. Extract sequences, identify conserved regions, analyze gaps, work with annotations, and manipulate alignment data for downstream analysi

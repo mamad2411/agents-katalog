@@ -1,0 +1,119 @@
+---
+name: session-health
+description: Check your current session's health — real context usage from JSONL token data, compaction proximity, session weight, and rate limit status. Use when asking about session size, compaction, context window, rate limits, "how big is my session", "how close to compaction", or "should I checkpoint".
+license: MIT
+metadata:
+  author: AfterRealm
+  version: "1.9.1"
+---
+
+# Session Health Check
+
+Show the user real session health data — not estimates. Parse actual token counts from the JSONL transcript.
+
+## How to Get Real Data
+
+For current session only:
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" --current
+```
+
+For all sessions:
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py"
+```
+
+For a specific project:
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" "project-name-fragment"
+```
+
+When invoked directly (not via time-menu), ask the user first with AskUserQuestion:
+**Question:** "Which sessions?"
+**Header:** "Health"
+**Options:**
+1. **Label:** "Current Session" **Description:** "Just this session"
+2. **Label:** "All Sessions" **Description:** "All active projects"
+
+To override the compaction threshold (default 1M):
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" --threshold 800000
+```
+
+Combined:
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" --threshold 800000 "project-name-fragment"
+```
+
+For structured output (programmatic consumption — preferred when you need to extract specific fields rather than display them):
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" --format json --current
+```
+
+Run `python "${CLAUDE_PLUGIN_ROOT}/scripts/session_health.py" --help` for the full flag and exit-code reference.
+
+The script parses JSONL transcripts and reads actual `usage` blocks from API responses to get:
+- **Real context usage** — `input_tokens + cache_read_input_tokens + cache_creation_input_tokens` from the last assistant turn = actual context window size
+- **JSONL file size** — total transcript weight
+- **Compaction count** — how many `compact_boundary` markers exist
+- **Turn count** — total assistant responses
+- **Cache efficiency** — cache read vs write tokens
+- **Total tokens** — cumulative input and output across the session
+
+## How Context Is Calculated
+
+The JSONL contains usage data on every assistant message:
+```json
+"usage": {
+  "input_tokens": 42,
+  "output_tokens": 1500,
+  "cache_read_input_tokens": 450000,
+  "cache_creation_input_tokens": 2000
+}
+```
+
+**Real context size = input_tokens + cache_read + cache_creation** from the last turn. This is the actual number of tokens sent to the API, which equals the current context window usage.
+
+Context window size depends on the model variant:
+- `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6`: **200K tokens** (default)
+- `claude-opus-4-7[1m]`, `claude-opus-4-6[1m]`, `claude-sonnet-4-6[1m]`: **1M tokens** (explicit 1M-context variant)
+
+The script defaults to a 1M threshold but compaction may trigger earlier depending on the user's settings. Pass `--threshold` with their actual context window size if you know it.
+
+- **context_pct = real_context / threshold × 100**
+- Default threshold: 1,000,000 tokens
+- Users can specify their compaction threshold via `--threshold`
+
+No guessing. No heuristics. Real numbers from the API.
+
+## Compaction Threshold
+
+Different users have different compaction thresholds. If the user tells you their compaction threshold (e.g., "my compaction is at 800K"), pass it via the `--threshold` flag. If they don't specify, use the default (1M).
+
+Ask the user for their threshold if the percentages seem off or if they mention their numbers don't match.
+
+## Compaction Risk
+
+| Context % | Risk | Action |
+|-----------|------|--------|
+| < 30% | Low | All clear |
+| 30-60% | Moderate | Healthy, keep going |
+| 60-80% | High | Consider checkpointing |
+| 80%+ | Imminent | Checkpoint NOW, compaction incoming |
+
+## Response Format
+
+Present ALL data from the script output in a table. Include every field — do not omit anything:
+
+| Project | JSONL | Context | Risk | Compactions | Turns | Cache | Tokens |
+|---------|-------|---------|------|-------------|-------|-------|--------|
+
+Then show rate limits below the table if available. Follow with recommendations if anything needs attention.
+
+## When to Warn
+
+- **Context > 70%**: "Checkpoint your progress — compaction is approaching."
+- **Context > 85%**: "Compaction is imminent. Checkpoint NOW."
+- **0 compactions + high context**: "First compaction hasn't happened yet — after it fires, older context will be summarized."
+- **Multiple compactions**: "This session has compacted [N] times. Context is being managed but consider starting fresh for complex new work."
+- **Everything healthy**: "Session looks good. Carry on."

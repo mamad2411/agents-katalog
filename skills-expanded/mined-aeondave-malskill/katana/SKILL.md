@@ -1,0 +1,156 @@
+---
+name: katana
+description: "Auth/lab ref: ProjectDiscovery web crawler for endpoint and JS-endpoint discovery."
+license: MIT
+compatibility: "Linux/macOS/Windows; Go binary; Targets: HTTP/HTTPS web applications."
+metadata:
+  author: AeonDave
+  version: "1.0"
+---
+
+# Katana
+
+ProjectDiscovery web crawler — endpoints, JS paths, XHR calls, and API routes from modern web apps.
+
+## Quick start
+
+```bash
+# Single URL crawl
+katana -u https://target.com
+
+# Crawl with JS parsing (extract endpoints from JS files)
+katana -u https://target.com -jc
+
+# Headless mode (renders JS — required for SPA/React/Angular apps)
+katana -u https://target.com -hl
+
+# Output to file
+katana -u https://target.com -jc -o endpoints.txt
+
+# Multiple targets from file
+katana -list urls.txt -jc -o all_endpoints.txt
+```
+
+## Crawling scope
+
+```bash
+# Default scope follows the registrable domain; review it against authorization
+katana -u https://target.com -jc
+
+# Restrict to the input host
+katana -u https://target.com -jc -fs fqdn
+
+# Depth control
+katana -u https://target.com -jc -d 5          # max depth 5 (default: 3)
+
+# Concurrency
+katana -u https://target.com -jc -c 20 -p 20   # 20 concurrent crawlers, 20 parallelism
+
+# Rate limit (requests per second)
+katana -u https://target.com -jc -rl 50
+
+# Agent-safe JSONL baseline with bounded depth and static asset filtering
+katana -u https://target.com -d 3 -jc -kf robotstxt -c 10 -p 10 -rl 50 -timeout 10 -retry 1 -ef png,jpg,jpeg,gif,svg,css,woff,woff2,ttf,eot,map -silent -j -o katana.jsonl
+```
+
+## JS endpoint extraction
+
+Katana's JS crawling (`-jc`) uses JSLuice and regex patterns to extract endpoints from JavaScript files. This is the primary value over generic crawlers.
+
+```bash
+# JS crawl + XHR extraction in JSONL (headless mode)
+katana -u https://target.com -hl -jc -xhr -j
+
+# Deeper JS parsing (memory intensive)
+katana -u https://target.com -d 5 -jc -jsl -kf all -c 10 -p 10 -rl 50 -o katana_urls.txt
+
+# Extract all JS file URLs only
+katana -u https://target.com -jc | grep "\.js$" > js_files.txt
+
+# Show discovered endpoints from JS (exclude static assets)
+katana -u https://target.com -jc | grep -v "\.(png|jpg|gif|svg|ico|woff|css)$"
+
+# Filter for API paths
+katana -u https://target.com -jc | grep -E "(/api/|/v[0-9]+/|/graphql|/rest/)"
+```
+
+## Headless mode (SPA/React/Angular)
+
+Standard crawler misses dynamically rendered content. Use headless for apps that require JavaScript execution.
+
+```bash
+# Headless Chrome/Chromium required
+katana -u https://target.com -hl -jc -d 3
+
+# Headless with DOM wait
+katana -u https://target.com -hl -jc -pls domcontentloaded -dwt 5
+
+# Headless with system Chrome and XHR extraction
+katana -u https://target.com -hl -sc -nos -xhr -j -o katana_headless.jsonl
+
+# Authenticated crawl — provide session cookie
+katana -u https://target.com -hl -H "Cookie: session=<token>" -jc
+```
+
+## Authentication and custom headers
+
+```bash
+# Bearer token
+katana -u https://api.target.com -H "Authorization: Bearer <token>" -jc
+
+# Multiple headers
+katana -u https://target.com -H "X-Api-Key: abc123" -H "Accept: application/json" -jc
+
+```
+
+## Pipeline integration
+
+Katana integrates with the ProjectDiscovery ecosystem:
+
+```bash
+# httpx → katana: crawl all live web hosts
+httpx -l live_hosts.txt -silent | katana -jc -o all_endpoints.txt
+
+# subfinder → httpx → katana pipeline
+subfinder -d target.com -silent | httpx -silent | katana -jc -o endpoints.txt
+
+# Feed into nuclei for vuln scanning
+katana -u https://target.com -jc -o endpoints.txt
+nuclei -l endpoints.txt -t exposures/ -t vulnerabilities/
+```
+
+## Output and filtering
+
+```bash
+# JSON output (structured for parsing)
+katana -u https://target.com -jc -jsonl -o katana.jsonl
+
+# Known files (robots.txt and sitemap.xml)
+katana -u https://target.com -kf all -d 3 -silent
+
+# Filter by extension (exclude static assets)
+katana -u https://target.com -jc -ef png,jpg,jpeg,gif,svg,css,woff,woff2,ttf,eot,map
+
+# Show only unique paths (deduplicate)
+katana -u https://target.com -jc | sort -u > unique_endpoints.txt
+
+# Extract parameters from found URLs
+katana -u https://target.com -jc | grep "?" | cut -d"?" -f2 | tr "&" "\n" | cut -d"=" -f1 | sort -u
+```
+
+## OPSEC notes
+
+- Standard mode: one request per link — low noise but misses JS-rendered content.
+- Headless mode: launches a real browser — higher resource use, slightly more detectable.
+- Use `-rl` rate limiting on sensitive or production scopes.
+- `-kf robotstxt` adds known-file crawling; it does not enforce robots.txt rules. It requires crawl depth of at least 3.
+
+## When to use vs. other crawlers
+
+| Scenario | Tool |
+|----------|------|
+| Modern SPA/React/Angular | `katana -headless` |
+| API endpoint extraction from JS | `katana -jc` |
+| Fast directory brute-force | `feroxbuster` |
+| Historical URL collection | `gau` |
+| Fast link extraction from static HTML | `hakrawler` |

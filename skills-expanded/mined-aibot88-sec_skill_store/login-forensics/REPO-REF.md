@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aibot88/sec_skill_store (path: skills/claudskills/login-forensics/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Investigate Salesforce login activity using LoginHistory, IdentityVerificationHistory, and Login Forensics (Event Monitoring add-on): reconstruct per-user login timelines, identify failed logins, anal

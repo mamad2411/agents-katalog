@@ -1,0 +1,75 @@
+---
+name: aif-code-review
+description: "Review code for bugs, regressions, maintainability, reliability and verification gaps with evidence."
+when_to_use: "Invoke for pending changes, a PR number, a commit hash or a codebase scan."
+category: workflow
+keywords: [review, quality, verification, reliability]
+argument-hint: "[#PR | COMMIT | --base [ref] | --pending | codebase [parallel]] [--pro-max] [--chef] [--yagni]"
+license: MIT
+metadata:
+  author: ainative-build
+  version: "2.0.3"
+  workflow:
+    follows: [aif-test]
+    precedes: [aif-ship]
+---
+
+# Code review
+
+Review the requested scope against its specification, regression paths, security and
+repository conventions. Review-only does not authorize edits, posting or merging. Resolve
+current source/revision and use evidence; scores never substitute for checks or findings.
+
+## Input Modes
+
+Auto-detect from arguments. If ambiguous or no arguments, prompt via `ask_user capability`; when no
+user can answer, review the branch against its target (`--base`) if it has commits ahead, else pending changes.
+
+| Input | Mode | What Gets Reviewed |
+|-------|------|--------------------|
+| `#123` or PR URL | **PR** | Full PR diff fetched via `gh pr diff` |
+| `abc1234` (7+ hex chars) | **Commit** | Single commit diff via `git show` |
+| `--base [ref]` | **Branch** | `git diff <ref>...HEAD`, commit log as intent; `ref` defaults to the target branch |
+| `--pending` | **Pending** | Staged, unstaged and untracked changes; intent from the plan or branch |
+| *(no args, recent changes)* | **Default** | Recent changes in context |
+| `codebase` | **Codebase** | Full codebase scan |
+| `codebase parallel` | **Codebase+** | Parallel multi-reviewer audit |
+
+**Resolution details:** `references/input-mode-resolution.md`
+
+### No Arguments
+
+If invoked WITHOUT arguments and no recent changes in context, use `ask_user capability` with header "Review Target", question "What would you like to review?":
+
+| Option | Description |
+|--------|-------------|
+| Pending changes | Review staged, unstaged and untracked changes |
+| Branch vs base | Review the current branch against its base (`--base`) |
+| Enter PR number | Fetch and review a specific PR |
+| Enter commit hash | Review a specific commit |
+| Full codebase scan | Deep codebase analysis |
+| Parallel codebase audit | Multi-reviewer codebase scan |
+
+
+## Select the operation
+
+- Review-only: compare spec/acceptance and quality, returning actionable findings with
+  file/line, impact and evidence; use `references/spec-compliance-review.md` as needed.
+- Request a review: `references/requesting-code-review.md` dispatches the `aif-code-reviewer` agent.
+- Receive feedback: `references/code-review-reception.md`; verify a finding before accepting it.
+- Authorized fixes: repair confirmed findings in scope, then review the changed revision.
+- Codebase scan: `references/codebase-scan-workflow.md`; parallel uses
+  `references/parallel-review-workflow.md` when explicitly selected and supported.
+- `--pro-max` / `--chef`: `references/advanced-modes.md`; preserve their explicit checkpoints
+  and the pro-max/codebase-parallel conflict.
+
+Use `references/checklist-workflow.md` for risky pre-landing work and
+`references/task-management-reviews.md` only when coordination warrants tracking. A typo
+review needs no orchestrated pipeline. Reuse checks when revision, inputs and environment
+are unchanged; rerun affected checks after edits or changed assumptions. Before claiming
+anything passes, follow `references/verification-before-completion.md`.
+
+Preserve the full requested scope; `--yagni` alone opts into scope cutting. Reject abstract
+concerns contradicted by current source/tests and explain the evidence. Never reverse an
+accepted product decision without a concrete user decision. Report verified findings and
+limitations; do not claim correctness beyond the inspected scope.

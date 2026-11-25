@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/95gabor/agentic-workflow (path: .agents/skills/optional/nestjs-backend/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: NestJS Backend (optional)

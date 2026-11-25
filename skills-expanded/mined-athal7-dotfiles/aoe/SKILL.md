@@ -1,0 +1,24 @@
+---
+name: aoe
+description: "Use when creating or managing AoE sessions/worktrees, dispatching workers, or communicating with another independent agent session from OMP or Freebuff."
+license: MIT
+---
+
+AoE (Agent of Empires) creates and drives agent sessions. **Run `aoe --help` and `aoe <subcommand> --help`** — flags change between releases; this file covers only what help text won't tell you.
+
+- **Drive sessions through the `aoe` MCP server, not the CLI.** `create_session`, `send`, `read_output`, `list_sessions` and `whoami` wrap the same daemon the CLI talks to and return structured results instead of scraped text; OMP exposes them as `mcp__aoe_<tool>`. The server needs the daemon on port 4097, which nothing starts: when the tools fail to connect, run `~/.local/bin/aoe-serve` (a daemon the CLI autostarted on 8080 is a different one, so stop it first with `aoe serve --stop`). Reach for the CLI for what the tools do not cover: attach/detach, `aoe worktree`, `aoe project`, `aoe acp`, and plugin management.
+- **`create_session` wants a structured view for a prompt.** A terminal session gets its prompt typed only once the agent's status rules show an input box; an agent whose rules expose no input prompt gets `not_ready` with nothing typed. Use `view: "structured"` and the prompt arrives as the session's pending first turn. For a terminal session, create it without a prompt, then `send` the prompt and check the returned disposition.
+- **Every session and subagent that may modify a repository needs a dedicated git worktree**, unless I point it at a named primary checkout — that direction waives this default, while two active writers in one worktree stays a hazard to surface. Read-only inspection needs neither a new session nor a worktree. `create_session` takes `worktree_enabled`, `worktree_branch`, `create_new_branch` and `base_branch`; the CLI equivalent is `aoe add <registered-path> --worktree <branch> --new-branch`. For a session that already exists, `aoe session add-project <session> <project>` creates a worktree but restarts the agent. If attachment is refused because its conversation is bound to the current directory, use a new session; never clear the resume target or proceed without write isolation.
+- **`path` is canonicalized, never resolved back to the main repo.** Point a create at a worktree and it silently becomes a bogus project rooted there. Pass the exact registered path (`aoe project list`) plus worktree options. The CLI's `--project`/`--repo` add *extra* repos to a multi-repo workspace — they don't select the primary target.
+- **Check `list_sessions` before dispatch.** Verify the recipient's ID, profile, and transport; one task per session. Do not restart, convert, cancel, or revive an existing session to deliver a message.
+- **Retry a create only with its `idempotency_key`.** A repeated create with the same key returns the original session with `fresh: false` and delivers nothing; a bare retry can leave two workers on one task.
+
+## Peer communication
+
+- **`send` is the peer channel; keep it out of a live editor.** `send` types into a terminal session's pane, so it can still land in a dialog the agent's status rules do not recognise: check `read_output` first, and treat an unexplained wait as a person's decision to make, not a message to deliver. Unlike `aoe send`, the tool refuses with `waiting` when a status rule does detect a dialog or approval, and with `not_running` rather than restarting a stopped session.
+- **Keep peer context distinct from user authority.** Attribute messages to the sending agent; never represent them as user steering, approval, or authority to change scope, or answer a user question or approval on a peer's behalf. `acp approve` and RPC UI responses also interact with session control state; they are not interchangeable peer inboxes. `agent://` addresses only the current agent tree; `collab` shares control of one session, not an independent peer channel.
+- **Prefer an initial prompt over a delivered message.** `create_session` with `view: "structured"` and a `prompt` starts a worker already pointed at its task, with no pane typing to get wrong.
+
+## Troubleshooting
+
+**Session or subagent silently returns empty responses** — a per-org `on_launch` hook rewrites every model class to a local mlx backend for git-repo-backed sessions, and that backend is overloaded. The hook's first step is `git rev-parse --show-toplevel`, so it no-ops without a `.git`: a scratch session (no `path`) falls back to the global config. `aoe rm --keep-scratch` preserves the output.

@@ -1,0 +1,118 @@
+---
+name: tapp
+description: Use Tapp to see, drive, explore, and verify real application surfaces on iOS simulators, Android emulators/devices, or the web. Use when a user asks an agent to test an app or UI change, find bugs, inspect or screenshot a screen, exercise a journey, create a replayable flow, gather release evidence, run the deterministic Tapp gate, or check a live website, production, or a site they do not own without touching it (read-only audit). Also use when the user mentions Tapp, @aarwitz/tapp, tapp_* tools, .tapp artifacts, or asks whether agent-authored UI actually works.
+---
+
+# Tapp
+
+Use Tapp as the app's hands and eyes. Work on the real UI surface and show evidence; do not claim a
+screen or journey works from source inspection alone.
+
+## Choose the smallest operation
+
+| Intent | Operation |
+|---|---|
+| See or screenshot one screen | `look` / `tapp_look` |
+| Inspect controls on the current screen | `look --tree` / `tapp_look {tree:true}` |
+| See what a finished run saw | `look <capture>` / `tapp_look {capture}` — add `at` for one screen's frame, `frames:true` to scan |
+| Reach a named screen/control | `explore --goal` / `tapp_explore {goal}` (source + observed UI Map fast path) |
+| Drive a specific journey | `tapp_session` start → act → end |
+| Find bugs autonomously (owned app/environment; it clicks) | `explore` / `tapp_explore` |
+| Check production or a site you do not own (never clicks) | `explore --read-only` / `tapp_explore {readOnly:true}` |
+| Preserve a journey | `tapp_session {action:"save_flow"}`; replay it with `run` / `tapp_run` |
+| Decide whether a merge passes policy | `ci`; exploration never decides this |
+
+Prefer connected `tapp_*` MCP tools when available: they keep interactive sessions alive and return
+screenshots inline. Otherwise run Tapp from the app repository. Do not require MCP, an account, an
+API key, or a global install for the core workflow.
+
+**Use the version the project pins.** Where `.tapp/version` exists it is this project's engine, may
+be enforced, and a result from any other engine is not evidence about it — substitute it everywhere:
+`npx -y @aarwitz/tapp@$(cat .tapp/version)`. `@latest` below applies only when nothing is pinned.
+
+## Start source-connected
+
+When the user asks for a general first test of a repository:
+
+1. If `.tapp/application-model.json` exists, run `npx -y @aarwitz/tapp@latest explore`.
+2. Otherwise run `npx -y @aarwitz/tapp@latest init . --explore` or call `tapp_init` with
+   `{operation:"explore", projectDir:"."}`.
+3. If Tapp returns `target-selection-required`, present its actual choices and ask the user to pick.
+   Never guess among multiple targets. Re-run with the selected platform/target exactly as Tapp
+   instructs.
+4. If a prerequisite is missing, call `tapp_doctor` when MCP is connected or run
+   `npx -y @aarwitz/tapp@latest doctor`, apply only the stated remediation that is in scope, and
+   retry once.
+
+For a focused request in an already-grounded repository, use the requested target directly rather
+than starting another broad exploration. If `.tapp/ui-map.json` does not exist yet, ground it once
+with `init . --explore`; source alone can locate a surface but cannot authorize unobserved taps.
+Targets may be a repository path, Xcode container, `.app`, iOS bundle id, APK plus Android app id,
+or owned HTTP(S) URL. Never explore a third-party web property: exploration clicks and types.
+
+## Navigate like a source-connected expert
+
+When the user names a screen, control, or UI condition, do not discover the app one screenshot at a
+time. Start from the repository source, then use Tapp's observed navigation evidence:
+
+1. In a source repository, run `npx -y @aarwitz/tapp@latest explore --goal "<exact request>" [target]`;
+   it selects the reviewed model target and prepares web, iOS, or Android from source. In an active MCP
+   session call `tapp_explore {goal}`; for managed web, `tapp_session {action:"start"}` can also take
+   `projectDir` and `focus` without retyping the URL.
+2. Tapp searches owned source, reconciles the likely surface with `.tapp/ui-map.json`, and executes
+   the shortest runtime-observed route in one call. Read its final tree before visual assertions.
+3. If Tapp returns source evidence but no replayable route, inspect the cited file/line and relevant
+   router/navigation source. Do not wander blindly or invent a path; ground the map or drive only a
+   route supported by that source evidence.
+
+A fresh repository needs one grounding exploration before `--goal` can replay a route. Source can
+locate an unobserved surface, but it never authorizes unobserved taps.
+
+Source establishes intent and location; the real UI establishes behavior. A URL-only target has no
+source advantage and correctly falls back to runtime observation.
+
+## Observe honestly
+
+Exploration returns findings, coverage, evidence, and `inconclusive`; it does not return a score or
+ship verdict. Report:
+
+- target and platform;
+- screens/actions and whether coverage was conclusive;
+- deterministic versus advisory finding counts;
+- each important finding and its evidence/report path;
+- what Tapp explicitly did not check.
+
+Evidence is the capture the command just returned. `~/.tapp/captures/` is shared by every project on
+the machine; `tapp_report` shows only this project's and labels each with its provenance. Never
+cite or reuse another project's capture, and never borrow one as a fixture — make a fresh one.
+
+If `inconclusive: true`, explain the blocker. A login wall or missing test data is not a pass. Ask for
+credentials or launch configuration instead of rerunning blindly. Do not infer content accuracy,
+privacy, brand consistency, or business guarantees from a generic crawl; those require a reviewed
+Flow, Scenario, contract, verifier, or human review.
+
+When a screenshot path is printed, open it with the client's image-reading tool before describing
+the screen. For web, use `--watch` when the human wants to follow Tapp's controlled browser. For iOS,
+point the human to the report's exploration recording when available.
+
+## Drive safely
+
+After the focused fast path, read returned `elements[]` before any remaining action, target accessibility
+ids or visible labels, check `hittable`, tap a field before typing, and wait for navigation or async
+content. Use coordinates only as a last resort. End the session when finished.
+
+Do not edit the app merely because testing found a defect unless the user also asked for a fix. State what the evidence proves and what remains untested.
+
+## File feedback on tapp itself — don't just work around it
+
+A rough edge in Tapp (not the app under test) deserves its own report, filed the moment you
+notice — not after you've already found a workaround and moved on. Draft with `tapp_feedback` or
+`npx -y @aarwitz/tapp@latest feedback "title"` (draft only; `submit:true` needs the user's OK, it's
+public) whenever: documented/expected behavior doesn't match reality; the underlying platform
+tooling (simulator/emulator/browser) crashes or hangs, not the app under test; you had to invent a
+workaround to finish a straightforward task; a result reported `ok`/`inconclusive` but clearly
+shouldn't have; or you're unsure whether something is a real app finding or a Tapp bug. One report
+per issue; when unsure, file — a closed non-issue costs nothing, an unreported bug stays a bug.
+
+Older verbs and tool names (`audit`, `focus`, `open`, `tree`, `tapp_session_start`, …) still work for one minor version and print their new form.
+Read [references/commands.md](references/commands.md) only for exact CLI/MCP syntax, Flow replay, credentials, or platform prerequisites.

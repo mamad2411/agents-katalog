@@ -1,0 +1,101 @@
+---
+name: disiplin-sorumlulugu
+description: "Avukat hakkında disiplin şikâyeti, soruşturma ve kovuşturma, disiplin cezaları ve bunlara itiraz/iptal yolları söz konusu olduğunda; disiplin riskini değerlendirmek için kullanılır."
+---
+
+# Avukatın Disiplin Sorumluluğu ve Baro Süreçleri
+
+## Görev
+Bir davranışın disiplin suçu oluşturup oluşturmadığını, uygulanacak ceza türünü ve sürecin
+aşamaları ile kanun yollarını belirlemek.
+
+## Soğuk başlangıç (intake)
+1. İsnat edilen davranış nedir (özensizlik, sır ihlali, güveni kötüye kullanma, ücret/emanet
+   para sorunu, meslektaşa karşı tavır)?
+2. Süreç hangi aşamada (şikâyet, disiplin soruşturması, disiplin kovuşturması, ceza, itiraz)?
+3. Daha önce verilmiş disiplin cezası / tekerrür var mı?
+4. Aynı fiil hakkında ceza yargılaması da var mı?
+
+## Denetim şeması
+1. **Disiplin suçunun çerçevesi.** Avukatlık onuruna, meslek düzenine, meslek kurallarına
+   aykırı eylem ve davranışlar disiplin suçudur (Av. K. m.34, m.134; TBB Meslek Kuralları).
+   Tip, çoğu zaman somut maddeyle değil genel davranış normuyla kurulur; bu yüzden eylemin
+   meslek onuruyla bağı gerekçelendirilir.
+2. **Ceza türleri ve ölçek.** Av. K. m.135: uyarma, kınama, para cezası, işten çıkarma
+   (geçici olarak mesleki faaliyetten alıkoyma) ve meslekten çıkarma. Ceza, fiilin ağırlığı,
+   tekerrür ve kusur derecesine göre belirlenir (orantılılık). Ara sonuç: eylem hangi
+   kademeye karşılık gelir?
+3. **Süreç.** Baro yönetim kurulu disiplin soruşturması açar; gerekirse baro disiplin kurulu
+   kovuşturma yürütür (Av. K. m.136 vd.). Savunma hakkı ve usul güvenceleri esastır; eksik
+   tebligat/savunma alınmaması iptal sebebidir.
+4. **Kanun yolu.** Baro disiplin kurulu kararına karşı TBB Disiplin Kurulu'na itiraz edilir;
+   TBB kararları idari işlem niteliğinde olup idari yargı (Danıştay) denetimine tabidir.
+   Süreleri kaçırma hak kaybı doğurur.
+5. **Zamanaşımı.** Disiplin kovuşturmasında Av. K. m.157'deki süreler işler; fiilin
+   öğrenilmesinden ve işlenmesinden itibaren süreler ayrı ayrı kontrol edilir.
+6. **Ceza yargısı ile ilişki.** Disiplin ve ceza sorumluluğu bağımsızdır; beraat tek başına
+   disiplin cezasını kaldırmaz, ancak maddi olgu tespitleri dikkate alınır.
+
+İçtihat gerektiğinde TBB Disiplin Kurulu kararları (barobirlik.org.tr) ve Danıştay kararları
+ilkesel düzeyde anılır; künye `[doğrulanacak]` işaretlenir.
+
+## Çıktı modülleri
+- Davranış-suç-ceza eşleştirmesi ve olası ceza kademesi.
+- Süreç ve süre takvimi (soruşturma → kovuşturma → itiraz → idari dava).
+- Savunma dilekçesi/itiraz iskeleti ([doldurulacak] yer tutucularla).
+
+## Plugin bağlamı
+
+Bu beceri `avukatlik-meslek-kurallari` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*
