@@ -1,0 +1,37 @@
+---
+name: ai-to-delegated
+description: Best practices for getting a step-function leap in productivity when working with other AI’s. Load `ai-to-delegated` before spawning a sub-agent, creating a team, talking to a teammate agent, or writing a doc likely read by other agents. Trigger words include “dispatch an agent”, “spawn a team”, and “fork the session to ...”.
+---
+
+# AI → Delegated
+
+Read all routes that match your current situation. Follow further links only when their stated condition applies.
+Read each file once while its contents remain in context. Reconsider the routes when your situation changes.
+For relationship definitions, see the plugin's [roles map](../../roles.md).
+
+| Current situation | Read |
+| --- | --- |
+| Deciding whether delegation is worthwhile | [When to delegate](planning/when-to-delegate.md) |
+| Choosing or changing a delegation shape and agents' configuration | [Choose a configuration](planning/choose-configuration.md) |
+| The harness cannot set the model, thinking, or fork you chose | [Dispatch outside the harness](planning/dispatch-outside-the-harness.md) |
+| About to dispatch, or currently supervising delegates | [Delegate coordination](coordination/delegates.md) |
+| The session appears to span multiple hours or more | Also [Many-hours supervision](coordination/many-hours-supervision.md) |
+| Balancing quotas or spend | [Budget balancing](coordination/budget-balancing.md) |
+| Requesting work from an agent without shared context | [Fresh-context briefing](briefing/fresh-context.md) |
+| Briefing an agent with inherited context window | [Forked-context briefing](briefing/forked-context.md) |
+| Examples of briefing delegates | [Briefing examples](briefing/examples.md) |
+| Working alongside peers | [Peer coordination](coordination/peers.md) |
+| About to commission, or currently supervising leaders | Also [leading leaders](coordination/leading-leaders.md) |
+| Your context window or another agent’s is tight or likely to run short | You and the affected agent’s team should follow [context window](../../context-window.md) |
+
+## Named configurations
+
+If a configuration is already chosen, read its file directly. Each file routes the dispatcher and participants to the guidance they need.
+
+- [Research fanout](configurations/research-fanout.md): independent research followed by synthesis.
+- [Colloquium](configurations/colloquium.md): adjacent research efforts with live peer exchange.
+- [Pair programming](configurations/pair-programming.md): agree on a plan, implement, and review once.
+- [Hillclimber–watcher](configurations/hillclimber-watcher/protocol.md): optimize toward a measurable target with outside judgment.
+- [External advisor](configurations/external-advisor.md): get a fresh, unbiased idea after repeated attempts fail.
+
+These configurations are examples to generalize from. They are incomplete and evolving, not required structures.

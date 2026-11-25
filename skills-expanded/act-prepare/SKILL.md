@@ -1,0 +1,63 @@
+---
+name: act-prepare
+description: Use when planning a larger feature or block, asked to "plan this out", before work that should run unattended, or when the human says they will be away. Ends with ready, sized tasks and every open question asked in one bundle. Not for a first idea still lacking a decision - use act-idea.
+---
+
+# Prepare a block
+
+Runs in the main session — it ends with questions for the human. Applies `R-human-ask` (bundled
+questions, stated assumptions) and `R-work-handover`. **In one sentence:** the human answers
+everything open **once**, then the block runs unattended. The costliest mistake is a question the
+code already answers, so research comes before the question round, never after.
+
+**Short path — one task, no open question:** bound the scope in a sentence, one `explorer` look at what exists
+and at `decisions.md`, then `entries.py new task <title>` with goal, acceptance criterion, steps and size
+(step 3). Ready by step 4's test: say so and hand it over. No question round, no ADR, no order plan. Anything
+open or conflicting: the full path below.
+
+1. **Bound the scope** — what's in, what's explicitly not, both written down.
+2. **Research what exists, in parallel** — several `explorer` roles in one message: what already
+   exists, which files are affected, does anything in `docs/project/decisions.md` conflict, where
+   does the code differ from the docs. Also grep `docs/project/learnings/` (headers `area:`,
+   `tags:`) for the topic and read only the hits; a note whose `retire_when` is met gets reported,
+   not followed.
+3. **Cut it into tasks or stories.** Each task: one-sentence goal, checkable acceptance criterion,
+   steps as bullets, and a size as duration and tokens with its assumption (`python .act/scripts/usage.py
+   --estimates`, as in `act-idea`). Something bigger with its own justification becomes a story
+   (`docs/project/stories/`, where the project uses them); the rest is a task under
+   `docs/ai/work/tasks/` (`python .act/scripts/entries.py new task <title>`).
+4. **Check readiness** — goal unambiguous, acceptance checkable, decisions made, preconditions
+   met, unknowns researched. Anything failing this stays marked open and **doesn't start**.
+5. **One bundled question round.** Each question in the inbox (`entries.py new question <title>`, form of
+   `R-human-ask` and `docs/ai/inbox/README.md`), ordered by how much each blocks, with one line on what happens
+   if it stays unanswered; the board's Waiting section surfaces them. Under `inbox-decisions: at-start` this is where a backlog
+   entry's `decision: open` points get asked; under `immediate` they are already in the inbox —
+   still check the backlog entries in scope for any left over.
+6. **Record the answers**: ADR in `docs/project/decisions.md`, open points cleared, tasks marked
+   ready. A question left open keeps its task on hold — never started "on best guess". A decision
+   that should be looked at again may carry an optional line `revisit: YYYY-MM-DD` under its ADR.
+7. **Lay out the order**: what runs when and in parallel, checkpoints, rough duration in minutes (the tasks' sizes added up, parallel runs not added twice) — the plan
+   the block runs on while the human is away. The first checkpoint follows the first runnable
+   slice: the orchestrator holds it against its acceptance check before handing out the rest, so
+   a wrong direction costs one slice, not the block.
+
+## When the human is away
+
+Explicitly cleared to run unattended ("I'll be away", "let it run through"):
+
+- Work the prepared order — no new scope, nothing added along the way.
+- Unexpected findings get noted and **skipped**, not waited on.
+- Everything left is blocked: **stop**, don't build on a guess.
+- Anything irreversible stays untouched even if it blocks the rest — being away is not approval
+  (`R-safe-approval`).
+- Journal and task status updated as they happen (`R-work-record-now`), not from memory later —
+  working state via `entries.py state <id> <text>`, not in the task file itself.
+- On return: **one** summary — done with evidence, still open and why, the bundled questions.
+
+## Limits
+
+- No question research already answers; no code here — building happens afterward.
+- No plan beyond the scope — something important found outside it becomes a backlog item, not an
+  extra task in this block.
+- Readiness isn't judged generously: "that'll sort itself out while building" is the sentence that
+  causes the interruption later, or the stall with nobody there.

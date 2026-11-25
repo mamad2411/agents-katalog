@@ -1,0 +1,168 @@
+---
+name: app-introspect
+description: Inspect a running GoFastr app's shape via MCP introspection tools. Use when the user asks "what routes exist", "is the app ready", "what plugins are loaded", "what's the current config", "what batteries depend on what", "what does this framework doc say", or any "describe the running server" question where the app was built with framework.WithMCPIntrospection() (and framework.WithMCPTools(mcptools.Register) for the docs tools).
+---
+
+# Inspect a live GoFastr app via the framework's MCP introspection
+
+`framework.WithMCPIntrospection()` opts the App into a set of read-only
+tools that describe the running server: routes, plugins, batteries,
+modules, config, readiness. `framework.WithMCPTools(mcptools.Register)` (from
+`framework/docs/mcptools`) adds the framework's own embedded docs as the
+`framework_docs_*` tools; package framework does not import the corpus.
+Use these to orient before reading code or before issuing requests.
+
+## Prerequisites
+
+Any GoFastr app running under `gofastr dev` has the full surface
+automatically (mount + introspection + control automatically, plus
+`log_*` tools when `battery/log` is registered; opt-out
+`GOFASTR_DEV_MCP=0`). The `framework_docs_*` tools are never implied:
+the app adds `framework.WithMCPTools(mcptools.Register)`. Outside the dev loop the app
+must be built with `framework.WithMCPIntrospection()` and expose `/mcp`
+(via `framework.WithMCP()`); `examples/site`, `examples/ecommerce` and
+generated apps wire all three. Launch the site with `./scripts/dev-watch.sh` (port
+8082) or `go run ./examples/site` (port 8083; plain go-run has no
+`PORT` set). The curl examples below use 8082; adjust to how the app
+was launched.
+
+## The tools
+
+| Tool                    | Use                                                                                  |
+|-------------------------|--------------------------------------------------------------------------------------|
+| `app_routes`            | Every `(method, pattern)` registered via the router, including from Groups + plugin Init. |
+| `app_plugins`           | List plugin names in registration order.                                              |
+| `app_batteries`         | List batteries with `deps` and `initialized` state, in dependency-resolved order.      |
+| `app_modules`           | List modules with manifest metadata (version, deps, migration group), enabled state, and owned surface counts. |
+| `app_config`            | AppConfig snapshot: `name`, `json_case`, `debug_endpoints`, `no_llmmd`, `request_timeout_ms`, `disable_request_timeout`. |
+| `app_readiness`         | Run all registered readiness checks; same set `/readyz` consults, invokable programmatically. |
+| `app_goroutine_leaks`   | Count + stacks of goroutines the runtime has PROVEN leaked (Go's `goroutineleak` profile, GC-fresh). Zero is healthy; a growing count means a worker/stream is being abandoned. |
+| `app_routines`          | Every registered stored routine: name, declared dialect, sha256 checksum of the Up body, ledger state (present/drifted/missing/skipped_for_dialect/unknown; `skipped_for_dialect` means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness in `pg_proc`/`pg_views` (Postgres; unknown on SQLite). Use to confirm a routine body change propagated, or spot one the boot skipped. |
+| `app_unmounted`         | The unmounted package copies compiled into the binary (`{"unmounted": [...], "count": n}`): each copy's `source` (upstream import path), `version` (release tag, or `dev` for a checkout copy) and `path` (the copy's import path in the app). A copy no longer gets framework fixes on upgrade. Use to confirm which framework packages this build carries its own copy of. |
+| `framework_docs_list`   | Every framework doc topic embedded in the binary (name, title, summary). Needs `WithMCPTools(mcptools.Register)`. |
+| `framework_docs_get`    | Full markdown of one topic by name (e.g. `entity-declarations`). Needs `WithMCPTools(mcptools.Register)`. |
+| `framework_docs_search` | Substring search across all topics (min 3 chars, `limit` caps hits). Needs `WithMCPTools(mcptools.Register)`. |
+| `contracts_list`        | Every rule `gofastr verify` enforces: ID, slug, capability, default severity, one-line summary. Optional `capability` filter. |
+| `contracts_explain`     | One rule in full: what it detects, why it matters, how to fix it, a bad/good example pair, and the exact suppression syntax. Takes an ID (`GOFASTR1002`) or a slug (`routing/colon-path-parameter`). |
+| `contracts_capabilities`| The rule capabilities with counts and severity breakdown; use to pick the argument for `gofastr verify <capability>`. |
+| `contracts_verify`      | **Dev loop only.** Runs the analyzers over the app's source tree and returns the findings: rule, file, line, severity, message, whether it is autofixable. Same analysis as `gofastr verify`. Optional `capability` filter. |
+| `contracts_fix`         | **Dev loop only. Writes to disk.** Applies one rule's autofixes and reports the files changed. Takes an ID or slug; scoped to a single rule so the edits stay reviewable. Rules without an autofix are refused. |
+
+`contracts_verify` and `contracts_fix` are absent, not merely refused,
+outside `gofastr dev`: they read and write local source, so a deployed
+app never registers them.
+
+The `framework_docs_*` tools answer "how does the framework work?"
+questions against the exact framework version the binary was built
+with. Prefer them over fetching docs from the repo when a live app
+is available.
+
+## The control tools (mutating)
+
+`framework.WithMCPControl()` adds runtime state control; any app
+running under `gofastr dev` has it too, since the whole MCP surface
+auto-enables there:
+
+| Tool                 | Use                                                                     |
+|----------------------|--------------------------------------------------------------------------|
+| `app_module_enable`  | Enable a registered module at runtime (persisted; dependency-checked).  |
+| `app_module_disable` | Disable a module (fails closed while enabled modules depend on it).     |
+
+Call `app_modules` first to see names + current state. These mutate the
+running app, so confirm with the user before toggling anything they
+didn't ask about.
+
+## How to invoke
+
+Curl the MCP endpoint with a JSON-RPC `tools/call` payload. Result is
+wrapped in MCP content format: `result.content[0].text` is a
+JSON-encoded string of the actual return value.
+
+### What endpoints does this app have?
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"app_routes","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq '.routes'
+```
+
+### What's loaded?
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"app_plugins","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
+       "params":{"name":"app_batteries","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call",
+       "params":{"name":"app_modules","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+### Is the app ready?
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"app_readiness","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+`ready: false` means at least one check failed, with per-check
+`status` (`ok`/`error`/`timeout`) and `duration_ms` in the `checks`
+array, OR that zero checks are registered (then `reason` says
+`"no readiness checks registered"` and `checks` is empty: unconfirmed
+is not ready). The tool never includes raw error text, even when the
+App was configured with `WithVerboseReadiness()`: `/readyz` and `/mcp`
+can sit on different trust boundaries, so verbose applies only to
+`/readyz`.
+
+### What's the config?
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"app_config","arguments":{}}}' \
+  | jq -r '.result.content[0].text' | jq .
+```
+
+`request_timeout_ms == 0` with `disable_request_timeout: false`
+means the framework default (30s) is in effect. A non-zero value
+is the explicit override.
+
+### What does the framework doc say?
+
+```bash
+curl -s http://localhost:8082/mcp \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"framework_docs_search","arguments":{"term":"owner_field","limit":10}}}' \
+  | jq -r '.result.content[0].text' | jq '.hits'
+```
+
+Then `framework_docs_get` with the winning topic name for the full
+markdown.
+
+## Anti-patterns
+
+- **Don't curl every tool when only one is needed.** Each call is
+  a JSON-RPC round-trip; pick the one that answers the question.
+- **Don't trust `app_readiness: ready=true` as a SLO signal.**
+  Readiness checks only cover what someone registered; "ready" can
+  still mean "no real dependencies are wired".
+- **Don't read `app_config` for runtime stats.** It's the config
+  the App was constructed with, not live behavior. For counters,
+  pair with `log_metrics` from the log-debug skill.

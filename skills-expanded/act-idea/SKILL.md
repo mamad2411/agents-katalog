@@ -1,0 +1,58 @@
+---
+name: act-idea
+description: 'Use when a feature, idea or change request is proposed: "can we add X", "it would be good if", "change request". Checks what exists, offers options with a recommendation, and after the decision files an effort estimate as backlog item and task. Not for planning a decided block - use act-prepare.'
+---
+
+# Take in an idea or change request
+
+Runs in the main session — decision and priority are the human's. Applies `R-work-idea-first`
+(concept before code) and `R-human-ask` (bundled questions, no silent decisions). **Builds
+nothing**: ends with a backlog item and, if picked up now, a task; building happens afterward via
+`act-prepare`.
+
+1. **Keep the wording verbatim** — the later yardstick, not the assistant's summary of it.
+2. **Check what exists first** (`explorer` role): does this partly exist already, which files
+   would be affected, and — above all — does it conflict with a decision in
+   `docs/project/decisions.md`? A conflict makes this an ADR revision, not a feature.
+3. **Write a concept** at `docs/project/concepts/<topic>.md` (images linked from the idea move into
+   the concept's folder with it, the idea's id or topic in front of a generic name like `img.png`,
+   and the links are adjusted): starting point with findings — who
+   will use the result, and how it would show that nobody does — then **options** (description,
+   pros, cons, effort each as in step 5), **recommendation** with its **failure modes** (how it could break, what it
+   could leak or expose, which assumption carries it) and its **way back** (revert, migration
+   down, switch off). "Do nothing" is a real option, with its consequences. Where the requirement
+   is still unclear, a throwaway prototype is an option of its own: time-boxed, in a scratch
+   folder, discarded afterwards, its findings go into the concept. An option that brings a new
+   dependency or a paid service is set against building it in the project, and the other way
+   round — weighed on maintenance, security, lock-in and running cost, not on build effort alone.
+4. **Put it to the human** as a question in the inbox (`python .act/scripts/entries.py new
+   question <title>` — writes `kind: question` and `for: all` into the header), options as
+   in the form of `R-human-ask` and `docs/ai/inbox/README.md`. Nothing built, no task filed, before it's answered. Any other open decision that comes up while filing goes into the inbox too, or stays on the backlog item
+   as `decision: open` under `inbox-decisions: at-start` (`R-human-ask`).
+5. **Estimate for the chosen path only**, as duration and tokens, never person-days, with the assumption it
+   rests on ("2 builder, 1 reviewer, 1 test run"); worked out from `python .act/scripts/usage.py --estimates`
+   (runs of a role × its median, as a range up to the 80th percentile; add about a third for the main session), without measured runs from experience in
+   the same form, said so. Also: scope, missing tooling (library, MCP server, rule set,
+   a skill that doesn't exist yet — its own step, not "along the way"), a rough task breakdown
+   with goal and acceptance check, and an ADR in `docs/project/decisions.md`. Optional: a line
+   `revisit: YYYY-MM-DD` under the ADR when it rests on an assumption that should be checked
+   again — always when the result's use is uncertain, so that keeping or removing it is decided
+   then; `act-doctor` reports the date once it has passed.
+6. **Priority and timing**, both from the human — plus the orchestrator's **own** estimate next
+   to it, from a different angle (pressure, dependencies, risk already in the codebase), not the
+   same number out of politeness. More than one step apart: say where the gap comes from.
+7. **File it** (`python .act/scripts/entries.py new <kind> <title>` for each): a backlog item
+   under `docs/ai/work/backlog/` (topic, priority, timing, effort, link to concept and ADR); a
+   task under `docs/ai/work/tasks/` only for what starts **now**; a journal entry under
+   `docs/ai/work/ledger/`.
+
+**Shortcut for small things:** a typo, a field name, one config line needs no concept or ADR —
+file it straight, but say the shortcut out loud so the human can object. When in doubt, don't
+shortcut: a needless concept costs half an hour, a missed conflict costs a rebuild.
+
+## Limits
+
+- No implementation here, not even "just a quick start" — that preempts the decision.
+- No recommendation without a real alternative, and no quietly aligned priorities — the gap
+  between the two numbers is itself information.
+- No effort estimate without a stated assumption behind it.

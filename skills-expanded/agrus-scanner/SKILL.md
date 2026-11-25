@@ -1,0 +1,87 @@
+---
+name: agrus-scanner
+description: Network reconnaissance and AI/ML service detection. Scan IP ranges with ping sweeps, port scanning, DNS resolution, and AI service probing across 90+ detection signatures. Use when the user wants to discover hosts, open ports, or AI/ML services on a network.
+metadata:
+  author: agrus
+  version: "0.2.2"
+compatibility: Requires the Agrus Scanner MCP server running (AgrusScanner.exe --mcp-only). Windows only.
+allowed-tools: mcp__agrus-scanner__scan_network mcp__agrus-scanner__probe_host mcp__agrus-scanner__list_presets
+---
+
+# Agrus Scanner
+
+Network reconnaissance tool that discovers hosts, open ports, and AI/ML services on local networks.
+
+## Prerequisites
+
+The Agrus Scanner MCP server must be running before using these tools:
+
+```
+AgrusScanner.exe --mcp-only
+```
+
+This starts a tray icon and MCP server on the configured port (default 8999).
+
+## Available Tools
+
+### scan_network
+
+Full network scan: ping sweep, port scan, DNS resolution, optional AI service detection.
+
+Parameters:
+- `ip_range` (required) — CIDR notation like `192.168.1.0/24` or range like `10.0.0.1-254`
+- `preset` — Port preset: `quick` (6 ports), `common` (22 ports), `extended` (58 ports), `ai` (38 AI/ML ports), `deep-ai` (all 65535 ports, full AI probing), `none` (ping only). Default: `quick`
+- `skip_ping` — Scan all IPs regardless of ping response. Default: `false`
+
+Returns JSON array of host objects.
+
+### probe_host
+
+Deep-scan a single IP with port scanning and AI service detection.
+
+Parameters:
+- `ip` (required) — Single IP address like `192.168.1.100`
+- `ports` — Comma-separated ports (`80,443,8080`) or preset name (`ai`, `quick`, etc). Default: `ai`
+
+Returns JSON object with full host detail.
+
+### list_presets
+
+List all available scan presets with port counts and port numbers. Takes no parameters.
+
+## Workflow
+
+1. Start with `list_presets` to understand available scan options
+2. Use `scan_network` with an IP range and appropriate preset for broad discovery
+3. Use `probe_host` on interesting IPs for deeper investigation
+4. The `ai` preset is best for finding AI/ML services (Ollama, vLLM, Stable Diffusion, ComfyUI, etc.)
+5. Use `deep-ai` preset to scan all 65535 ports with full AI probing — catches services on non-standard ports (slow, best for single IPs)
+
+## Example
+
+To scan a local network for AI services:
+
+```
+scan_network(ip_range="192.168.1.0/24", preset="ai")
+```
+
+To deep-probe a specific host:
+
+```
+probe_host(ip="192.168.1.50", ports="ai")
+```
+
+## AI Services Detected
+
+The scanner detects 60+ AI/ML services across these categories:
+- **LLM**: Ollama, vLLM, HuggingFace TGI, llama.cpp, KoboldCpp, LM Studio, LiteLLM, Jan.ai, GPT4All, LocalAI, FastChat, Tabby, Xinference, SGLang, text-generation-webui, NVIDIA NIM, NVIDIA Dynamo, OpenLLM, MLX-LM, llamafile, Aphrodite Engine
+- **Image Gen**: Stable Diffusion (A1111), ComfyUI, InvokeAI, SD WebUI Forge, Fooocus-API
+- **Video Gen**: SwarmUI, HunyuanVideo
+- **Voice / STT / TTS**: Speaches, whisper.cpp, OpenedAI-Speech, F5-TTS, GPT-SoVITS, XTTS-API-Server, Coqui XTTS Streaming
+- **ML Platforms**: NVIDIA Triton, TorchServe, TensorFlow Serving, MLflow, Ray Serve, BentoML, KServe, MindsDB
+- **AI UIs**: Open WebUI, AnythingLLM, LibreChat, Flowise, Dify, SillyTavern, n8n, PrivateGPT
+- **Agent Platform**: AutoGen Studio, Letta, OpenHands, CrewAI Studio, Langflow
+- **RAG Platform**: Onyx, R2R, kotaemon, RAGFlow, Quivr, Verba, Khoj
+- **Embeddings**: HF Text Embeddings Inference (TEI), Infinity
+- **Vector DB**: Qdrant, ChromaDB, Weaviate, Milvus
+- **GPU/Infra**: NVIDIA DCGM, Docker API with 70+ AI image pattern matches

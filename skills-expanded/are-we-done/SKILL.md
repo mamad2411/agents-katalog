@@ -1,0 +1,139 @@
+---
+name: are-we-done
+description: '[Adam''s Skills] Deterministic close-out gate for a session or work tree. Sweeps a fixed set of sources — the todo list, this session''s own promises, git state, TODO/FIXME markers the diff introduced, test and build state, and any issue or ticket referenced — and checks that every open point has been explicitly decided: done, won''t do, deferred, or handed to another session. Strict by default, with a severity floor that lifts only on evidence of how the project actually works (CI on every push, a user who commits last). A clean sweep returns one line and one sentence, plus a line on any processes it stopped. An unclean one either asks about the genuinely ambiguous points or names the blockers to fix now, with every issue number carrying its title. It decides nothing for the user and fixes nothing, with one exception: when the answer is yes, or no only because of open questions, it stops the background shells and processes left running in the work tree, so the folder can be deleted. Use when work looks finished and you want to confirm the session can actually close — "are we done?", before ending a session, before shipping, or before handing off.'
+allowed-tools: Read, Grep, Glob, Bash, AskUserQuestion, TaskStop
+---
+
+# are-we-done
+
+Answer one question — *can this session close?* — and answer it the same way every time.
+
+Done does **not** mean everything is finished. It means **nothing is still undecided**: every
+open point has been settled as done, won't do, deferred, or another session's work. An item
+parked with a reason is closed. An item nobody ruled on is not, however small.
+
+This skill never edits, commits, or fixes, and never decides on the user's behalf. The one thing
+it changes is process state: on a close (section 3b) it stops the background shells and processes
+left running in the work tree, without asking.
+
+## 1. Sweep (all seven, in order, every run)
+
+Run the full sweep before judging anything — see [REFERENCE.md](REFERENCE.md) for the exact
+commands and what counts as a hit.
+
+1. **Todo list** — any item not `completed`.
+2. **This session's own promises** — "I'll do X next", "leaving Y for now", "we should also Z",
+   plus any question you put to the user that never got an answer. **If the session was compacted
+   or you cannot see its start, that is itself a hit** — an empty result from a transcript you
+   can only half-read is not a clean leg, and reporting it as one is inventing closure.
+3. **Work tree** — `git status`: uncommitted edits, untracked files, conflict markers,
+   a half-applied multi-file change, an in-progress merge or rebase.
+4. **Markers introduced by this work** — `TODO`/`FIXME`/`XXX`/`HACK` added by this session, in
+   unstaged, staged *and* committed changes; a committed-only sweep misses exactly the markers
+   written last. An empty commit range is a range that did not resolve, not a clean sweep.
+   Pre-existing markers elsewhere in the repo are not this session's business.
+5. **Verification state** — did tests, typecheck, lint, or build run *after the last edit*, and
+   what did they say? Never assume; if nothing ran since the last change, that is an open point.
+6. **Referenced work items** — every issue, ticket, or PR number named this session, resolved to
+   its **title** (`gh issue view <n> --json title`, or the tracker's equivalent). A bare number
+   never appears in the output. Unresolvable → use the title as stated this session, marked
+   `(unverified)`; a missing `gh` is an environment gap, not an undecided point.
+7. **Background processes** — this session's background tasks, plus every process its tool shells
+   (subagents' included) started that is still running, plus orphans whose command line or working
+   directory is inside the work tree. These are what stop the folder being deleted later. Not open
+   points in themselves; they feed section 3b.
+
+## 2. Classify
+
+Put every hit in exactly one bucket. No item stays unbucketed.
+
+| Bucket | Test |
+|---|---|
+| `DONE` | Finished and verified in this session. |
+| `WON'T DO` | Ruled out on the record, with a reason. |
+| `DEFERRED` | Parked deliberately — to a later session, an issue, or a follow-up. |
+| `BLOCKER` | A bug, breakage, or unmet requirement inside the scope just worked on. |
+| `AMBIGUOUS` | Nobody ruled on it, and skipping it is defensible. |
+
+"On the record" means the user or you said it in this session. Silence is not a decision — an
+item nobody mentioned again is `AMBIGUOUS`, not `DONE`.
+
+## 3. Verdict — one rule, one floor
+
+**Yes** iff every item is `DONE`, `WON'T DO`, or `DEFERRED` — and there are zero `BLOCKER` and
+zero `AMBIGUOUS`. Otherwise **no**. Do not soften a `no` because the remainder is small.
+
+**The severity floor is strict by default.** An uncommitted tree and "not verified since the last
+edit" are `AMBIGUOUS` and force a no — unless this project's own workflow already answers them. A
+team whose CI runs the suite on every push has not left testing undecided by not running it
+locally, and asking every session is how the gate gets ignored. Lift the floor for one ambient
+state at a time, on evidence only, never on assumption ([REFERENCE.md](REFERENCE.md) lists what
+counts). A lifted state is still named in the output; it just stops forcing a no.
+
+## 3b. Clean up — automatic on a close
+
+When the verdict is yes (shape A), or no only because of `AMBIGUOUS` items (shape B), stop every
+process from leg 7 that nothing still needs. Do not ask; the user wants the folder deletable the
+moment the session ends. On shape A, clean up before the output. On shape B, clean up after the
+answers come back, and skip it if any answer is "do it now" — work continues. Never on shape C — its
+servers may still be in use.
+
+Keep a process only when the session record shows it is still wanted: the user asked for it to stay
+up, or the session is still waiting on its result (that wait is itself `AMBIGUOUS`). Everything else
+— finished test runs, dev servers started to check something, idle shells, watchers — is transient
+and goes. MCP servers and the user's own terminals and editors are never touched. Commands in
+[REFERENCE.md](REFERENCE.md).
+
+## 4. Output — one of exactly three shapes
+
+Templates in [REFERENCE.md](REFERENCE.md). Never invent a fourth shape and never add a section
+to one. Only one pairing is allowed, and it is spelled out in C below.
+
+**A — Yes.** Two lines of text: a verdict line, a blank line, then one sentence naming what was
+completed *and anything parked*. Say "nothing undecided", never "nothing outstanding" — deferred
+work is outstanding; the point is that someone ruled on it. Those two lines are the entire output;
+brevity is the deliverable here. If 3b stopped or kept anything, or found a process it may not
+touch holding the folder, one `Stopped:` / `Still running:` line follows; when there was nothing,
+say nothing.
+
+One exception, only when something was deferred: a paste-ready `Parked:` block may follow, so the
+parking outlives the session that decided it. You print it, the user places it,
+and `/raise-issue` files any of it that deserves a tracked issue.
+
+A clean close is also the one moment worth mentioning a waiting skills update: on shape A only, run
+`/check-skill-updates` if it is installed and append its single line. Never on B or C — an update
+offer beside an unanswered question or a blocker dilutes both.
+
+**B — Ambiguous items exist (no blockers).** Ask, via the **AskUserQuestion** tool — one question
+per ambiguous item, max four, each offering the real options (do it now / defer / won't do).
+Open with the tool call; do not narrate the questions in prose first. Then stop and wait; the
+answers are the user's, and carrying them out is a separate ask. Report what 3b stopped after the
+answers, beneath the dispositions.
+
+**C — Blockers exist.** A short, flat list — blockers first, then anything ambiguous underneath.
+One line each: what is broken, where (`file:line`), and what it blocks. Every referenced item as
+`#123 — Exact issue title`. No preamble, no reassurance, no restating the session. If blockers
+and ambiguous items both exist, the blocker list comes first and the shape-B questions follow it
+in the same turn — that list is the only text allowed to precede them, and undecided items appear
+as questions only, never also as bullets in the list.
+
+## Guardrails
+
+- **Do not fix anything.** Naming a blocker is the whole job; the user decides what happens next.
+  Stopping leftover processes in 3b is the one action taken, and only on a close.
+- **Do not invent closure.** If the sweep cannot establish something (a test that never ran, an
+  issue title that will not resolve), that is an open point, not an assumption.
+- **A single unresolved point makes the answer no.** This gate exists to be strict; a
+  yes that is nearly true is the failure mode it is built to prevent.
+
+## Relationship to other skills
+
+`/fresh-eyes` asks *is the work correct?* — a blind read of the diff against the intent.
+`are-we-done` asks *is the conversation closed?* — a sweep for undecided points. Run
+`/fresh-eyes` first if you want the diff audited; findings it leaves open show up here as
+`AMBIGUOUS` or `BLOCKER`. `/where-are-we` is the mirror image at the other end: it reopens a session,
+this one closes it. `/ship-it` is the next step when the answer is yes and the work is meant to
+go out — this gate says the session can close, not that anything has shipped. `/ship-it` calls this
+sweep at the end, once the release is out and verified — never before landing, because shipping
+work that is still in testing is a deliberate use of it, and a gate that argued with that would
+just be in the way. Run after, the sweep says what is left; it never holds or reverses a ship.

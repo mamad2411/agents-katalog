@@ -1,0 +1,262 @@
+---
+name: ai-edt
+description: "1C:Enterprise development through the AI-EDT MCP server - BSL analysis and editing, metadata, managed and ordinary forms, query validation, project diagnostics, debugging, infobase updates and unit tests. Use when the project is a 1C:EDT workspace: BSL modules, .mdo metadata, 1C queries, managed forms, Form.oform containers. Also use when all you have is a delivered .cf or .cfe with no project yet - it becomes one. Not for 1C 7.7 sources."
+---
+
+# AI-EDT
+
+AI-EDT exposes a running 1C:EDT instance over MCP. Search, navigation and analysis run against
+EDT's semantic model, not against file text, so references, definitions and call hierarchies are
+resolved the way the IDE resolves them. Plain text and regular-expression search over the module
+catalogue is available too, as one operation among others.
+
+The tool catalogue lives in `references/`. Read the file you need for the task at hand rather
+than all of them.
+
+## When to use it
+
+- Reading and editing BSL: modules, methods, references, call graphs, refactoring.
+- Metadata: inspect, create, change, delete, rename with cascade.
+- Managed forms: structure, a screenshot of the WYSIWYG editor, editing without hand-written XML.
+- **Ordinary (non-managed) forms held in `Form.oform`.** `ordinary_forms` reads and edits their
+  layout and their module: the operation catalogue, creating and importing a form, elements, pages,
+  table columns, command panels, properties, handlers, `inspect_layout`. The same module address
+  reaches the embedded module through the standard module tools. See
+  `references/ordinary-forms.md`.
+- 1C queries: syntax and semantic validation before anything runs.
+- Project problems, infobase updates, YAxUnit tests, debugging and profiling.
+- **A configuration or extension delivered as one binary file.** A `.cf` becomes a project in a
+  single call (`config_io operation=import_configuration_from_binary`), with no project needed
+  beforehand. A `.cfe` the same way, but an extension that borrows from its base configuration
+  needs `baseConfigurationPath` pointing at the matching `.cf` - without it the extension is staged
+  against an empty infobase, which only carries an extension that adopts nothing.
+
+  An `.epf` or `.erf` is different: `unpack_external_binary` needs an existing project to name,
+  because it takes the platform runtime and the host infobase from it. It is two steps, and it is
+  not a way in from nothing.
+
+- **What actually happened in the infobase.** `infobase_admin operation=read_event_log` reads the
+  event log of a FILE infobase - logins, postings, configuration updates, errors the platform
+  raised - filtered by `from` / `to` / `event` / `user` / `severity`. `severity` matches exactly and
+  takes the letters `I`, `W`, `E`, `N` as well as the full names. `excludeEvents` takes event names
+  to leave out - a whole name, or, ending in `*`, the start of one, so `_$Transaction$_*` drops the
+  transaction events that otherwise fill the answer; case is ignored and the exclusion runs before
+  `limit`. This is the only route here to
+  runtime facts rather than configuration; a server infobase and the single-file SQLite form of the
+  log are both refused by name rather than answered with an empty list.
+
+- **The configuration the infobase holds, as opposed to the one the project holds.**
+  `config_io operation=export_database_configuration` and `operation=export_database_extension`
+  dump the configuration or the extension out of the infobase into a `.cf` / `.cfe`. Both read the
+  base as it stands: an occupied `outputPath` is refused unless `overwrite=true`, and a base that
+  is not in `EQUAL` state is refused unless `allowOutOfSync=true`. `infobase_admin
+  operation=list_registered_infobases` answers what EDT's own infobase list holds - group, type,
+  connection string and additional parameters with the passwords masked, platform version, and the
+  projects each is bound to.
+
+- **Changes made in the infobase, pulled into the project.** `infobase_admin
+  operation=sync_control syncOperation=retrieve_database_changes` (the standalone `sync_control`
+  takes the same action as its `operation`) pulls what the infobase now holds into the project -
+  the direction opposite to `update_database`. A project carrying changes of its own is refused
+  until `replaceLocal=true`; a thick client this EDT launched against the infobase is refused by
+  its launch name (`heldBy`) before anything starts. A slow pull answers `Pending` with a `runKey`.
+
+- **The whole infobase as one `.dt` file.** `infobase_admin operation=export_database_snapshot`
+  dumps the infobase into a `.dt`, and `restore_database_snapshot` loads one back after writing a
+  backup of what the infobase holds (`backupTo`, derived beside the file when omitted): the load
+  replaces everything the infobase holds and does not start without the backup. A finished load
+  marks the stored `ConfigDumpInfo.xml` copy, and an incremental `update_database` is then refused
+  (`infobaseChanged`) until `infobase_admin operation=sync_control syncOperation=rebuild_dump_info`
+  rewrites it;
+  `verifyInfobaseContent=true` compares the copy with the infobase itself before an update.
+
+- **Working inside an extension.** Borrowing (`extension_workshop operation=borrow_object` /
+  `borrow_module` / `borrow_child`) writes the link that makes the borrowed object actually
+  extend the one it came from, and says so on the response; call borrow again on an object
+  borrowed by an older build and it repairs the link in place. Do not hand-edit the `.mdo` for
+  this. `includeChildren=true` on `borrow_object` also borrows that object's own children
+  (attributes, including those of a tabular section, forms, templates, commands, nested
+  subsystems) and lists what was taken, skipped, and what EDT pulled in by attribute type.
+  It does not override modules and does not walk other objects by reference. Default false
+  borrows only the named object. `borrow_objects` does not read the argument.
+
+  To widen the type of something the extension has adopted, use
+  `edit_metadata operation=extend_object_type` - **not** `set_object_type`. Setting a type
+  replaces a composition the adopted object does not have; extending adds an entry marked
+  `Extended` where an adopted object really keeps its types, and leaves the inherited ones alone.
+
+  A form element of an extension that takes a data path starting at a base-form attribute borrows
+  that attribute in the same write, and the response names it in `adoptedFormAttributes`. A path
+  EDT does not export with the extension form **and** the form does not resolve is refused before
+  anything is written - the refusal names the element, the path and the reason, and the form is left
+  as it was. A path the form resolves but that the extension cannot reference - a segment of
+  another engine, a tail past the borrowed attribute - is accepted, and EDT can drop it on export
+  with no marker to warn about it: `form-data-path` fires only on a segment nothing resolves. A
+  path an operation creates itself (the table of `add_dynamic_list_table`, the tables
+  of `setup_settings_composer_on_form`) is not asked about resolution: the object is the write's
+  own. When a check cannot be asked at all - the EDT service is absent or the call failed - nothing
+  is refused and the response names the check in `dataPathChecksNotPerformed`
+  (`attributeBelongsToExtension`, `exportOfExtensionForm`, `pathResolutionInForm`), because a
+  response that stays silent about it reads as a path that passed it.
+
+- **When a parameter's description reads like one line and you need the rules.**
+  `edit_metadata operation=help topic=parameters` carries the full text of the parameters whose
+  schema description was shortened. Nothing was removed from the schema - every parameter is still
+  declared - so this is detail, not a second list.
+
+For BSL and 1C metadata this server beats grep-style search: it answers from the model.
+
+## When not to use it
+
+- **1C 7.7** sources (`.1s`, `.ert`, `1Cv7.MD`). The EDT model does not cover them.
+- **Forms of a configuration that is not an EDT project.** Ordinary forms held in `Form.oform`
+  inside an EDT project are covered by `ordinary_forms`; a configuration kept only in the
+  Configuration-Designer format has no project model to read here.
+- **Data in a running infobase, outside a suspended debug session.** Use an HTTP route into the
+  running 1C application instead.
+- **EDT is not running.** The tools are unavailable. Say so instead of falling back to editing
+  project files by hand - a blind write into an EDT project is how work gets lost.
+
+## Before you start
+
+Probe with `get_edt_version`. If it does not answer, report that the server is unreachable rather
+than that EDT is down: the same silence appears when the MCP server is stopped, the call queue is
+stuck or the plugin is incompatible. On a connection error or timeout do not call `self_status` -
+it lives on the same server and will not answer either. `self_status` is useful in the opposite
+case: the server answers, but one operation fails.
+
+A `401` from `/mcp` while `/health` answers is not the server being down: the token check is on (**Require bearer token** on the AI-EDT preference page of that EDT, Window > Preferences > AI-EDT; off as shipped) and the client sends no bearer token, or the wrong one. The token is in the **Bearer token** field of that page and goes into the client configuration as `Authorization: Bearer <token>`; a server open to every interface demands it whatever the flag says. Nothing else gets through, so there is nothing to work around. A `404` naming `/mcp` on another path (`/register`, `/.well-known/...`) is the client walking OAuth discovery after that `401` - the answer is the same token.
+
+Reading and analysis without the server are fine. Writing into an EDT project without it is not.
+
+## Entry points
+
+A facade replaces a family of related tools: one name, with the action chosen by an `operation`
+parameter (`action` for the debugger). Most facades carry their own catalogue - call
+`operation=help`, and `operation=help topic=<operation>` for one operation's contract.
+`operation=help find=<words>` searches that help and names the topic to open for the whole section.
+
+| Facade | Use it for |
+|---|---|
+| `code_search` | Exploring code and model: search, references, definitions, call hierarchy, symbols. Read-only. |
+| `edit_metadata` | Creating and changing metadata and forms. Bulk work through `batch=true`. |
+| `diagnostics` | Project errors, summaries, revalidation, export readiness, check documentation. |
+| `launch_debugger` | The whole debugger: launch and attach, breakpoints, stepping, variables, evaluation, profiling. |
+| `project_admin` | Projects, configurations, subsystems, resync to disk, restarting EDT. |
+| `infobase_admin` | Infobases and launching: applications, the infobases EDT has registered, create and delete, credentials, starting a client, database update, dumping and loading the whole infobase as a `.dt`, sync control. |
+| `config_io` | Import and export of the configuration and of individual artifacts, including the configuration or the extension the infobase itself holds, and unpacking a binary `.epf` / `.erf` into XML. |
+| `insights` | Metrics, dependency graphs, configuration comparison, impact analysis. |
+| `security_audit` | Role rights, RLS violations, sensitive-data scan. |
+| `docs_lookup` | Platform documentation and an object's built-in help. |
+| `workspace_marks` | Tags, objects by tag, bookmarks, task markers. |
+| `cluster_admin` | The Navigator's custom folders: read the cluster tree of a collection, create, rename, describe and delete clusters, move objects in and out. Five writes, each gated by its own door. |
+| `tag_admin` | The project's metadata tags, written: create, rename or recolor, delete, assign to and unassign from an object. Reads stay in `workspace_marks`. Five writes, each gated by its own door; `dryRun=true` answers what the write would do and writes nothing, and passes a write-blocking preset when the call goes through `tag_admin operation=...` - the standalone write names that preset switches off stay refused with and without `dryRun`. |
+| `git` | The project's repository inside the IDE: status, branches, log, a commit of named paths, a switch of branch, what changed in a file, putting one file back, and a restore point taken before a merge. |
+| `yaxunit_tests` | YAxUnit unit tests; `installYaxunit=true` installs the engine and confirms both safety flags off unless `yaxunitUnsafeMode=false`. |
+
+Constructors are called directly, not through a facade: `dcs_workshop` (data composition schemas),
+`mxl_workshop` (spreadsheet templates), `xdto_workshop` (XDTO packages), `extension_workshop`
+(extensions and borrowing), `external_object_workshop` (external data processors and reports),
+`external_data_source_workshop`.
+
+So are the everyday reading and writing tools: `write_module_source`, `read_module_source`,
+`read_method_source`, `get_module_structure`, `list_modules`, `validate_query`, `ai_context`,
+`diff_module`, `get_form_structure`, `get_form_screenshot`, `code_review`, `get_edt_version`.
+
+`ordinary_forms` is one too, with its own `operation` catalogue and a JSON answer. It reads and
+edits the ordinary forms of the project, and the standard module tools reach their module through
+the ordinary `Module.bsl` address - `references/ordinary-forms.md`.
+
+`code_search` never writes. It only reads.
+
+### The Canonical preset hides aliases
+
+Many former standalone names still work as compatibility aliases, but the default **Canonical**
+preset hides them from `tools/list`. Call through the facade: `diagnostics
+operation=get_project_errors`, not `get_project_errors`; `launch_debugger action=launch`, not
+`debug_launch`. Operation names are written in short form here for readability.
+
+If a tool seems to be missing, do not conclude it does not exist and do not hand-roll a
+replacement. Look in this order: `tools/list` for the current session, then `operation=help` on
+the relevant facade, then `edit_metadata operation=help topic=availability` for what the current
+EDT runtime supports.
+
+## Rules that are not optional
+
+1. **Write BSL through `write_module_source`**, never by editing `.bsl` files directly. A direct
+   file write is invisible to EDT until a refresh, and it skips validation. Prefer the targeted
+   modes (`replaceMethod`, `replaceLines`, `insertBefore` / `insertAfter`) over whole-module
+   `replace`, which overwrites everything. `normalizeInvalidCharacters` (default true) replaces
+   U+2012-U+2015 and the minus sign U+2212 with a hyphen, U+00A0 with a space, and drops U+00AD,
+   outside BSL string literals; `invalidCharactersReplaced` is the count of changes and
+   `invalidCharactersPositions` their line and column, the first 50 with the list marked when it was cut.
+2. **Edit managed forms through `edit_metadata` form operations**, not by hand-writing `.form` XML.
+3. **Validate every query you write or change** with `validate_query`, immediately, not in a batch
+   at the end. For data composition queries pass `dcsMode=true`. Add `describeResult=true` before
+   you write code against the result: it reports the columns and their types, so you stop reading
+   them off the query text. Before writing the query, `insights operation=describe_db_tables` tells
+   you which tables the object has and what may be selected from each.
+4. **Run `validate_for_export` before writing the configuration into an infobase** and before
+   building artifacts. This includes the implicit update that `yaxunit_tests` performs. Findings
+   block the operation: fix them first.
+5. **After edits, revalidate before reading problems.** `diagnostics operation=revalidate_objects`
+   on the objects you touched, then `diagnostics operation=get_project_errors` filtered to them.
+   Reading problems without revalidating reports the previous state.
+6. **Edit an ordinary form through `ordinary_forms`**, or through `edit_metadata
+   operation=create_form formType=ORDINARY` when you want the ordinary creator. Never hand-write the
+   `Form.oform` container. A write there updates the project only: `diagnostics
+   operation=validate_for_export`, then `infobase_admin operation=update_database`, is what puts the
+   form into the infobase.
+
+## Spending context wisely
+
+- `ai_context` with a target FQN replaces a metadata call plus a module list plus a structure call.
+  Measured on five common modules: default `depth=standard` replies were 5,173-5,945 characters;
+  `read_module_source` replies were 64,706-225,721 characters, with up to 5,000 source lines per call.
+  `standard` lists at most 30 methods per module by default (`maxMethods`).
+- `get_module_structure`, then `read_method_source` for the one method you need. This works on
+  modules of tens of thousands of lines and gives exact method boundaries cheaply. Do not fall
+  back to reading whole files because a module is large.
+- Cache large maps (module lists, FQN catalogues, the structure of a big module) once into an
+  ignored file in the project instead of asking again.
+- Push heavy sweeps into a sub-agent so the raw output does not settle in the main context.
+
+## Reporting a defect or a wish
+
+A tool that answers against its description, or an operation the task needs and the server lacks,
+goes to the plugin repository `Desko77/ai-edt` as an issue.
+
+- Not a plugin defect, not filed: EDT not running or the project not loaded, `*ApiNotFound` and
+  `dcsFactoryMethodNotFound` (the running EDT lacks the API), a mistake in the configuration or in
+  the call itself. Say so to the user instead.
+- Another product, not filed here: a defect of the 1C platform, of another EDT plugin or of the MCP
+  client - name the product and where it takes reports. A question without a defect goes to the
+  Telegram topic `https://t.me/AI_EDT_1c/23`.
+- Reproduce first: the tool and operation, the arguments, the answer with the error tag and text
+  verbatim, what was expected. Look for a duplicate with
+  `gh issue list --repo Desko77/ai-edt --state all --search "<words>"`, or without `gh` give the user
+  `https://github.com/Desko77/ai-edt/issues?q=<words>`; an existing issue gets a comment, not a twin.
+- The draft is a temporary file outside the user's repository, deleted once the issue is sent or
+  handed over. Title `<tool or operation>: <what is wrong>`, up to 80 characters. A defect has the
+  sections What happened, How to reproduce, Expected, Environment (plugin version - `version` of
+  `GET /mcp` or `serverInfo.version`; EDT version - `get_edt_version`; MCP client; 1C platform; OS).
+  A wish has Task, What is missing, How it could work.
+- Generic names only: `Catalog.Items`, `C:/Projects/my-project`, `my-base`. No customer, company or
+  person names, connection strings, credentials, whole logs or screenshots with data.
+- Show the user the title and the whole text, name the repository and the labels, and send only
+  after their explicit consent. When `gh auth status` exits 0: `gh issue create --repo Desko77/ai-edt
+  --title "<title>" --body-file <draft> --label bug --label from-agent` (`enhancement` for a wish); a
+  refusal over a missing label is repeated without that label. Otherwise give the user
+  `https://github.com/Desko77/ai-edt/issues/new/choose` and the text to paste.
+- The `report-issue` skill of the 1C rule collections (`Desko77/claude-code-skills-1c`,
+  `Desko77/cursor-1c-skills`) runs these steps and checks the draft for private data with a script;
+  use it when it is installed.
+
+## Reference files
+
+| You need | File |
+|---|---|
+| What each facade covers and which operations it exposes | `references/facades.md` |
+| A ready order of calls for a concrete task | `references/workflows.md` |
+| What the responses mean and how the server behaves at scale | `references/expected-behavior.md` |
+| `ordinary_forms`: operations, arguments, layout and module editing, delivery | `references/ordinary-forms.md` |

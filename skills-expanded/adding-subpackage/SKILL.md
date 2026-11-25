@@ -1,0 +1,43 @@
+---
+name: adding-subpackage
+description: Use when adding a new subpackage under back/core/, back/objects/, or agents/ — e.g. a new graph DB engine, W3C parser, industry importer, reasoning module, or domain class. Enforces the checklist defined in .cursor/07-project-conventions.mdc.
+---
+
+# Adding a new subpackage
+
+The canonical 8-step checklist lives in **`.cursor/07-project-conventions.mdc
+§Adding a New Subpackage Checklist`**. The reference patterns to imitate live
+in the same file under **§Subpackage Patterns (reference)**. Read both
+first; this skill only sequences the work and acts as a parent-selector.
+
+## Choose the parent
+
+| Need | Parent |
+|------|--------|
+| Talks to Databricks/Delta/UC, parses W3C, runs reasoning, etc. | `back/core/` |
+| Owns business logic for a domain concept (Ontology, Mapping, …) | `back/objects/` |
+| Wraps an LLM-driven engine | `agents/` |
+
+If unsure, default to `back/core/` and lift to `back/objects/` only when
+state or session-awareness justifies it.
+
+## Procedure
+
+1. Pick the parent (table above).
+2. Walk the 8 steps from `.cursor/07 §Adding a New Subpackage Checklist`. Tick each off in a TodoWrite.
+3. Pick the closest reference pattern from `.cursor/07 §Subpackage Patterns` and imitate its layout (e.g. graph DB engine → `back/core/graphdb/`).
+4. Update Sphinx (`docs/sphinx/api/<pkg>.rst` + parent toctree, then `scripts/build_docs.sh`).
+5. Run tests.
+6. Run the `changelog` skill.
+
+## Don't
+
+- Don't split a class across files, and don't put several public classes in one file — one class per file, one purpose per class, records grouped by aggregate root, no grab-bag `models.py` (`.cursor/07 §Class-First Policy`).
+- Don't let a package grow flat: once it holds more than ~12 modules, or three or more share a topic, move them into a topic sub-package (`.cursor/07 §Package Organisation 5`).
+- Don't add layers or base classes the package doesn't need yet — the simplest code is the best (`.cursor/01 §Key Principles`).
+- Don't put HTTP/FastAPI types in `back/core/`.
+- Don't put `Request`/`Response` in `back/objects/`.
+- Don't import from internal modules outside the package — always import from the package (`.cursor/07 §__init__.py Conventions`).
+- Don't skip the Sphinx page — `make docs` warnings will fail review.
+- Don't write comments, docstrings, logs, changelog sections, or audit-trail
+  strings in a language other than English (`.cursor/05 §English-only artifacts`).

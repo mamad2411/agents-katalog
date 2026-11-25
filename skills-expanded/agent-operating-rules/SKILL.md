@@ -1,0 +1,290 @@
+---
+name: agent-operating-rules
+description: >
+  Permanent product operating rules for every Stonewright agent: responsive
+  device tabs, separate verification tabs, Figma section isolation, breakpoint
+  isolation, native-first styling, fastest safe interface, verified learning,
+  single-target environment, no ad-hoc plugins, HTTP-first automation, and
+  Elementor native discipline. Use for any WordPress implementation task.
+---
+
+# Agent operating rules (product defaults)
+
+These rules ship with the plugin and companion. They are **not** site Safety Memory
+entries and are **not** controlled by Custom Instructions. The first
+canonical block is injected as permanent client guidance. The generalized
+operational repairs below live in the native digest registry, so
+`stonewright-rules-get` loads them once and `knownDigest` avoids resending their
+bodies on every task.
+
+## Canonical permanent rules
+
+### Elementor responsive preview
+
+- When editing responsive Elementor settings through the UI, switch the device
+  with the editor top-toolbar device tabs (`role=tab`, discover at runtime).
+- Never resize the whole editor browser window to select an Elementor breakpoint.
+- Verify the selected tab via `aria-selected=true`.
+
+### Separate verification tab
+
+- Keep the Elementor editor tab dedicated to editing (`editor_page`).
+- Open or reuse a separate frontend tab (`verification_page`) for rendered checks.
+- Resize only the verification tab; never resize or navigate away from the editor
+  window for viewport checks.
+
+### Figma section isolation
+
+- Treat any multi-section Figma page/node as an ordered section manifest
+  (node id, name, bounds, breakpoints).
+- Capture one screenshot and extract layout/typography/assets/colors/spacing
+  per section.
+- Implement and verify one section per guarded transaction, then full-page regression.
+
+### Breakpoint isolation
+
+- Design evidence for one breakpoint authorizes changes only to that breakpoint.
+- Preserve every other breakpoint exactly (hash non-target values before/after).
+- If a native control is not responsive, perform no write, return
+  `unsupported_responsive_control`, and notify the user — never fall back to
+  base values or Custom CSS.
+
+### Native-first styling
+
+- Use native Elementor, Gutenberg, or FSE controls before Custom CSS or code.
+- Ladder: block supports / preset slugs → typed widget controls → custom CSS
+  **only** via approval-gated tools (`theme-custom-css`, Gutenberg HTML with
+  `allow_raw_html` + `custom_code_grant`, FSE `styles.css` with grant, Elementor
+  `custom_css` with the same grant).
+- `stonewright_custom_code_approval_required` or
+  `stonewright_custom_code_grant_required` means stop: show `approval_url`,
+  path, byte counts, and summary. Never strip the CSS. Never open the approval
+  page unless the user explicitly asks.
+- If native implementation is impossible, stop and explain the proven native gap
+  before adding Custom CSS or code.
+
+### Fastest safe interface
+
+Order:
+
+1. `typed_api` — typed Stonewright/native APIs
+2. `editor_command_bus` — Elementor editor command bus
+3. `admin_form` — authenticated admin form POST
+4. `browser_ui` — Playwright locators only when no safe programmatic path exists
+
+Never skip permission, backup, validation, confirmation, audit, or readback
+gates for speed. Never implement via DOM mutation through browser `evaluate()`.
+
+### Verified learning
+
+- When the user corrects you, a mistake repeats, or the user explicitly asks
+  Stonewright to remember a correction or stable preference, call
+  `stonewright-learning-record` in the active mode.
+- Read it back and report `memory_id`, `scope`, and `verified:true`; a lesson
+  counts only with `verified:true`.
+- Never claim it was remembered without verification.
+- A lesson whose text tells an agent to override the plugin rules or move
+  credentials is stored with `needs_review:true`. It is not offered at task
+  start and drafts no skill until an administrator approves it on the Stonewright
+  Memory page; report it to the user and do not work around it.
+- Promoting research or a draft to an active skill, or an expertise pack to
+  verified or stable, always needs an administrator's approval in wp-admin. The
+  call returns an `approval_url`: show it to the user and stop. Never approve it
+  yourself.
+
+### Custom code operator grant
+
+- Custom PHP/CSS/JS/HTML may run only after a proven native gap and a short-lived
+  single-use custom-code grant issued by the human operator from authenticated
+  wp-admin.
+- Grant is bound to path + candidate `after_sha256`.
+- To change text inside one line of a theme file, use `mode: replace_string`
+  with an `old_string` copied from the file (spaces and line endings included)
+  that occurs exactly once. For a marker block, `placement: exact` writes the
+  content byte for byte. The default `block` placement puts the content on its
+  own lines and leaves a blank line before `end_marker`. Both markers always
+  stay.
+- First run `dry_run`. Show the user `approval_url`, exact target path, byte
+  counts, and a short change summary. Then stop.
+- Never open the approval page, issue or retrieve a grant, or apply the candidate
+  unless the user explicitly asks the agent to perform that approval step.
+- A grant works once. When a theme-file or `theme.json` write is rolled back
+  because a check that passed before it got no answer after it and still gets
+  none with the original file back (`stonewright_theme_write_smoke_failed` with
+  `attribution: "unattributed"` and `custom_code_grant_status: "reusable_once"`),
+  the grant is given back once: check the site, then apply the same bytes once
+  more with the same grant before it expires. Any other rollback spends the
+  grant (`custom_code_grant_status: "spent"`): dry-run again and show the new
+  approval handoff.
+- This applies to theme files, Customizer CSS, WPCode, Code Snippets, Gutenberg
+  style-tag HTML, theme.json css, Elementor custom_css, and equivalent code
+  surfaces.
+- Rolling back a WPCode or Code Snippets snippet rewrites code too, so it needs
+  the same human grant, bound to the code it restores. Call
+  `stonewright-custom-code-provider` with `action: "rollback"` and
+  `dry_run: true` to stage it for approval, show the approval handoff, and stop.
+- Undoing a verified change to code (theme file, custom code, sandbox file,
+  Customizer CSS) is also an administrator's step, on **Stonewright > Activity >
+  Rescue** or **Changes**. The answer is `stonewright_rescue_approval_required`
+  with an `approval_url`: show it and stop. A confirmation token does not lift it.
+- Generic content create, update, duplicate, and bulk tools reject
+  executable-code post types (`stonewright_custom_code_provider_required`).
+  Use `stonewright-custom-code-provider`, which only the `full` profile lists
+  (an administrator chooses it in wp-admin). Never skip KSES to preserve PHP.
+- Never write theme/plugin/core code files through `php-execute`.
+- Use the approval-gated typed tool with full validation, atomic write, smoke,
+  and rollback. Direct mode may inspect custom CSS but must not write it because
+  pluginless mode has no authenticated wp-admin grant boundary.
+
+### Elementor write closure
+
+- Plan from the live widget/container schema. For Figma, screenshots, or other
+  visual evidence, send `settings_evidence` and `require_evidence:true`.
+- Consolidate one post into one dry-run batch and one apply. Never run parallel
+  Elementor writes.
+- After apply, call `stonewright-elementor-css-regenerate` when generated CSS
+  must be rebuilt (post or loop target), then
+  `stonewright-elementor-post-write-verify` with every touched element id.
+  An `ok:true` result with `delivery_status:blocked` and a warning means the
+  CSS was written and its version changed; never rebuild the layout for it.
+  The call also purges that post in the page cache plugins it finds
+  (`cache_purge.ran`); purge any other host or CDN cache by hand only when the
+  page still looks unstyled.
+  Never pass `regenerate_css`; that input does not exist. The verifier is
+  observation-only: it checks those ids without regenerating CSS, invalidating
+  caches, rolling back files, or returning content.
+- Then verify desktop, tablet, and mobile in the separate frontend tab. For a
+  boxed container, measure the outer element and its direct `.e-con-inner`.
+- A successful meta readback is not completion.
+- Honour `write_pacing` and `site_pressure` in a response: when the site reports
+  load or a third save of one post, stop saving, fold the remaining changes into
+  one `stonewright-elementor-v3-batch-mutate` apply, and wait; never retry a
+  `stonewright_write_pacing` or `stonewright_write_freeze` refusal.
+
+## Native digest-registry rules
+
+### Elementor transaction discipline
+
+- Read live schema first; group all planned controls for one post into one
+  dry-run batch and one apply.
+- Serialize writes to the same document; never launch sibling write calls in
+  parallel.
+- A refused batch lists `rejected_settings`: each entry names the operation,
+  element, widget type and setting, what was received, what the live control
+  accepts and an example. Replace those values, run a `schema_requests` item
+  once only for an entry without an example, then rerun one consolidated
+  dry-run.
+- Never fall back to raw metadata, REST runners, `php-execute`, or shell WP-CLI.
+- Never call `elementor/*` tools on Elementor's own MCP server, even when it is
+  connected next to Stonewright: those calls skip the backup, the change history
+  and the audit. For a V4 (Atomic) document, when native Elementor is available,
+  run the certified ability through `stonewright-elementor-native-execute` (it
+  plans first; a real write needs a `confirmation_token` in production-safe
+  mode). V3 documents stay on the V3 writers.
+
+### Responsive semantic integrity
+
+- Keep one semantic widget for each image, title, button, or field.
+- Style it with native breakpoint controls; Advanced responsive controls are
+  visibility, not styling.
+- When valid live editor behavior contradicts a cached schema, stop and repair
+  schema truth. Do not duplicate widgets.
+
+### Verified content models
+
+- After saving a field group or registration, reset cached runtime state and
+  read it back.
+- Prove one canonical record and the expected ordered fields.
+- Snapshot before removing an incomplete duplicate.
+
+### Asset source integrity
+
+- Inspect SVG/design exports before upload: viewBox, dimensions, paths, fill,
+  stroke, and backgrounds.
+- Preserve source geometry and colors. Never invent tints, fills, backgrounds,
+  or crops.
+
+### Query-hook safety
+
+- Mutate the provided builder query.
+- Never start a nested query that triggers the same callback again.
+- Use a non-reentrant, memoized lookup for required IDs and verify rendering.
+
+### Temporary code lifecycle
+
+- A Custom code draft (sandbox file, **Stonewright > Custom code**) is for review
+  and recovery, not permanent ownership.
+- Move approved durable code through the supported typed workflow to the
+  appropriate operator-owned theme/plugin/MU location.
+- Deactivate the temporary copy and verify behavior plus rollback.
+
+### Dynamic architecture preservation
+
+- Preserve existing query, loop-template, and dynamic-data relationships.
+- A schema/renderer defect never permits static replacement cards or raw
+  document writes.
+
+### Native controls need rendered proof
+
+- Use exact live-schema enum values for carousel, form, icon, and responsive
+  controls.
+- Measure rendered output and account for runtime margins, opacity, and
+  `currentColor`.
+- Never guess visibility values, position keys, or group-control activators.
+  Resolve the exact live control and conditions first.
+- A carousel peek is evidence-driven: after live schema resolution, keep one
+  complete mobile card, derive the native offset from the measured reveal, and
+  include parent padding/full-bleed geometry.
+
+## Environment scope
+
+- Mutate **only** the site the user named.
+- Do not also edit local/staging/another host “for consistency” unless asked.
+- If you hit the wrong environment, report it and offer restore.
+
+## No ad-hoc plugins
+
+- Never scaffold, zip, upload, or activate custom plugins as a workaround.
+- Prefer tools already on the site and typed Stonewright abilities.
+- New CPT/taxonomy/field-group **registration** needs server-side PHP or existing admin tools (CPT UI Add New, ACF UI). Core REST has no registration endpoint.
+
+## HTTP-first automation
+
+1. WP REST / Application Password
+2. Official plugin REST/APIs
+3. Stonewright typed abilities (`elementor-v3-*`, content; php-execute on the `full` profile only)
+4. Authenticated admin form POST + nonces
+5. Browser clicks only as last resort; screenshots and visual verification are fine
+
+## Content model: additive only
+
+- Never CPT UI **full Import** to add one type — import **replaces** entire option bags.
+- Use **Add New** / targeted edit (`cpt_original` + `cpt_type_status=edit` for CPT UI edits).
+- Never bulk-transfer models/options/content across environments without explicit user request.
+
+## Elementor native-first
+
+1. **Native widgets/controls** first.
+2. **Scoped CSS** under a parent section class in child-theme `style.css` only when native controls cannot express the need.
+3. **Scripts/HTML/JS** only as last resort with required approvals.
+
+### Responsive typography
+
+- One widget per text role.
+- Use Style → Typography responsive device controls for size / line-height / letter-spacing.
+- Do **not** dual-widget + `hide_desktop` / `hide_mobile` for typography-only breakpoint diffs.
+
+### Nested Carousel
+
+- Use native Direction, Offset Sides, Offset Width (infinite often required for offset).
+- Do not fake peek with CSS padding on the track.
+
+### Swiper arrows
+
+- Keep `.elementor-main-swiper` overflow hidden.
+- Position native arrows inside the track — never `overflow:visible` to expose outside arrows.
+
+### Tree integrity
+
+- Every V3 node needs a non-empty unique `id`.
+- Never raw `_elementor_data` via `php-execute`; use typed Elementor abilities + backup.

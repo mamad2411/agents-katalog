@@ -1,0 +1,313 @@
+---
+name: agent-marketplace
+description: >
+  How to use the agent-marketplace CLI to install shared AI agent resources
+  from Git, directory, or hosted Marketplace sources and materialize them into
+  native harness layouts. Use when setting up a repo, writing
+  `.agents/config.yaml`, installing/removing skills, commands, subagents,
+  hooks, MCP servers, or collections, checking sync drift, updating locks,
+  preparing pre-upgrade configuration conversion, or repairing shared harness
+  config ownership.
+metadata:
+  tags:
+    - cli
+    - skills
+    - setup
+---
+
+# agent-marketplace
+
+The full user documentation lives in the repository's
+[`site/docs`](https://github.com/Adyen/agent-marketplace/blob/main/site/docs/index.md).
+This skill caches what an agent needs most often; the
+[CLI reference](https://github.com/Adyen/agent-marketplace/blob/main/site/docs/reference/cli.md),
+[configuration reference](https://github.com/Adyen/agent-marketplace/blob/main/site/docs/reference/configuration.md),
+and `agent-marketplace <command> --help` own the exhaustive detail.
+
+## Quick Start
+
+For a new setup, use the example below. For an existing installation, first
+follow [Convert before upgrading](#convert-before-upgrading); do not overwrite
+authored configuration or relabel legacy fields as v4.
+
+```bash
+agent-marketplace init --harnesses claude,codex   # ~/.agents/config.yaml (v4, targets only)
+
+mkdir -p .agents
+cat > .agents/config.yaml << 'EOF'
+apiVersion: agent-marketplace/v4
+sources:
+  infra:
+    git: git@github.com:example-org/infra-skills.git
+    ref: main
+    path: skills
+resources:
+  infra:
+    include:
+      - skill/vm-lifecycle
+      - command/deploy
+EOF
+
+agent-marketplace sync      # writes .agents/lock.yaml and native harness files
+agent-marketplace status
+git add .agents/config.yaml .agents/lock.yaml
+```
+
+Bare `agent-marketplace` on a terminal opens the TUI; on first launch it asks
+for the target harnesses. When no user config exists, a plain `sync` creates
+one with `harnesses: [factory, windsurf]`, so declare targets first.
+
+## Configuration
+
+`apiVersion: agent-marketplace/v4` is the only supported consumer schema;
+`init`, `install`, `remove`, and the TUI create v4 files. Every existing root,
+including organization and personal-local, requires that exact string. An
+omitted root version fails with `v4.api-version-required`; explicit unsupported
+or invalid values fail with `v4.api-version`, naming the authored file and
+`apiVersion` field. Included fragments under a validated v4 root may omit the
+field or declare exact v4. An existing empty/versionless file is not absent.
+
+Unsupported input refuses before new acquisition, config/lock staging or
+publication, or harness writes/prunes, preserving bytes and metadata and
+creating no missing writable root or lock. Ordinary logs remain allowed. Safe
+recovery of a pre-existing journal may finish already-admitted writes before
+fresh validation; read-only dependency modes refuse pending work without replay.
+The v4 runtime adapter remains independent of on-disk consumer syntax.
+
+### Layers
+
+| Layer | Config | Lock |
+|---|---|---|
+| Organization | `/etc/agent-marketplace/config.yaml` | `/etc/agent-marketplace/lock.yaml` |
+| User | `~/.agents/config.yaml` | `~/.agents/lock.yaml` |
+| Repository | `<repo>/.agents/config.yaml` | `<repo>/.agents/lock.yaml` |
+| Repository personal | `<repo>/.agents/config.local.yaml` | `<repo>/.agents/lock.local.yaml` |
+
+Layers merge organization → user → repository → personal. Repo and personal
+selections target the first non-empty `harnesses:` list in repository, then
+user, then organization. User and organization selections target the user list,
+then the organization list, and use the repository list only when neither sets
+one, so a repository never narrows machine output. Lists are never combined.
+Repo and personal selections install under repo roots; user and organization
+selections install under machine roots. The
+personal file cannot set `harnesses` or allowlists, and the CLI adds it and its
+lock to `.gitignore`. Every layer supports local-file `include:` (one path or a
+list); fragments merge below the including file, and editors refuse to edit a
+selection that lives in a fragment (`config.edit.include-owned`).
+
+### Sources and resource groups
+
+```yaml
+apiVersion: agent-marketplace/v4
+harnesses: [claude, cursor, devin, codex]
+sources:
+  shared:                        # name is a label local to this file
+    git: https://github.com/example-org/agent-resources.git
+    ref: v1.4.0                  # required for git
+    path: resources              # optional subdirectory
+    source_harness: claude       # optional; omit to autodetect
+  local:
+    directory: ./agent-resources # read live, never locked
+  company:
+    marketplace: https://marketplace.example.com
+resources:
+  shared:
+    include: [skill/code-review, command/release, collection/platform-onboarding]
+    tags: [platform]
+    exclude: [skill/legacy-review]
+    harnesses: [claude]          # narrows targets, never widens
+  local: [skill/scratch]         # plain list = include only
+  company:
+    - shared-agents/skill/review:
+        revision: sha256:<64 lowercase hex>
+```
+
+- A source has exactly one of `git`, `directory`, or `marketplace`. Every
+  `resources` key must name a source declared in the same file or its includes.
+- Git/directory locators are `<kind>/<name>`; Marketplace locators are
+  `<registry-slug>/<kind>/<name>`. Kinds: `skill`, `command`, `subagent`,
+  `hook`, `mcp`, `collection`.
+- Group fields: `include`, `exclude` (`*`, `<kind>/*`, `<kind>/<name>`),
+  `tags`, `all: true`, `required: true` (protects selections from excludes and
+  `remove`, selects nothing itself), `harnesses`.
+- Exclusions apply after inclusions within a file. Required resources are never
+  excluded.
+- Relative `directory:` paths in `.agents/config.yaml`/`config.local.yaml`
+  resolve from the repo root; in other files, from the declaring file.
+- Git and directory resources take their version from the source `ref`; declare
+  a second source for another ref. `revision` is Marketplace-only.
+- Other root fields: `allowed_registries`, `allowed_marketplaces` (regex
+  allowlists), `materialization` (`mode: symlink|file`, per-target `targets`),
+  plus machine-only `backup`, `logging`, `telemetry`.
+
+Unknown fields, YAML aliases/merge keys, and duplicate keys are rejected with
+`v4.*` diagnostics; the message names the setting.
+
+## Output paths
+
+| Harness | Repo root | Machine root | Skill / command |
+|---|---|---|---|
+| `claude` | `.claude` | `~/.claude` | `skills/<name>/SKILL.md`, `commands/<name>.md` |
+| `factory` | `.factory` | `~/.factory` | `skills/<name>/SKILL.md`, `commands/<name>.md` (always copied) |
+| `cursor` | `.cursor` | `~/.cursor` | `skills/<name>/SKILL.md`, `commands/<name>.md` |
+| `windsurf` | `<repo>` (`.windsurf/…`) | `~/.codeium/windsurf` | `skills/<name>/SKILL.md`, `workflows/` (machine: `global_workflows/`) |
+| `gemini` | `.gemini` | `~/.gemini` | `skills/<name>/SKILL.md`, `commands/<name>.toml` |
+| `devin` | `.devin` | `~/.config/devin` | `skills/<name>/SKILL.md` for both |
+| `codex` | `.agents` + `.codex` | `~/.agents` + `$CODEX_HOME` or `~/.codex` | `.agents/skills/<name>/SKILL.md` for both |
+
+Devin and Codex commands are skill directories whose `SKILL.md` carries
+`x-agent-marketplace-kind: command`. Shared aggregate files hold hooks and MCP
+servers: Claude MCP goes to `<repo>/.mcp.json` or `~/.claude.json`; Gemini uses
+`settings.json`; Devin uses `hooks.v1.json` (machine: `config.json#hooks`) and
+`mcp_config.json`; Codex uses `.codex/hooks.json` and `.codex/config.toml`.
+Windsurf has no subagents. The
+[output paths reference](https://github.com/Adyen/agent-marketplace/blob/main/site/docs/reference/harnesses-and-output-paths.md)
+lists every kind per harness.
+
+Default `symlink` mode links skills, commands, and subagents into
+`~/.cache/agent-marketplace/compiled/<harness>/`; `materialization.mode: file`
+writes regular trees for every harness. Commit config and locks; ignore the
+generated roots you use (for example `.claude/skills/`,
+`.claude/.claude-plugin/`, `.devin/`).
+
+### Shared aggregate ownership
+
+Sync edits shared files entry by entry and keeps handwritten entries, comments,
+and unrelated settings.
+
+- Claude, Factory, Cursor, Windsurf, and Gemini hooks mark entries with
+  `"_managed_by": "agent-marketplace"`.
+- Devin, Codex, and Gemini MCP carry no marker. Ownership lives under
+  `$XDG_STATE_HOME/agent-marketplace` (default `~/.local/state/agent-marketplace`).
+  When that state is missing or corrupt, sync preserves every entry, refuses
+  collisions, and prunes nothing. A raw safety backup (five newest per file) is
+  taken before each mutation, even with backups disabled.
+- Codex repo changes print `materialize.codex.trust-review`; the CLI never
+  edits Codex trust or `.gitignore`. `CODEX_HOME` must be absolute and moves
+  only the `.codex` partition.
+
+## Locks
+
+Each layer's lock records the exact Git commit and inventory for the sources
+that layer declares, plus verified Marketplace revisions. Directory sources are
+never locked. The CLI writes `agent-marketplace-lock/v2` (read by v4.0.9+) and
+reads v1. The organization lock may be absent permanently; only
+`lock --scope organization` writes it. A current lock does not move when the
+branch moves: use `update` or `lock --upgrade`. Never hand-edit a lock.
+
+## Daily commands
+
+```bash
+agent-marketplace list [--kind skill|command|subagent|hook|mcp|collection]
+agent-marketplace list --from <git-or-web-url> [--ref R] [--path P]  # ad hoc, no config write
+agent-marketplace install <name> [--kind K] [--scope user|repo|local]  # default user
+agent-marketplace install <collection>
+agent-marketplace install --tag <tag> [--kind K]       # default user
+agent-marketplace install --all [--kind K] [--registry URL]  # default user
+agent-marketplace install --from <url> [<name>] [--ref R] [--path P]
+agent-marketplace install <marketplace-endpoint>       # registers endpoint (user scope)
+agent-marketplace install alias:registry/kind/name[@sha256:...] [--as local-name]
+agent-marketplace search [query] [--marketplace alias|url|all]
+agent-marketplace remove <name> [--kind K] [--scope repo|user|local]
+agent-marketplace remove --from <url> [<name>] [--ref R] [--path P]
+agent-marketplace sync                 # materialize; reconcile stale writable locks
+agent-marketplace sync --locked        # CI: require fresh locks, write no config/locks
+agent-marketplace sync --check         # exit 1 on lock or output drift; writes nothing
+agent-marketplace sync --offline       # trusted caches only
+agent-marketplace sync --strict -v     # missing/unloadable selections become errors
+agent-marketplace status               # targets, locks, synced resources, drift
+agent-marketplace update [--scope S] [--registry URL]   # advance Git locks, then sync
+agent-marketplace lock [--check|--upgrade] [--scope S]
+agent-marketplace doctor [--repair [--yes]]
+agent-marketplace gc --dry-run         # cache cleanup sees only the current repo
+agent-marketplace backup create|list|restore --target <harness>
+agent-marketplace deinit               # remove managed artifacts and cache
+```
+
+- `remove` drops an explicit selection, or records an exclusion when a
+  collection, tag, or `all` selected the resource. Required resources cannot
+  be removed. When the same resource is enabled at machine and repo scope, an
+  unscoped `remove` reports the ambiguity; pass `--scope`. An explicit scope
+  never falls back to another, and repo/local scope cannot hide machine
+  resources.
+- `--kind` disambiguates a name used by more than one kind.
+- `update --bump` rewrites eligible refs in v4 `sources:` to newer tags that
+  differ only in the final number, then updates locks and syncs. Refs declared
+  by included fragments are reported and left unchanged.
+- Read-only commands (`sync --check/--locked/--offline`, `lock --check`,
+  `list`, `status`) fail with `dependency.recovery-required` after an
+  interrupted write; a plain `sync` or `lock` completes the recovery.
+
+### `doctor` and `doctor --repair`
+
+`doctor` reports repo detection, config diagnostics, harness roots, unmet
+prerequisites, and Devin CLI compatibility (3000.3 floor; it only recommends
+adding `devin`). `--repair` covers Devin and Codex aggregate ownership: it
+previews exact adoption matches, evidence-backed orphans, and value conflicts.
+`--yes` adopts byte-identical matches only; removing an orphan or replacing a
+conflict always needs an interactive per-entry confirmation. Off a terminal,
+`--repair` without `--yes` only previews.
+
+## Hosted Marketplaces
+
+Register an endpoint with `install <url>` (adds a `marketplace` source), then
+install by locator. Installation resolves and verifies the exact revision,
+records it in the owning layer's lock, and prompts before accepting security
+findings (`--accept-risk`/`--yes` in automation). A Marketplace group selects
+through explicit `include` only; `tags`, `all`, and group `harnesses` fail at
+run time with `v4.marketplace-runtime-unsupported`. A missing or mismatched lock
+record fails with `v4.marketplace-lock-required`/`-mismatch`; a writing `sync`
+or `lock` records selected Marketplace resources missing from an existing lock
+while keeping existing pins, and read-only modes (`--check`, `--locked`,
+`--offline`, `doctor`) never write. When an organization intentionally deploys
+no acquisition lock, `--locked`, `--offline`, and `lock --check` refuse
+`v4.marketplace-lock-required` with a hint naming an online `agent-marketplace
+sync` or `sync --check`, which verifies the organization's Marketplace
+requests transiently, instead of the administrator.
+
+## Resource prerequisites
+
+Resources declare advisory prerequisites in their own frontmatter
+(`metadata.requires`), never in `.agents/config.yaml`. A prerequisite is met
+when a resource of that kind and name is selected from any source or layer.
+Unmet prerequisites warn during `install`, `sync`, `sync --check`, and `doctor`,
+and appear under `UNMET REQUIREMENTS` in `status`; they never install anything,
+never override an exclude, and never fail `sync --check`.
+
+## Convert before upgrading
+
+The shipped CLI has no `migrate` command, startup conversion prompt, TUI
+migration modal, or legacy reader/editor. Before replacing an older binary,
+use an **older released migrator** to convert every writable user, repo, and
+personal-local root and verify its entire include tree. Have the externally
+owned organization configuration converted and deployed by its administrator.
+
+Conversion can refuse include trees, unrepresentable legacy input, or exact
+Marketplace pins without verified cache evidence. Resolve refusals before
+upgrading; never advise merely changing the version string, flattening away
+policy, or fabricating evidence. See the
+[pre-upgrade guide](https://github.com/Adyen/agent-marketplace/blob/main/site/docs/how-to/migrate-configuration.md).
+Keep backups and a compatible older binary for rollback. Lock v1 reads/v2
+writes, source-revision compatibility, Marketplace operator
+`agent-marketplace.io/marketplace/v1`, APIs/artifacts, and native harness schemas
+are independent and remain supported.
+
+## Gotchas
+
+- **No selection, no output**: a source without an `include`, `tags`, or `all`
+  selection only contributes to `list`.
+- **No target, no output**: missing `.devin/` or `.codex/` output means the
+  harness is not in the effective list (`status` → `TARGET HARNESS SET`).
+- **Name collisions pick one winner**: same kind and name from different
+  sources resolves by `required`, then layer/file precedence, then
+  alphabetical normalized origin, with a warning. Hooks are the exception: all
+  are installed. A skill and a command may share a name.
+- **Collections cannot add registries**: a member naming another registry needs
+  that registry configured as a source first.
+- **Private Git sources**: prefer SSH URLs; HTTPS fails when terminal prompts
+  are disabled.
+- **`gc` sees only the current repository**: it can delete a cache entry another
+  repo needs; run `--dry-run` first.
+- **Keep `~/.local/state/agent-marketplace`**: it is the ownership authority,
+  not a cache. Deleting it stops sync from pruning what it wrote; use
+  `doctor --repair` to re-adopt.

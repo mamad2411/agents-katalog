@@ -1,0 +1,382 @@
+---
+name: ai-figure
+version: "1.0.0"
+description: Generate clean SVG diagrams (flowchart, tree, mindmap, architecture, sequence, quadrant, gantt, state machine, ER, timeline, swimlane, bubble chart, radar chart) from a markdown string or a JSON config via fig(). Auto-layout, zero coordinates needed. Works in browser and Node.js.
+author: hustcc
+license: MIT
+package: ai-figure
+api: fig(markdown|options) → string (SVG)
+tags: [flowchart, tree-diagram, mindmap, architecture-diagram, sequence-diagram, quadrant-chart, gantt-chart, state-machine, er-diagram, timeline, swimlane, bubble-chart, radar-chart, svg, layout, visualization, markdown]
+---
+
+# ai-figure Skill
+
+Generates self-contained SVG diagrams. No coordinates needed — layout is computed automatically.
+
+## Install
+
+```bash
+npm install ai-figure
+```
+
+## CDN (browser, no bundler)
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/ai-figure/dist/index.global.js"></script>
+<!-- or: https://unpkg.com/ai-figure/dist/index.global.js -->
+<script>
+  // Global: AiFigure.fig(...)
+  document.getElementById('chart').innerHTML = AiFigure.fig('figure flow\na[A] --> b[B]');
+</script>
+```
+
+## Usage
+
+```typescript
+import { fig } from 'ai-figure';
+
+// Markdown string (preferred — compact, streaming-safe)
+const svg = fig(`
+  figure flow
+  direction: LR
+  palette: antv
+  title: CI Pipeline
+  subtitle: automated build and deploy
+  code[Write Code] --> test{Tests Pass?}
+  test --> build[Build Image]: yes
+  test --> fix((Fix Issues)): no
+  fix --> code
+  build --> deploy[/Deploy/]
+  group Pipeline: code, test, build
+`);
+
+// JSON config object (programmatic / strongly-typed)
+const svg2 = fig({ figure: 'flow', nodes: [...], edges: [...] });
+
+// DOM: document.getElementById('chart').innerHTML = svg;
+// Node.js: fs.writeFileSync('chart.svg', svg);
+```
+
+`fig()` accepts either a **markdown string** or a **JSON config**. When given a string it never throws — partial or empty input (e.g. during AI streaming) returns a valid empty SVG that fills in progressively.
+
+## Markdown syntax
+
+**First line must be:** `figure <type>` — this is the required header, **not** a `key: value` config line.
+
+Valid types: `flow` `tree` `mindmap` `arch` `sequence` `quadrant` `gantt` `state` `er` `timeline` `swimlane` `bubble` `radar`
+
+Config lines use `key: value` syntax. Data lines use diagram-specific patterns.
+
+| Key | Values | Default | Applies to |
+|-----|--------|---------|------------|
+| `title` | any string | — | all types |
+| `subtitle` | any string | — | all types |
+| `theme` | `light` `dark` | `light` | all types |
+| `palette` | `default` `antv` `drawio` `figma` `vega` `mono-blue` `mono-green` `mono-purple` `mono-orange` | `default` | all types |
+| `direction` | `TB` `LR` | `TB` | flow, tree, arch only |
+
+Lines starting with `%%` are comments.
+
+### Node notation (flow / tree / mindmap / arch)
+
+| Notation | Shape |
+|----------|-------|
+| `id[label]` | process (rectangle) |
+| `id{label}` | decision (diamond) |
+| `id((label))` | terminal (pill) |
+| `id[/label/]` | io (parallelogram) |
+| `id` | process, id used as label |
+
+### flow
+
+```
+figure flow
+direction: LR
+palette: antv
+title: My Flow
+subtitle: data pipeline example
+A[Source] --> B[Target]          %% simple edge
+A --> B[Target]: label           %% labeled edge
+group Name: id1, id2, id3        %% logical group (dashed border)
+```
+
+### tree
+
+```
+figure tree
+direction: LR
+title: Org Chart
+subtitle: company structure
+root[Root]
+root --> child[Child]
+child --> leaf[Leaf]
+```
+
+### mindmap
+
+```
+figure mindmap
+title: Product Strategy
+subtitle: 2026 planning map
+root[Product Strategy]
+root --> market[Market]
+root --> tech[Technology]
+market --> smb[SMB]
+market --> ent[Enterprise]
+tech --> ai[AI Features]
+```
+
+### arch
+
+```
+figure arch
+direction: TB
+palette: antv
+title: Web Stack
+subtitle: three-tier architecture
+layer Frontend
+  ui[React App]
+  assets[Static Assets]
+layer Backend
+  api[REST API]
+  auth[Auth Service]
+layer Data
+  db[PostgreSQL]
+```
+
+### sequence
+
+```
+figure sequence
+title: Login
+subtitle: OAuth2 password flow
+actors: Browser, API, DB         %% optional; inferred from messages if omitted
+Browser -> API: POST /login      %% solid arrow
+API --> Browser: 200 OK          %% dashed return arrow
+```
+
+### quadrant
+
+```
+figure quadrant
+title: Priority
+subtitle: effort vs value
+x-axis Effort: Low .. High
+y-axis Value: Low .. High
+quadrant-1: Quick Wins    %% top-left
+quadrant-2: Strategic     %% top-right
+quadrant-3: Low Prio      %% bottom-left
+quadrant-4: Long Shots    %% bottom-right
+Feature A: 0.2, 0.9       %% label: x, y  (x/y in [0,1])
+```
+
+### gantt
+
+```
+figure gantt
+title: Q1 Roadmap
+subtitle: Jan – Mar 2025
+section Design
+  Wireframes: t1, 2025-01-06, 2025-01-24    %% label: id, start, end
+  Mockups: t2, 2025-01-25, 2025-02-07
+section Dev
+  Frontend: t3, 2025-02-03, 2025-02-28
+milestone: Launch, 2025-03-01
+```
+
+- Task format: `<label>: <id>, <yyyy-mm-dd>, <yyyy-mm-dd>` — **id is required**, even if you don't reference it
+- `end` ≥ `start`; `section` groups tasks under a bold header; `milestone: <label>, <date>` marks a point in time
+
+### state
+
+```
+figure state
+title: Order Status
+subtitle: e-commerce order lifecycle
+idle[Idle]
+processing[Processing]
+accent: failed                   %% mark as accent/focal state
+start --> idle                   %% start pseudo-state
+idle --> processing: order placed
+processing --> end: shipped
+processing --> failed: error
+failed --> idle: retry
+```
+
+- `id[label]` — normal state (rounded rectangle)
+- `start` / `end` — reserved pseudo-state ids (filled circle / ringed circle)
+- `id --> id2: event` — transition with optional label
+- `accent: id` — mark a state as the focal/error state (max 1–2)
+
+### er
+
+```
+figure er
+title: Blog Schema
+subtitle: users and posts
+entity User
+  id pk: uuid
+  email: text
+entity Post
+  id pk: uuid
+  author_id fk: uuid
+  title: text
+User --> Post: writes
+```
+
+- `entity Name` — declare an entity box (name used as id and label)
+- Fields: `name pk: type` (primary key), `name fk: type` (foreign key), `name: type`, or bare `name`
+- `A --> B: label` — relationship line with optional label
+- `accent: EntityName` to mark the aggregate root entity
+
+### timeline
+
+```
+figure timeline
+title: Product History
+subtitle: major releases
+2020-01-15: v1.0 Launch milestone   %% major milestone (larger accent dot)
+2021-06-01: v1.5 Improvements
+2022-03-10: v2.0 Redesign milestone
+2023-11-01: v3.0 AI Features
+```
+
+- Lines: `yyyy-mm-dd: label` or `yyyy-mm-dd: label milestone`
+- Events are sorted chronologically and spaced proportionally on a horizontal axis
+- Labels alternate above and below the baseline to reduce collision
+
+### swimlane
+
+```
+figure swimlane
+title: Order Flow
+subtitle: cross-team process
+section Customer
+  order[Place Order]
+  pay[Confirm Payment]
+section Warehouse
+  receive[Receive Order]
+  pack[Pack Items]
+section Shipping
+  ship[Ship Package]
+order --> pay
+pay --> receive
+receive --> pack
+pack --> ship
+```
+
+- `section LaneName` — declares a new lane; subsequent node lines belong to it
+- `id[Node Label]` — node declaration inside the current lane
+- `A --> B` or `A --> B: label` — directed edges (may cross lanes)
+
+### bubble
+
+```
+figure bubble
+title: Market Analysis
+subtitle: by product segment
+%% label: value (positive number)
+Product A: 75
+Product B: 50
+Product C: 85
+```
+
+- Data lines: `Label: value` — any positive number; bubble **area is proportional to value**
+- Positions computed automatically; no coordinates needed
+
+### radar
+
+```
+figure radar
+title: Framework Comparison
+subtitle: 2025 technical evaluation
+axes: Performance, Scalability, DX, Ecosystem, Tooling
+React: 75, 80, 90, 95, 88
+Vue: 82, 72, 90, 82, 80
+Angular: 65, 92, 72, 90, 86
+```
+
+- `axes:` — comma-separated list of axis labels (3 or more recommended); each becomes a spoke of the web
+- Series lines: `Series Name: v1, v2, v3, ...` — one numeric value per axis, range **0–100** (treated as a percentage of the axis maximum; values are clamped)
+- Multiple series can be overlaid; each is assigned a different palette color
+- A legend with colored dots and series names appears below the chart
+
+## Common pitfalls
+
+These mistakes may produce unexpected or broken diagrams:
+
+| ❌ Wrong | ✅ Correct | Note |
+|----------|-----------|------|
+| `type: flow` | `figure flow` (first line) | `figure <type>` is the header, not a config key |
+| `A -->|label| B` | `A --> B: label` | Mermaid pipe-label syntax is not supported |
+| `[*] --> idle` | `start --> idle` | Use `start` / `end` pseudo-ids, not `[*]` |
+| `Task: start, end` (gantt) | `Task: id, start, end` | Task **id** is always required in gantt |
+| `direction: LR` in gantt/sequence | (omit it) | `direction` is only meaningful for flow, tree, arch |
+
+## JSON config (fig(options))
+
+Same result as markdown but typed. Use when building diagrams programmatically.
+
+All options share: `title?`, `subtitle?`, `theme?: 'light'|'dark'`, `palette?: string|string[]`, and (where applicable) `direction?: 'TB'|'LR'`.
+
+```typescript
+// flow
+{ figure: 'flow', nodes: FlowNode[], edges: FlowEdge[], groups?: FlowGroup[] }
+// FlowNode:  { id, label, type?: 'process'|'decision'|'terminal'|'io' }
+// FlowEdge:  { from, to, label? }
+// FlowGroup: { id, label, nodes: string[] }
+
+// tree
+{ figure: 'tree', nodes: TreeNode[] }
+// TreeNode: { id, label, parent? }
+
+// mindmap
+{ figure: 'mindmap', nodes: MindmapNode[] }
+// MindmapNode: { id, label, parent?, side?: 'left'|'right' }
+
+// arch
+{ figure: 'arch', layers: ArchLayer[] }
+// ArchLayer: { id, label, nodes: { id, label }[] }
+
+// sequence
+{ figure: 'sequence', actors: string[], messages: SeqMessage[] }
+// SeqMessage: { from, to, label?, style?: 'solid'|'return' }
+
+// quadrant — quadrants: [top-left, top-right, bottom-left, bottom-right]; x=0 left, y=0 bottom
+{ figure: 'quadrant', xAxis: { label, min, max }, yAxis: { label, min, max },
+  quadrants: [string, string, string, string], points: QuadrantPoint[] }
+// QuadrantPoint: { id, label, x, y }  x/y in [0,1]
+
+// gantt
+{ figure: 'gantt', tasks: GanttTask[], milestones?: GanttMilestone[] }
+// GanttTask:      { id, label, start, end, groupId? }  start/end: 'yyyy-mm-dd'
+// GanttMilestone: { date, label }
+
+// state
+{ figure: 'state', nodes: StateNode[], transitions: StateTransition[] }
+// StateNode:       { id, label, type?: 'state'|'start'|'end', accent?: boolean }
+// StateTransition: { from, to, label? }
+
+// er
+{ figure: 'er', entities: ErEntity[], relations: ErRelation[] }
+// ErEntity:  { id, label, fields: ErField[], accent?: boolean }
+// ErField:   { name, type?, key?: 'pk'|'fk' }
+// ErRelation: { from, to, label? }
+
+// timeline
+{ figure: 'timeline', events: TimelineEvent[] }
+// TimelineEvent: { id, label, date, milestone? }  date: 'yyyy-mm-dd'
+
+// swimlane
+{ figure: 'swimlane', lanes: string[], nodes: SwimlaneNode[], edges: SwimlaneEdge[] }
+// SwimlaneNode: { id, label, lane, type? }  lane = one of lanes[]
+// SwimlaneEdge: { from, to, label? }
+
+// bubble
+{ figure: 'bubble', items: BubbleItem[] }
+// BubbleItem: { label, value }  — value is a positive number; area proportional to value
+
+// radar
+{ figure: 'radar', axes: string[], series: RadarSeries[] }
+// RadarSeries: { label, values }  — values are 0-100 (one per axis); clamped to [0,100]
+```

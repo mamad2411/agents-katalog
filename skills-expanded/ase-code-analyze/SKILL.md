@@ -1,0 +1,296 @@
+---
+name: ase-code-analyze
+argument-hint: "[--help|-h] [--performance|-p] [--security|-s] [--severity|-S=(AUTO|LOW|MEDIUM|HIGH)] [--prefix|-P=<prefix>] [--staged] [--unstaged] [<source-reference>]"
+description: >
+    Analyze the source code for problems in either the logic and
+    semantics and its related control flow, performance and efficiency,
+    or security.
+user-invocable: true
+disable-model-invocation: false
+effort: high
+allowed-tools:
+    - "Agent"
+    - "Glob"
+    - "Bash(git rev-parse *)"
+    - "Bash(git -C *)"
+---
+
+@${CLAUDE_SKILL_DIR}/../../meta/ase-control.md
+@${CLAUDE_SKILL_DIR}/../../meta/ase-skill.md
+@${CLAUDE_SKILL_DIR}/../../meta/ase-getopt.md
+
+<purpose name="ase-code-analyze">
+Analyze Source Code
+</purpose>
+
+<expand name="getopt"
+    arg1="ase-code-analyze"
+    arg2="--performance|-p --security|-s --severity|-S=(AUTO|LOW|MEDIUM|HIGH) --prefix|-P= --staged --unstaged">
+    $ARGUMENTS
+</expand>
+
+<objective>
+*Analyze* the source code of <getopt-arguments/>, and its directly
+related source code, for problems - read-only, *without* applying any
+changes. The *analysis lens* depends on the selected options: problems
+in its *logic* and *semantics* and its related *control flow*, or
+problems in *performance* and *efficiency*, or problems in *security*.
+</objective>
+
+<flow>
+
+1.  <step id="STEP 1: Sanity Check Usage">
+
+    <if condition="<getopt-option-performance/> is equal `true` and <getopt-option-security/> is equal `true`">
+
+    Only output the following <template/> and then *STOP* the entire flow
+    (do not perform any further steps):
+
+    <template>
+    ⧉ **ASE**: ✪ skill: **ase-code-analyze**, ▶ ERROR: options `--performance` and `--security` are mutually exclusive
+    </template>
+
+    </if>
+
+    </step>
+
+2.  <step id="STEP 2: Investigate Code Base">
+
+    <if condition="<ase-project-boxing/> is equal `black` and <getopt-option-severity/> is equal `AUTO`">
+
+    The project source artifacts are classified as a *black box*, so
+    the user does *not* want them inspected or their problems surfaced
+    (an *explicitly* given severity floor lifts this skip).
+    *Skip* the entire investigation and analysis: do *not* invoke any
+    `Bash`, `Glob`, or `Agent` tool and do *not* read any source, only
+    output the following <template/> and then *SKIP* the remaining step
+    STEP 3:
+
+    <template>
+    <ase-tpl-bullet-normal/> **CODE ANALYSIS**: *suppressed* (`project.boxing` is `black`)
+    </template>
+
+    </if>
+
+    First, use the following <template/> to give a hint on this step:
+
+    <template>
+    <ase-tpl-bullet-secondary/> **ANALYSIS INVESTIGATION**
+    </template>
+
+    Dispatch the investigation to *sub-agents* via the `Agent`
+    tool so that *no* investigation details leak into the user-visible
+    transcript. The sub-agents perform the silent reading and checking;
+    only their final structured return values are consumed here.
+
+    For this, first determine the *analysis lens* <lens/>: set
+    <lens>performance</lens> if <getopt-option-performance/> is equal
+    `true`, set <lens>security</lens> if <getopt-option-security/> is
+    equal `true`, and set <lens>logic</lens> otherwise.
+
+    <if condition="<getopt-option-staged/> is equal `true` or <getopt-option-unstaged/> is equal `true`">
+
+    Then *silently* restrict the analysis to the *changed* files of
+    the Git working copy. Set <changes>staged and unstaged</changes>
+    if both <getopt-option-staged/> and <getopt-option-unstaged/> are
+    equal `true`, set <changes>staged</changes> if only
+    <getopt-option-staged/> is equal `true`, and set
+    <changes>unstaged</changes> otherwise. Determine the *repository
+    root* by running the command `git rev-parse --show-toplevel`
+    (taken exactly as given) and capturing its output into
+    <repo-root/>. Then determine the changed files by running the
+    corresponding commands (taken exactly as given), each listing one
+    path relative to <repo-root/> per line, and collect all listed
+    paths, dropping duplicates:
+
+    <if condition="<getopt-option-staged/> is equal `true`">
+    `git -C "<repo-root/>" -c core.quotepath=off diff --cached --name-only --diff-filter=d`
+    </if>
+
+    <if condition="<getopt-option-unstaged/> is equal `true`">
+    `git -C "<repo-root/>" -c core.quotepath=off diff --name-only --diff-filter=d`
+
+    `git -C "<repo-root/>" -c core.quotepath=off ls-files --others --exclude-standard`
+    </if>
+
+    *Skip* every listed path below the `.ase/` directory (it carries
+    *ASE*'s own state) and every path which is not a source code file
+    (e.g. a binary file), and prefix every remaining path with
+    `<repo-root/>/`. If `<getopt-arguments/>` is not empty, keep only
+    those files which lie within the source code referenced by it,
+    expanding any directory or wildcard references with the `Glob`
+    tool. Set <sources/> to the resulting list of individual source
+    code files, preserving order.
+
+    If <sources/> is empty, only output the following <template/>
+    and then *SKIP* the rest of this STEP 2 and the remaining step
+    STEP 3:
+
+    <template>
+    <ase-tpl-bullet-normal/> **CODE ANALYSIS**: *no <changes/> source files to analyze*
+    </template>
+
+    </if>
+    <else>
+
+    Then *silently* resolve `<getopt-arguments/>` to the list
+    <sources/> of individual source code files, expanding any
+    directory or wildcard references with the `Glob` tool.
+
+    If <sources/> is empty (no *source-reference* given or none of it
+    resolvable), only output the following <template/> and then *STOP*
+    the entire flow (do not perform any further steps):
+
+    <template>
+    ⧉ **ASE**: ✪ skill: **ase-code-analyze**, ▶ ERROR: no source files to analyze -- give a *source-reference* or use `--staged`/`--unstaged`
+    </template>
+
+    </else>
+
+    Then partition <sources/>, preserving order, into at most *eight*
+    batches of roughly equal size (a single file yields a single
+    batch), and invoke the following tool once per batch, emitting
+    *all* invocations *in one single message* so they run in
+    *parallel*:
+
+    ```text
+        Agent(
+            description:       "Analysis Investigation (<batch-index/>/<batch-count/>)",
+            subagent_type:     "ase:ase-code-analyze",
+            prompt:            "<lens/> <batch/>",
+            run_in_background: false
+        )
+    ```
+
+    Here <batch/> is the space-separated list of the source code file
+    paths of the corresponding batch, <batch-index/> is the 1-based
+    index of that batch, and <batch-count/> is the total number of
+    batches, so that each parallel invocation is distinguishable in
+    the progress display.
+
+    Parse the result message of each `Agent` tool invocation as a JSON
+    array and concatenate all those arrays. Then *deduplicate* the
+    combined list: when two problems share the same `file` and `line`,
+    *silently drop* all but the first one (sub-agents may have read
+    overlapping *related* files for comprehension). Finally sort the
+    list by `file` and then numerically by `line`, and set <problems/>
+    to that list.
+
+    You *MUST* *NOT* output anything at all in this STEP 2 beyond the
+    `Bash`, `Glob`, and `Agent` tool invocations and the templates above.
+
+    </step>
+
+3.  <step id="STEP 3: Show Results">
+
+    Before reporting, determine the *problem id prefix* <id-prefix/>:
+    set <id-prefix><getopt-option-prefix/>-</id-prefix> if
+    <getopt-option-prefix/> is *not* empty, and set <id-prefix></id-prefix>
+    (set to empty) otherwise. Every reported problem id and every
+    persisted key below carries this <id-prefix/>, so that analyses run
+    under *distinct* prefixes occupy *distinct* id namespaces and hence
+    do not overwrite each other.
+
+    Before reporting, determine the *effective severity floor* <floor/>:
+    define the ordinal rank `LOW`=1, `MEDIUM`=2, `HIGH`=3.
+
+    <if condition="<getopt-option-severity/> is equal `AUTO`">
+    Set <floor>MEDIUM</floor> if <ase-project-boxing/> is equal `grey`
+    (grey boxing surfaces only *material* findings of severity `MEDIUM`
+    and above), and <floor>LOW</floor> otherwise.
+    </if>
+    <else>
+    Set <floor><getopt-option-severity/></floor>: an *explicitly* given
+    severity floor always *wins* over the boxing, both over the `grey`
+    floor and over the `black` skip.
+    </else>
+
+    Then *apply the effective severity floor* <floor/>: *Keep* a detected
+    problem if and only if its `severity` field is `ACCEPTED` *or*
+    `rank(severity)` is greater than or equal to `rank(<floor/>)`;
+    *silently drop* all other problems (they are neither reported nor
+    persisted). With the floor `LOW`, all problems are kept.
+    `ACCEPTED` problems are *never* dropped.
+
+    Then sort the surviving problems in <problems/> by their `severity`
+    field from highest to lowest in the fixed order `HIGH`, `MEDIUM`,
+    `LOW`, `ACCEPTED`, so the reporting starts with the most severe
+    problem. Within the same severity, keep the `file`/`line` order
+    established in STEP 2.
+
+    Then renumber the surviving problems contiguously as `<id-prefix/>P<n/>`
+    with <n/> = 1, 2, ... in that sorted ordering, so `<id-prefix/>P1` is
+    the most severe problem and the persisted `ase-issue-<id-prefix/>P<n/>`
+    keys follow the reported sequence. If *all* problems are dropped, skip
+    the per-problem report but still purge any stale
+    persisted problems with a *single* `ase_kv_batch` call to the `ase`
+    MCP server with `transactional` set to `true` and a `commands`
+    parameter array holding exactly one `{ command: "clear", prefix:
+    "ase-issue-<id-prefix/>" }` entry,
+    and still emit the final hint <template/> below.
+
+    In this STEP 3, for *EVERY* surviving problem in <problems/>, set
+    <severity/> to its `severity` field, <title/> to its `title` field,
+    <description/> to its `description` field, <evidence/> to its
+    `evidence` field, and <trade-off/> to its `trade-off` field, and
+    immediately report it with the following output <template/>, based
+    on concise bullet points.
+
+    <if condition="<getopt-option-performance/> is equal `true`">
+
+    <template>
+
+    <ase-tpl-bullet-signal/> **PROBLEM** (Severity: **<severity/>**): **<id-prefix/>P<n/>**: **<title/>**
+
+    <description/>
+
+    ⊙ EVIDENCE: <evidence/>
+    ⊖ TRADEOFF: <trade-off/>
+
+    </template>
+
+    </if>
+
+    <if condition="<getopt-option-performance/> is NOT equal `true`">
+
+    <template>
+
+    <ase-tpl-bullet-signal/> **PROBLEM** (Severity: **<severity/>**): **<id-prefix/>P<n/>**: **<title/>**
+
+    <description/>
+
+    </template>
+
+    </if>
+
+    Hints:
+
+    -   For the final results, do *not* output anything else, especially do
+        *not* give any further explanations or information.
+
+    -   Uniquely identify the problems with `<id-prefix/>P<n/>` where <n/> is 1, 2, ...
+
+    -   *Additionally*, persist all reported problems in a *single*
+        `ase_kv_batch` call to the `ase` MCP server with `transactional`
+        set to `true`. The `commands` parameter array of this call
+        starts with one `{ command: "clear", prefix: "ase-issue-<id-prefix/>" }`
+        entry (which removes only the previously persisted
+        `ase-issue-<id-prefix/>*` keys, leaving any unrelated keys in the
+        shared store intact),
+        followed by one `{ command: "set", key: "ase-issue-<id-prefix/>P<n/>",
+        val: "<title/>: <description/>" }` entry per reported problem.
+
+    Finally, give a final hint by expanding the following (which,
+    depending on the configured <ase-guidance-level/>, may expand into
+    nothing and hence emit no output at all):
+
+    <ase-tpl-hint level="minimal">
+    For deeper analysis, suggestions on solution approaches and then final problem resolution, use `/ase-task-edit <id-prefix/>P{n}`, or for a direct one-shot fix use `/ase-code-edit <id-prefix/>P{n}`, in the same or even a different session.
+    </ase-tpl-hint>
+
+    You *MUST* not output anything else in this STEP 3,
+    especially not any further explanations.
+
+    </step>
+
+</flow>
