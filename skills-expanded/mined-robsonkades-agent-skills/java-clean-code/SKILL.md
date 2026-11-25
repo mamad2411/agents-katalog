@@ -1,0 +1,149 @@
+---
+name: java-clean-code
+description: >
+  Readability and intention-revealing structure in Java: method and class sizing — including
+  the point where splitting becomes harmful fragmentation — abstraction levels within a
+  method, comments, hidden side effects, temporal coupling and hidden dependencies. Use when
+  reviewing or refactoring for clarity, when a method has grown past comprehension or a
+  class has shattered into fragments that only make sense together, or when callers must
+  know an unwritten call order. Does not cover naming and API shape (java-api-design), the
+  smell catalogue (java-code-smells), exception handling (java-exception-design) or null
+  handling (java-null-safety).
+---
+
+# Java Clean Code
+
+## Purpose
+
+Make Java code that the next reader understands without running it. Two failure modes,
+not one: the method that does five things, and the class exploded into a dozen
+three-line fragments that communicate through fields and can only be understood by
+reading all of them. Both are unreadable; only the first is commonly named. This skill
+decides where to split, where to merge, and when to leave code alone.
+
+Readability yields to correctness always, and to performance only with evidence. Keep the
+reproducible benchmark/profile and environment in the performance record; leave a short code
+comment only when a future maintainer could reasonably "simplify" a still-measured hot path.
+
+## Workflow
+
+Match the requested mode: a findings-only review reports evidence and proposed corrections;
+an authorized refactor applies and verifies them. The readability criteria are the same in
+both modes; selecting this skill does not expand the requested change scope.
+
+Before changing structure, identify the reader's task or recurring change that is difficult;
+inspect project conventions, the compiler release/toolchain, framework lifecycle,
+affected callers and existing tests. Java 25 is this skill's authoring baseline, not a
+fallback target for an unknown project. If the target cannot be established, keep
+version-sensitive changes conditional and continue with compatible structural reasoning.
+`Clock` needs Java 8+, `List.copyOf` Java 10+, records
+Java 16+, and `RandomGenerator` Java 17+. Use the project's supported alternatives;
+this skill does not authorize upgrades, preview features or new dependencies.
+When caller contracts or tests are missing, identify the gap and characterize observable
+results, effects and failure order before claiming a behaviour-preserving change.
+Reuse supplied context; ask only when an unresolved contract changes the safe edit. In a
+review, distinguish a demonstrated defect from a maintenance cost, a convention or a
+hypothesis. No findings is valid when the code already supports its readers and callers.
+
+1. State what the unit does in one sentence. "And", "then" or "unless" can reveal
+   separate responsibilities, but also describe one coherent algorithm or lifecycle.
+   Identify the actual comprehension or change cost before splitting; naming is
+   java-api-design's.
+2. Check each method for abstraction level: does it mix policy ("apply the fee rule")
+   with mechanics (rounding, string assembly, iteration bookkeeping)? Extract a stable
+   concept when the name makes policy easier to follow; keep trivial mechanics inline.
+3. Check for hidden structure: ambient reads (`now()`, locale, static config) inside
+   logic, fields used as scratch space between calls, methods valid only in a fixed
+   order. Expose inputs or state when this resolves a real testing, reasoning or misuse
+   problem; preserve deliberate lifecycle and ownership boundaries.
+4. Only then weigh size — count the concepts a reader must hold at once, not lines.
+   A 30-line method at one abstraction level beats ten 3-line hops.
+5. Re-run the tests. A change that alters behaviour is not a readability change; the
+   safety workflow and mechanics for larger moves live in java-refactoring.
+
+## Split, keep or merge
+
+| Evidence                                                               | Default decision                                | Why                                                                  |
+| ---------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| Policy and mechanics are interleaved; a block has a stable domain name | Extract the mechanics                           | The orchestration becomes the readable policy                        |
+| Linear code has one level, one lifecycle and few live concepts         | Keep it together                                | Line count alone does not pay for navigation                         |
+| Helpers communicate through mutable fields or wide parameter bundles   | Merge or introduce one explicit state value     | Fragmentation hid the data flow and often created reentrancy defects |
+| A branch is a distinct volatile policy with independent tests/owners   | Extract a policy object or function             | Change coupling, not size, justifies the boundary                    |
+| Performance evidence requires an unusual shape                         | Keep the measured shape and record the evidence | Readability must not erase a demonstrated constraint                 |
+
+## Rules
+
+- Prefer one abstraction level per method when named extractions reduce concepts held
+  at once. Guards, resource scopes and trivial mechanics need not become helpers;
+  consult the structure reference when extraction would only add navigation. Preserve
+  evaluation timing and count when they affect results, effects or failure behavior;
+  helper arguments are evaluated before its body. Preserve the selected overload too:
+  broadening a helper parameter or local to `Object` can change the invoked method even
+  when the runtime value is identical. Read the structure reference when extraction
+  changes the declared types around an overloaded call.
+- Every extraction has a price — a name to trust and a hop to follow. A fragment with
+  one caller, wide shared state and no independent meaning is a candidate for inlining,
+  not an arity rule. Retain useful policy, extension, failure or resource boundaries;
+  inspect framework and external callers before concluding that a helper has no consumers.
+- Section comments are a diagnostic, not a verdict. Stable domain steps often deserve named
+  extractions; a dense algorithm, state machine or intentionally co-located hot loop may be
+  clearer with phase/invariant comments. A comment that merely paraphrases syntax is noise;
+  one that preserves rationale, invariant, units, protocol or measured constraint is design
+  evidence.
+- A method whose public contract promises an observational read must not expose a semantic
+  write. Internal memoisation may be acceptable when it preserves results, thread safety,
+  resource bounds and failure behavior; lazy I/O or externally visible mutation is not a
+  harmless getter implementation. (Command–query separation in full is
+  java-tell-dont-ask's.)
+- For accidental internal call order, if `b()` is only valid after `a()`, merge them,
+  pass what `b` needs as the return of `a`, or encode the order in a type. Preserve
+  framework/protocol lifecycles and published APIs; documented state checks may be
+  appropriate there. A phase type only certifies an invariant when construction enforces
+  it and later mutation cannot invalidate it; a record wrapping mutable state does not
+  suffice. Keep checks for facts that can change before use. Load the temporal-coupling
+  reference before introducing phase types; choose them only when caller clarity or
+  misuse prevention repays the additional API.
+- Expose ambient inputs when outcomes, reproducibility or isolation require control:
+  pass a `Clock`, `Locale` or config value at a suitable boundary. Preserve intentional
+  repeated reads and time zones. An irrelevant generated identifier or an already adequate
+  test seam does not justify plumbing every environmental dependency through every layer.
+
+## Production checks
+
+- **Concurrency:** extraction that promotes locals to fields can make a previously reentrant
+  operation race. Run concurrent calls when a refactor changes state lifetime; `final` on the
+  field does not make the referenced accumulator safe. Also inspect implementation and sharing
+  when an ambient source becomes an injected dependency (`java-thread-safety-contracts`).
+- **Failure atomicity:** moving an effect into a helper does not make a workflow transactional.
+  List effects and retry boundaries before rearranging persistence, messages or remote calls.
+- **Observability:** preserve event names, correlation and error classification. Do not retain
+  logs merely to narrate newly fragmented control flow.
+- **Compatibility:** reflection, dependency injection, serialization and framework proxies may
+  observe constructors, visibility and annotations that ordinary callers do not. An internal
+  readability edit can still be a runtime contract change.
+- **Reviewability:** separate semantic movement from renaming/formatting when practical. A
+  smaller conceptual diff makes behavior preservation easier to establish than a lower line
+  count does.
+
+## References
+
+Deliver the concrete readability problem, why a split/merge (or no change) follows from
+the code, and the checks executed for behaviour preservation. Report untested assumptions;
+passing tests alone neither proves equivalence nor measures reader comprehension.
+Stop when the identified reader task is supported and affected contracts have been checked;
+record separate defects or unresolved questions without expanding into a general cleanup.
+When the necessary change reaches a published API, use `java-api-design`; for a broader
+behaviour-preserving move, use `java-refactoring`. Pass the reader problem, affected callers,
+compatibility constraints and observed effects/tests so the next decision can address
+compatibility or the safe sequence of changes. If that skill is unavailable, report the
+needed decision and supporting evidence; finish independent local work without assuming
+the wider change is safe.
+
+- [Worked examples](references/worked-examples.md) — an under-factored settlement
+  method split by abstraction level, and an over-fragmented batch processor merged
+  back, each with trade-offs and verification. Read before splitting or merging
+  anything larger than a single method.
+- [Structure and coupling](references/structure-and-coupling.md) — detection
+  heuristics, overload selection during extraction, false positives and limits for abstraction levels, temporal
+  coupling and hidden dependencies. Read when a rule above matches but the fix is not
+  obvious, or the match might be a false positive.

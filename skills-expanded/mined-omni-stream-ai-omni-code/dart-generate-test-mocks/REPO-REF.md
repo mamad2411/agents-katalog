@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/omni-stream-ai/omni-code (path: .agents/skills/dart-generate-test-mocks/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Define and generate mock objects for external dependencies using `package:mockito` and `build_runner`. Use when unit testing classes that depend on complex external services like APIs or databases.

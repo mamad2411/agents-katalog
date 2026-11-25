@@ -1,0 +1,62 @@
+---
+name: apply-auto
+description: Use in Maestro CS full automation mode to work the user's queued applications and submit each one whose final review is clean.
+metadata:
+  title: Apply automatically
+  summary: Works your queued jobs and submits the ones whose final review is clean.
+  kind: scheduled
+  needs: [maestro, browser]
+  toolset: apply
+  never: Never submits a job whose final review shows anything to check.
+  include: [agent-apply-execution]
+---
+
+# Apply automatically
+
+Full automation mode must be on in the brief; otherwise stop.
+
+Call `sync_now` at the start and end of a run when the brief's `sync.enabled` is true.
+Only work jobs whose `ownership.owned_here` is true.
+
+1. **Queue.** Call `list_proposals(status="accepted")` only.
+   Work the queue the way the user has asked you to.
+   Jobs in Needs you go back through the user's queue before a later automatic run.
+   Stop when the daily cap in the brief is used up.
+2. **Prepare.** Work only jobs that are already tailored.
+   A job not tailored yet keeps its place in the queue for the next Tailor run: never tailor it here, and list it in the digest as waiting for tailoring.
+3. **Accounts.** When a site needs an account or sign-in, call `get_job_site_login(proposal_id)`.
+4. **Fill.** Answer from the user's profile, career history and saved answers.
+   Record every completed page with `record_filled_answers`.
+   Name the saved fact (`slot`) behind every screening answer.
+5. **Check.** Call `get_final_review(proposal_id)`.
+   Submit without asking only when `get_final_review` shows all of these:
+   - the PDF is ready;
+   - there is no knock-out conflict;
+   - `base_country.eligible` is not false (the resume is set for the job's country);
+   - `flags` is empty;
+   - `duplicate_submitted` is false;
+   - there are no blocked or manual items;
+   - every screening answer you recorded names its saved fact (`slot`).
+6. **Submit.** Attach a screenshot of the filled form as `final_review` evidence.
+   Record `record_consent` with channel `auto` and action `approved`.
+   Submit once.
+   Never submit the same application twice.
+   Then call `mark_submitted` with channel `auto` and a `note` naming what confirmed it.
+   A confirmation screenshot is optional.
+   If you cannot tell whether submission succeeded, call `report_failure` with reason `submission_uncertain` and never retry.
+7. **Everything else.** Call `report_failure` with the reason.
+   Ask the user what the job needs through whatever this run can reach: this chat, or a channel the user set up for these runs.
+   For a submit, that is the final review summary with every flag, and "Submit now?".
+   Don't wait: move on to the next job, and check for answers before recording the run.
+   If nobody can be reached now, leave it: it waits in Needs you.
+   A yes that comes after the run has ended is not acted on; the job waits in Needs you.
+   From Needs you, `record_consent` moves the job straight to approved, with no `resume_proposal` first.
+   If the user says yes while the run is still going and the job's filled form is still intact:
+   Attach the filled-form screenshot as `final_review` evidence.
+   Then call `record_consent` with the channel the yes came through (`chat` for this chat, `slack` for Slack, `mcp` for any other channel, named in the note), action `approved`, and the user's words.
+   Submit once.
+   Then call `mark_submitted` with channel `auto` and a note naming what confirmed it.
+8. **Record the run.** Call `record_run` with automation `apply-session`.
+   Report outcome `ok`, `partial` if a job failed, or `failed` if no job could be worked.
+   Include `counts` (`updated`: submitted; `needs_you`: parked for the user; `skipped`: declined or left for tailoring), `digest`, and `job_ids` for the jobs worked.
+   Count each job once, by where it ended.

@@ -1,0 +1,76 @@
+---
+description: Work the document chain — bare = state map, with a target = iterate that artefact
+argument-hint: "[target-state] [project-slug]"
+---
+
+Role: dispatcher for work on the document chain. The chain is a star,
+not a fixed line: each target state declares its own inputs in its
+definition file; where the definitions live and how the chain grows
+is CLAUDE.md, Document chain's. This dispatcher never changes.
+
+**Bare `/forge` — report the map.**
+1. Infer the current project from context ($0 may be a slug; if
+   ambiguous, ask).
+2. Make the project's ledger, `python scripts/forge-ledger.py <slug>`
+   (the ledger is made at read time, SOL.0680; a project of the shape
+   before the migration is said as `templates/project.md` says), read it and
+   list `.claude/skills/forge/states/` for the available target states.
+3. Report compactly:
+   - the project's kind and language (the project file, POS.1590,
+     POS.0960) and whether it is
+     under git — as `python scripts/forge-status.py --remote` of step
+     4 reports it, a repository of its own or "not under git"
+     (POS.0550),
+     stated as a fact, never as a defect (POS.0940);
+   - a `library` is material, not a project waiting for a brief:
+     report its sources and research (from the ledger and the
+     indexes) and stop after the git line — no chain, no target
+     states, no next step beyond `/ingest`;
+   - which chain artefacts exist, at what version and status —
+     briefs with their mining state, a draft brief or a `pending` /
+     `partial` one named as work waiting; a layer the project does
+     not have is not reported as missing (CLAUDE.md, Document chain);
+   - which target states can be worked on from here (inputs exist) and
+     which cannot yet (say what is missing);
+   - which renders are stale (as `/render` step 5 defines it) and
+     which published files are (state `stale` in the ledger's
+     Published table);
+   - which libraries the project needs (the ledger's Dependencies
+     table, POS.1020) and whether each is cloned alongside;
+   - what is waiting on the principal (from the ledger): of the open
+     threads, those something waits on and the high ones, named in
+     words with the ID in brackets as an address, the rest as a count
+     by priority, the full list being `/thread`'s; of whatever else
+     waits, the few live matters in words and the rest as a count
+     (CLAUDE.md, Working methods, Plain speech).
+4. Recommend the natural next step in words — a recommendation, never a
+   gate — and, where the map lists more than one matter waiting on
+   the principal, offer a walkthrough of them (CLAUDE.md, Working
+   methods).
+5. End with the state of the engine and of the project against the
+   origin, from `python scripts/forge-status.py --remote`, as the map's
+   last word (POS.1710): said as a fact with the words of POS.1490 (up
+   to date, behind, ahead, diverged, no upstream, unreachable, no
+   origin) and with that state's
+   one offer, as `/pull` step 1 has it, and, from the same run, what
+   waits on GitHub outside git (POS.1970), relayed as the script prints
+   it; the offer is to look at it before anything is written into the
+   project. The map says it looked at the remote and runs none of it.
+
+**`/forge <state>` — work on that artefact.**
+1. Resolve `.claude/skills/forge/states/$0.md`. If it does not exist, list
+   the states that do and stop. On a `library`, which has no chain
+   (CLAUDE.md, Document chain), say so and stop: no state is worked
+   there.
+2. Read the file and follow it. It declares the target artefact, its
+   inputs and its working rules; everything else (write-once-per-round,
+   versioning, ledger upkeep) follows the core conventions. How the
+   files of every artefact are made: the first version is created from
+   its template as v0.1 with its companion from `templates/history.md`,
+   the ledger reads the header (CLAUDE.md, Ledger), items follow the ID
+   scheme of CLAUDE.md, a write rewrites for coherence and never
+   appends, and empty sections and the template's comments are deleted
+   but the line that names the template (CLAUDE.md, Templates); a
+   definition names only its files, its prefixes and what is its own. A
+   state file's arguments are those following the state name: for
+   `brief` the name, then the slug; for the other states the slug.

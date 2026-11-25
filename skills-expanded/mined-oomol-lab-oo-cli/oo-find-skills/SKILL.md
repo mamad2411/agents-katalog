@@ -1,0 +1,225 @@
+---
+name: oo-find-skills
+description: Find, compare, install, and troubleshoot access to published OOMOL/oo skills. Use when the user asks to find, search for, discover, recommend, compare, choose, or install an existing skill for a task; asks whether there is a skill that can do something; reports a private skill that a bot or team member cannot install; or explicitly mentions the OOMOL/oo skill catalog. Do not use for creating or editing local skills, generic skill design, or non-OOMOL skill catalogs.
+disable-model-invocation: <!-- agentic:var disableModelInvocation -->
+<!-- agentic:if agent=claude|hermes -->
+allowed-tools: [Bash(oo *)]
+<!-- agentic:endif -->
+---
+
+# oo Find Skills
+
+Use this skill when the user wants to discover, compare, recommend, or install
+existing published skills from the OOMOL or `oo` skill catalog through
+`oo skills search` and `oo skills install`.
+
+Read [references/oo-cli-contract.md](references/oo-cli-contract.md) when you
+need exact `oo skills search` or `oo skills install` command forms, JSON
+expectations, output-shape rules, or failure-handling details.
+
+For a known private package that cannot be found or installed, or a request to
+repair a failed installation, read
+[Private package access](references/oo-cli-contract.md#private-package-access).
+Keep the exact failed package and existing install authorization. The discovery
+and selection workflow below applies when choosing a new skill.
+
+## Workflow
+
+### 1. Normalize the request into a search sentence and keywords
+
+Convert the user request into:
+
+- one short internal intent statement
+- one concise English sentence for the search text
+- `1` to `3` required keywords or short phrases for the `--keywords` filter
+
+Rules:
+
+- The sentence must always be in English, regardless of the user's language.
+- Keywords may use the user's original language. Keep product names, brand
+  names, and proper nouns exactly as the user wrote them and do not translate
+  them. For example, keep `滴答清单` as `滴答清单`; do not turn it into
+  `TickTick`.
+- The backend tokenizes `--keywords`, so original-language and product-name
+  keywords reach the catalog entry the user actually wants. The free-text
+  sentence alone runs an untokenized semantic search that can map a localized
+  product onto a different global product.
+- The sentence should describe only the user's need itself.
+- Prefer a short sentence built from task + capability + domain or constraint.
+- Do not add meta words such as `skill`, `skills`, `search`, or `install`
+  unless the user's actual need depends on those words.
+
+Examples:
+
+- Sentence: `translate scanned images from Japanese to English`
+  Keywords: `Japanese`, `image translation`
+- Sentence: `create a task in the dida365 to-do app`
+  Keywords: `滴答清单`, `dida365`
+- Sentence: `generate a QR code from text`
+  Keywords: `QR code`
+- Sentence: `convert speech to text`
+  Keywords: `transcription`
+- Sentence: `write Markdown more effectively`
+  Keywords: `Markdown`, `writing`
+
+### 2. Search for candidate skills
+
+Always pass the keywords through `--keywords`:
+
+```bash
+oo skills search "<english sentence>" --keywords "<comma-separated keywords>" --json
+```
+
+Then:
+
+- Rank only from the returned JSON array.
+- Prefer semantic matches between the original user goal and the returned
+  `description`, `skillDisplayName`, or `name`.
+- Keep one primary skill.
+- Keep one fallback skill only if it is genuinely plausible.
+
+If the returned array is empty, report that this search found no matching skill.
+For an expected private package, follow the private package access guidance;
+otherwise stop. Do not present a menu or conclude the package was never published.
+
+### 3. Filter installable results
+
+- Treat a search item as installable only when it includes both `packageName`
+  and `name`.
+- If the JSON array is non-empty but no installable items exist, stop and tell
+  the user that no installable skill could be derived from the search results.
+  Do not present a menu.
+
+### 4. Rank the installable results
+
+- Rank the installable JSON items using only the fields in the response.
+- Pick one primary skill and, only if credible, one fallback skill.
+
+### 5. Report or ask the user to choose
+
+- If the user asked to find, compare, recommend, or check whether a skill exists,
+  report the primary skill and any credible fallback, briefly explain why they
+  match, and ask whether the user wants to install one. Do not install yet.
+- If the user explicitly asked to install, add, set up, or choose and install a
+  matching skill, ask the user to choose between the available install actions.
+- If the user later names or selects one of the reported installable skills,
+  treat that as confirmation for that exact install action.
+
+Interaction rules:
+
+- If a credible fallback exists, offer these actions:
+  1. Install the primary skill as `primarySkillName (primaryPackageName)`
+  2. Install the fallback skill as `fallbackSkillName (fallbackPackageName)`
+  3. Install both
+  4. Install neither
+- If no credible fallback exists, offer only these actions:
+  1. Install the primary skill as `primarySkillName (primaryPackageName)`
+  2. Install neither
+<!-- agentic:if skillSelectionPromptTool -->
+- First, try to use the `<!-- agentic:var skillSelectionPromptTool -->` tool with one short multiple-choice
+  question that includes only the actions that are actually available.
+- If the `<!-- agentic:var skillSelectionPromptTool -->` tool is unavailable in the current mode or the
+  tool call fails, fall back to plain text.
+- If the `<!-- agentic:var skillSelectionPromptTool -->` UI returns `None of the above`, treat that as
+  the same outcome as `Install neither`.
+<!-- agentic:endif -->
+<!-- agentic:if agent=openclaw -->
+- Prefer asking the user with a short multiple-choice prompt in chat.
+- If the host provides a short-question UI, you may use it. Otherwise ask in
+  plain text.
+- If the UI returns `None of the above`, treat that as the same outcome as
+  `Install neither`.
+<!-- agentic:endif -->
+- In either UI or text form, the label for every install action must include
+  the concrete `skillName (packageName)` text.
+
+Fallback text format:
+
+```text
+1. Install <skillName> (<packageName>)
+2. Install <skillName2> (<packageName2>)
+3. Install both
+4. Install neither
+
+Reply with: 1, 2, 3, or 4
+```
+
+If no credible fallback exists, use:
+
+```text
+1. Install <skillName> (<packageName>)
+2. Install neither
+
+Reply with: 1 or 2
+```
+
+If the user reply is not one of the explicit numbers that correspond to the
+currently available options, do not install anything. Ask the user to reply
+with one of the displayed numbers.
+
+### 6. Install after confirmation
+
+- After the user chooses an install action, install only the selected skill or
+  skills with `oo skills install`.
+- If the user chooses `Install neither`, declines installation, or the UI returns
+  `None of the above`, do not install anything. Reply with exactly one short
+  acknowledgement in the user's language that no skill was installed, then stop.
+- Batch by package:
+  - If both selected skills come from the same package, install them with one
+    command and multiple `-s` flags.
+  - If they come from different packages, run one install command per package.
+  If `Install both` requires multiple `oo skills install` commands across
+  different packages and a later command fails after an earlier one succeeded,
+  report the partial completion accurately: say which package/skill
+  installation(s) succeeded, say which command failed, say that no rollback was
+  attempted, and follow the failure-handling rules below.
+
+Install examples:
+
+- Single skill install:
+
+```bash
+oo skills install "<packageName>" -s "<skillName>"
+```
+
+- Two skills from the same package:
+
+```bash
+oo skills install "<packageName>" -s "<skillName1>" -s "<skillName2>"
+```
+
+- Two skills from different packages:
+
+```bash
+oo skills install "<packageName1>" -s "<skillName1>"
+oo skills install "<packageName2>" -s "<skillName2>"
+```
+
+11. Use each search result's `name` field as the `-s` value. Use
+   `skillDisplayName` only for display text.
+12. Never invent package names, skill names, versions, or extra metadata.
+13. Report the exact failure from `oo skills search` or `oo skills install`.
+   When there are private-package or team-access clues, follow
+   [Private package access](references/oo-cli-contract.md#private-package-access)
+   for read-only diagnosis and an authorized repair. For other failures, stop.
+   Do not invent recommendations or claim an install succeeded.
+14. If the command output shows `OOMOL_INSUFFICIENT_CREDIT` or the CLI's
+   insufficient OOMOL balance message, stop immediately, tell the user their current account has insufficient
+   credit or is overdue, and direct them to
+   `https://console.oomol.com/billing` before retrying.
+15. If a command fails with a message saying the self-hosted connector only
+   supports connector commands, or with JSON error code `not_authenticated`
+   in self-hosted connector mode, an OOMOL account is required. Ask the user
+   to run `oo auth login`, then stop.
+
+## Behavior Notes
+
+- `oo skills search --json` returns at most `5` results.
+- Use `skillDisplayName` when present, otherwise fall back to `name`.
+- You may compare response text fields against the original user request, but
+  you must not use external metadata or guessed fields to break ties.
+- Treat a fallback as credible only when it is the next-best result that still
+  plausibly solves the same user request, not merely a loosely related or
+  duplicate-looking match.
+- Do not install anything before the user explicitly chooses one of the offered
+  install actions.

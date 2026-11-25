@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/okyssta/skills (path: cybersecurity/implementing-envelope-encryption-with-aws-kms/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Envelope encryption is a strategy where data is encrypted with a data

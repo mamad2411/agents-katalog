@@ -1,0 +1,256 @@
+---
+name: screenbrowser
+description: 'Record a video of a web app with Screen Browser: a demo, tutorial, walkthrough, promo, onboarding or launch video, or a video for a pitch deck. Use when someone asks to "make a video of my app / website", "record a demo", "show how my app works", "make a promo video" or "document this feature as a video". Works from the app''s address alone, or from its source code when you are in it.'
+---
+
+# Screen Browser: videos of your web app
+
+Screen Browser turns a written guide into a video with voiceover: it signs in to the app in a real
+browser, follows the guide, adds the voice and the on-screen effects, and returns an MP4. A guide is plain language — what
+the viewer does and what they see — not selectors, not stage directions. The recorder resolves each
+step against the live page and remembers what it learned for the next run.
+
+## Setup (once per machine)
+
+The MCP server is part of the Screen Browser app and signs the user in with OAuth: installing this
+plugin, or `claude mcp add --transport http screenbrowser https://mcp.screenbrowser.com`, is enough —
+the first tool call opens the browser for sign-in and consent. If the agent cannot open a browser,
+an API key from **Settings → API keys** goes on the same command as
+`--header "Authorization: Bearer sb_live_…"`.
+
+If the `screenbrowser` MCP tools are not available in the session, stop and ask the user to install
+the plugin or register the server; if they are present but every call is refused, ask them to run
+`/mcp` and authenticate.
+
+Connecting needs a Screen Browser account with a confirmed email address. The first 100 new accounts
+get 10 free minutes of video with no card (valid 30 days, with a small Screen Browser
+logo on the video): https://rec.screenbrowser.com/register/free. Once that is full, the link says so and offers the
+7-day trial for $3.99 on monthly Starter or Pro instead (https://screenbrowser.com/pricing/). Don't
+call Screen Browser itself free: the free minutes are for the first 100 accounts only, not a free plan.
+
+## Two ways in
+
+- **No source code, just an address** (claude.ai, Cowork, any chat): ask the human for the app's
+  address, what the video should show, and whether it is a tutorial or a promo. Look at the app with
+  your web tools if you have them. If you can't, ask the human to describe the steps and the exact
+  button labels. If the app has a sign-in, ask for a demo account (email and password only; no Google
+  or Microsoft sign-in, no 2FA, no captcha). Never use a real customer's account.
+- **Inside the app's code** (Claude Code, Cursor, Codex): read the templates and routes for the real
+  labels, the login form and the page shown after sign-in. Ask the human only for what the code
+  can't tell you: the deployed address and, if the pages to show sit behind a sign-in, the demo
+  account. A public page needs only its address.
+
+**Tutorial or promo.** A tutorial explains each step calmly: what the viewer clicks and what it does.
+A promo is 30–60 seconds (about 8–15 steps): it shows the best parts first, skips setup screens, and
+its captions are short, upbeat selling lines.
+
+## Workflow
+
+1. **Check credits.** `get_credits`. A one-minute video costs about 15 credits with the default Studio voice, 10 with a
+   Standard voice; a run charges nothing unless it completes.
+2. **Find or create the project.** `list_projects`; if the app is not there, gather from the user:
+   the app's address (staging or production), a **demo user** if the pages to show sit behind a
+   sign-in (email and password only: no OAuth, no 2FA, no captcha, no new-device email), and whose app it is: that
+   answer is the attestation (`self_owned`, `client_authorized` or `internal_tool`). Ask it together
+   with the address, not as a separate question: "What's the app's address, and is it your own app, a
+   client's, or an internal tool?" When the user's words already say it ("my app", "our product", or
+   you are in their own codebase), state it in one line ("I'll note this is your own app") instead of
+   asking. Never assume it for a site that looks like someone else's. **No sign-in?** If the pages to
+   show open without signing in, skip the demo user: save an empty auth guide (the recording opens the
+   project's address and starts there) and set `login_success_text` to words the page always shows. **If the app only runs on
+   the user's computer**, `localhost` cannot be recorded: start the app and a tunnel in the background
+   (`ngrok http <port>`, or `cloudflared tunnel --url http://localhost:<port>` with no account) and use
+   the tunnel's https address as the target URL and in the guides' `Go to` lines. Screen Browser skips
+   ngrok's free-plan warning page, so the guides need no extra step. Keep the app and the tunnel running
+   until the run ends, and record one video at a time. Then `create_project` with
+   a login gate — `login_success_url_contains` when the post-login redirect in the code goes to a
+   distinct path such as `/dashboard`, otherwise `login_success_text` (words only a signed-in user
+   sees) — and, only if a step opens a page on another site (a sign-in on a separate domain), `allow_hosts`;
+   the app's API, CDN and fonts need no list.
+   Credentials go in `variables`, never in guides; a user who keeps them out of chat sets them on
+   `project_url`, and `start_run` refuses until every `{VARIABLE}` has a value. Narration defaults to English in the language's default
+   voice; when the user wants another language or a particular voice, `list_voices` (optionally with a
+   `language`) shows the ids, tiers and credits per minute, and `create_project` / `update_project` take
+   `language` and `voice`. A single video can use a different voice via `start_run`'s `voice`.
+   **Mobile web:** the same guide can be recorded as a phone or tablet. `create_project` /
+   `update_project` take a default `device` (`desktop`, `iphone`, `iphone-max`, `android`,
+   `android-large`, `ipad`, `ipad-pro`, `android-tablet`), a `frame` (`portrait` 9:16 in a phone
+   frame, `landscape` widescreen 16:9 with the phone upright, or `none` for the bare screen) and a
+   `backdrop` (`neutral` or `brand`). One run is one device: for a desktop and a phone version,
+   start two runs of the same guide and pass `device` to the second. Same credits per minute.
+3. **Write the auth guide** from the login form (in the code, or as seen on the page) (see "Writing the two guides" below).
+   For a page without a sign-in, save it empty.
+4. **Write the main guide** for the feature, 10–25 steps with a caption before every action the viewer
+   should hear about (same section).
+5. **Validate.** `validate_guide` (kind `auth`, then `main`, with `project_id`) and fix every problem
+   until `passed` is true. The check is free and instant: it reads the guide (directives, variables,
+   secrets typed literally, the "Go to" start, length and cost) without opening the app, so a label
+   the page does not show still only appears on the first run. Run it after every edit, not only the
+   first time. Show both guides to the user before
+   uploading.
+6. **Upload and run.** `put_guide` auth, `put_guide` main (give it a `name`, and a `video_title` when
+   the opening should say something other than the name), `start_run` (with
+   `device`, `frame`, `backdrop` for a phone or tablet version), then `get_run`
+   every 15–30 seconds until `is_terminal`. Most runs take 2–6 minutes, a long guide up to 15, so keep polling; do not start a second run of the
+   same project while one is in progress.
+   If a run fails with `error.code` `login_failed` ("Sign-in didn't go through"), check the demo
+   credentials first; if they are right, the login gate was wrong: fix it with `update_project` and
+   start again. On a page without a sign-in the same check fails as `page_check_failed` ("The page
+   didn't show what we expected"): check the address, and set `login_success_text` to words the page
+   always shows.
+7. **Review, then deliver.** Review the take as described in "Review the take before handing it over"
+   below. Then give the user `video_url` (signed, valid 15 minutes; call
+   `get_run` again for a fresh link) and the credits charged, and ask what to change: every note in
+   plain words is one edit to the guide and one more run. `get_run`'s `artifacts` also carry the exports: `gif` (animated GIF of the
+   video), `chapter_gifs` (zip, one per chapter), `subtitles_vtt` / `subtitles_srt`, and `chapters` (YouTube's
+   chapter list) — hand over the ones the user asked for, or all of them for an upload elsewhere. On failure read `error.hints`, fix the guide, and retry once. Typical
+   causes: the login gate never appeared, a page on another site missing from `allow_hosts`, the demo user hit a
+   captcha, a step that names something the page does not show.
+
+The guide syntax and the examples are in `references/guide-syntax.md` and `references/example-guides.md`.
+
+<!-- GENERATED WRITING GUIDES START — DO NOT EDIT. Change web/resources/mcp/writing-guides.md and run scripts/docs/sync-skill.php. -->
+
+## Writing the two guides
+
+**The auth guide** comes from the login form in the code: go to the login page, type `{USERNAME}` into
+the field the user sees as the email or username field, `{PASSWORD}` into the password field, press the
+sign-in button, then `Confirm` something only a signed-in user sees. If the page needs no sign-in,
+save an empty auth guide and set `login_success_text` to words the page shows.
+
+**The main guide** covers the feature, in the words a colleague would use over the shoulder: 10–25 steps,
+one action per line, each naming the thing as it appears on screen — the button's text, the field's label,
+the menu item's words. Put a `[CAPTION "…"]` line before every action the viewer should hear about, in the
+words a narrator would say: the captions are the narration, spoken verbatim, so a click without one plays
+in silence and reads as a cut. One short sentence each; a caption may cover the two or three actions that
+follow it. Put a `Confirm …` line after every navigation or save so a broken flow stops early. For a phone
+or tablet run, never write hover steps (a touch screen has no pointer; the recorder skips them) and name
+mobile navigation as the user sees it ("the menu button"); keep zoom factors at 1.4 or below, the screen is
+small. If a step creates data, name it so reruns do not collide, or delete it at the end of the guide.
+
+## Writing guides that work on the first run
+
+- **Name things the way a person sees them.** "Click Save", "Type the name into the Repository Name
+  field", "Open Settings from the left menu". The recorder finds buttons by their text, fields by
+  their label or placeholder, and learns the rest from the live page.
+- **Never use class names a build tool generated** (`css-1x9f2k`, `sc-bdVaJa`, `_1a2b3c`): they change
+  with every deploy and `validate_guide` refuses them. Ids and `name=` attributes from the templates
+  are fine when a step needs precision; the guide syntax shows how, but a good guide rarely needs it.
+- **Use what you have.** With the source code, read the templates for the real labels and names.
+  With a browser tool, open the dev server and look at the page. With neither, write plain prose and
+  let the run learn.
+- **Wait for the app, not the clock**: "Wait for the Saved message" beats "Wait 2 seconds".
+- Anything hidden behind hover or below the fold needs a "Hover …" or "Scroll down" step first.
+- **First-visit dialogs, cookie banners, "you are already signed in" interstitials:** write them as
+  optional steps — `If visible, click "Remind Later"`, `If shown, click "Accept"`. The recorder
+  skips an optional step whose element is not on the page instead of failing the run.
+- **Cookie banners:** without a step of your own, the recorder declines optional cookies before
+  recording starts. To accept instead, add `If visible, click "Accept all"` to the guide.
+- Keep secrets out: never type a real password, token or card number literally.
+- One feature per video. Split long flows into several guides on the same project.
+
+## Flutter web apps
+
+A web app built with Flutter records like any other; the same steps work on the desktop and as a
+phone. Three things differ:
+
+- **Name things by the words on screen**, never by ids or CSS: a Flutter page has none worth using.
+  A checkbox, switch or radio button is named by the text beside it: `Click the "Enable feature" switch`.
+  An icon-only button is named by its tooltip: `Click "Open main menu"`.
+- **Set a slider by the value it shows**: `Set the "Estimated value" slider to $300`.
+- **The app must keep the sign-in after a reload** (a stored session or token). The login runs before
+  recording and the walkthrough opens the app again; an app that holds the sign-in only in memory
+  cannot be recorded. Use text as the login gate, not a URL.
+
+Rows far down a long list are found without `Scroll` steps.
+
+## 3D apps (WebGL, Three.js)
+
+An app that draws 3D graphics with WebGL (a Three.js scene, a map or globe you can turn, a product
+viewer, a game) needs **3D recording**, or its motion may not look smooth in the video.
+
+- **Turn it on for the project:** pass `three_d: true` to `create_project` or `update_project`. It
+  stays on for every video of that project. Leave it off for ordinary apps.
+- **Tell the user first:** it adds 10 credits per minute of video, and these recordings take a few
+  minutes longer to start.
+- **Not sure?** Record without it. When the app's 3D graphics were too much for an ordinary
+  recording, `get_run` returns a warning with code `three_d`: tell the user what it costs, turn it on
+  and record again.
+
+The guide itself is written the same way as for any other app.
+
+## Effects (optional)
+
+Screen Browser adds the narration, captions and highlights on its own from the caption lines. Beyond
+that, a guide asks for an effect with a directive: a bracketed line placed right before the step it
+decorates, or on the same line as the caption for that step —
+`[HIGHLIGHT "text=New campaign"] [CAPTION "Click New campaign to get started."]`. Point at elements
+the same human way (`text=`, `label=`, `role=button:Save`, `name=`), never at a generated class
+name. The guide syntax has the complete list.
+
+Which effect for which moment; these are the choices that make a demo video look deliberate:
+
+| Moment | Effect |
+|---|---|
+| The viewer is about to click something | `[HIGHLIGHT "text=Save"]` before the click; the ring stays until the next action |
+| A dense form, card or preview the viewer must read | `[ZOOM "css=…" 1.5]` aimed at the container (the card, the panel), never at its heading; `[ZOOM_OUT]` when done |
+| A control that needs a sentence beside it | `[TOOLTIP "…" on="label=…" placement=right]`, on the side that does not cover a field the viewer is about to fill |
+| Something the video cannot show (what happens later, where data comes from) | `[ANNOTATION …]`, a label pinned to the element; the guide syntax has the form |
+| A new section of the flow | `[CHAPTER "Title"]`, one per section, two to four per video, with a title that matches what follows |
+| The start of the video | `[HEADLINE "Title"]`, once, on the first line |
+| The end, after the last save | `[CONFETTI 1500]`, once |
+| A number, key or address on screen | `[BLUR "label=…"]` |
+
+Rules that keep it readable: one effect per moment (a ring or a zoom or a tooltip, not two cards on
+the screen at once; a zoom on a card with a ring on the same card is the exception that works); a
+caption on every action; no tooltip or annotation on top of the thing the next step types into;
+zoom factors 1.4–1.6 on desktop and 1.4 or below on a phone. Effects depend on the plan: every plan
+has captions, toasts, highlights, dim, annotations, chapters, step numbers, scroll, cursor, blur and zoom;
+arrows, tooltips, headlines, fades, freeze, speed and confetti need Pro or above. An effect
+outside the plan is skipped at recording time (the step still runs); `validate_guide` warns about it.
+
+## Review the take before handing it over
+
+Look at the video the way the user will: play it, or read frames at the moment of every effect the guide
+asks for. Check that the ring is on the thing about to be clicked before the click, that the words name
+what is on screen at that moment, that no card or tooltip covers a field being typed into, and that each
+chapter card's title matches what follows it. A miss is a guide edit and a rerun (`put_guide`,
+`start_run`), which costs the same as the first take. A failed run costs nothing and is the fastest way to
+learn what the page really calls things: `get_run` lists what was resolved and what was learned per step.
+
+<!-- GENERATED WRITING GUIDES END -->
+
+## Opening and ending
+
+A workspace with a brand (Settings › Brand in the app: logo, colours, font, call to action) gets a
+branded opening with the video's title and an ending with its call to action on every video. They
+are free: they do not count toward the minutes. The opening shows the guide's `video_title`, or its
+name when there is none, so write it the way a viewer would title the video ("Invite a teammate").
+
+- When the project has an opening, do not add a `[HEADLINE]` on the first line: the opening already
+  shows the title.
+- `update_project` sets the project's own choice (Pro and above): `bookends_mode: "custom"`,
+  `opening_style` (`clean`, `bold`, `minimal`, `product`, `none`), `ending_style` (`clean`, `bold`,
+  `minimal`, `none`), `opening_seconds` / `ending_seconds` (3–10), `cta_text`, `fade`, and
+  `narrate_title` to have the narrator speak over the opening (off by default), with `title_line`
+  for the words (plain text up to 100 characters, `{title}` fills in the video title; empty speaks
+  the title). `bookends_mode: "default"` goes back to the
+  workspace default. Logos, fonts and clips are uploaded in the app, not through the tools.
+- Change these only when the user asks; the workspace default is what the user chose for every video.
+
+## Running out of credits
+
+When `start_run` is refused with `insufficient_credits`, or `get_credits` shows the balance is short, do not
+retry. Relay the two links from the response to the user verbatim: the one-click top-up link
+(`top_up_url`, opens Stripe Checkout for the suggested pack, no login needed) and the billing page. `top_up`
+(optional `pack`: small, medium, large) returns the same links on demand — a `/topup` request from the user
+means call it and print the link. Once the user says they have paid, `get_credits` again and continue.
+
+## When a run fails on our side
+
+`get_run` marks such failures with `error.failure_report.available: true` (the page never loaded, the login
+gate never appeared with correct credentials, a step timed out on an element that was there, a crash).
+Then, and only then, **ask the user** whether to send Screen Browser the evidence — it shares their app's
+screenshot, page structure and logs, never credentials — and call `report_run_failure` with the run id and
+their note. Nothing is retried and the guide is not changed; Screen Browser replies on the run. If the
+failure is in the guide (a button that does not exist, a wrong label), fix the guide instead.

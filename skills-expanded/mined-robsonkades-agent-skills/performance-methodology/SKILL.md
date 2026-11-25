@@ -1,0 +1,154 @@
+---
+name: performance-methodology
+description: >
+  The investigation process for performance work: defining measurable goals, recording a baseline,
+  characterising before diagnosing, falsifiability, fixed-work speedup bounds,
+  experimental design, and validating by mechanism rather than by coincidence.
+  Use when starting a performance investigation, when a fix is credited to a deploy that
+  also restarted the process, when an optimisation is proposed without a measurement, when a
+  benchmark result changes with the duration of the run, when an investigation has run for
+  days without refuting a hypothesis, or when "it's fine in staging" is the explanation.
+  Does not cover which tool to run (jfr-and-async-profiler), the statistics of the numbers
+  (latency-statistics), or microbenchmark construction (jmh-microbenchmarks).
+---
+
+# Performance Methodology
+
+## Purpose
+
+Run a performance investigation as an experiment rather than a search for something to
+change. The failure modes this prevents are the optimisation with no measurement behind
+it, the fix credited by temporal coincidence, and the conclusion reached by confirmation
+bias after the first plausible finding.
+
+Use the steps relevant to the decision; a small investigation need not become a profiling campaign.
+
+## Workflow
+
+1. **Define the decision and measurable goal, with load context.** Reuse the request, existing
+   SLOs, incident timeline and metrics before asking. Select the relevant latency, throughput,
+   startup, memory or cost metric, threshold/comparison, population and window; ask only for
+   unresolved constraints that change the decision. A latency SLO needs its percentile or threshold
+   fraction; a batch-cost question does not. The service indicator's definition is `slo-and-alerting`.
+2. **Record the relevant baseline and workload** before a change where possible: the target metric,
+   correctness/error guardrails and resources implicated by the symptom. For JVM work, record the
+   JDK version and effective flags
+   (for HotSpot, inspect the target with `jcmd <pid> VM.version`, `VM.command_line` and
+   `VM.flags -all`, subject to attach access), and the request mix, data volume and uptime
+   that produced them. Preserve available incident evidence without delaying necessary mitigation;
+   missing history limits attribution. A baseline without its workload cannot be reproduced.
+3. **Characterise before diagnosing, with a method.** Use RED for the service, USE for
+   bounded resources, workload characterisation, and then a drill-down whose clock matches
+   the symptom. JFR is one possible instrument, not a mandatory first probe: verify that
+   its enabled events, thresholds, duration and overhead can answer this question on this
+   workload. Initial suspicions are useful for choosing observations; they become engineering
+   hypotheses only after they predict evidence that could refute them. The methods and their
+   limits are in `references/methods-and-failure-modes.md`.
+4. **Write the hypothesis so it can be wrong.** Name the component, the mechanism and the
+   expected impact — then ask what evidence would refute it, and go look for that. A
+   hypothesis predicts an observation; a measurement records one with its method. Label
+   which is which.
+5. **Bound the payoff where a comparable decomposition exists.** With fraction `p` sped up by `s`, the speedup is
+   `1 / ((1−p) + p/s)`, ceiling `1/(1−p)`; a 45% frame gives at most 1.82×, which is a
+   **45% reduction**, not "82% less time". Use this only for a fixed-work decomposition whose
+   parts and clock are comparable. A CPU sample fraction does not bound request-tail latency,
+   and percentiles do not add. For tail work, define the slow-request cohort and decompose its
+   critical path; treat the result as a bound to validate, not a prediction guaranteed by the
+   formula. Let value, risk and uncertainty—not a universal percentage—set the go/no-go bar.
+6. **Design the comparison before running it.** Define the estimand, practical effect size,
+   sampling unit, load schedule, control, run order, stopping rule and analysis. Randomise or
+   block when possible; alternate only when it is the justified blocking scheme. Choose sample
+   size from variance and desired precision or power. Use factorial designs for interactions;
+   do not hide several changes in one treatment.
+   Check whether the treatment changes a resource shared with controls: randomising requests
+   does not prevent cache, queue or dependency interference. Choose the assignment unit and
+   interpretation accordingly; a mixed-rollout contrast need not estimate a full rollout.
+   Reconcile assignment and analysed populations through routing, logging and filtering;
+   balanced totals alone do not rule out outcome-dependent selection.
+7. **Validate effect and mechanism separately.** A controlled comparison can support an effect
+   before its exact mechanism is known. Label that uncertainty; assess whether the proposed
+   mechanism accounts for the effect's size and challenge plausible alternative causes. A reversible feature flag can support
+   an AB/BA test; otherwise use randomised traffic allocation, a restarted control, bisection,
+   or another defensible counterfactual. Do not add a runtime toggle merely to satisfy this
+   recipe if the toggle changes the mechanism or raises production risk.
+8. **Decide whether to stop.** Keeping the current solution is valid when it already meets the goal.
+   Stop when the goal/SLO is met with the predeclared margin and
+   uncertainty across its evaluation window; when the next measurement costs more than its
+   decision value; or when bounded local options, alone and in credible combinations, cannot
+   close the gap. The last two are findings, not failed investigations.
+9. **Write it down** — question, evidence, tested hypotheses, decision, and any change and measured
+   contrast. Distinguish refuted explanations from untested ones and record the next useful check
+   if work stops with missing evidence. Performance work that is not recorded gets redone.
+
+## Rules
+
+- Do not collapse a latency distribution into one statistic. Report request count and
+  throughput plus the statistics that answer the decision: selected quantiles for an SLO,
+  the mean for total work or queueing models when its assumptions fit, error/timeout/censoring
+  rates, and uncertainty. Never average per-instance percentiles into a fleet percentile;
+  aggregate mergeable histograms or raw observations with compatible boundaries instead.
+- A deploy carries side effects — process restart, cache invalidation, connection reset,
+  pod rotation. Before crediting a change, enumerate everything that moved with it and
+  ask whether each alone would explain the result.
+- An investigation often starts when the metric is unusually bad, so regression to the mean
+  is a competing explanation. Compare like-for-like periods or contemporaneous controls;
+  "over days" is insufficient when seasonality, traffic mix or deployments differ.
+- The instances still running are not a sample of the instances that failed. Evidence
+  from a degrading instance is captured before its restart, in the order
+  `incident-evidence-capture` sets out where possible. Missing local evidence limits the
+  inference; exported metrics, traces or retained artifacts may still exist.
+- A result that changes with run duration may expose warm-up, drift, queue growth or leaked
+  state. Report the time-dependent behavior; do not discard it to manufacture a plateau.
+- A benchmark that improves while the target outcome does not is a finding about the benchmark.
+  Gate the work on the chosen outcome and correctness/operational guardrails under representative load.
+- Observe in production only within an explicit collection budget and data-handling policy;
+  profiling, tracing and event-threshold changes can consume CPU, storage and cardinality or
+  expose sensitive data. Experiment where blast radius is acceptable. A canary is not
+  automatically randomised or isolated: routing bias, shared dependencies and fresh-process
+  state can confound it.
+- Use JMH for JVM microbenchmarks. For application elapsed-time instrumentation, a monotonic
+  clock such as `System.nanoTime()` is appropriate within one JVM; clock choice alone does
+  not solve benchmark dead-code elimination, warm-up or workload validity.
+- Warm-up is a workload- and runtime-dependent state transition, not a fixed clock. Measure
+  compilation, cache and resource state; include cold/ramp behaviour when users experience it.
+- Staging is not production until data volume, access pattern (hot keys), concurrency and
+  process uptime are stated. A benchmark over 1,000 rows can fail over 50,000,000.
+- Check the current default before adding any JVM flag. Several widely copied flags have
+  been the default for years, and re-enabling one produces the feeling of having acted
+  while the real problem stays undiagnosed.
+- Check queues and saturation before narrowing to code. In the idealised stationary M/M/1
+  model, response time grows as `1/(1−ρ)` and its exponential p99 as
+  `−ln(0.01)/(1−ρ)` times mean service time: about 18× at `ρ=.75` and 46× at `.90`.
+  Real arrivals, service-time tails, finite pools and backpressure often violate that model.
+  Less arrival work, more capacity, or faster service can all lower utilisation; measure the
+  actual queue and service demand (`littles-law-and-queueing`).
+- Days without a discriminating measurement warrant reviewing hypotheses and collection
+  gaps; rare incidents or missing access can also explain delay. The symptom-to-fix table
+  in `references/methods-and-failure-modes.md` lists candidates, not proven diagnoses.
+
+Treat missing evidence as unknown. A fresh `java -XX:+PrintFlagsFinal -version` describes
+that new process, not the deployed target; use it only for a labelled baseline under its
+own launch conditions. Tool availability, profiler coverage and lack of samples must be
+reported separately from absence of a mechanism. Keep Java/provider guidance tied to the
+project's deployed version, without implying an upgrade.
+
+## References
+
+- [Methods, experiments and failure modes](references/methods-and-failure-modes.md) — which
+  method answers which question (USE, RED, workload characterisation, drill-down, Method R,
+  with sources), Gregg's anti-methods, the hypothesis → measurement → diagnosis →
+  optimisation → validation ladder with what each rung must produce, Amdahl and Gustafson
+  stated with their assumptions, experimental units, randomisation/blocking and interaction
+  designs, the failure modes of an
+  investigation (confounds, regression to the mean, survivorship, optimising the
+  benchmark), production versus staging, and when to stop. Read at step 3, and whenever an
+  investigation has stalled.
+- [Performance folklore versus the JDK 25 baseline](references/folklore.md) — the claims
+  that are still repeated and what is actually true now. Read when an optimisation is
+  justified by a general rule rather than by a measurement.
+- [Investigation checklist](references/investigation-checklist.md) — what to have ready
+  before starting, during observation, at hypothesis time, while measuring and when
+  validating. Read at the start of an investigation and again before declaring it closed.
+- [Reporting a finding](references/reporting-a-finding.md) — the evidence a result needs,
+  a worked before-and-after, the refusals that are also findings, and what not to put
+  in. Read when the investigation is finished and someone has to act on it.

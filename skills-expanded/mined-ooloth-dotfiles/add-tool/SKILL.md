@@ -1,0 +1,275 @@
+---
+name: add-tool
+description: Add a new tool to the dotfiles repository. Use when asked to add a new CLI tool, application, or package as a managed dotfiles tool.
+---
+
+## Context
+
+- Existing tools: !`ls "${DOTFILES}/tools" | grep -v ^@`
+- Template: `tools/@new/` — reference for file structure and patterns
+
+## Your task
+
+Add a new tool to this dotfiles repository. Follow these steps:
+
+### 1. Research the tool
+
+Before writing any files:
+
+- **How is it installed?** Check its README/docs for the recommended installer. Common options:
+  `brew install`, `npm install -g`, `bun install -g`, `uv tool install`, `cargo install`, or a
+  custom install script.
+- **What does `{command} --version` output?** Run it (or check the docs) to know the exact format —
+  you'll need this to write `parse_version`.
+- **Are there zsh completions?** Check the docs or the brew caveats after install. If completions
+  require explicit shell setup (e.g. `eval "$(tool completion zsh)"`), note it — you'll need
+  `shell.zsh`.
+- **Does it have dotfiles config to manage?** If it writes config to `~/.config/{tool}/` or similar,
+  you'll need `link.bash` and a `config/` directory.
+
+### 2. Classify the tool
+
+**Brew tool**: add the formula or cask to `tools/{tool}/Brewfile`, starting from
+`tools/@new/Brewfile` (e.g. `brew "sd"`). `u` installs and upgrades it through the combined Brewfile
+that `tools/homebrew/update.bash` generates and bundles, so it needs no `utils.bash`,
+`install.bash` or `update.bash`. Skip to step 7. Examples: `eza`, `sd`, `logcli`. Add an
+`install.bash` only for setup brew can't do, as `tools/neovim/install.bash` clones its config repo.
+
+**Non-brew tool** (npm/bun/uv/cargo or a custom script): needs `utils.bash`, `install.bash` and
+`update.bash`, as in steps 3-5. These stay in bash, because `u` and setup find them by file name
+(decision 007's addendum), so write them from the templates.
+
+**Either kind with config** (has config files to symlink): also needs `link.bash` and a `config/`
+directory. Examples: `claude`, `neovim`, `git`
+
+### 3. Create `tools/{tool}/utils.bash` (non-brew tools only)
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+export TOOL_LOWER="{tool}"
+export TOOL_UPPER="{Tool}"
+export TOOL_COMMAND="{tool}"
+export TOOL_PACKAGE="{package-name}"
+export TOOL_EMOJI="🔧"
+export TOOL_CONFIG_DIR="${HOME}/.config/${TOOL_LOWER}"  # omit if no config
+
+parse_version() {
+  local raw_version="${1}"
+  # Adapt to match the actual output of the version command (arg 6 in install/update):
+  printf "${raw_version}"
+}
+```
+
+Key variables:
+- `TOOL_LOWER`: lowercase name used in paths and log messages
+- `TOOL_UPPER`: display name (often same as `TOOL_LOWER`, but e.g. `"Claude Code"`)
+- `TOOL_COMMAND`: the binary name (`which` resolves this)
+- `TOOL_PACKAGE`: the package name passed to the installer
+- `TOOL_EMOJI`: used in log output
+- `TOOL_CONFIG_DIR`: only needed for tools with config; omit the export if unused
+
+**`parse_version` by installer** — receives the raw output of the version command (arg 6) and must
+return a clean semver string:
+
+| Installer | Version command (arg 6) | Typical raw output | `parse_version` logic |
+|---|---|---|---|
+| `npm` / `bun` | `{command} --version` | `1.10.2` | print as-is |
+| `npm` (some) | `{command} --version` | `1.0.0 (Claude Code)` | strip suffix |
+| `uv tool` | `{pkg} --version` | `ty, version 0.0.1` | strip `"ty, version "` prefix |
+| `cargo` | `{command} --version` | `sd 1.0.0` | strip `"sd "` prefix |
+
+### 4. Create `tools/{tool}/install.bash` (non-brew tools only)
+
+Structure is always the same — only the install command (arg 5) and version command (arg 6) change
+by installer:
+
+**npm:**
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../../tools/bash/utils.bash"
+source "${DOTFILES}/features/install/utils.bash"
+source "${DOTFILES}/tools/{tool}/utils.bash" # source last to avoid env var overrides
+
+install_and_symlink \
+  "${TOOL_LOWER}" \
+  "${TOOL_UPPER}" \
+  "${TOOL_COMMAND}" \
+  "${TOOL_EMOJI}" \
+  "npm install --global ${TOOL_PACKAGE}@latest" \
+  "${TOOL_COMMAND} --version" \
+  "parse_version"
+```
+
+**bun:**
+```bash
+  "bun install --global ${TOOL_PACKAGE}" \
+  "${TOOL_COMMAND} --version" \
+```
+
+**uv:**
+```bash
+  "uv tool install ${TOOL_PACKAGE}" \
+  "${TOOL_PACKAGE} --version" \
+```
+
+**cargo:**
+```bash
+  "cargo install ${TOOL_PACKAGE}" \
+  "${TOOL_COMMAND} --version" \
+```
+
+For **tools with config**, add the symlink script path as an 8th argument:
+
+```bash
+  "parse_version" \
+  "${DOTFILES}/tools/${TOOL_LOWER}/link.bash"
+```
+
+### 5. Create `tools/{tool}/update.bash` (non-brew tools only)
+
+Same pattern — update command varies by installer, 8th arg is always the install script fallback:
+
+**npm:**
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../../tools/bash/utils.bash"
+source "${DOTFILES}/features/update/utils.bash"
+source "${DOTFILES}/tools/{tool}/utils.bash" # source last to avoid env var overrides
+
+update_and_symlink \
+  "${TOOL_LOWER}" \
+  "${TOOL_UPPER}" \
+  "${TOOL_COMMAND}" \
+  "${TOOL_EMOJI}" \
+  "npm install --global ${TOOL_PACKAGE}@latest" \
+  "${TOOL_COMMAND} --version" \
+  "parse_version" \
+  "${DOTFILES}/tools/${TOOL_LOWER}/install.bash"
+```
+
+Update commands by installer: `npm install --global {pkg}@latest` / `bun install --global {pkg}` /
+`uv tool upgrade {pkg}` / `cargo install {pkg}`
+
+For **tools with config**, add the symlink script path as a 9th argument:
+
+```bash
+  "${DOTFILES}/tools/${TOOL_LOWER}/install.bash" \
+  "${DOTFILES}/tools/${TOOL_LOWER}/link.bash"
+```
+
+### 6. Create `tools/{tool}/uninstall.bash` (non-brew tools only)
+
+**Brew-managed tools**: skip this file. Uninstall with `brew uninstall {formula}`,
+then move the tool folder to `tools/@archive` (or delete it). `u` installs what
+the Brewfiles declare but never removes anything they no longer declare.
+
+**Non-brew tools** (npm/bun/uv/cargo): create a plain script with only the
+cleanup steps brew can't handle — no wrapper needed:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../../tools/bash/utils.bash"
+
+info "🔧 Uninstalling {tool}"
+{uninstall command}
+```
+
+Uninstall commands: `npm uninstall --global {pkg}` / `bun uninstall --global {pkg}` / `uv tool
+uninstall {pkg}` / `cargo uninstall {pkg}`
+
+### 7. Create `tools/{tool}/shell.zsh` (only if needed)
+
+Only create this file if the tool requires explicit shell setup: environment variables, aliases, or
+completions not auto-installed by the package manager.
+
+Only an interactive zsh reads `shell.zsh`, through `.zshrc`. A program started any other way, such
+as a command Rex runs through its non-interactive login shell, never sees its exports. A variable
+such a program needs goes in the tool's own config file when the tool reads one, as Claude Code's
+settings go in the `env` block of `tools/claude/config/settings.json`.
+
+Brew auto-installs completions to `/opt/homebrew/share/zsh/site-functions` — no `shell.zsh` needed
+for those. Only add completion setup if the tool's docs require something like `eval "$(tool
+completion zsh)"` or `source <(tool completions zsh)`.
+
+```zsh
+########################
+# ENVIRONMENT VARIABLES #
+########################
+
+# export SOME_VAR="value"
+
+###########
+# ALIASES #
+###########
+
+# alias x="tool --flag"
+
+###############
+# COMPLETIONS #
+###############
+
+# eval "$(tool completion zsh)"
+```
+
+### 8. For tools with config: create `link.bash`
+
+`tools/{tool}/link.bash`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../../tools/bash/utils.bash"
+source "${DOTFILES}/tools/{tool}/utils.bash"
+
+symlink "${DOTFILES}/tools/{tool}/config/settings.json" "${TOOL_CONFIG_DIR}"
+```
+
+`symlink()`'s second argument is the directory the link goes in. The link takes the source file's
+name, so passing a file path creates `settings.json/settings.json`.
+
+### 9. Verify
+
+If the tool has `.bash` files, lint them:
+
+```bash
+shellcheck tools/{tool}/*.bash
+```
+
+For a non-brew tool, run the install script to confirm it works end-to-end:
+
+```bash
+bash tools/{tool}/install.bash
+```
+
+From a worktree, the install skips its link step with a note. Once the tool is in the main
+checkout, make its links with `bash ~/Repos/ooloth/dotfiles/features/update/symlinks.bash {tool}`.
+Rerunning `install.bash` makes none, because it stops early when the tool is already installed.
+
+For a brew tool, install just its Brewfile and confirm the formula is there:
+
+```bash
+brew bundle --file=tools/{tool}/Brewfile
+brew list --versions {formula}
+```
+
+## Notes
+
+- **Auto-discovery**: `u` runs every `update.bash` under `tools/` (except `@new` and `@archive`)
+  with no registration. `features/install/tools.bash` only lists `install.bash` files when run for
+  every tool, so run a new tool's `install.bash` directly.
+- **Prerequisites**: if the tool's update depends on outside state that would make it fail, such
+  as a running daemon or a login, add `tools/{tool}/preflight.bash` from `tools/@new/`. `u` runs
+  every one before any update and stops if one fails.
+- **Tests**: a tool's tests go in `tools/{tool}/tests/test_*.py`, which
+  `scripts/checks/tests.bash` finds and runs in CI. No registration is needed.
+- **Shell config**: `tools/zsh/config/tools.zsh` finds and sources every `shell.zsh` under `tools/`
+  and `features/` in each new shell. Open a new shell after adding one.

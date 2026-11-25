@@ -1,0 +1,68 @@
+---
+name: dev
+description: "Start the local development stack (the full Docker stack under the robosystems profile) and tail service logs. Use for \"start the stack\", \"bring up dev\", \"start the local environment\", or \"tail the logs\"."
+metadata:
+  lane: build
+---
+
+Start the development environment — the full Docker stack under the `robosystems` profile.
+
+## Start
+
+```bash
+just start
+```
+
+Always use the `robosystems` profile (the default), never an individual service profile. Add `just start robosystems build` to rebuild images as part of the start.
+
+## Services
+
+The `robosystems` profile brings up:
+
+| Service | Port | Role |
+| --- | --- | --- |
+| `api` | 8000 | Main RoboSystems API |
+| `graph-api` | 8001 | LadybugDB graph database API |
+| `dagster-webserver` | 8002 | Orchestration UI |
+| `dagster-daemon` | — | Schedules and sensors (runs migrations on boot) |
+| `worker` | — | Background task processing |
+| `pg` | 5432 | PostgreSQL (platform + extensions databases) |
+| `valkey` | 6379 | Cache and queues |
+| `seaweedfs` | 8333 | S3-compatible object storage |
+| `mailpit` | 8025 | The dev inbox (SMTP on 1025) |
+| `dynamodb` | — | DynamoDB Local, the graph registries |
+| `storage-init` | — | Creates the buckets and tables, then exits |
+| `opensearch` | 9200 | Full-text + semantic search |
+
+The frontend apps (`robosystems-app`, `roboledger-app`, `roboinvestor-app`) are on the `apps` profile and are **not** started by `robosystems`. Observability (`otel-collector`, `prometheus`, `grafana`) is on the `observability` profile.
+
+Confirm what actually came up rather than assuming:
+
+```bash
+docker compose -f compose.yaml ps
+```
+
+## Health checks
+
+```bash
+curl http://localhost:8000/v1/status     # API — liveness only
+curl http://localhost:8001/health        # Graph API
+```
+
+`/v1/status` is a **liveness** probe: it reports healthy whenever the process is up and does not check PostgreSQL, Valkey, or the graph tier. Note the API path is `/v1/status` — `/health` and `/v1/health` do not exist on the main API.
+
+## Logs
+
+```bash
+just logs api                 # follow one service
+just logs dagster-daemon      # migrations + schedules land here
+just logs-grep worker ERROR   # search a service's logs
+```
+
+Run log tailing as a background command rather than backgrounding it with `&` — a foreground follow will block.
+
+## When it doesn't come up
+
+- Code changes not picked up → `just restart`. Only a locally built backend runs the checkout's source; with the image lines set in `.env` the stack runs the published release, whatever the checkout holds
+- Dependency or Dockerfile changes → `just rebuild`
+- Taxonomy/framework source edits → `just reset-local` (tears down, wipes data, rebuilds, reseeds)

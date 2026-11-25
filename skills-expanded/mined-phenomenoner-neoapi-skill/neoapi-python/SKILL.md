@@ -1,0 +1,349 @@
+---
+name: neoapi-python
+metadata:
+  version: 1.0.0-beta.33
+description: "Fubon Neo (富邦新一代/富邦 API) Python SDK guidance focused on trading and market data workflows, including login, market data access, order placement, and locating the right docs/llms outputs. Use when prompts mention FubonNeo API or the Python SDK."
+---
+
+# NeoAPI Python
+
+## Overview
+
+本 skill 教導 AI 編程代理使用 **Fubon Neo Python SDK** 進行台股**證券交易**與**行情資料**存取。適用 Python 3.8–3.13、SDK >= 2.x（避免 3.14）。預設 SDK 2.5.0，除非使用者另外指定。
+
+> **TL;DR** — 三大工作流程：
+> 1. **登入** → `sdk.login(ID, PWD, cert, cert_pwd)` 取得帳號清單
+> 2. **下單** → 建構 `Order(...)` → `sdk.stock.place_order(acc, order)`
+> 3. **行情** → `sdk.init_realtime()` → `sdk.marketdata.rest_client.stock.intraday.*`
+
+
+## Shioaji migration routing
+
+When the user asks to migrate or port existing Shioaji code, keep the tone practical and neutral: help them translate working code safely; do not frame the answer as a broker comparison. Load `references/migration-shioaji.md` first, then add the narrow reference below when needed.
+
+| Migration task | Load / check |
+| :--- | :--- |
+| Login / CA / account selection | `references/migration-shioaji.md` + official login docs |
+| Stock order placement | `references/migration-shioaji.md` + `references/implementation-practices.md` |
+| Modify / cancel / status tracking | `references/migration-shioaji.md` + `references/response-shapes.md` |
+| Quantity or lot-size confusion | `references/migration-shioaji.md` (Neo quantity is shares) |
+| Test vs production behavior | `references/test-environment.md` |
+| WebSocket / callback migration | `references/migration-shioaji.md` + `references/examples-guidance.md` |
+
+## 常見錯誤（Common Mistakes）
+
+| 錯誤 | 正確做法 |
+| :--- | :--- |
+| 把 PyPI 的 Python 版本 metadata 當成支援清單 | 可用 `pip install fubon-neo`，但仍以[官方支援清單](https://www.fbs.com.tw/TradeAPI/docs/install-compatibility)的 Python 3.8–3.13 為準；也可安裝官方下載的 wheel |
+| 在測試環境用 `intraday.quote` 判斷可下單價格 | 測試環境應用 `sdk.stock.query_symbol_quote(acc, symbol)` |
+| 誤以為 SDK >= 2.2.1 必須傳入連線參數 | 官方快速上手使用 `FubonSDK()`；`FubonSDK(30, 2)` 可明示預設值，自訂連線參數時依官方文件調整 |
+| 預設憑證密碼卻傳 `cert_pass=""` | SDK >= 1.3.2 應省略第 4 個參數：`sdk.login(id, pwd, cert_path)`；不要用空字串代替 |
+| 下單後找不到已刪的單 | 已刪單仍在 `get_order_results` 中，status=30 |
+| 登入後直接用 `sdk.marketdata.rest_client` | 需先呼叫 `sdk.init_realtime()` |
+| `user_def` 字串過長 | 建議 10 字元以內，過長會被截斷 |
+| 在 Python 3.14 使用 SDK v2 | 官方目前支援 Python 3.8–3.13，不支援 3.14 |
+| 數量填「張數」而非「股數」 | FubonNeo 數量一律為**股數**（1 張 = 1000 股） |
+| WebSocket `on_message` 直接取 `message["price"]` | 訊息是 envelope 結構，交易資料在 `message["data"]` 內，需先檢查 `message["event"] == "data"` |
+| 用 `data["price"] == "市價"` 判斷 WebSocket 價格狀態 | 價格欄位是數值；值為 `0` 時應搭配同欄位的 `isLimitUp*` / `isLimitDown*` 旗標解碼，不能比對字串或臆測原始委託型別 |
+
+## Public Docs Access
+
+- Base site: <https://www.fbs.com.tw/TradeAPI/>
+- English locale: <https://www.fbs.com.tw/TradeAPI/en/>
+- Build with LLM (zh): <https://www.fbs.com.tw/TradeAPI/docs/welcome/build-with-llm>
+- Build with LLM (en): <https://www.fbs.com.tw/TradeAPI/en/docs/welcome/build-with-llm/>
+- LLM indexes:
+  - <https://www.fbs.com.tw/TradeAPI/llms.txt>
+  - <https://www.fbs.com.tw/TradeAPI/llms-full.txt>
+  - <https://www.fbs.com.tw/TradeAPI/en/llms.txt>
+  - <https://www.fbs.com.tw/TradeAPI/en/llms-full.txt>
+- Note: The `.md` URL trick is no longer supported; use `.txt` instead. Every page under `/TradeAPI/docs/` or `/TradeAPI/en/docs/` can be accessed as plain text by appending `.txt` (e.g., `https://www.fbs.com.tw/TradeAPI/docs/trading/introduction.txt`). Use `llms.txt` to find the page paths.
+
+## Usage Cheat Sheet
+
+### Quickstart (Trading)
+
+```python
+from fubon_neo.sdk import FubonSDK, Order, Mode
+from fubon_neo.constant import BSAction, MarketType, PriceType, TimeInForce, OrderType
+
+# Init & Login
+sdk = FubonSDK()  # SDK 2.2.1+: FubonSDK(30, 2) explicitly sets the defaults
+accounts = sdk.login("ID", "PWD", "C:/path/to/cert.pfx", "CertPWD")
+acc = accounts.data[0]  # Pick stock account
+
+# Place Order (Buy 1000 shares of 2330 at Limit 580)
+# Keyword form recommended (matches official docs); positional form also works.
+order = Order(
+    buy_sell=BSAction.Buy,
+    symbol="2330",
+    quantity=1000,
+    market_type=MarketType.Common,
+    price_type=PriceType.Limit,
+    time_in_force=TimeInForce.ROD,
+    order_type=OrderType.Stock,
+    price="580"
+)
+res = sdk.stock.place_order(acc, order)
+print(f"Order: {res.data.order_no}")
+```
+
+### Certificate Password Login
+
+```python
+# Certificate with a user-defined password
+accounts = sdk.login(user_id, login_password, cert_path, cert_password)
+
+# Certificate using the official default-password mode (SDK >= 1.3.2)
+# Omit the fourth argument entirely; do not pass "" or None.
+accounts = sdk.login(user_id, login_password, cert_path)
+```
+
+若程式從環境變數讀取自訂憑證密碼，請在缺值時直接報錯，不要用 `os.getenv("CERT_PASSWORD", "")` 靜默退回空字串。測試環境的憑證密碼則依官方測試包為 `12345678`。
+
+官方依據：`https://www.fbs.com.tw/TradeAPI/docs/trading/quickstart.txt`。
+
+### Critical Constants
+
+| Category | Class | Common Values |
+| :--- | :--- | :--- |
+| **Action** | `BSAction` | `.Buy`, `.Sell` |
+| **Price** | `PriceType` | `.Limit` (限價), `.Market` (市價), `.Reference` (參考價) |
+| **Time** | `TimeInForce` | `.ROD` (當日有效), `.IOC` (立即成交否則取消), `.FOK` (全部成交否則取消) |
+| **Market** | `MarketType` | `.Common` (整股), `.IntradayOdd` (盤中零股), `.Odd` (盤後零股) |
+| **Order** | `OrderType` | `.Stock` (現股), `.MarginTrading` (融資), `.ShortSelling` (融券) |
+
+### Validating Prices
+
+Real-time quotes (`intraday.quote`) may differ from valid order prices (especially in Test Env).
+
+- **For Orders**: Always check `sdk.stock.query_symbol_quote(acc, symbol)`.
+  - Use `limit_up_price` / `limit_down_price` from this result for placing limit orders.
+  - This source reflects the *order system's* view of validity.
+- **For Display**: Use `sdk.marketdata.rest_client.stock.intraday.quote(symbol)`.
+
+### Rate Limits (Summary)
+
+- **REST**: 300 req/min (IP-based).
+- **WebSocket**: 200 subscriptions per connection.
+
+## SDK 版本相容性（Version Compatibility）
+
+| SDK Version | Python | Constructor | 備註 |
+| :--- | :--- | :--- | :--- |
+| >= 2.2.6 | 3.8–3.13 | `FubonSDK()` 或 `FubonSDK(30, 2)` | 現行基準為 2.5.0；期貨空資料回傳規則見下節 |
+| 2.2.1–2.2.5 | 視各版本支援情況 | `FubonSDK()` 或 `FubonSDK(30, 2)` | 可自訂連線參數 |
+| 2.0–2.2.0 | 視各版本支援情況 | `FubonSDK()` | 無位置參數 |
+| 1.3.1–1.x | 視各版本支援情況 | `FubonSDK()` | 測試環境最低要求 |
+
+測試環境一律加 `url="wss://neoapitest.fbs.com.tw/TASP/XCPXWS"` 參數。
+
+## 工作流程決策樹（Workflow Decision Tree）
+
+```
+需求是什麼？
+├── 交易（Trading）
+│   ├── 下單 / 改單 / 刪單
+│   │   ├── 測試環境？→ FubonSDK(30, 2, url=test_url) + query_symbol_quote 取價格
+│   │   └── 正式環境？→ FubonSDK() + intraday.ticker 取漲跌停
+│   ├── 查詢帳務 → sdk.stock.get_order_results / get_inventories
+│   └── 當沖（Day Trade）→ 見下方「當沖」章節
+├── 行情（Market Data）
+│   ├── 即時快照 → HTTP: intraday.quote（成交）/ intraday.ticker（參考價/漲跌停）
+│   ├── 歷史資料 → HTTP: historical
+│   └── 即時串流 → WebSocket: sdk.init_realtime() + subscribe
+└── 環境確認
+    ├── SDK 版本 → 見上方「版本相容性」
+    ├── 安裝方式 → PyPI fubon-neo 或官方下載的 .whl
+    └── 文件查詢 → references/doc-index.md
+```
+
+## Trading Workflow
+
+- Start from `docs/trading/prepare` and `docs/trading/quickstart` for setup.
+- Use Python library references under `docs/trading/library/python/` for exact function names, parameters, and return types.
+- Typical flow: login (password or API key) → place/modify/cancel order → query order/account info → logout.
+- Always mention rate limits when relevant (`docs/trading/trade-rate-limit`).
+
+## Market Data Workflow
+
+- Decide on **HTTP** vs **WebSocket**:
+  - HTTP API for snapshots, intraday, historical.
+  - WebSocket API for real-time streams.
+- Use `docs/market-data/http-api/getting-started` and `docs/market-data/websocket-api/getting-started`.
+- Mention connection setup and rate limits when relevant.
+- To use `sdk.marketdata.rest_client`, call `sdk.init_realtime()` after login.
+- For limit-up/limit-down prices in market data, use `intraday.ticker` (not `intraday.quote`).
+- Raw WebSocket JSON uses camelCase flags such as `isLimitUpPrice` and `isLimitDownAsk`; these booleans may be omitted when the condition is false, so read them with `data.get(flag, False)`.
+- WebSocket `price` / `bid` / `ask` are numeric. If a price is `0`, decode it together with the matching field-specific limit flags; never compare it to the string `"市價"`, and do not claim the public quote reveals the original order type.
+- Trading hours reference (Taiwan cash equities): `references/twse-trading-hours.md` (Asia/Taipei)
+
+Official field definitions: `docs/market-data/websocket-api/market-data-channels/trades.txt` and `aggregates.txt`.
+
+```python
+def decode_ws_price_state(data: dict, field: str = "price") -> dict:
+    flag_names = {
+        "price": ("isLimitUpPrice", "isLimitDownPrice"),
+        "bid": ("isLimitUpBid", "isLimitDownBid"),
+        "ask": ("isLimitUpAsk", "isLimitDownAsk"),
+    }
+    if field not in flag_names:
+        raise ValueError(f"Unsupported WebSocket price field: {field}")
+    up_flag, down_flag = flag_names[field]
+    value = data.get(field)
+    if value is not None and (
+        not isinstance(value, (int, float)) or isinstance(value, bool)
+    ):
+        raise TypeError(f"WebSocket {field} must be numeric")
+    is_limit_up = bool(data.get(up_flag, False))
+    is_limit_down = bool(data.get(down_flag, False))
+    return {
+        "value": value,
+        "is_zero_encoded": value == 0,
+        "is_limit_up": is_limit_up,
+        "is_limit_down": is_limit_down,
+        "has_limit_marker": is_limit_up or is_limit_down,
+    }
+```
+
+可直接重用並測試的完整版本在 `references/guardrail_patterns.py`。
+
+## 當沖（Day Trading）
+
+台股當沖分為：
+
+- **先買後賣**（現股當沖-買）：先以 `BSAction.Buy` 下單，同日再以 `BSAction.Sell` 賣出。使用 `OrderType.Stock`。
+- **先賣後買**（現股當沖-賣/融券當沖）：先以融券賣出，同日再買回。使用 `OrderType.ShortSelling`。
+
+### 關鍵判斷
+
+- 使用 `intraday.ticker` 回傳的 `canDayTrade` / `canBuyDayTrade` 欄位確認標的可否當沖（行情端的快速旗標）。
+- 若你要更精確地判斷「先買後賣」vs「先賣後買」能不能做，建議查交易端的 **status bitmask**：
+  - 來源常見於：
+    - `sdk.stock.query_symbol_quote(acc, symbol)` 回傳的 `data.status`
+    - `sdk.stock.daytrade_and_stock_info(acc, symbol)` 回傳的 `data.status`（有些 wrapper 會叫 `disposition_status`）
+  - **bitmask 定義（加總）**：
+    - `1`：平盤下可融券賣出
+    - `2`：平盤下可借券賣出
+    - `4`：可先買後賣當沖（buy-first daytrade）
+    - `8`：可先賣後買當沖（sell-first daytrade / daytrade short）
+  - 判斷請用 **位元運算**，不要用 `>=`：
+
+```python
+def decode_daytrade_status(status: int) -> dict[str, bool]:
+    return {
+        "can_short_sell_below_flat": bool(status & 1),
+        "can_borrow_sell_below_flat": bool(status & 2),
+        "can_daytrade_buy_first": bool(status & 4),
+        "can_daytrade_sell_first": bool(status & 8),
+    }
+
+# examples
+# status=15 -> all True (1+2+4+8)
+# status=3  -> only the first two True (1+2)
+# status=8  -> sell-first daytrade only
+```
+
+- 部位平倉（沖銷）：在收盤前以反向委託等量股數沖銷。
+
+### 條件單當沖
+
+SDK >= 2.2.4 支援條件單當沖（搜尋 llms-full.txt 中 `ConditionDayTrade` 或「當沖條件單」），可設定停損停利自動回補。
+
+### 參考實作
+
+- [StrategyExecutor_feather](https://github.com/phenomenoner/StrategyExecutor_feather)：現股當沖先賣的自動化策略範例。
+
+## 期貨 / 選擇權（Futures & Options）
+
+本 skill 以**證券（Stock）**交易與行情為主要範圍。期貨／選擇權 API 請依官方文件查核。SDK 2.5.0 起，期貨帳務單式部位、平倉查詢及期貨期權批次委託列表在查無資料時回傳成功與空清單；先檢查失敗，再判斷 `data` 是否為空，不可把 `is_success` 當成有資料的判斷。2.5.0 亦新增期貨／選擇權歷史日行情及選擇權歷史 K 線；2.4.0 新增證券三大法人、集保股權分散及董監持股查詢。細節見[官方版本遷移資訊](https://www.fbs.com.tw/TradeAPI/docs/download/download-sdk)。
+
+## Examples
+
+- Use `references/examples-guidance.md` to map SDK calls to docs and avoid common modification pitfalls.
+
+## Testing / Sandbox
+
+- Official test bundle: `https://www.fbs.com.tw/TradeAPI_SDK/sample_code/test_environment.zip`
+- Use SDK v1.3.1+ and the test URL `wss://neoapitest.fbs.com.tw/TASP/XCPXWS`.
+- SDK v2.2.0 and earlier: `FubonSDK(url=...)`
+- SDK v2.2.1 and later: `FubonSDK(30, 2, url=...)` (30/2 are reference values).
+- Test credentials: ID from certificate; login password and cert password are `12345678`.
+- See `references/test-environment.md` for operational notes (trading hours, shared account caveats).
+- Install the Python SDK from PyPI (`pip install fubon-neo`) or an official downloaded wheel.
+- Skill validation checklist: `references/skill-tests.md`.
+
+- Local integrated runner (maintainer-only; may be absent in some distributed skill copies): `.test/test_runner.py`
+  - If present, it can run:
+    - `--suite smoke`: basic login + market/trade sanity checks
+    - `--suite complex`: multi-symbol marketdata + dual-order lifecycle + callback coverage
+    - `--suite all`: full coverage (includes complex checks)
+  - If it is missing, use the minimal smoke snippet below (login → logout; no orders).
+
+Minimal smoke (test env, no orders):
+```python
+from fubon_neo.sdk import FubonSDK
+import os
+
+URL = os.getenv("NEOAPI_TEST_URL", "wss://neoapitest.fbs.com.tw/TASP/XCPXWS")
+# SDK v2.2.1+: use FubonSDK(30, 2, url=...)
+sdk = FubonSDK(30, 2, url=URL)
+
+accounts = sdk.login(
+    os.getenv("NEOAPI_TEST_ID"),
+    os.getenv("NEOAPI_TEST_PASSWORD"),
+    os.getenv("NEOAPI_TEST_CERT_PATH"),
+    os.getenv("NEOAPI_TEST_CERT_PASSWORD"),
+)
+print("login_ok=", bool(getattr(accounts, "is_success", True)))
+
+sdk.logout()
+```
+
+- For limit-down/limit-up in test env, prefer `sdk.stock.query_symbol_quote` (test environment data). `intraday.quote` uses market data (prod) and may differ.
+
+## SDK Install (Quick Note)
+
+- Install with `pip install fubon-neo`, or download and install the platform wheel from the official SDK page.
+- SDK >= v2 works on Python 3.8–3.13 (avoid 3.14 for now).
+- Windows SAC／程式碼簽章問題：先讀 [Windows SDK 簽章查核](references/windows-signatures.md)。2026-11-17 查核的 SDK 2.5.0 Windows x64 官網版 PYD 本機簽章為 `Valid`，同版本 PyPI 版為 `NotSigned`；兩個發行檔不同，**SAC 尚未實測**。以該筆查核的版本、管道與雜湊為範圍，升級或更換發行檔後重新查驗。
+
+## 即時成交回報 + Safe-net Readback
+
+For live or latency-sensitive trading systems, treat **filled callbacks** as the primary fill source and `get_order_results` as a periodic reconciliation safe-net.
+
+- Register callbacks before login/re-login when possible:
+  - `sdk.set_on_order(on_order)` for order acknowledgements (`OrderResult`)
+  - `sdk.set_on_order_changed(on_order_changed)` for modify/cancel reports (`OrderResult`)
+  - `sdk.set_on_filled(on_filled)` for execution fills (`FilledData`)
+  - `sdk.set_on_event(on_event)` for connection/re-login events
+- Compute entry/exit average from execution data, not from submitted order price:
+  - preferred: `FilledData.filled_avg_price`
+  - otherwise aggregate `filled_price * filled_qty` across fills
+  - reconciliation fallback: `OrderResult.filled_money / filled_qty` from `sdk.stock.get_order_results(acc)`
+- Never use submitted limit price (`price`, `after_price`, limit-up/down) as P/L entry price fallback. If fill price is missing, mark the position as unresolved and reconcile.
+- Run `get_order_results` periodically (for example every ~30 seconds) to detect missed callbacks and reconcile `filled_qty`, `filled_money`, and status.
+- Reconcile records by `order_no` + `seq_no` when available; include `filled_no` for idempotent fill dedupe.
+- Record a `fill_source` in receipts/state, such as `active_filled_callback` or `order_results_readback`, so operators can tell whether the low-latency path or the safe-net supplied the fill.
+
+## Implementation Patterns
+
+For production-tested patterns, see `references/implementation-practices.md`. Key topics:
+
+- **SDK Manager**: Connection lifecycle, auto-reconnect, graceful termination
+- **WebSocket**: Multi-connection load balancing (200 symbols/connection limit)
+- **Async Patterns**: ThreadPoolExecutor for blocking calls, per-symbol locking
+- **Error Handling**: FugleAPIError compatibility for old/new SDK versions
+- **Order Placement**: Order creation, placement, and fill handling
+- **Strategy Patterns**: Tick-to-decision pipeline, stop loss, position sizing
+- **Error & Status Codes**: Order status codes, HTTP errors, common rejection reasons
+
+## References
+
+- **Doc index**: `references/doc-index.md`
+- **Implementation practices**: `references/implementation-practices.md`
+- **Response shapes**: `references/response-shapes.md`
+- **Windows wheel signatures / SAC evidence**: `references/windows-signatures.md`
+- **Source docs (maintainers)**: `docs/` and `i18n/en/docusaurus-plugin-content-docs/current`
+
+When code or docs need updating, mirror changes in the English localization if the content is user-facing.

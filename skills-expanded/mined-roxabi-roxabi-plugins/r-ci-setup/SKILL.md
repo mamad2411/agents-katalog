@@ -1,0 +1,56 @@
+---
+name: R-ci-setup
+argument-hint: '[--force]'
+description: 'Set up CI/CD — GitHub Actions workflows, TruffleHog, Dependabot, pre-commit hooks, marketplace plugins. Triggers: "ci setup" | "setup ci" | "configure ci" | "setup hooks" | "setup github actions".'
+version: 0.2.0
+allowed-tools: Bash, Read, ToolSearch
+---
+
+# CI Setup
+
+Let:
+  I_TS := `${CLAUDE_PLUGIN_ROOT}/skills/dev-init/init.ts`
+  Φ    := CLAUDE_PLUGIN_ROOT
+  F    := `--force` flag present in `$ARGUMENTS`
+  σ    := `.dev/stack.yml`
+  D(label, result) := Display: `{label} {result}`
+  D✅(label)       := D(label, "✅ Created")
+  D⏭(label)       := D(label, "⏭ Skipped")
+
+**Stack:** Read `.dev/stack.yml` first — every `{field}` placeholder below resolves from it. ¬∃ → output: "`.dev/stack.yml` not found — run `/R-env-setup` to generate it." and stop.
+
+Configure CI/CD pipelines and local safety nets: GitHub Actions workflows, secret scanning, dependency updates, pre-commit hooks, and marketplace plugins.
+
+Can run standalone (`/R-ci-setup`) or be called by `/init`.
+
+## Dispatch
+
+Phase 1 — GitHub Actions Workflows → Read `${CLAUDE_SKILL_DIR}/cookbooks/workflows.md`, execute.
+Phase 1b–1c — Secret Scanning + Dependabot → Read `${CLAUDE_SKILL_DIR}/cookbooks/scanning.md`, execute.
+Phase 2 — Pre-commit Hooks → Read `${CLAUDE_SKILL_DIR}/cookbooks/hooks.md`, execute.
+Phase 3 — Marketplace Plugins → Read `${CLAUDE_SKILL_DIR}/cookbooks/marketplace.md`, execute.
+Phase 4 — Report (below).
+
+## Phase 4 — Report
+
+```
+CI Setup Complete
+=================
+
+  CI/CD workflows   ✅ Created / ✅ Already configured / ⏭ Skipped
+  TruffleHog        ✅ scripts seeded + secret-scan.yml / ⏭ Skipped
+  Dependabot        ✅ .github/dependabot.yml created / ⏭ Skipped
+  Pre-commit hooks  ✅ lefthook installed (principal-freeze + trufflehog on commit/push) / ✅ pre-commit / ✅ Already configured / ⏭ Disabled / ⏭ Skipped
+  Principal freeze  ✅ lefthook/pre-commit seeded / ⏭ Skipped
+  License checker   ✅ tools/licenseChecker.ts copied (JS) / ✅ tools/license_check.py copied (Python) / ⏭ Skipped
+  License policy    ✅ .license-policy.json created (N packages) / ✅ All compliant / ⏭ Skipped / ⏭ pip-licenses missing
+  Marketplace       ✅ N plugins installed (name, name, ...) / ⏭ Skipped
+```
+
+## Safety Rules
+
+1. **Never push to remote** without user confirmation
+2. **Always present choices and wait for user reply** before installing hooks or plugins
+3. **Idempotent** — skip already-configured items unless F
+
+$ARGUMENTS

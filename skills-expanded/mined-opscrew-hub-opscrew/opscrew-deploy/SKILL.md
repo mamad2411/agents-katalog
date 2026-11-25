@@ -1,0 +1,743 @@
+---
+name: opscrew-deploy
+description: Take the user's app from this repository to a hardened production deployment on their own cloud, a server they already have, a Portainer they already run (on a NAS or any Docker host), a shared hosting account they already pay for (cPanel, Plesk, DirectAdmin or SFTP), or for a site with no server Cloudflare's hosting or GitHub Pages, with OpsCrew (scan, analyze, interview, design, prepare the code, then provision), and turn Portainer on or off. Use when the user wants to deploy, host, launch or "put online" their app, deploy to their own server, home server, NAS, Portainer or shared hosting (cPanel and the like), or move it off Lovable, Bolt, Replit or v0 hosting.
+---
+
+# Deploy this app with OpsCrew
+
+OpsCrew gives you deterministic, safe tools through its MCP server (`opscrew_*`). You do the
+reasoning and talk to the user; OpsCrew does detection, pricing, rendering and anything that touches
+infrastructure. Follow these steps in order and keep the user informed in plain English.
+
+## Rules (always)
+
+- Never run `tofu`, `terraform`, `hcloud`, `doctl`, `cntb`, `aws`, `gcloud`, `az`, `ssh` or `curl`
+  yourself for this flow. Infrastructure changes happen only through OpsCrew, after the user
+  approves a plan.
+- Never ask the user to paste tokens, passwords or `.env` values into this chat, and never print
+  them. Secrets are entered in the user's own terminal by `opscrew provision`.
+- Do not edit files under `opscrew/`, `.opscrew/` or `.github/workflows/opscrew-deploy*.yml`;
+  OpsCrew writes and validates those.
+- Tell the user what each step will do and what it costs before doing it.
+
+## Steps
+
+1. **Scan.** Call `opscrew_scan`. Summarise critical and high findings in plain English and offer to
+   fix them first (see the `opscrew-scan` skill). Do not continue to deployment while a live secret
+   is committed in the repository unless the user explicitly accepts the risk.
+2. **Understand the app.** Call `opscrew_detect` and describe the stack back to the user in two or
+   three sentences (framework, database, where it came from). Correct obvious misunderstandings by
+   asking the user.
+3. **Interview.** Call `opscrew_interview_questions`. Ask the user every returned question (use the
+   question's options when it has them), then call `opscrew_save_requirements` with the answers.
+   One question is where to run the app: Hetzner Cloud, DigitalOcean (Droplets), Contabo or a
+   server the user already has (`own`: a rented server elsewhere, a company machine or a home
+   server). Its default is the provider whose credentials are already set (`HCLOUD_TOKEN`,
+   `DIGITALOCEAN_TOKEN`, or all four of Contabo's `CNTB_OAUTH2_CLIENT_ID`,
+   `CNTB_OAUTH2_CLIENT_SECRET`, `CNTB_OAUTH2_USER` and `CNTB_OAUTH2_PASS`), otherwise Hetzner
+   Cloud; let the user choose. For a site that needs no
+   server, the question also offers `cloudflare-workers` (Cloudflare's hosting: static files free,
+   and server-side rendering for Astro, Next.js, Nuxt and SvelteKit) and `github-pages` (GitHub
+   Pages: static only, public sites, no custom headers, no commercial use), only where they fit
+   the app (see **Sites with no server** below). For `own`, also ask the
+   returned server questions and pass them with the `server.` answer ids they return (address,
+   SSH port, user, key, whether the internet reaches the server and how the site is served):
+   - the key is a path to the private key file, or `agent` for the SSH agent (which also covers a
+     key with a passphrase). Never ask for a password, a passphrase or the key itself.
+   - the address stays on the user's computer (`.opscrew/server.json`); tool results say "your
+     server" instead. Never write the address into a file, a commit or a pull request.
+   - how visitors reach the server, in plain words: (a) through a Cloudflare Tunnel, the default
+     behind Cloudflare's proxy and the only way for a server the internet cannot reach (no web
+     ports open; needs Cloudflare Zero Trust, free); (b) directly behind Cloudflare's proxy with a
+     filter that lets only Cloudflare reach ports 80/443, for a server with a public address (if
+     the filter cannot load, Docker and the site stay down rather than open); (c) directly with DNS
+     only, open to everyone on 80/443 and without Cloudflare's protection. Recommend (a) unless the
+     user has a reason against it. Both Cloudflare ways need a domain on the user's Cloudflare
+     account.
+   - a server at home (`server.home`: yes by default for a private or local address): see
+     **Hosting at home** below for what to ask and say.
+
+   These questions are about what runs next to the app:
+   - `workerCommands.<name>`: a background-job library OpsCrew found has no conventional start
+     command (BullMQ, asynq, river). Ask the user for the command that starts that worker from the
+     app's code (for example `node dist/worker.js`); never guess one.
+   - `keepExternalServices.<kind>`: the app already uses a hosted service (a hosted MongoDB,
+     PlanetScale, Upstash, Neon and the like). Ask whether to keep it or let OpsCrew run one on the
+     server, and pass on what running it there adds (its memory on the server, and its data on the
+     server's disk). Without an answer, OpsCrew keeps the hosted one.
+   - `keepExternalServices.s3` and `objectStorage`: the app stores files through an S3 client.
+     Ask whether to keep the storage it uses now (named when it is a known host such as Amazon S3,
+     Cloudflare R2 or Supabase Storage) or let OpsCrew create a bucket (`false`), and if so where,
+     from the `objectStorage` choices with their prices. Each choice says where it is offered:
+     offer only those that fit the provider the user picks. Garage keeps the files on the app's
+     server; on a cloud server it is offered only as the user's choice, so say that the files then
+     live only on that server. Never replace the app's storage unasked: without an answer OpsCrew
+     keeps it and plans no bucket. An answer never moves a bucket the plan already has; moving it
+     is a change of `storage.objectStorage.provider` in `opscrew/plan.yaml`, and the user moves
+     the files.
+
+   For `portainer` (a Portainer the user already runs, often on a NAS such as Synology, Unraid or
+   TrueNAS), ask the returned `portainer.` questions instead: Portainer's HTTPS address, the
+   environment, how new versions reach Portainer and how visitors reach the app.
+   - The access token comes only from `PORTAINER_API_KEY` in the MCP server's environment. Never
+     ask for it, a Portainer password or any other token in the chat; tell the user to create the
+     token in Portainer (My account → Access tokens) and set it in their shell.
+   - When OpsCrew connects the first time (or the certificate changed), the user confirms
+     Portainer's certificate fingerprint in a dialog. Never confirm it for them and never pass a
+     fingerprint yourself. If the client cannot show the dialog, ask them to run
+     `npx opscrew interview` in a terminal once, then continue.
+   - The address stays on the user's computer; tool results say "your Portainer" instead. Never
+     write it into a file, a commit or a pull request.
+   - New versions: `updater` (recommended: a tiny updater stack asks Portainer once a minute over
+     the local network; nothing opened to the internet) or `cloudflare` (GitHub Actions calls
+     Portainer through Cloudflare Access at once; needs the domain on Cloudflare and Zero Trust).
+   - Visitors: `tunnel` (recommended with a domain on Cloudflare; no port opened), `proxy` (the
+     user's own reverse proxy on a host port they choose; OpsCrew prints the DNS record and the
+     route to set up and does not manage the certificate) or `caddy` (Caddy on ports 80 and 443,
+     only when they are free; OpsCrew prints the DNS record to create).
+
+   For `hosting` (a shared hosting account the user already pays for, with cPanel, Plesk or
+   DirectAdmin, or a host reached only over SFTP), ask the returned `hosting.` questions. The
+   choice is offered only when the MCP server's environment has `OPSCREW_HOSTING_URL`,
+   `OPSCREW_HOSTING_USER` and `OPSCREW_HOSTING_TOKEN`, or `OPSCREW_SFTP_HOST`, `OPSCREW_SFTP_USER`
+   and `OPSCREW_SFTP_KEY` (the path to the key file). The panel's token reaches the whole account,
+   every site and mailbox on it (cPanel can't limit a token), so it stays in the user's
+   environment: never ask for it, a password or the SFTP key in the chat, and never write it into a
+   file. The panel's address and user stay on the user's computer (`.opscrew/hosting.json`).
+4. **Design.** Call `opscrew_design_options`. Present each option with its monthly cost, whether it
+   fits the budget and its trade-offs; say which one OpsCrew recommends and why. When prices are
+   marked as static estimates, say so. After the user chooses, call `opscrew_select_design`.
+   - **Components.** Both tools list what runs next to the web process: workers (with their command
+     and number of copies), cron jobs (in UTC), the services OpsCrew runs as containers (databases,
+     Valkey, or Redis 8 or Dragonfly when the app needs one, brokers, search and analytics
+     engines, each with its version and memory limit), SQLite
+     on a persistent volume, and object storage with each option's monthly price. Each option shows
+     every component's memory limit and its share of the server's monthly price. Pass on the
+     licence sentences in plain words (MongoDB's SSPL, MySQL's GPL, Redpanda's BSL and so on): they
+     restrict offering that software as a service, not running it for the user's own app. The
+     user changes counts, memory, versions or the storage provider, or turns a component off, in
+     `opscrew/plan.yaml`; then call `opscrew_select_design` again (it keeps those edits and checks
+     that everything fits the server).
+   - **Builder and deploys.** `opscrew_select_design` returns who builds the image (OpsCrew's
+     Dockerfile for Node and Python, Buildpacks for Go, Java, .NET and Ruby, Railpack for Bun
+     projects and the rest, or the repository's own Dockerfile), how deploys switch, and the signing, deploy tag
+     and image retention settings, each with its reason; pass them on. Deploys have no downtime: the
+     new version gets traffic only once its health check passes. Servers under 1 GB and Portainer
+     restart the app instead: requests wait meanwhile, so visitors see a short pause, not an
+     error. Tell the user that migrations must keep working with the version still running. They change these settings in `opscrew/plan.yaml` (the
+     builder needs `app.build.chosen: user`); then call `opscrew_select_design` again.
+   - **The reverse proxy.** The server's proxy is Caddy (the default), nginx with certbot or
+     OpenLiteSpeed with certbot (`caddy`, `nginx`, `openlitespeed`), set as `target.edge` in
+     `opscrew/plan.yaml`; all three give visitors the same TLS and headers. Every app on
+     one server uses the same proxy, so OpsCrew refuses a different one while other OpsCrew apps are
+     there; with one app the switch is planned, with a short interruption it states. The user's own
+     rules for the app go in `opscrew/proxy/additions.caddy`, `.nginx` or `.openlitespeed`; OpsCrew
+     checks them before they go live and refuses unsafe ones. For an app leaving Vercel, design
+     writes the `vercel.json` routing rules it can translate into that file (none for
+     OpenLiteSpeed) and lists the ones it left out: pass that list on. A Portainer stack and
+     previews always use Caddy, and a Portainer stack does not use additions yet.
+     Before the user picks OpenLiteSpeed, say what differs: a hostname the server doesn't serve
+     gets a 403 page instead of a closed connection; a deploy, a rollback or a certificate renewal
+     ends WebSockets open longer than five minutes; every app on the server shares one request
+     time limit (300 s) and one request size limit; its page cache stays off unless the app opts
+     its pages in with `X-LiteSpeed-Cache-Control` (each deploy and rollback empties it); and its
+     image is about 1.1 GB.
+   - **Currencies.** When the user's budget is in another currency than the provider's prices,
+     OpsCrew converts with a fixed approximate rate. If the user wants exact numbers, search the
+     web for today's exchange rate, recalculate the monthly costs with it and say which rate and
+     date you used.
+   - **Own server.** OpsCrew connects over SSH and inspects the server read-only first. The first
+     time, the user confirms the server's SSH host key in a dialog: tell them to compare the
+     fingerprint with the one on the server itself (`ssh-keygen -lf
+     /etc/ssh/ssh_host_ed25519_key.pub` in their provider's web console), never approve it for
+     them. If the client cannot show the dialog, ask them to run `npx opscrew design` in a
+     terminal once. There is one option and no price (they already pay for the server); pass on
+     every warning (too little memory or disk, a tunnel without a Cloudflare domain). There is no
+     provider backup there: OpsCrew backs up the app's data with its snapshots instead, and for
+     data that matters design proposes scheduled snapshots with an encrypted copy off the server
+     (`snapshots.schedule` and `snapshots.offsite` in the plan; see the `opscrew-snapshots`
+     skill). Backing up the server itself stays their responsibility.
+   - **Existing Portainer.** There is one option, without a price or sizes: the app and its
+     components as stacks in the chosen environment, built for its architecture, with the data in
+     named volumes. Say that OpsCrew does not change the host (its firewall, SSH and Portainer's
+     own security stay theirs) and that it checks nothing about the host's memory or disk. The
+     app's data is backed up by OpsCrew's snapshots, in the stack's own snapshots volume; for data
+     that matters design proposes scheduled snapshots (only the services copied while they run)
+     with an encrypted copy off the host (see the `opscrew-snapshots` skill). Backing up the
+     Portainer host itself stays their responsibility. OpenSearch and Elasticsearch need a
+     kernel setting on the Docker host (`vm.max_map_count`), which a stack cannot make, so OpsCrew
+     does not run them in Portainer: design keeps the app's own (for example a hosted one), and a
+     plan that asks for one stops before any change, saying how to make the setting and run the
+     engine by hand next to Portainer.
+   - **On Contabo.** Say what differs before the user pays:
+     - It needs all four `CNTB_OAUTH2_*` credentials (client id, client secret, API user, API
+       password), and they reach the whole Contabo account: Contabo has no scoped keys.
+     - Servers are bought on monthly contracts, from a dated price list (no price API). Cloud VPS 4
+       has a one-time setup fee that is not in OpsCrew's price: the user checks it on Contabo's
+       order page.
+     - Removing the server only cancels it: Contabo bills it to the end of its term, OpsCrew shuts
+       it down at once and shows the end date.
+     - A plan size can't change in place. Two ways: `npx opscrew retarget --to <provider>` to
+       another provider, with a short maintenance window for the data; or a new Contabo server, with
+       downtime: a data snapshot with its copy off the server, `npx opscrew destroy`, design and
+       provision the new size, then `npx opscrew restore <id> --from offsite --key-file <path>`.
+     - No provider backups (OpsCrew's data snapshots cover the data) and no Contabo object storage
+       (the bucket is Garage on the server, or Cloudflare R2).
+   - **On a hosting account.** There is one option, the account, without a price, with what the
+     app gets there (the hostname, its PHP version, the database, the cron jobs). Say what differs
+     from a server:
+     - The account serves requests and runs cron jobs, nothing in between: no workers, queues,
+       Redis, WebSockets served from PHP or containers. When the app needs one, design says why and
+       names a server target instead (or a hosted service the app can keep).
+     - An SFTP-only host takes static sites and plain PHP apps only, without a database.
+     - OpsCrew never changes the account's PHP version, which every site on it shares. Where the
+       panel allows it, the app's hostname gets its own version; otherwise provision stops and
+       names the ways out.
+     - On LiteSpeed, each release restarts every PHP process of the account for a moment, other
+       sites' included.
+     - Commands that need a server (`retarget`, previews, runner machines, the private network,
+       Portainer and the add-ons) refuse a hosting account and say what to use instead.
+5. **Prepare the code.** Read `opscrew/plan.yaml` (`codeChanges`). Apply the pending changes by
+   following the `opscrew-adapt` skill. Show the user the diff and let them commit it (or commit it
+   for them only after they say so). The changes must be merged into the deploy branch before the
+   first deploy.
+6. **Preview the infrastructure (optional).** Call `opscrew_render` and `opscrew_plan` to show which
+   files OpsCrew will add and exactly which cloud resources it will create, with cost and policy
+   checks.
+7. **Provision.** Prefer the user's own terminal, because it is the only place where they can type
+   production values (API keys for their app) directly into OpsCrew:
+
+   ```bash
+   npx opscrew provision
+   ```
+
+   It checks the credentials of their cloud provider (Hetzner Cloud, DigitalOcean or Contabo),
+   plus their Cloudflare and GitHub tokens, shows the plan and asks for approval, creates the
+   server, stores the deploy secrets in GitHub and opens a pull request with the infrastructure
+   and deploy workflow. Merging that pull request deploys the app.
+
+   If the user wants to approve from here instead, call `opscrew_plan`, show them the plan, cost
+   and policy results, then call `opscrew_apply` with the plan hash. OpsCrew asks the user in a
+   dialog (a destroying plan needs them to type the server name); never claim approval yourself.
+   Unless `OPSCREW_APP_ENV_FILE` is set, the deploy secrets still have to be stored by running
+   `npx opscrew provision` in their terminal afterwards (it resumes without changing the server).
+
+   **On a hosting account** provision runs only in the user's terminal, `npx opscrew provision`;
+   `opscrew_apply` refuses it. With a panel it has two hosting plans, each approved by its own
+   hash (in scripts `--approve <hash>`; `--yes` never approves one): plan A installs OpsCrew's
+   agent on the account and its cron line (every minute, as the account's user), and the agent's
+   first report builds plan B, the app's part. `opscrew_plan` shows plan A and the DNS plan, never applies them. GitHub
+   gets no credential to the account: GitHub Actions builds and signs each release and pushes it to
+   the `opscrew/release/<env>` branch, and the agent fetches it with its own read-only deploy key,
+   checks the signature, switches and checks the app, so a release is live within about a minute.
+   An SFTP-only host has one hosting plan, and GitHub Actions uploads each release over SFTP with a
+   key kept as a deploy secret. The app's secrets go from the user's computer to files on the
+   account outside the web root; GitHub never gets them.
+
+   **The recovery copy of the app's secrets.** The first provision that generates secrets makes an
+   encrypted copy of them, of the deploy key and of the infrastructure state, committed as
+   `opscrew/secrets.sops.json` with OpsCrew's pull request. Only the user's age key opens it. In a
+   terminal OpsCrew asks for the user's own age key or where to write a new one. Through
+   `opscrew_apply`, ask the user for a full path outside the repository (for example in their home
+   folder) and pass it as `keyOut`: OpsCrew writes the new key there once and never returns it.
+   Tell the user to move it into their password manager and delete the file. Never read that file,
+   and never ask for the key itself. Without `keyOut` no copy is made yet, and the result says so.
+   Through the tools, a public repository's copy is never committed: OpsCrew writes only the
+   folder copy, if one is set, and says to run `npx opscrew provision` (or
+   `npx opscrew rotate recovery-key`) in a terminal, which asks.
+
+   **Origin protection.** For hostnames behind Cloudflare's proxy, OpsCrew serves a Cloudflare
+   origin certificate and requires a client certificate only the user's zone sends, so only
+   Cloudflare acting for their zone reaches the server. Its changes are in the Cloudflare plan.
+   It needs **Zone → SSL and Certificates → Edit** and **Zone → Zone Settings → Edit** on the
+   Cloudflare token; without them the site keeps its current protection and the result names the
+   missing permission.
+
+   **Workers and cron jobs** need nothing extra: the deploy starts the services first, then the
+   new web version, then the workers and the cron jobs with the same image. When a new worker does
+   not stay up, the deploy puts the app back on the previous version and names the worker and
+   `docker compose logs <worker>`.
+
+   **The storage key.** When the plan keeps the app's files in a bucket on Cloudflare R2,
+   DigitalOcean Spaces or Hetzner Object Storage, the bucket has a plan of its own:
+   `opscrew_plan` returns it as `storagePlanHash`, with its changes and monthly price. Show it to
+   the user and pass `storagePlanHash` to `opscrew_apply` with the other hashes; it is approved in
+   its own dialog, never with another plan. In the user's Portainer, the stack plan follows once
+   the bucket exists, in a dialog after that apply. The app also needs a key the user creates in
+   the provider's console: OpsCrew never creates one (Spaces' and Hetzner's before the bucket,
+   R2's after it, as a token limited to the bucket). It comes only from the user's own terminal:
+   `npx opscrew provision` shows the console steps and asks for it there once, or the user sets
+   `OPSCREW_STORAGE_ACCESS_KEY_ID` and `OPSCREW_STORAGE_SECRET_ACCESS_KEY` in the MCP server's
+   environment. When a tool stops because the key is missing, pass on its steps. OpsCrew keeps the
+   key on the user's computer like a provider token, never in the repository or in infrastructure
+   state. Never ask for the key in the chat. R2 also needs the Cloudflare token's
+   **Account → Workers R2 Storage → Edit** permission. Garage, on the user's own server or
+   Portainer, needs no key from them: OpsCrew generates it.
+
+   **The Cloudflare plan comes first.** When the app's domain is on Cloudflare, `opscrew_plan` also
+   returns a Cloudflare plan with its own hash (`cloudflarePlanHash`), approved on its own before
+   the infrastructure plan. It lists what OpsCrew changes in its two shared rules in the zone (the
+   probe block for paths like `/.env` and the strict TLS rule, each listing the hostnames of every
+   OpsCrew app in the zone) and, when Cloudflare Access is used, in the account's Zero Trust
+   organization and one-time PIN login. Show it to the user and say that the zone's other rules
+   stay exactly as they are. Pass `cloudflarePlanHash` to `opscrew_apply` with the other hashes
+   (only it when `opscrew_plan` returned nothing else); without it, the Cloudflare plan is refused.
+   When the plan removes OpsCrew's rule (the last app's hostnames leave it), the dialog asks the
+   user to type the app's name. In a terminal script the Cloudflare plan's hash is one more
+   `--approve <hash>`, and `--yes` never approves it. When the plan stops because a hostname is
+   already in OpsCrew's rule for another app, pass on its explanation: OpsCrew never takes a
+   hostname from another app.
+
+   **On the user's own server** there are two plans besides the Cloudflare plan, each approved on
+   its own: the Cloudflare infrastructure (DNS records, or the tunnel and Cloudflare Access in
+   tunnel mode) and the host plan, which lists every change OpsCrew would make on the server (Docker 28 or newer from
+   Docker's repository, a `deploy` user, SSH hardening, the ufw firewall, fail2ban, automatic
+   security updates, the shared folders `/srv/edge`, `/srv/apps` and `/srv/data`, the app's own
+   `/srv/apps/<app>` and `/srv/data/<app>` and its record in `/etc/opscrew/apps/<app>.json`, and
+   `vm.max_map_count` when a search engine needs it) and marks what is already in place. Several
+   OpsCrew apps can share one server: each has its own folders, and all sit behind one shared edge
+   (Caddy and kamal-proxy in `/srv/edge`), which goes with the last app; the host plan shows which
+   parts are shared and which are the app's own. Show both plans to the user. `opscrew_plan` returns `planHash` and `hostPlanHash`; pass both to `opscrew_apply`
+   (only `planHash` when it returned only a host plan). In a terminal the user runs
+   `npx opscrew provision`, or in scripts `npx opscrew provision --plan-only` and then
+   `--approve <infrastructure hash> --approve <host plan hash>`; `--yes` never approves either.
+   When other users on the server log in with a password and have no SSH key, OpsCrew stops until
+   the user chooses: ask them whether to turn password logins off anyway (`off`) or keep them
+   (`keep`), never choose for them, and pass their answer as `passwordLogins` to both `opscrew_plan`
+   and `opscrew_apply` (in a terminal: `--password-logins off|keep`). The host plan then shows the
+   choice in the dialog they approve.
+   OpsCrew stops and changes nothing when the server already runs a web server on ports 80/443,
+   uses another firewall, has Docker from Snap, Podman or the distribution's package, or when
+   another OpsCrew app on the server already uses the app's name or one of its hostnames; pass on
+   its explanation. Tunnel mode and Portainer's subdomain need
+   Cloudflare Zero Trust turned on for the account (free plan, https://one.dash.cloudflare.com/).
+
+   **In the user's existing Portainer** there are up to two plans besides the Cloudflare plan, each
+   approved on its own: the Cloudflare infrastructure (the tunnel, and Access in front of
+   Portainer's webhook in `cloudflare` mode) and the stack plan, which lists every change in Portainer (the app's stack,
+   the updater or connector stack, the registry entry and the repository access) and marks what is
+   already in place. `opscrew_plan` returns `planHash` and `stackPlanHash`; pass both to
+   `opscrew_apply` (when it returned only a stack plan, pass its `stackPlanHash` as `planHash`).
+   With the Cloudflare Tunnel (web `tunnel`) or Cloudflare redeploys (redeploy `cloudflare`)
+   OpsCrew creates a tunnel, and the first stack plan needs its token, which exists only after the
+   Cloudflare plan is applied; so that stack plan is shown in its own dialog after the Cloudflare
+   apply. In a terminal: `npx opscrew provision`; in scripts `--plan-only`, then `--approve <hash>`
+   for each plan (with a new tunnel in either mode that takes three runs); `--yes` never approves
+   either.
+   - A private image needs a read-only registry token in `OPSCREW_GHCR_READ_TOKEN` and a private
+     repository a read-only repository token in `OPSCREW_REPO_READ_TOKEN`, both in the user's
+     shell. If the image is public, pass `publicImage: true` (`--public-image`) only when the user
+     says so; `publicImage: false` (`--private-image`) switches back. After the user rotated one
+     of those tokens, pass `replaceTokens` (`--replace-token repository|registry`) once.
+   - With a limited (non-admin) Portainer token and a private image, OpsCrew stops before any
+     change and shows one-time steps (an administrator adds a `ghcr.io` registry entry, or the
+     image is made public); pass them on and plan again afterwards.
+   - For `proxy` and `caddy` OpsCrew creates no DNS record: pass on the record it prints. Switching
+     how visitors reach the app takes the site down until DNS or the proxy points at the new route.
+   - OpsCrew changes nothing it did not create: other stacks, volumes, registry entries and
+     Portainer's own settings stay as they are.
+8. **Check.** After the first deploy finishes, call `opscrew_verify` and `opscrew_secure` and walk
+   the user through anything that failed. Point them to `opscrew/RUNBOOK.md` for day-to-day
+   operations. For an app in the user's Portainer behind their own reverse proxy, ask where the
+   proxy serves it and pass that address as `url` to `opscrew_verify` (`--url` in a terminal).
+
+   **The deeper check**, only when the user asks for it: `opscrew_secure` with `deep: true`
+   (`npx opscrew secure --deep`) also runs Lynis on the server and ssh-audit and testssl.sh in
+   Docker on the user's computer, read-only, in a few minutes. Present each tool's findings by
+   severity, and the known noise apart with its reason. Without Docker the two outside audits are
+   skipped with how to enable them; in a Portainer only testssl.sh runs. A fix OpsCrew can make (an
+   SSH setting) happens only through its approved plans, never by itself.
+
+## Before you start and later
+
+- **Preflight.** On a fresh machine or clone, call `opscrew_init_check` first and help the user fix
+  every item marked ✗ (tools to install, tokens to create). `npx opscrew init --fix` also adds
+  `.opscrew/` to `.gitignore`.
+- **Drift.** When the user asks whether anything changed, or after they worked in the Hetzner Cloud,
+  DigitalOcean, Contabo or Cloudflare console (or on their own server over SSH, or in Portainer),
+  call `opscrew_drift`. It reports changes made outside OpsCrew (attribute names only; on their own
+  server also its SSH, firewall, deploy user and runtime files; in their Portainer the app's stack
+  file, environment keys, redeploy setting, registry entry and deploy branch, never a value),
+  changes not applied yet and edited generated files, and changes nothing. Once the app was
+  deployed on a server it also names a component of the plan with no container there, a
+  container the plan no longer has and a stopped one. To undo
+  drift the user runs `npx opscrew provision`; to keep a console change, `opscrew/plan.yaml` must
+  be updated to match first.
+- **Status.** `opscrew_status` shows the server's proxy, each certificate OpsCrew manages with its
+  expiry (pass on any warning: fewer than 30 days left, or a failed renewal with its reason), and
+  the recovery copy's state. It lists the app's components (web process, workers, cron jobs,
+  services) and, once the app was deployed, whether each runs: read over SSH on a server, or
+  through Portainer's API (with `PORTAINER_API_KEY`) in the user's Portainer. On the user's own
+  server it reads them only after the SSH host key was confirmed once; otherwise ask the user to
+  run `npx opscrew status` in a terminal.
+- **The recovery copy.** `opscrew_secrets_status` shows when the copy was last updated, how many
+  keys open it and whether it is behind. On a new computer, `opscrew_secrets_restore` rebuilds
+  OpsCrew's files from it with the key file the user names (`keyFile`, a full path; never read it
+  yourself). When files differ, it writes nothing and lists them by name: ask the user which side
+  to keep and call it again with `onConflict`. `opscrew_secrets_rotate` makes a new key, written
+  only to the `keyOut` file the user names, and proposes the re-encrypted copy in a pull request
+  (dialogs approve each step); older commits stay readable with the old key.
+  `opscrew_secrets_folder` sets a folder the copy is also written to, or stops it with `null`.
+  In a terminal: `npx opscrew secrets status|restore|rotate|folder`.
+- **Getting a domain.** When the user has no domain yet, call `opscrew_domain_check` with a name
+  or a domain. It checks availability live and returns the first-year and renewal prices with
+  their currency, and a plain reason for names that cannot be bought through the API (taken,
+  premium, extensions sold only in a registrar's dashboard). It asks Cloudflare Registrar by
+  default; pass `registrar` (`porkbun`, `namecheap` or `godaddy`) to ask another registrar, or
+  `compare: true` to list the prices of every registrar that is set up side by side, cheapest
+  renewal first (sorted by price only, never by anything else). Each registrar is set up with
+  environment variables in the user's own shell or `.env`:
+  - Cloudflare uses `CLOUDFLARE_API_TOKEN` with the optional Registrar permission.
+  - Porkbun uses `PORKBUN_API_KEY` and `PORKBUN_SECRET_API_KEY`; a domain the user already has
+    at Porkbun also needs API access turned on for it in Porkbun's dashboard.
+  - Namecheap uses `NAMECHEAP_API_USER` and `NAMECHEAP_API_KEY`, and optionally
+    `NAMECHEAP_USERNAME` and `NAMECHEAP_CLIENT_IP`. The machine's public IPv4 address must be on
+    the API whitelist in Namecheap's dashboard, and Namecheap only enables API access for accounts
+    with 20 domains, a $50 balance or $50 spent.
+  - GoDaddy uses `GODADDY_API_TOKEN`, and optionally `GODADDY_PROFILE_ID` for a saved contact
+    profile.
+
+  Buying and connecting are terminal-only on purpose; there is no tool for either. To buy, tell the
+  user to run `npx opscrew domain buy <domain>` in their own terminal (add `--registrar <id>` to
+  buy at Porkbun, Namecheap or GoDaddy): it shows the price and asks them to type the domain to
+  confirm (scripts need `--confirm` and `--max-price`). Afterwards OpsCrew creates the Cloudflare
+  zone and sets the domain in `opscrew/plan.yaml`; at Cloudflare it also turns on DNSSEC and
+  leaves auto-renew on, and a domain bought elsewhere still gets its DNS moved to Cloudflare (its
+  nameservers are switched). When the user already owns a domain, tell them to run
+  `npx opscrew domain connect <domain>`: it copies the current DNS records into a new Cloudflare
+  zone first, shows them for approval, then switches the nameservers. If old DNSSEC (DS) records
+  are still published, OpsCrew removes them through the registrar's API after approval (or the
+  user removes them in the registrar's dashboard when the API cannot), and the nameserver switch
+  happens on a later `npx opscrew domain connect <domain>` run, at least 24 hours after they are
+  gone (the run says when). When the user removes them by hand it can take up to three runs. Never
+  ask the user for tokens, API keys or contact details (name, address, email,
+  phone): registrars use the account's own contact, and OpsCrew never collects one.
+- **Environments.** Beside prod, an app can have more environments (staging, dev, …), each with
+  its own plan, state, secrets and approvals, whose build and components follow the image: an
+  environment built from a branch has its own, and a promoted one copies its source's at each
+  design; promote refuses a target that lacks its source's services.
+  `opscrew_env_list` shows them: where each runs, how it gets new versions, where its deploy job
+  runs and whether it is deployed. To add one, ask the user its few questions (where it runs, the
+  user's computer `localhost` included; its size; its hostname, answer `domain`: when prod is
+  behind Cloudflare's proxy the default is a name nobody can guess, `<name>-<random>.<zone>`, and
+  any other name works, also in another domain the Cloudflare token covers, hidden only one level
+  below its zone; a domain of its own keeps prod's cookies apart too; whether it is built on each push
+  to main or promoted from another environment; where its deploy job runs: `github`, `server`,
+  `local` or `host`, a runner machine with `runnerHost`; where its image is built: `build`
+  `github` or `runner`) and call `opscrew_env_add` with `name` and `answers`; it designs it and
+  returns its monthly cost. `opscrew_env_set` changes how it gets new versions (`from`: `main` or
+  another environment) and where its jobs run (`runner`, `runnerHost`, `build`).
+  `opscrew_env_remove` removes an environment that is not deployed, only when the
+  user asks. Every deploy, status, drift, secrets and design tool takes `environment`: once the
+  app has several, always pass the one the user means (a call without it fails with the names),
+  and in the terminal commands you pass on add `--env <name>`, for example
+  `npx opscrew provision --env staging`. Removing one stays in the terminal:
+  `npx opscrew destroy --env <name>`, then `opscrew_env_remove`.
+- **Previews of pull requests.** Suggest them when a team reviews pull requests and the app runs
+  on a server: each pull request from a branch of the repository gets its own copy of the app at
+  an address nobody can guess, `https://pr-<number>-<random>.<domain>`, built and deployed by
+  GitHub Actions on a small server of its own, and removed with its data when the pull request
+  closes. Previews need a domain of their own: a Cloudflare zone used only for previews, never the
+  app's (`npx opscrew domain buy <name>` buys one, about $10 a year), behind Cloudflare's proxy
+  with one wildcard record and one Cloudflare Origin CA certificate, so no public certificate names
+  a preview, there is no weekly certificate limit, and the server's web ports accept only
+  Cloudflare. Setup is in the user's terminal: `npx opscrew env add preview --previews --domain
+  <zone>` (no default; optional `--cap <n>` or `--size <type>`, `--lifetime <days>`, `--seed
+  <command>` or `--no-seed`,
+  `--target own` for a server they have with nothing else on it) designs it and shows its monthly
+  cost; then `npx opscrew provision --env preview`, where the user approves the plans by their
+  hashes and types `<app>-preview`: a standing approval for GitHub Actions to create, update and
+  delete previews within the recipe's bounds without asking again. The deploy-setup pull request
+  adds the preview workflow. The app's values for previews come from `.env.preview`: test keys
+  only, since anyone who can push a branch can read them. `opscrew_preview_list` with
+  `environment` lists the previews (read-only); their logs are `npx opscrew preview logs <n>`,
+  removing one is `npx opscrew preview destroy <n>` (the user types `pr-<n>`), and removing them
+  all with their server is `npx opscrew destroy --env preview`. The pull request's comment says:
+  the preview runs at its address with its commit; it runs but its seed failed (its data may be
+  missing; the next push tries again); it failed at a step (a preview that ran before keeps its
+  earlier version; the logs say why); the cap is reached (close or merge another pull request
+  with one, or wait until one is idle for its lifetime; nothing running was stopped); the server
+  refused a request outside the recipe, was busy, could not be reached, or the preview did not
+  answer within 3 minutes; the image did not build; or
+  the preview was removed. Previews never run for forks or Dependabot and have no login in front
+  of them: a hidden address protects against guessing and certificate logs, not against a shared
+  link, referrer headers, or, on a public repository, the pull request's comment and "View
+  deployment". They are not for sites without a server, a Portainer or
+  this computer; each runs its own empty databases (seeded when there is a seed), never prod's
+  data.
+- **Previews with fewer servers or one domain, only by the user's choice.** A server and a domain
+  of their own stay the default: suggest neither opt-in, and when the user asks, say what it risks
+  before they choose. `--share-server <env>` (for example `dev`; in the terminal, a choice in
+  "Where should previews run?" with a confirmation that defaults to no) runs previews on that
+  environment's server, adding no server to the cost: anyone who can push a branch then runs code
+  beside that environment's data and secrets, which escaping its container would reach, and
+  reaches what its server serves on its web ports, so only for an environment with test data and
+  test keys. It is refused for prod or a server prod runs on, a server with other apps, without
+  public SSH (closed, or a Cloudflare Tunnel), with nginx or OpenLiteSpeed as its proxy, on a
+  private network, not yet provisioned, or with a cap that doesn't fit (it says the cap that fits). While previews run
+  there, that environment's `destroy`, `retarget`, proxy switch and `env remove` are refused, and
+  `npx opscrew destroy --env preview` removes the previews, recipe and wildcard but never the
+  server. `--app-zone` with `--domain previews.<app's domain>` puts previews below the app's own
+  domain: it needs Cloudflare's Advanced Certificate Manager on that domain, a paid add-on turned
+  on in Cloudflare's dashboard (which shows its price; name no figure), and Total TLS off, and
+  cookies the app sets for the whole domain reach previews, where a pull request's code can read
+  them, and previews can set such cookies too. It is refused without ACM, with Total TLS on, with
+  records at or below the domain, or for a domain that is an app or environment hostname or a
+  parent of one, each with the dashboard steps. `destroy --env preview` removes the advanced
+  certificate; ACM stays on (and billed) until the user turns it off in the dashboard. Both are
+  set up in the user's terminal; the previews page of the guide has the details.
+- **Promotion.** An environment promoted from another (for example prod from staging) gets no
+  build of its own: `opscrew_promote` with `to` deploys exactly the image its source runs. To roll
+  it back, the user runs `npx opscrew rollback --env <name>` in their terminal (see "Rolling back"
+  below), not a promotion. OpsCrew checks where the image was
+  built and that nothing waits for provision, then the user approves the promotion's hash in a
+  dialog; you never approve it, and a client without dialogs gets the terminal command
+  (`npx opscrew promote --to <env>`). Its result names the hash and the deploy run; call
+  `opscrew_verify` with that environment afterwards. Without image signing
+  (`supplyChain.sign`) the provenance check is a consistency check, not a security gate: say so if
+  the user relies on it.
+- **Rolling back.** To undo a release that deploys fine but is wrong, the user runs
+  `npx opscrew rollback` in their terminal, never a tool; follow the `opscrew-troubleshoot` skill's
+  "A release that deploys fine but is wrong", which says what to tell them first. On a server or
+  this computer the rollback asks how to treat the database (`--database snapshot|migrations|keep`
+  in a script); help them choose, and name what each loses:
+  - **snapshot** (the default outside prod): when the bad release's migrations changed the schema
+    or the data and losing what was written since it deployed is fine, as on dev and staging;
+  - **migrations**: when the plan has `app.migrations` and the rows written since must stay, but
+    the tables and columns the release added (and their data) may go;
+  - **keep** (the default on prod): when the release didn't change the database, or its changes
+    only add what the earlier version ignores; with a destructive change on prod, suggest fixing
+    forward instead.
+
+  A snapshot or down migration is approved like a destroy: the user types the app's name, or a
+  script gives `--confirm <name>`; never type or pass it for them. Snapshots exist only where
+  `deploy.snapshots` is on (every environment but previews, prod included, by default;
+  `deploy.keepSnapshots` versions are kept), and need this computer to reach the server. The
+  snapshot taken before each release holds every service with data, the app's SQLite files and
+  the databases on other servers; of the services that must stop for their copy, ClickHouse and
+  Neo4j when `deploy.snapshotStop` is absent, and when it is set, the ones it names (Kafka,
+  RabbitMQ, a search engine…). Uploads in object storage are never in a
+  snapshot. To put data back without changing the version, or to take a snapshot before a risky
+  change, follow the `opscrew-snapshots` skill.
+- **This computer.** An environment can run on the user's computer (`localhost`, in Docker, at
+  `https://<app>.localhost`). Two steps stay in their terminal: `npx opscrew localhost trust`
+  (shows the command that trusts OpsCrew's local certificate authority and asks first;
+  `untrust` takes it back), and, for an environment whose deploy job runs on this computer,
+  `npx opscrew runner start --env <name>`, which keeps GitHub's runner in the foreground until
+  Ctrl+C and then removes it from GitHub. Such an environment has no DNS: never call
+  `npx opscrew dns` for it. `opscrew_plan` returns its local plan with `localPlanHash`: show it
+  to the user and pass that hash to `opscrew_apply` as `planHash`.
+- **Runner machines.** A machine of the user's (a home server, a spare PC, a VM with Ubuntu or
+  Debian) can run environments' deploy jobs, and with `build` `runner` their builds, if its CPU is
+  the server's (OpsCrew's Hetzner, DigitalOcean and Contabo servers are x86-64).
+  `opscrew_runner_host_add` with `name`, `user`, `host` and, unless the key is in the SSH agent,
+  `keyFile` (ask the user; never a password, and never read the key file): the user confirms its
+  host key and approves its host plan in dialogs. `opscrew_runner_host_list` names the machines,
+  never their address. Then `opscrew_env_set` with `runner` `host` and `runnerHost`, and
+  `opscrew_plan`: it returns the machine's host plan in `runnerHostPlanHashes`, which
+  `opscrew_apply` takes as they are. The
+  production server never builds: with `runner` `server`, `build` stays `github`.
+  `opscrew_runner_host_remove` only when the user asks: they type the machine's name in its dialog,
+  and it is refused while an environment's deploy job runs there.
+- **Hardening a runner machine.** Off by default: offer it only when the user asks.
+  `opscrew_runner_host_add` takes `harden` (`ssh`, `firewall`) and `sshFrom`;
+  `opscrew_runner_host_set` takes `harden`, `noHarden` and `sshFrom`. `ssh` means key-only SSH
+  logins with no passwords or root; `firewall` is OpsCrew's own nftables table that lets only
+  `sshFrom` reach SSH. `sshFrom` must come from the user (their address or network): never guess
+  it, and know that it replaces the earlier sources. Each change goes through the host plan's
+  dialog, and OpsCrew refuses a firewall that leaves out the address it connects from. `noHarden`
+  removes only that part, and `opscrew_runner_host_remove` takes both off.
+- **Sites with no server.** A static site, or a server-rendered app with a Cloudflare adapter,
+  can run on Cloudflare's hosting (`cloudflare-workers`, Workers with static assets) or, static
+  only, on GitHub Pages (`github-pages`). Both need the domain's DNS on Cloudflare, and neither
+  takes databases, workers, cron jobs or other server parts: design says why when a target does
+  not fit. `opscrew_design_options` offers one option with the provider's published price and
+  limits; pass the limits on (and for GitHub Pages GitHub's terms: no commercial use, the site is
+  public, no security headers).
+  - **Cloudflare's hosting** needs a second Cloudflare token of the user's holding only
+    **Account → Workers Scripts → Edit**, set as `OPSCREW_CLOUDFLARE_DEPLOY_TOKEN` in their shell
+    (never in the chat): `opscrew provision` stores it as a GitHub secret for the deploy
+    workflow. `opscrew_plan` returns the Worker and its custom domains as `planHash`, and the
+    `www` redirect in the Cloudflare plan. `adapt` adds the framework's Cloudflare adapter when
+    the app needs one.
+  - **GitHub Pages** needs the user's GitHub token with Pages and Administration, both Read and
+    write. `opscrew_plan` returns the Pages plan (`pagesPlanHash`: Pages published by the
+    workflow and the custom domain, set before any DNS record points at GitHub), the site's
+    DNS-only records (`planHash`) and GitHub's domain verification record
+    (`pagesVerificationPlanHash`); pass each to `opscrew_apply`, which shows each in its own
+    dialog (a Pages plan with another hash is refused). When OpsCrew stops for the verification
+    value, the user adds the domain in their GitHub account's Pages settings, copies the TXT
+    record's value and you pass it as `pagesVerification` (in a terminal
+    `--pages-verification <value>`); it is public in DNS. Afterwards pass on the one manual step
+    OpsCrew prints: clicking Verify on that page. HTTPS is enforced by a later
+    `npx opscrew provision` once GitHub has issued the certificate (`opscrew_status` says when).
+  - **Day 2.** `opscrew_status` shows the version running, the one before and the rollback
+    command. A rollback is `npx opscrew rollback` in the user's terminal (see "Rolling back"
+    above): on Cloudflare's hosting an earlier Worker version with no build, on GitHub Pages a
+    re-run of an earlier run, which rebuilds that commit and which GitHub allows for 30 days. On
+    Cloudflare a promoted environment gets its source's exact build; GitHub Pages refuses promotion (each
+    environment builds its own, and it has prod only). `opscrew_secure` says that GitHub Pages
+    cannot set security headers and that Cloudflare can.
+- **Monorepos.** When the repository has several deployable folders, `opscrew_interview_questions`
+  asks which one the first app is (`appDir`); ask the user, never guess.
+- **Several apps in one repository.** A repository can hold more than one app, for example a
+  landing page in `sites/landing` and its documentation in `sites/docs`, each deployed on its own.
+  The first app is the repository's own and is set up as above. Each further app gets a key and
+  its own folder: `opscrew_app_add` with `key` and `dir` (for example `docs` and `sites/docs`)
+  checks that the folder holds an app and that none of the names it gives (workflow, deploy
+  secrets, GitHub environment, image, branches) clash, then the app has its own plans,
+  environments, workflows, deploy secrets, state and approvals, and the planning steps above run
+  again for it. `opscrew_app_list` names the apps, their folders and whether each is deployed.
+  Every planning, deploy, status, drift, secrets, environment and design tool takes `app`: once
+  the repository has several, always pass the one the user means (a further app's key, or `.` for
+  the first app; a call without it fails with the apps), and in the terminal commands you pass on
+  add `--app <key>`, for example `npx opscrew provision --app docs`. A further app's files are
+  under `opscrew/apps/<key>/` (its plan is `opscrew/apps/<key>/plan.yaml`). The security scan
+  covers the whole repository, so every app shares its report. Removing a further app stays in the
+  terminal first: `npx opscrew destroy --app <key>`, then `opscrew_app_remove` only when the user
+  asks (they type its key in a dialog).
+- **Tearing down.** There is no tool for it on purpose. Tell the user to run `npx opscrew destroy`
+  in their own terminal: it offers a snapshot first (the database is deleted with the server), asks
+  them to type the server name and removes the deploy secrets from GitHub. On Contabo it cancels
+  the server instead: billed to the end of its term, shut down at once, its end date shown. The
+  app's bucket stays, with its files, unless they add `--delete-data`. On their own server it
+  never deletes or reinstalls the server: it removes the app and its Cloudflare records after they
+  type the app's name, keeps the app's data unless they add `--delete-data`, and reverses
+  OpsCrew's own changes to the server only with `--undo-host` (a separate plan they approve).
+  OpsCrew's snapshots of the app's data stay there too unless they add `--delete-data`. On every
+  target, the encrypted copies off the server stay in their bucket, which OpsCrew never deletes
+  (`npx opscrew snapshot offsite off` only stops new uploads). In their existing Portainer it
+  removes only what OpsCrew created (the app's stacks, its registry entry, the deploy secrets and
+  the Cloudflare resources) after they type the app's name, never Portainer itself or another
+  stack, and keeps the app's data volumes unless they add `--delete-data`. A site on Cloudflare's
+  hosting or GitHub Pages is removed after they type the app's name (on GitHub Pages its DNS
+  records first, then the site, so nobody can take the domain over); GitHub's domain
+  verification record stays unless they add `--delete-verification`. On a hosting account it
+  removes only what OpsCrew made there after they type the hostname; what the panel can't remove
+  through its API is a step it names for the panel. On every target it
+  also removes the app's hostnames from OpsCrew's shared Cloudflare rules (deleting a rule only
+  when no other OpsCrew app is in it), and the account's Zero Trust organization and one-time PIN
+  login stay for the other apps.
+- **Hosting at home.** A Raspberry Pi (64-bit OS), a mini PC or another Linux machine at the
+  user's home, reached on the home network with an SSH key, can serve the app from the home's own
+  internet address (`provider: own` with `server.home: true`). Before the user chooses it:
+  - say that many home internet plans restrict running servers (they check their provider's
+    terms), and that videos or large downloads must not go through Cloudflare's proxy.
+  - how visitors reach it: `proxy` (recommended with a domain on Cloudflare: the router forwards
+    TCP 80 and 443, and a filter lets only Cloudflare in, so nobody sees the home's address),
+    `dns-only` (the only choice without a domain on Cloudflare, and then only with a fixed
+    address) or `tunnel` (no forwards, works on any connection, also without a public IPv4).
+    Don't ask `server.reachable` for it. `server.sshFrom` (space-separated networks that may reach
+    SSH) is optional: pass it only when the user names them, for example their VPN's network
+    beside the home network.
+  - an address updater on the server keeps the site's records at the home's address every
+    2 minutes, with a Cloudflare token of its own: the user makes it at
+    https://dash.cloudflare.com/profile/api-tokens with only Zone → DNS → Edit on that one zone and
+    sets it as `OPSCREW_DNS_UPDATER_TOKEN` before provision. Never ask for it in the chat. It goes
+    only to the server, readable by root alone; say plainly that it can change any record of the
+    zone and that anything with root on the server can use it, the deploy runner included.
+  - design names what to set on the router: the forwards of TCP 80 and 443 to the server's
+    address on the home network, a DHCP reservation for it, never a forward for SSH, and, when an
+    AAAA record is published, inbound TCP 80 and 443 in the router's IPv6 firewall. Pass these on;
+    the home's public address is never shown behind the proxy. When design warns that the
+    connection looks like it has no public IPv4 (carrier-grade NAT), offer the tunnel, or IPv6
+    behind the proxy (`target.home.ipv4: false` in `opscrew/plan.yaml`, then design again).
+  - SSH answers only on the home network, so provision, status and the server's checks work from
+    there; away from home, `opscrew_status` says so and shows the last outside check.
+  - `opscrew_verify` starts the outside check on GitHub's machines (the
+    `opscrew-outside-check.yml` workflow provision's pull request brings): it says which port
+    didn't answer from outside and what to forward, and offers the tunnel. Only `opscrew_verify`
+    starts it.
+  - a new updater token: the user sets `OPSCREW_DNS_UPDATER_TOKEN` to it and runs
+    `npx opscrew rotate dns-updater` in a terminal, then deletes the old one. Destroying the app,
+    or switching it away from home, deletes the records the updater kept after the user types the
+    app's name (`--approve <hash> --confirm <app>` in a script); the token itself stays until they
+    delete it at Cloudflare. A move to another Cloudflare account takes the new account's updater
+    token from `OPSCREW_NEW_DNS_UPDATER_TOKEN` (the terminal asks for it, hidden, when unset).
+- **Portainer.** A web UI for the containers, off by default, on any server OpsCrew deploys to.
+  `opscrew_portainer_enable` installs it (listening only on the server itself, reached through an
+  SSH tunnel; an admin password generated on the user's computer) after the user approves the plan
+  in a dialog; `subdomain` and `allowEmails` opt in to a subdomain behind Cloudflare Access.
+  `opscrew_portainer_status` tells where the password file is; never read that file or print the
+  password. To open Portainer the user runs `npx opscrew portainer status` in a terminal and
+  starts the SSH tunnel it prints. Warn them that Portainer controls Docker, which is the same as
+  root on the server, so they should keep it local unless they need the subdomain.
+  `opscrew_portainer_disable` removes it and always keeps its data (users and settings). Deleting
+  that data stays in the terminal: the user runs `npx opscrew portainer disable --delete-data`
+  and types the app's name; the tool refuses to do it.
+- **A service on a server of its own.** On a cloud server or the user's own server, any of the
+  app's services (a database, a cache, a broker) can run on a server of its own, at the same or
+  another provider (Hetzner, DigitalOcean, Contabo) or on another server the user owns with a public
+  address; the web process, workers, cron jobs and add-ons stay on the app's server. Before the
+  user decides, call `opscrew_placement_estimate` with the service, the provider, the location and
+  optionally the server type: pass on the new server's price, the app's new monthly total and the
+  delay each query gets (with what it adds to a page making 20 queries; say so when it warns). The
+  user then adds the server under `servers` in `opscrew/plan.yaml` and sets `server` on the
+  service; `opscrew_select_design` (or `npx opscrew design`) checks it, sizes and prices the server
+  and refuses what cannot be linked, saying what would work. A server of the user's needs its SSH
+  login once: `npx opscrew design` in a terminal asks for it. The servers are joined by a private
+  WireGuard network, and the service answers only there, only to the app's servers. Moving a
+  live service copies Postgres in a short maintenance window that design shows first (Valkey,
+  Redis and Dragonfly start empty); it runs in the user's terminal with `npx opscrew provision`
+  (scripts add `--allow-downtime`), and once the app runs on the new copy,
+  `npx opscrew provision --finish-move` deletes the old one after they type the service's name.
+  A Kafka or Redpanda without `login: true` in its options has no login: say that only the app's
+  servers reach it.
+- **Devices on the private network.** The user's laptop or phone can join the app's private
+  network, to reach each server's SSH, Beszel and Portainer on its private address without a
+  public port or an SSH tunnel. Adding a device is terminal-only, with no tool on purpose: tell
+  the user to run `npx opscrew vpn add <name>` in their own terminal (`--this-computer` for the
+  computer they work on, `--qr` to scan it with the WireGuard app on a phone), because it makes the
+  device's private key on their computer and writes it only into the device's configuration
+  file: a private key must never pass through this chat, a model or a log. The same goes for
+  `npx opscrew vpn grant <device> <service>` (the device's own login to a database or cache,
+  read-only unless `--full`; it prints the password once in the terminal), `vpn revoke`,
+  `vpn remove` and `npx opscrew secure --close-public-ssh` (once deploys run on the server's own
+  runner and this computer is a device, SSH answers only on the private network;
+  `--open-public-ssh` opens it again). `opscrew_status` lists the devices by name and address with
+  their last handshake, and the grants; never ask for or read a device's configuration file.
+- **Moving the app somewhere else.** Moving a live app to another cloud provider, to a server
+  the user owns or into their Portainer (and from any of these to another) is terminal-only on
+  purpose; there is no tool for it, and you must not try to perform its steps yourself. Tell the
+  user to run `npx opscrew retarget --to <hetzner|digitalocean|contabo|own|portainer>` in their own
+  terminal (`npx opscrew retarget --help` explains the flags). For their own server or Portainer
+  it asks the same questions as the interview (how to reach the server; Portainer's address,
+  certificate and environment, and its host's public address). It prepares the new side next to
+  the old one and deploys the app there, then copies the app's data in a maintenance window: it
+  shows each data mount's size and the expected minutes first, and asks for each service whether
+  to copy its data or start it empty (`--empty <service>` in scripts). Then it switches DNS.
+  After checking the app, the user runs `npx opscrew retarget --finish` to remove the old side
+  (it asks them to type the app name): an old server OpsCrew created is deleted, and from their
+  own server or Portainer only the app and its data are removed, never the server or Portainer
+  itself. `npx opscrew retarget --abort` restores the old deployment, but only before the DNS
+  switch. A server at a cloud provider is billed until the move is finished. `opscrew_status`
+  (or `npx opscrew status`) shows where a move stands; while it is in progress, design,
+  provision and drift stop with the commands to continue, finish or abort it, so pass those on to
+  the user.
+- **Moving the app to another Cloudflare account.** When the user wants the app's zone in
+  another Cloudflare account (a new account of their own, or a company's), the app stays where it
+  runs and only its Cloudflare pieces move. It is terminal-only on purpose, with no tool: every
+  approval and every typed name happens in the user's own terminal, so never approve, type or
+  pass one yourself. They first make the new account and its token, set it as
+  `OPSCREW_NEW_CLOUDFLARE_API_TOKEN` (`CLOUDFLARE_API_TOKEN` stays the current account's), and
+  commit what `npx opscrew provision` brings up to date. Then, in order:
+  1. `npx opscrew cloudflare move --to <account id or exact name>` in each repository whose app is
+     in the zone: it prepares the app in the new account while the current one keeps serving and
+     shows each plan to approve.
+  2. `npx opscrew cloudflare move --switch` once, from any of them: it asks for the domain to be
+     typed. With the registrar's API keys set (`PORKBUN_API_KEY` and `PORKBUN_SECRET_API_KEY`,
+     `NAMECHEAP_API_USER` and `NAMECHEAP_API_KEY`, or `GODADDY_API_TOKEN`) it changes the
+     nameservers itself; at Cloudflare Registrar or another registrar it prints what to do there
+     and goes on when run again. With DNSSEC on, the first run removes the DS record (Porkbun)
+     or says where to turn DNSSEC off, and stops: the user runs it again after the time it
+     prints and approves again. HTTPS fails until the new account's certificate is issued,
+     usually within minutes; the switch shows that gap before it is approved.
+  3. `npx opscrew cloudflare move --finish` in each repository: a short maintenance window when
+     the app has an R2 bucket, then the current account's pieces are removed after the user types
+     the app's and each bucket's name. Its last line names the files to commit and push.
+  `npx opscrew cloudflare move --abort` undoes a prepare, but only before the switch changed
+  anything. `opscrew_status` shows each environment's step (and the apps prepared, when the new
+  token is set) and names the command to run next: pass it on to the user.
+
+If a tool returns an error, read its message and hint to the user and suggest the next step; do not
+work around OpsCrew's checks.

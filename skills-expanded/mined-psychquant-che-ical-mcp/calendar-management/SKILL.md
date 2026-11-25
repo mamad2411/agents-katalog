@@ -1,0 +1,162 @@
+---
+name: calendar-management
+description: Guide for effective use of che-ical-mcp for macOS Calendar & Reminders management. Use when user asks about calendar events, reminders, scheduling, or time management.
+allowed-tools:
+  - mcp__che-ical-mcp__list_calendars
+  - mcp__che-ical-mcp__create_calendar
+  - mcp__che-ical-mcp__delete_calendar
+  - mcp__che-ical-mcp__list_events
+  - mcp__che-ical-mcp__create_event
+  - mcp__che-ical-mcp__update_event
+  - mcp__che-ical-mcp__delete_event
+  - mcp__che-ical-mcp__list_reminders
+  - mcp__che-ical-mcp__create_reminder
+  - mcp__che-ical-mcp__update_reminder
+  - mcp__che-ical-mcp__complete_reminder
+  - mcp__che-ical-mcp__delete_reminder
+  - mcp__che-ical-mcp__search_events
+  - mcp__che-ical-mcp__list_events_quick
+  - mcp__che-ical-mcp__create_events_batch
+  - mcp__che-ical-mcp__check_conflicts
+  - mcp__che-ical-mcp__copy_event
+  - mcp__che-ical-mcp__move_events_batch
+  - mcp__che-ical-mcp__delete_events_batch
+  - mcp__che-ical-mcp__find_duplicate_events
+---
+
+# macOS Calendar & Reminders Management
+
+This skill guides you through effective use of che-ical-mcp for calendar and task management on macOS.
+
+## Date/Time Format
+
+**CRITICAL**: Always use ISO8601 format with timezone for all date/time parameters:
+```
+2026-01-18T14:00:00+08:00  (correct)
+2026-01-18 14:00           (wrong - will fail)
+```
+
+Use the user's local timezone. For Taiwan: `+08:00`. An event module's events follow the module (a conference's sessions use the conference's zone; its all-day umbrella takes date-only values).
+
+## Tool Categories
+
+### 1. Discovery (Start Here)
+Before creating or modifying, always check existing state:
+
+```
+list_calendars          → See all calendars and their sources
+list_events_quick       → Quick view: "today", "this_week", "next_7_days"
+list_reminders          → See tasks by list or completion status
+```
+
+### 2. Events (Calendar)
+| Task | Tool | Key Parameters |
+|------|------|----------------|
+| View schedule | `list_events` | start_date, end_date, calendar_name |
+| Quick view | `list_events_quick` | range: "today", "tomorrow", "this_week", week_starts_on |
+| Create event | `create_event` | title, start_time, end_time, calendar_name (required) |
+| Search | `search_events` | keyword/keywords, match_mode ("any"/"all") |
+| Check availability | `check_conflicts` | start_time, end_time |
+
+**Week Start Day (v0.8.2+)**: For `this_week`/`next_week` ranges, use `week_starts_on`:
+- `system` (default): Use system locale
+- `monday`: ISO 8601 (Europe, Asia)
+- `sunday`: US, Japan
+- `saturday`: Middle East
+
+### 3. Reminders (Tasks)
+| Task | Tool | Key Parameters |
+|------|------|----------------|
+| List tasks | `list_reminders` | calendar_name, completed (JSON boolean; omit/null = all; strings/numbers rejected) |
+| Create task | `create_reminder` | title, calendar_name (required), due_date (bare `YYYY-MM-DD` = date-only, no time) |
+| Complete | `complete_reminder` | reminder_id, completed (JSON boolean, default true; strings/numbers rejected) |
+
+> Every boolean argument on every tool (`all_day`, `clear_*`, `include_completed`, `dry_run`, `delete_original`, …) is a strict JSON boolean (#207): strings and numbers are rejected; omit or `null` keeps the default.
+
+> **Recurring reminders (#194)**: list/search items carry `has_recurrence`, `recurrence_rules` and a `due` object (`date` / `time` / `timezone` / `date_time`). `complete_reminder` returns `operation` (write outcome), `observed` (the saved object) and `next_occurrence`. **Read `operation.status`, not `is_completed`**: completing a recurring reminder advances the same item to its next occurrence, so `is_completed` can be `false` after a successful write. `next_occurrence.status: "confirmed"` carries the next due (also in the message); `"unknown"` is not a failure — never repeat the write because of it.
+
+### 4. Batch Operations (Efficiency)
+| Task | Tool | When to Use |
+|------|------|-------------|
+| Create multiple | `create_events_batch` | Recurring meetings, series (it cannot set reminders: an event module creates its events one by one with `create_event`) |
+| Move multiple | `move_events_batch` | Calendar migration |
+| Delete multiple | `delete_events_batch` | Cleanup old events |
+| Find duplicates | `find_duplicate_events` | Before merging calendars |
+
+**Stays.** An event whose notes hold a `lodging-module:` marker line is a stay: it is changed or deleted only through the lodging module (its end-day rule and read-back, its questions), never by calling directly, outside the module's own steps, any tool of this skill that can touch an existing event (the module's steps use them after its questions), and these are all of them in its `allowed-tools`: `update_event`, `delete_event`, `delete_events_batch`, `move_events_batch`, `copy_event` (a copy would carry the marker and make two stays), and `delete_calendar` (a calendar holding a stay is not deleted with its events until the module has asked about each stay; with `require_empty` it is refused anyway). The other tools there read, create new events, or work on reminders and calendars without touching a stay. **No workflow creates, outside the module, an event whose notes carry a `lodging-module:` marker line**: `create_event` and `create_events_batch` (a migration that re-creates events from `list_events` included) would carry the marker and make two stays, as a copy would; such an event is left out of the create and named, and the module creates or moves the stay. This holds in any workflow, a cleanup or a migration included, and also when the user asks here ("I changed it by phone" is the module's section 5, an address, a calendar move or text below the marker is its "Other changes the user asks for", a delete is its section 7). A batch that would include a stay leaves it out and names it.
+
+## Common Workflows
+
+### Schedule a Meeting
+If the input matches a module's trigger in `rules/event-modules.md` (today: a conference program or a booking for a stay) and that module is on, build it as the module says instead of the steps below for what the module handles (a program, a stay); other items in the same message, such as a flight, still go through the steps below; otherwise carry on below.
+
+```
+1. Resolve calendar_name  → name from the user, else the folder's calendar_routing rules (rules/calendar-routing.md), else ask
+2. check_conflicts(start_time, end_time)  → Ensure no overlap
+3. create_event(title, start_time, end_time, calendar_name, location?, alarms_minutes_offsets?)
+4. Report how the calendar was decided (the `Routed to …` / `Not routed: …` line)
+```
+
+### Recurring Series with Excluded Dates (#182)
+
+Skip specific dates (e.g. holidays) when creating a recurring event, via `recurrence.excluded_occurrence_dates`:
+
+```json
+create_event({
+  "title": "Weekly seminar",
+  "start_time": "2026-09-07T14:00:00+08:00",
+  "end_time": "2026-09-07T16:00:00+08:00",
+  "calendar_name": "Work",
+  "recurrence": {
+    "frequency": "weekly",
+    "excluded_occurrence_dates": ["2026-09-28", "2026-10-05"]
+  }
+})
+```
+
+- Same date grammar as `occurrence_date`; date-only values are interpreted in the event timezone. Max 100, duplicates rejected.
+- Applied with best-effort all-or-nothing semantics: if any exclusion fails, the entire new series is removed via compensating delete (rollback failure is reported, never silent). The first occurrence cannot be excluded. One `undo` removes the whole series including exclusions.
+- Response includes `excluded_occurrence_dates` (normalized `yyyy-MM-dd`) + `exclusion_count`. Also available per-item in `create_events_batch` (reported per-item).
+- `update_event` and `create_reminder` reject this field — it is creation-time only.
+
+### Weekly Review
+```
+1. list_events_quick(range: "this_week")  → See upcoming events
+2. list_reminders(completed: false)       → See pending tasks
+3. search_events(keywords: ["important"]) → Find priority items
+```
+
+### Calendar Migration
+```
+1. list_calendars()                       → Identify source/target
+2. find_duplicate_events(calendar_names: [source, target], start_date, end_date)  → Check for duplicates (at least two calendars)
+3. move_events_batch(event_ids, target_calendar) → Move events
+4. delete_calendar(id, require_empty: true)      → Remove the emptied source (#328)
+```
+
+`delete_calendar` cannot be undone. Pass `require_empty: true` unless the user asked to delete a calendar together with its events: it refuses a calendar that holds any event (searched about 200 years each side of now; the answer's `searched_from` / `searched_to` say how far) or a list that holds any reminder, and deletes nothing.
+
+## Source Disambiguation
+
+When multiple calendars have the same name (e.g., "Work" in both iCloud and Google):
+
+```
+create_event(
+  calendar_name: "Work",
+  calendar_source: "iCloud",  ← Specify the source
+  ...
+)
+```
+
+Available sources: "iCloud", "Google", "Exchange", "CalDAV", "Local"
+
+`find_duplicate_events` is the exception: it takes no `calendar_source`, and refuses one. A name two accounts share reads both calendars, and they count as the two compared. Each side of a pair gives `calendar` and `calendar_source`.
+
+## Best Practices
+
+1. **Always specify calendar_name** for create operations (v0.8.0+) — resolve it through `rules/calendar-routing.md` first; ask only when no rule applies
+2. **Use batch operations** for multiple similar actions
+3. **Check conflicts** before scheduling important events
+4. **Use search** instead of listing all events when looking for specific items
+5. **Prefer list_events_quick** over list_events for common ranges
+6. **Specify week_starts_on** when user's locale differs from expected (v0.8.2+)

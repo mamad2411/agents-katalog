@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/retr0-rgb-lab/openwisdom (path: apps/web/public/registry/skills/community/scenarios/the-fool/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Steelman first, then challenge: Socratic assumptions, dialectic, pre-mortem, red team, falsification."

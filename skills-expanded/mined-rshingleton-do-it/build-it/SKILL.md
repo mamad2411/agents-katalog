@@ -1,0 +1,100 @@
+---
+name: build-it
+description: Build an approved do-it plan test-first at its agreed seams, leaving every change uncommitted in the working tree; runs ready phases in parallel when it can.
+disable-model-invocation: true
+argument-hint: "<work id> [phase N]"
+model: sonnet
+---
+
+# build-it
+
+Builds what the plan approved, nothing else, uncommitted; `ship-it` commits.
+
+## 1. Start
+
+- Read the state block ([STATE.md](../do-it/STATE.md)); every change to it
+  goes through `work.mjs`, the work-item script described there. No
+  `approvals.plan`: stop, `blocked`, "plan not approved".
+- `status: blocked`: show the recorded blocker; continue only once the user
+  has resolved it, then `work.mjs event <id> unblock`. A blocked phase
+  (lane M): `unblock --phase <n>` once its blocker is resolved.
+- `work.mjs event <id> start --brief`: sets `status: building`, and `base_ref` on the
+  first run only. Before that first run, `git status --porcelain` showing
+  changes outside `docs/planning/`: the audit will flag them as unplanned.
+  Ask the user to commit them first or add them to the plan.
+- Discover standards and tooling once per session per [STANDARDS.md](STANDARDS.md).
+- Tracker: when the state block names a tracker ref, call the Skill tool with
+  "track-it" and run `start` on it (and on the phase ref). A tracker failure
+  is noted and never blocks the build.
+
+## 2. Pick the work
+
+- **Fix mode** (`audit.verdict: FAIL`, or a non-empty `fix:` list): the work
+  is the Musts in `audit.must` plus the small and local Shoulds of the same
+  round (one file, no interface, no behaviour change), read from the audit
+  report (lane M) or the plan's `## Audit` section (lane S), and each `fix:`
+  entry (an assumption the user rejected at ship). Fix each one test-first
+  where it has a seam, run the checks, record `### Settled` and `### Touched`
+  ([ROUNDS.md](../prove-it/ROUNDS.md)), then go to §5. Phases are not rebuilt.
+- Lane S: the plan's steps, in order, as one unit.
+- Lane M: the **frontier**, every phase not `done` whose `blocked_by` phases
+  are all `done`. With `phase N`, just that phase if it is on the frontier.
+- Mode, once per item when lane M starts: compute waves from `blocked_by`. A
+  wave wider than one and background subagents: every phase builds in a
+  worktree per [PARALLEL.md](PARALLEL.md), a width-1 first wave included.
+  Otherwise one at a time in place, each in an `it-builder` agent per
+  [DELEGATE.md](DELEGATE.md) (main builds: lane S, fix mode, no subagents).
+  Print `Mode: parallel` or `Mode: sequential (<reason>)`.
+
+## 3. Build one unit
+
+1. Call the Skill tool with "test-it", passing the unit's `## Seams` as agreed
+   in planning (tests go only there). None listed: propose them, record them
+   as an assumption, continue.
+2. Follow the `it-core` posture: reuse ladder, scope list, surgical edits,
+   `shortcut:` markers.
+3. A failure you cannot explain in one hypothesis, a flaky one, or one still
+   failing after three fix rounds: call the Skill tool with "debug-it",
+   passing the assumption that may be wrong.
+4. Run the self-check in [STANDARDS.md](STANDARDS.md) §3.
+5. Run the checks through `work.mjs verify-phase <id> [n] --brief -- "<commands>"`
+   (quoted, so a chain runs whole): it records the phase (lane S: the item) verified
+   only when they exit 0. New assumptions, or a defect the unit surfaces but does not
+   fix: `work.mjs set <id> assumptions|defects '<json list>' --brief`, old entries kept. In a complete run finish-it runs the checks through
+   `work.mjs run verify` instead (same recording, plus the run record).
+
+Out-of-scope problems go to `log-it`, not into the diff.
+
+## 4. Stop conditions
+
+Stop the run and report `blocked` with one line of why. Lane M:
+`work.mjs event <id> block "<why>" --phase <n>`. Lane S, or when nothing
+else can run: `work.mjs event <id> block "<why>"`, so `do-it` resumes here.
+Stop when:
+
+- an unknown fails the assume-or-ask test in the `it-core` posture;
+- a failure survives `debug-it`;
+- the plan is wrong (a seam does not exist, scope is larger than planned:
+  suggest raising the lane);
+- the next action cannot be undone from the working tree (a migration
+  against a shared database, a call to a production service, a force push).
+
+Other ready phases not depending on a blocked one keep going.
+
+## 5. Finish
+
+When no phase is left to build (or fix mode has fixed every listed Must and
+`fix:` entry, then passed `verify-phase`; lane M names any phase), `work.mjs event <id> build-done` (status `auditing`) and
+return `done`. Called by `do-it`, let it continue; run alone, close with:
+
+> Built <id>: <N> phase(s), uncommitted on `<branch>` since `<base_ref>`.
+> Skipped: ... Not checked: ... Risk: ...
+> **Next:** `/prove-it <id>`.
+
+## Rules
+
+- No commits, no pushes, no stashes on the user's branch, unless a run record
+  exists for the item: then [COMMITS.md](COMMITS.md). Scratch branches never merge.
+- No edits to ADR status, a `CONTEXT.md`, the context map or the changelog;
+  `ship-it` owns them.
+- Do not change the plan's scope. Raise it with the user instead.

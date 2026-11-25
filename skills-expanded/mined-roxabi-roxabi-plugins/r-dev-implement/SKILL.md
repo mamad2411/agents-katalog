@@ -1,0 +1,385 @@
+---
+name: R-dev-implement
+argument-hint: '[--issue <N> | --plan <path> | --audit]'
+description: Execute plan — setup worktree, spawn agents, write code + tests. Triggers: "dev-implement" | "implement" | "build this" | "execute plan" | "start coding" | "write the code" | "code this up" | "let's build it" | "build it out" | "/R-dev-implement". Not the host native /implement.
+version: 0.3.3
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, EnterWorktree, ExitWorktree, Task, TaskCreate, TaskUpdate, TaskList, TaskGet, Skill, ToolSearch
+---
+
+# Implement
+
+## Success
+
+I := QG pass ∧ worktree ∃ ∧ commits > 0 ∧ principal on β
+V := `cd "$WT_PATH" && {commands.format} && {commands.lint} && {commands.typecheck} && {commands.test}` → exit 0
+
+Let:
+  π := artifacts/plans/{N}-{slug}.md
+  τ := tier (S | F-lite | F-full)
+  ω := non-principal worktree on `feat/{N}-{slug}` (path = harness layout — see harness-worktree.md)
+  β := base branch (staging if ∃ origin/staging, else main)
+  principal := main checkout — **always stays on β** (¬switch to feat)
+  H_wt := claude-enter | harness-default
+  QG := `{commands.format} && {commands.lint} && {commands.typecheck} && {commands.test}`
+  bar := mechanical floor (format/lint/typecheck/test pass), ¬the quality bar — output must read as hand-authored by a dev-core maintainer: match surrounding idiom, naming, and comment density; calibrate against `plugins/dev-core/`
+
+**Stack:** Read `.dev/stack.yml` first — every `{field}` placeholder below resolves from it. ¬∃ → output: "`.dev/stack.yml` not found — run `/R-env-setup` to generate it." and stop.
+
+Plan → ω → agents (test-first) → passing QG.
+
+**Flow: single continuous pipeline. ¬stop between steps. Decision response → immediately execute next step. Stop only on: explicit Cancel/Abort or Step 6 completion.**
+
+```
+/R-dev-implement --issue 42        Execute plan for issue #42
+/R-dev-implement --plan artifacts/plans/42-dark-mode-plan.md   Execute from explicit plan path
+/R-dev-implement --issue 42 --audit   Show reasoning checkpoint before coding
+```
+
+Does NOT create a PR — that is `/R-pr` (next step).
+
+## Chain Position
+
+- **Phase:** Build
+- **Predecessor:** `/R-dev-plan` (artifact: `artifacts/plans/{N}-{slug}-plan.md`)
+- **Successor:** `/R-pr`
+- **Class:** adv (continuous flow, no gate)
+
+## Task Integration
+
+- `/R-dev` owns the dev-pipeline task lifecycle externally (mark in_progress before invoke, completed after return — host-mapped)
+- This skill does NOT update its own dev-pipeline task
+- Sub-tasks: attach/re-seed plan-tasks from `/R-dev-plan` (Step 6a), flip lifecycle as agents execute (Step 1b + Step 4)
+- **Host mapping SSoT:** [harness-task-list.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/harness-task-list.md) — probe once, use H for all task ops
+- **Worktree SSoT:** [harness-worktree.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/harness-worktree.md) — principal freezes on β; code only in ω
+
+## Exit
+
+- **Success via `/R-dev`:** return control silently. ¬write summary. ¬ask user. ¬announce `/R-pr`. `/R-dev` re-scans and advances.
+- **Success standalone:** print final status block (below) + `Next: /R-pr`. Stop.
+- **Failure:** return error. `/R-dev` presents Retry | Skip | Abort.
+
+## Pipeline
+
+| Step | ID | Required | Verifies via | Notes |
+|------|----|----------|---------------|-------|
+| 1 | locate-plan | ✓ | π ∃ ∨ σ ∃ (S-tier) | — |
+| 2 | setup | ✓ | ω ∃ ∧ branch ∃ | rollback on failure |
+| 3 | context-inject | — | — | τ=F only |
+| 4 | implement | ✓ | tasks `completed` | parallel: conditional, retry 3 |
+| 5 | quality-gate | ✓ | QG exit 0 | retry 3, rollback on failure |
+| 6 | summary | ✓ | all tasks done | — |
+
+## Pre-flight
+
+Success: QG pass ∧ worktree ∃ ∧ commits > 0 ∧ principal on β
+Evidence: QG exit 0 inside ω (`worktree=` from setup-preflight)
+Steps: locate-plan → setup → context-inject → implement → quality-gate → summary
+¬clear → STOP + ask: "Do you have a plan to implement?"
+
+## Step 1 — Locate Plan
+
+`--issue N` → `ls artifacts/plans/N-*.md*` → read full → extract tasks, agents, τ, slug.
+`--plan <path>` → read directly.
+¬found ⇒ suggest `/R-dev-plan`. **Stop.**
+
+**S-tier exception:** τ=S ∧ ¬π → locate spec (`ls artifacts/specs/N-*.md*`) or issue body (`gh issue view N --json body`). Skip to Step 4 (Tier S). ¬require π for τ=S.
+
+Extract from frontmatter: `issue`, `tier`, `spec` path. From body: agent list, task list, slice structure.
+
+### Step 1b — Attach to Plan Tasks (dual harness)
+
+**Probe H** (once per `/R-dev-implement` run) per [harness-task-list.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/harness-task-list.md):
+
+```
+tools ∋ TaskCreate ∧ TaskUpdate ∧ TaskList  → H := claude-tasks
+else tools ∋ todo_write                     → H := grok-todos
+else                                        → H := artifact-only
+```
+
+Fields / seed shape: [plan-task-schema.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/plan-task-schema.md).  
+Blueprint source: π `## Task Seeding Blueprint` (or micro-task table). Cache map M := `{T# → host_id}` (claude) or `{T# → T#}` (grok stable ids).
+
+#### H = claude-tasks
+
+Parse π's `## Task IDs` section → M. ¬section → fall through to 1b.3.
+
+| Step | Action |
+|------|--------|
+| **1b.1 Verify** | ∀ id ∈ M → `TaskGet(id)`. All succeed → cache M, goto Step 2 |
+| **1b.2 Partial miss** | Session restart wiped some ids → re-seed **missing** rows only via `TaskCreate` (schema), rewrite `## Task IDs` in π |
+| **1b.3 Total miss** | Section absent / all dead → re-seed **all** micro-tasks via `TaskCreate` + `blockedBy` wiring, append `## Task IDs`, commit `chore(plan): attach task ids` |
+
+τ=S without π → `TaskCreate` 3–6 coarse tasks from spec AC: `{ kind: "plan-task", issue: N, tier: "S" }`. No artifact update.
+
+#### H = grok-todos
+
+Host has no durable id graph and no `TaskGet`. Stable ids = blueprint `T{n}`.
+
+| Step | Action |
+|------|--------|
+| **1b.1 Verify** | If session already has todos with ids `T1…Tn` matching blueprint → reuse (merge=true only for status updates). Goto Step 2 |
+| **1b.2 Partial miss** | Some `T#` missing from current todos → `todo_write` merge=true with those ids only (`status: pending`, content from schema portable encoding) |
+| **1b.3 Total miss** | No matching todos → seed **all** from blueprint: `todo_write` merge=false, id=`T{n}`, content=`[{phase}] {agent_instance} — {subject} \| Verify: {cmd} \| {spec_trace}`. **¬** write `## Task IDs` host-sha section (nothing durable). Optional: note `host: grok-todos` in π frontmatter if useful |
+
+Deps: **¬** invent `blockedBy` on host. Ready-set = rows whose blueprint `blockedBy` are all `completed` (track status in todo list).
+
+τ=S without π → `todo_write` 3–6 coarse todos from AC (`id: S1…`, content = criterion text).
+
+#### H = artifact-only
+
+No host task list. Skip attach/re-seed. Work from π micro-task table only; progress in the reply / Step 6 summary.
+
+## Step 2 — Setup
+
+**2a. Issue check:** `gh issue view <N>` — ∄ ⇒ draft + present choice: **Create** | **Edit** | **Skip** + `gh issue create`.
+
+**2b+2d. Repo, base + pre-flight:**
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/setup-preflight.sh {N} {slug}
+```
+
+Emits: `repo`, `base`, `principal`, `principal_branch`, `principal_ok`, `branch_exists`, `legacy_worktree`, `worktree`, `worktree_branch`, `dirty` (if worktree found), `fetch`.
+
+**Probe H_wt** (once): `EnterWorktree` ∃ → `claude-enter`; else `harness-default`.  
+SSoT: [harness-worktree.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/harness-worktree.md).
+
+ω path = `worktree=` from preflight (branch-first detect). Branch base: `base` from output.
+
+**2c. Guards:**
+
+`principal_ok` = false → **STOP**. Principal must be on β. Present choice **Switch principal to base** | **Abort**. **¬** `git switch feat/…` on principal to “fix” this.
+
+`branch_exists` ≠ false ∧ `worktree` = false → branch exists but no ω → present choice **Recreate worktree** (invoke `skill: "R-setup-worktree", args: "{N:+--issue $N }--slug {slug}"`) | **Abort**
+
+`worktree` ≠ false ∧ `dirty=true` ⇒ → present choice **Stash changes** (`git -C "$WT_PATH" stash`) | **Reset** (`git -C "$WT_PATH" checkout .`) | **Continue with dirty state** | **Abort**
+
+**2e. Worktree:**
+
+`worktree` = false → invoke `skill: "R-setup-worktree", args: "{N:+--issue $N }--slug {slug}"`, re-run preflight.
+
+Enter existing ω (`WT_PATH` from preflight):
+
+- **H_wt = claude-enter:** `EnterWorktree(path: "$WT_PATH")`
+- **H_wt = harness-default:** all code ops use `cwd` / absolute paths under `$WT_PATH` — **¬** switch principal to BRANCH
+
+Inside ω:
+```bash
+cd "$WT_PATH"   # or git -C / Write under WT_PATH
+cp .env.example .env 2>/dev/null; {package_manager} install
+# Optional: {commands.worktree_setup} <N>
+```
+
+ω **mandatory** ∀ τ (XS, S, F-lite, F-full) — ¬exception. ¬"skip worktree" branch. ¬feature commits on principal.
+
+## Step 3 — Context Injection (τ=F only)
+
+∀ agent: inject read instructions in Task prompt. Section headers only (¬numeric prefixes).
+
+Template: "Read `{doc}` sections: {sections}. Read `{ref_file}` for conventions."
+
+| Agent | Standards → Sections | +ref |
+|-------|---------------------|:---:|
+| R-frontend-dev | frontend-patterns: Component Patterns, AI Quick Ref · testing: FE Testing | ✓ |
+| R-backend-dev | backend-patterns: Design Patterns, Error Handling, AI Quick Ref · testing: BE Testing | ✓ |
+| R-tester | testing: Test Structure (AAA), Coverage, Mocking, AI-Assisted TDD | ✓ |
+| R-architect | frontend-patterns + backend-patterns: AI Quick Ref | ✗ |
+| R-devops, R-security-auditor, R-doc-writer | ∅ | ✗ |
+
+Ref file paths from `/R-dev-plan` Step 3.
+
+## Step 3b — Reasoning Audit (optional)
+
+`--audit` → present reasoning audit per [reasoning-audit.md](${CLAUDE_PLUGIN_ROOT}/skills/shared/references/reasoning-audit.md). Read π/R-spec in full first.
+→ present choice **Proceed** | **Adjust approach** | **Abort**
+¬`--audit` → skip to Step 4.
+
+## Step 4 — Implement
+
+Use **H from Step 1b** for every lifecycle op (mapping below). Generic ops: claim → inject context → spawn → mark done.
+
+### Task lifecycle (all tiers) — by H
+
+| Generic | H = claude-tasks | H = grok-todos | H = artifact-only |
+|---------|------------------|----------------|-------------------|
+| Claim / start | `TaskUpdate(id, status: in_progress, owner: …)` | `todo_write` merge=true, id=`T#`, status=`in_progress` | Note start in reply |
+| Load context | `TaskGet(id)` → description + metadata | Blueprint row + todo `content` for `T#` | π micro-task row only |
+| Mark done | `TaskUpdate(id, status: completed)` | `todo_write` merge=true, id=`T#`, status=`completed` | Check off in summary |
+| Retry note | `TaskUpdate` metadata `last_error` | Append error to todo `content` or leave `in_progress` | Note in reply |
+| 3× fail | leave in_progress → escalate (Step 5) | same | same |
+| List ready | `TaskList` → empty `blockedBy` + phase | Blueprint: deps all `completed` + matching phase | Same from π table |
+| List all done? | `TaskList` + metadata.issue == N | All seeded `T#` status=`completed` | All π rows done |
+
+### Tier S — Direct
+
+Read spec + ref patterns → create + implement → tests → QG → loop until ✓. Single session, ¬agent spawning. Flip each task start → completed via H mapping as you progress.
+
+### Tier F — Agent-Driven (test-first)
+
+Spawn via host subagent tool (`Task` / `spawn_subagent`). Sequential ∨ parallel (2–3 max).
+
+**Worktree isolation:** Code only in ω (`$WT_PATH`). Principal stays on β.
+
+| H_wt | Lead | Subagents |
+|------|------|-----------|
+| claude-enter | session CWD = ω after EnterWorktree | inherit CWD |
+| harness-default | ops under `$WT_PATH` | `spawn_subagent(..., cwd: WT_PATH)` — **¬** `isolation: worktree` (anonymous trees break BRANCH link) |
+
+**Per agent spawn:**
+1. Claim task (H table).
+2. Load context (H table) → inject into subagent prompt.
+3. Spawn:
+   ```
+   Task(   # or spawn_subagent on Grok with cwd: WT_PATH
+     subagent_type: "dev-core:{agent}",
+     description: "{agent}: {phase} — #{N} {slug}",
+     prompt: "Issue #{N}. Task: {task_description}. Target: {file_path}. Skeleton: {code_snippet}. Verify: {verify_command}. Ref pattern: {pattern_file}. Worktree: {WT_PATH} — stay inside this directory only; ¬checkout feat on principal. ¬seed host tasks — task lifecycle managed by lead."
+   )
+   ```
+   Agent name map: `R-tester` → `dev-core:R-tester` | `R-frontend-dev` → `dev-core:R-frontend-dev` | `R-backend-dev` → `dev-core:R-backend-dev` | `R-devops` → `dev-core:R-devops` | `R-doc-writer` → `dev-core:R-doc-writer` | `R-architect` → `dev-core:R-architect` | `R-security-auditor` → `dev-core:R-security-auditor`
+4. Subagent returns → verify → ✓ → mark done (H). ✗ → retry (≤3).
+
+**RED → GREEN → REFACTOR:**
+1. **RED** — R-tester: write failing tests from spec. Structural verify only (grep test structure). Tests expected to fail pre-impl. Create RED-GATE sentinel per slice. RED tasks flip completed as each test file lands.
+2. **GREEN** — domain agents ∥: implement to pass. `ready` verify → run now; `deferred` → wait RED-GATE. Advance only when blueprint deps are satisfied (claude: `blockedBy` clear; grok/artifact: deps completed in checklist).
+3. **REFACTOR** — domain agents: refactor, keep tests ✓.
+4. **Verify** — R-tester: coverage + edge cases.
+
+**Parallel spawn:** list ready tasks (H table) for current phase → spawn ≤N agents, each with its own context-injected prompt.
+
+**Per-task:** verify → ✓ | ✗ fix (max 3) | 3✗ → escalate to lead. Track first-try pass rate.
+
+Agents create files from scratch (¬stubs). Include target path, shape/skeleton, ref pattern file in each spawn prompt (in addition to loaded task context).
+
+## Step 5 — Quality Gate
+
+Run QG inside ω (`cd "$WT_PATH"` or `git -C` / shell with cwd=ω):
+
+```bash
+cd "$WT_PATH"
+{commands.format} && {commands.lint} && {commands.typecheck} && {commands.test}
+```
+
+> format before lint — auto-format first so the linter never flags style the formatter would have fixed (¬format-induced lint noise).
+
+✓ → Step 6.
+✗ → fix loop (max 3). Spawn domain R-fixer agents as needed. 3✗ → present choice **Escalate to lead** | **Continue with failures** | **Abandon ω** (H_wt claude: `ExitWorktree(action: "remove")`; harness-default: `git worktree remove "$WT_PATH"`) + delete branch.
+
+## Step 6 — Summary
+
+Before printing summary → assert all plan-tasks for issue N are completed (**H table**: claude `TaskList` + metadata.issue; grok all `T#` completed; artifact-only π rows). ¬all completed → highlight stragglers (blockers for `/R-pr`).
+
+### Step 6a — SC→Test Matrix (τ ≠ S)
+
+**Tier S exemption:** τ=S (no `/R-dev-plan` artifact, no SC-N labels) → skip this step entirely. ¬emit matrix.
+
+For τ=F (F-lite or F-full):
+
+1. Read spec (`artifacts/specs/{N}-*.md*`) → extract all SC-N lines (e.g. `SC1: …`, `SC2: …`).
+2. Read R-tester deliverable (from task outputs or grep test files in ω): collect `{file} :: {test name}` pairs.
+3. For each SC:
+   - ≥1 named test mapped → row: `| SC-N: {text} | {file} :: {test name}[, …] | ⏳ not run |`
+   - ¬mapped → row: `| SC-N: {text} | — | ⚠ NO TEST — {reason} |` (NO TEST is a Status verdict, per the schema below)
+     - `reason` MUST ∈ `{infra-not-wired, prompt-logic-only, ui-manual-only, out-of-scope}` (closed enum — ¬free-form). Unmapped SC with ¬reason from enum = **blocking gap**: highlight in summary, ¬proceed to `/R-pr`.
+4. Persist matrix as a fenced markdown block in the summary output (consumed by `/R-pr` Step 3d). Disk persist of the final matrix+evidence is Step 6b.
+
+**Status column schema** (for `/R-pr` and falsification gate #280):
+- `⏳ not run` — test exists, not yet executed against this change **or** ran without a recorded evidence line
+- `✓ proven` — test ran green + falsification check passed **and** evidence line recorded (set by #280 gate)
+- `✗ failed` — test ran red (set by #280 gate; note: `broke X → test failed with Y`)
+- `⚠ NO TEST — {reason}` — no test; reason ∈ enum
+- `⚠ NO FALSIFY — e2e` — e2e row; counts like NO TEST, ¬proven
+
+**Priced quantity (mechanical, not optional):** scan each SC checkbox. Signals: fail-closed / fail closed / deny / refuse / reject / guard / gate / auth / authz / secret / inject / security. Matching SC whose following fenced yaml does not contain `priced:` + `not:` + `oracles:` → **blocking gap**, ¬proceed to `/R-pr` (re-run `/R-spec`). Map tests to `priced` + `oracles`, never to `not`.
+
+### Step 6b — Falsification Gate (#280 / #417)
+
+Runs immediately after SC→Test Matrix is built. Scope: unit + fast-integration tests only. e2e tests are **exempt** — set Status to `⚠ NO FALSIFY — e2e` (do not leave `⏳ not run`).
+
+**Precondition:** the implement agent must `git add` all newly created source files before the gate runs — the Write tool does NOT auto-stage, and unstaged new files are invisible to `git diff HEAD`.
+
+**Evidence is mandatory.** A mapped test without a runner-proven row stays `⏳ not run`, never `✓ proven`. ¬mental-only check. Markdown is a **report**, not the oracle (ADR-019).
+
+**Runner — plugin-owned (default):**
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/skills/pr/run-falsify.sh \
+  --map artifacts/reviews/{N}-falsify-map.json \
+  --out artifacts/reviews/{N}-falsify.json \
+  --issue {N}
+```
+
+Build the map from the SC→Test matrix: each unit/FI row → `{ sc_id, sources: [<priced source paths>], test_cmd: "{commands.test_file} {test_file}" }` (`commands.test_file` when `.dev/stack.yml` sets it, else `{commands.test}`). That shape is **enforced**, not advisory: the helper reads the contract with Bun.YAML (bun >= 1.2.21 on PATH), takes its command + plain relative test file paths the snapshot carries, and runs that as argv, with no shell. If `commands.test` cannot run one named file (a turbo root script, `unittest discover`), every row ends `restore-failed` — set `commands.test_file` (e.g. `bunx vitest run`). Test paths reach argv, so they are an allowlist (`[A-Za-z0-9_./@+-]`, no leading `.`, no `..`): a route-group path like `app/(auth)/x.test.tsx` cannot be a falsify test path. Sources are hashed and deleted inside the snapshot only: any relative path with no empty, `.` or `..` segment (dot-dirs are fine); one that resolves outside the snapshot fails its row as `source-escape`. Refusals: `refused-test-cmd:row<i>` — a row that is not that shape (a pipe, a `;`, another runner, a `..` path, a test path the snapshot does not carry), a malformed row, or a bad source; the whole map is refused, and every row the failing check refused is named on stderr. `missing-test-command` / `unsupported-test-command` — the contract's command is absent, not one plain command (shell syntax, a `VAR=` prefix), or the file is not valid YAML / not a regular file / bun is missing (stderr names which): fix `.dev/stack.yml` or the PATH, re-mapping will not help. `runner-error` — the input made the helper fail (stderr says why). Once rows run, `oracle_reason` is the first failing row's reason. ADR-019 §2c. Isolation is **copy at HEAD with the working tree overlaid** inside the helper (¬repo-global `git stash` as the public API) — which is why the `git add`-but-not-commit precondition above is enough: the snapshot carries your uncommitted work. ADR-019 §2a.
+
+**Consumer `test:falsify` / stack.yml:** allowed **only if** the script execs this helper as a child and does not swallow non-zero. Otherwise **stub-refuse** — do not treat it as an alternate oracle. LLM-operated `git stash` is **not** an alternate oracle after #417.
+
+On `oracle_ok=true`: set each proven matrix row to `✓ proven` from JSON `rows[].status` / `error`. On `oracle_ok=false`: leave rows `⏳ not run` or `✗ failed` per JSON; **¬proceed to `/R-pr`**.
+
+**Persist (mandatory, τ≠S):** `artifacts/reviews/{N}-falsify.json` (and optional `.md` render written by the helper). Conversation-only summary is ¬the oracle — `/R-pr` fail-closes on missing/failed `--verify`.
+
+**Matrix format (fixed columns — parseable):**
+
+````markdown
+## SC → Test Matrix
+
+| SC | Test(s) | Status |
+|----|---------|--------|
+| SC1: {text} | `{file} :: {test name}` | ⏳ not run |
+| SC2: {text} | `{file} :: {test name}`, `{file2} :: {test name2}` | ⏳ not run |
+| SC3: {text} | — | ⚠ NO TEST — prompt-logic-only |
+````
+
+```
+Implement Complete
+  Issue:    #N — title
+  Branch:   feat/N-slug
+  Worktree: {WT_PATH}
+  Principal: {principal} @ {β}
+  Tier:     S|F-lite|F-full
+  Agents:   list
+  Files:    created/modified list
+  Tasks:    N/total completed (stragglers: ...)
+  Verify:   N/total first-try (%)
+  SC Matrix: N/total mapped (gaps: ...)
+  Next:     /R-pr → /R-dev-review → /1b1 → merge
+```
+
+## Rollback
+
+H_wt = claude-enter:
+```
+ExitWorktree(action: "remove", discard_changes: true)
+```
+
+H_wt = harness-default:
+```bash
+git worktree remove --force "$WT_PATH"
+```
+
+```bash
+git branch -D feat/<N>-<slug>
+# Optional: {commands.worktree_teardown} <N>
+# Principal must still be on β after teardown
+```
+
+## Edge Cases
+
+Read [references/edge-cases.md](${CLAUDE_SKILL_DIR}/references/edge-cases.md).
+
+| Merge conflict (ω setup) | `git rebase --abort` → present choice: **Resolve manually** (fix conflicts → `git rebase --continue`) \| **Abort** |
+| Abandon after 3✗ gate failures | remove ω (H_wt) then `git branch -D feat/<N>-<slug>`; principal stays on β |
+| Principal not on β | STOP — restore β before any feature work |
+
+## Safety
+
+1. ¬`git add -A` ∨ `git add .` — specific files only
+2. ¬push without PR via `/R-pr`
+3. ¬create issue without user approval
+4. Always ω ∀ τ — ¬exception (XS, S, F-lite, F-full all require ω)
+5. Always HEREDOC for commit messages
+6. Pre-commit hook failure → fix, re-stage, NEW commit (¬amend)
+7. **¬** `git switch` / `checkout` feat on principal — principal freezes on β
+8. Grok: **¬** `isolation: worktree` for implement workers — use `cwd: WT_PATH`
+9. AGENTS.md / `standards.testing` / lefthook comments: **ban enumerating** `validate:full` steps — point at the package script (`{package_manager} run validate:full` / `{commands.*}`). A copied step list is `parallel-path-drift`.
+
+$ARGUMENTS

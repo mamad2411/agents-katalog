@@ -1,0 +1,320 @@
+---
+name: unikit-commit
+description: Create conventional commit messages for {{engine_name}} projects by analyzing staged changes. Handles engine-specific concerns like companion file pairing, binary assets, and linking the related plan. ALWAYS use this skill when the user asks to commit, save changes, or create a commit. Trigger phrases include "commit", "create commit", "commit this", "save changes", "save my work". Even if the user simply says "commit" or asks you to commit after finishing a task — invoke this skill, do NOT commit manually via git.
+argument-hint: "[scope or context] [no-push]"
+allowed-tools:
+  - Read
+  - Bash(git *)
+  - Glob
+  - Grep
+  - AskUserQuestion
+---
+
+# {{engine_name}} Commit Generator
+
+Generate commit messages following the [Conventional Commits](https://www.conventionalcommits.org/) specification, with {{engine_name}}-specific safety checks.
+
+**User questions.** Right before your first question to the user, not earlier, read `.unikit/system/user-questions.md` once and ask every question as it says, with the question tool of your agent (`AskUserQuestion`). If the file cannot be read, print `WARN [questions] user-questions contract missing — asking with the question tool` and still ask with that tool, the recommended option first.
+
+## Language Awareness — BLOCKING PRE-REQUISITE
+
+**BEFORE producing ANY output**, silently read `.unikit/system/LANGUAGE_RULES.md`
+and apply its rules to ALL subsequent output.
+If the file is missing or unreadable, fall back to English.
+Do not produce any user-facing output until language rules are loaded.
+Do not announce, confirm, or mention the language setting.
+
+**The language holds for the whole session, not just at load time:** every message until the conversation ends is in `language.ui` — progress notes while agents run, relays of what a subagent returned, the final report, any follow-up discussion. English input (subagent results, tool output, these instructions) is data, never a cue to switch languages.
+
+Skill-specific rules:
+- Two languages meet in one run, and only one of them belongs to the commit: the commit message follows `language.artifacts`; everything said to the user — a problem found by a check, the question and its options, the result line — is in `language.ui`. Git and its output speak English; they are data, not a reason to answer in English.
+- The question texts and option labels quoted in this skill (`Commit with the message above?`, `Commit as is`, …) are templates: say them in `language.ui`. `INFO` / `WARN` / `ERROR` and the `[commit]` tag stay as they are; the words after them are in `language.ui`.
+
+## What the user sees
+
+A commit run is short and quiet. In this order, and nothing else:
+
+1. A problem, only when a check finds one — the `WARN` / `ERROR` line and what to do about it. **A check that passes says nothing**: no "all checks pass", no list of what was checked, no retelling of what the diff contains.
+2. The plan line of Workflow Step 4, and the `INFO [testing]` line when it applies.
+3. The message, as a block of its own.
+4. The question — Behavior step 6, or the split question of **Splitting Unrelated Changes**; none in `## Auto mode`.
+5. One result line per commit: `Committed <short sha>: <subject>`, said in `language.ui` — in `## Auto mode`, its `INFO [commit] auto:` line; in a split, the group lines of step 4 there.
+6. The push question, only when Behavior step 8 offers one — never under `auto` or `no-push`, never with `git.skip_push_after_commit: true`; in a plan with PR checkpoints it may be the boundary question of `references/push-boundary.md` or one line saying why no push is offered.
+
+No narration between commands, and **no mention of a setting that merely did its job**: `git.skip_push_after_commit: true` ends the run silently after the result line.
+
+## Workflow
+
+1. **Analyze Changes**
+   - Run `git status` to see staged files
+   - Run `git diff --cached` to see staged changes
+   - If nothing staged, show warning and suggest staging
+
+2. **{{engine_name}} Safety Checks**
+
+   Run these checks before generating the commit message. Report findings as `WARN` or `ERROR`.
+
+   **a) Engine companion files**
+   Some engines require companion/metadata files for every asset.
+   Read `.unikit/DESCRIPTION.md` to determine if the current engine has such a mechanism. If yes:
+   - If a new file is staged, its companion is also staged (and vice versa)
+   - If a file is deleted, its companion is also deleted (and vice versa)
+   - Orphaned companion files (no matching asset) → `ERROR`, suggest staging the missing counterpart or removing the orphan
+   - Missing companion for a new asset → `ERROR`, suggest staging it
+   If the engine has no companion file mechanism — skip this check.
+
+   **b) Engine-ignored directories**
+   If any staged file matches a path that should be ignored by the engine (check the project's `.gitignore`) → `ERROR`. These are engine-generated directories that should never be committed. Suggest unstaging them.
+
+   **c) Binary asset awareness**
+   Run `git diff --cached --numstat` — files shown as `-	-	<path>` are binary.
+   If staged changes include binary files, warn the user about binary content in the commit. These files don't diff well — just note their presence so the user is aware.
+
+   **d) Secrets check**
+   Never commit files that likely contain secrets (`.env`, `credentials.json`, API keys in config files). If detected → `ERROR`.
+
+3. **Context Check (Read-Only)**
+   - Read `.unikit/ARCHITECTURE.md` (if present) to verify staged changes don't violate module boundaries or dependency rules defined there. **Architecture topics:** the root; then the topic files listed under its `## Topics` whose `Load when` matches a staged file; when unsure, load. A listed file that is missing → `WARN [architecture] topic file missing: .unikit/architecture/<slug>.md`, continue.
+   - Read `.unikit/ROADMAP.md` (if present) to check milestone alignment — for `feat`/`fix`/`perf` commits, check if changes relate to an unchecked milestone and suggest mentioning it in the commit body
+   - Read `.unikit/RULES.md` (if present) — the project's rules. A rule about commits or commit messages applies to the message written in Step 7 and wins over this skill's defaults on conflict. **Rule topics:** also load the topic files listed under its `## Topics` whose `Load when` matches the staged files or the commit itself — commit messages, staging; when unsure, load.
+   - Read `.unikit/skill-context/unikit-commit/SKILL.md` (if present) — project-specific rules accumulated by `/unikit-evolve`. Treat as overrides: skill-context wins over general rules on conflict
+   - Missing optional files (`ROADMAP.md`) are `WARN`, not blockers
+   - These are lightweight checks — flag only clear violations as `WARN`, don't block the commit
+   - Never modify these files
+
+   <!-- unikit:extension-point:bootstrap -->
+
+4. **Plan Linkage**
+   - Check if `.unikit/code/plans/` contains an active plan (look for a `plans/*/PLAN.md` manifest)
+   - If a plan exists and the staged changes clearly relate to its tasks, the plan is the source of the message's human part (Step 7): read its `## Overview` and the `WHY:` line of every task the staged changes belong to, and add the `Plan: <folder>` trailer. Phase and task numbers never go into the message — the trailer is the link.
+   - Print `INFO [commit] plan: <folder> — source of the message` when a plan is linked, or `INFO [commit] no related plan — the message is written from the diff` when none is.
+   - A related plan is optional: without one, the human part is written from the effect the diff makes visible.
+   - **The linked plan's manifest has `## Experiment Context`** → read `.unikit/system/prototype-profile.md` and follow its `## Role: quality and the rest`; the Context Check of item 3 ran before the plan was linked, so apply that section to its findings before they reach the message or the report. Missing or unreadable → `WARN [prototype] profile contract missing — committing as for an ordinary plan; run unikit-ai update`.
+   - **Review loop.** The user has been answering a result handed over in this session with edits, or tests the user ordered or chose in a run without a plan still wait for acceptance (`dev-principles.md` item 5a), this commit closes that loop without the user's word of acceptance, and logic changed with no test written → also print `INFO [testing] review loop closed without acceptance: no tests written for <changed logic>`, then commit as usual: write no test and run no suite. No tests due (a plan with `Testing: no`, or no plan and the user never asked for tests) → print nothing. A commit that `/unikit-implement` makes itself during its run is not that.
+
+   **Ultra bundle check.** Read the first line of the resolved plan manifest. If it equals `<!-- unikit:plan-mode:ultra -->`, this is an ultra bundle: read `.unikit/system/ultra-plan-read.md` now, once, and follow it for reading depth and mutability. A plan without the marker never reads this file. **Discovery itself does not change** — the folder is found the way it always was; only what is read inside it differs.
+   **If `.unikit/system/ultra-plan-read.md` is missing or unreadable, do not block:** treat every plan as a single-file plan and continue exactly as before — a project that predates the ultra port has no bundles to read.
+
+   A broken bundle is a `WARN` here, never a blocker — like every other context check in this skill. Plan linkage is optional, and refusing to record finished work because a plan file lost a link punishes the wrong action. Blocking on bundle integrity belongs to `/unikit-verify`.
+
+   **Reading depth:** read the manifest plus the phase files of the **current commit group** only — staged paths are mapped onto groups, and the rest of the bundle is not needed.
+
+   **Commit-group mapping** (ultra bundles only): a staged path is mapped onto a group by the rules in `.unikit/system/ultra-plan-read.md` → `## Commit-group mapping` — how the group is resolved, how ownership is read when one phase spans two groups, and what to do when groups overlap on a file. Follow them there; they are not repeated here.
+
+5. **Determine Commit Type**
+   - `feat`: New feature
+   - `fix`: Bug fix
+   - `docs`: Documentation only
+   - `style`: Code style (formatting, semicolons)
+   - `refactor`: Code change that neither fixes a bug nor adds a feature
+   - `perf`: Performance improvement
+   - `test`: Adding or modifying tests
+   - `build`: Build system or dependencies
+   - `ci`: CI configuration
+   - `chore`: Maintenance tasks
+
+6. **Identify Scope**
+   - Derive from file paths using the project's module/folder structure (see `.unikit/ARCHITECTURE.md`):
+     - Module directories → module name in kebab-case (e.g., `Wallets/` → `wallets`, `MiniGames/` → `mini-games`)
+     - Feature directories → feature name (e.g., `Gameplay/` → `gameplay`, `Application/` → `app`)
+   - Use the argument as scope when it names an area; a caller's context (`checkpoint: …`, `final commit`) is never a scope
+   - Omit scope if changes span multiple unrelated areas
+
+7. **Write the Message**
+
+   The message is read by people who were not in this session — a teammate catching up, a reviewer, someone running `git log` months later. Write it for them, not as a report of the work done.
+
+   **Subject** — `<type>(<scope>): <subject>`
+   - The subject names what changed for the game or the team — a capability, a behaviour, a fix — not the class, method or file that changed. The technical area goes into `scope`.
+   - Under 72 characters, imperative mood ("add", not "added"), no capital letter after the type, no period at the end.
+   - The `type(scope):` prefix is always in English; the subject and the body are written in the language set by `language.artifacts` in `.unikit/config.yaml`.
+
+   **Body** — only when the subject cannot carry the point. A small change is a subject and nothing else.
+   - One to four bullets, or one short paragraph. Each point: what changed → before and now, when there was a "before" → what it gives the game or the team → the honest limit ("only one enemy uses it so far").
+   - A refactor is described through what it gives the team. When behaviour does not change, say so in one sentence.
+   - Every claim traces to the diff, to the plan's `## Overview` or to a task's `WHY:` line (Step 4). No evaluative words without a basis ("significantly", "much faster").
+
+   **Technical paragraph** — optional: the last paragraph of prose, at most three lines, labelled `Technical:`. The label is translated into the commit language like any heading — with a non-English `language.artifacts` the English word `Technical:` never appears in the message, whatever the examples below show; identifiers inside the paragraph stay whole English tokens. It carries only what a future developer will search for and the diff does not show by itself:
+   - a system or entry point that was added, renamed or removed;
+   - a change of data or save format, and whether existing saves still load;
+   - a new package or dependency;
+   - a manual setup step in the editor — a scene, an asset, project settings;
+   - a breaking change, together with the `BREAKING CHANGE:` footer.
+
+   **Never in the prose:** phase or task numbers, guard or test ids, lists of files (git keeps them — `git show --stat`), sizes in bytes, line or step numbers, a method-by-method retelling of the diff.
+
+   **Footer** — machine tokens, always in English: `BREAKING CHANGE: <what breaks>` when it applies, then `Plan: <folder>` when Step 4 found a related folder plan — the folder name alone, which does not change when the plan is archived. No other trailer (see **Important**).
+
+   **Check before showing.** Re-read the human part and take every identifier out of it. Then the chat test: could it be pasted, unedited, into a team chat where not everyone reads code? If not, rewrite it before it is shown.
+
+## Format
+
+```
+<type>(<scope>): <subject>
+
+<body: one to four bullets or one short paragraph — omitted for a small change>
+
+Technical: <at most three lines — omitted when there is nothing to find>
+
+BREAKING CHANGE: <what breaks — only for a breaking change>
+Plan: <folder>
+```
+
+## Examples
+
+Identifiers below are invented — the shape is the point, not the names.
+
+**Small change — the subject is the whole message:**
+```
+fix(inventory): stop the item counter going negative on fast swaps
+```
+
+**Feature with a body and a plan link:**
+```
+feat(campaign): give campaign maps permanent ids
+
+- Maps used to be identified by their position in the list, so reordering
+  the list broke saves and links. Every map now has its own permanent id.
+- Map content can now be changed in the balance tables, without a programmer.
+- Only the first chapter uses the new ids so far; the rest follows.
+
+Technical: CampaignMapId replaces the list index; saves from older builds
+are converted on first load.
+
+Plan: campaign-map-ids
+```
+
+**Refactor that does not change behaviour:**
+```
+refactor(fx): separate hit effects from gameplay logic
+
+Flash, hit sound and damage numbers on enemies and blocks now come from one
+shared set of parts instead of being set up by hand on every object. Editing
+effects can no longer break gameplay. Game behaviour does not change.
+
+Technical: FeedbackPresenter owns the hit effects that used to live inside
+EnemyView and BlockView.
+
+Plan: fx-feedback-kit
+```
+
+**Breaking change:**
+```
+feat(inventory)!: sort items by category instead of a fixed type list
+
+A new kind of item no longer needs a code change: items are grouped by
+category. Existing item definitions have to be re-exported once.
+
+BREAKING CHANGE: item definitions use CategoryID instead of TypeEnum
+```
+
+## Behavior
+
+When invoked:
+
+1. Check for staged changes
+2. Run {{engine_name}} safety checks (meta pairing, ignored dirs, binary assets, secrets)
+3. Run lightweight context checks against `.unikit/` docs
+4. If errors found — list them and ask user whether to proceed or fix first
+5. Write the commit message by Workflow Step 7 — its check before showing included
+6. Print the full message — subject, body, footer — as plain text in a block of its own, then confirm with the user before committing. In `## Auto mode` the message is printed the same way and committed without this question.
+
+   ```
+   The question tool of your agent (`AskUserQuestion`): 💾 Commit with the message above?
+
+   Options:
+   1. Commit as is
+   2. Edit message
+   3. Cancel
+   ```
+
+   Based on choice:
+   - Commit as is → proceed to step 7
+   - Edit message → ask the user for the corrected message via the question tool of your agent (`AskUserQuestion`), then return to step 6 with the new message
+   - Cancel → do NOT commit → **STOP**
+
+7. Execute `git commit` with the confirmed message
+8. **Post-commit push handling** — the first case that holds decides:
+   1. **`## Auto mode`, or the token `no-push`** → no push is offered, and not a word is said about it.
+   2. **`git.skip_push_after_commit = true` in `.unikit/config.yaml`**:
+      - Skip push prompt entirely
+      - End workflow after successful local commit — silently: the result line is the last thing said, with no word about the setting
+   3. **The branch's plan carries at least one `PR checkpoint:` line** → read `{{skills_dir}}/{{self_name}}/references/push-boundary.md` now, once, and follow it — it replaces case 4. The branch's plan is the one Workflow step 4 (Plan Linkage) linked; when it linked none, the folder found by the branch-match rule of `/unikit-implement` Step 0.1 (the three name formats). The check is `grep -c 'PR checkpoint:'` over its manifest.
+      **If `references/push-boundary.md` is missing or unreadable, do not block:** take case 4 — the target is `HEAD`, the current state — and print once `WARN [commit] push-boundary reference missing — module boundaries are not checked, the ordinary push offer is used; run unikit-ai update`.
+   4. **Otherwise** (default behavior), offer to push:
+     - Show branch/ahead status: `git status -sb`
+     - If the branch has no upstream, use: `git push -u origin <branch>`
+     - Otherwise: `git push`
+
+     ```
+     The question tool of your agent (`AskUserQuestion`): Push to remote?
+
+     Options:
+     1. 🔄 Push now
+     2. Skip push
+     ```
+
+     - **Push now** → execute push command based on upstream status:
+       - if branch has no upstream → `git push -u origin <branch>`
+       - otherwise → `git push`
+     - **Skip push** → end the workflow
+
+If argument provided (e.g., `/unikit-commit wallets`):
+- Use it as the scope
+- Or as context for the commit message. A caller's context — `unikit-implement-coordinator` passes `checkpoint: Commit N, tasks X-Y` or `final commit` — tells Step 4 which plan tasks the staged changes belong to: it is input, never text for the message. The token `auto` is neither scope nor context: it switches on `## Auto mode`. The token `no-push` is not scope or context either: it switches the push offer off for this run (Behavior step 8) — `/unikit-implement` and `unikit-implement-coordinator` pass it while their plan carries a `PR checkpoint:` line. Only the exact token, as one comma-separated part of the argument, counts — the same rule as `auto`.
+
+## Auto mode
+
+A caller the user has told to commit without asking — `/unikit-implement` once its auto-commit is on — adds `auto` to the argument: `checkpoint: phase 3, auto`, `final commit, auto`. Only that exact token, as one comma-separated part of the argument, counts; a rule text or a scope that merely contains the word never does.
+
+**Auto removes the routine questions, never the checks:**
+
+- The message is written by Workflow Step 7, its check before showing included, and printed in full as a block of its own — then committed without the Behavior step 6 question.
+- No split question: everything staged is committed together, unless the caller passed a split — then that split is applied (**Splitting Unrelated Changes**, steps 3-4) without asking, except while a merge is in progress.
+- No push, and no question about it, whatever `git.skip_push_after_commit` says — the same as `no-push`.
+- An `ERROR` from the safety checks (a secret, an orphaned companion file, an engine-ignored directory) still stops and asks the Behavior step 4 question: auto skips the confirmation of a good commit, never the guard against a bad one. A `WARN` is printed and does not stop it.
+- After each commit print `INFO [commit] auto: <short sha> <subject>`.
+
+## Splitting Unrelated Changes
+
+If staged changes contain unrelated work (e.g., a feature + a bugfix, or changes to independent modules), suggest splitting into separate commits. When the caller passes a proposed split — `unikit-implement-coordinator` relays the groups of `unikit-commit-sidecar` — start from that one instead of deriving your own.
+
+A split needs an existing commit to split against: when `git rev-parse --verify -q HEAD` fails (the repository has no commit yet), do not offer it — commit everything together and print `INFO [commit] no HEAD yet — split not offered`.
+
+**While a merge is in progress** — `git rev-parse -q --verify MERGE_HEAD` succeeds — no split is offered and a split passed by the caller is not applied: `git reset -q` below would drop `MERGE_HEAD` and the merge commit would have one parent. Commit everything together and print `INFO [commit] merge in progress — split not offered`.
+
+1. Show which files/hunks belong to which commit
+2. Confirm split plan with the user:
+
+   ```
+   The question tool of your agent (`AskUserQuestion`): Split into separate commits?
+
+   Options:
+   1. ✅ Yes, split as suggested
+   2. No, commit everything together
+   3. Let me adjust the grouping
+   ```
+
+   Based on choice:
+   - Yes, split as suggested → proceed to step 3
+   - No, commit everything together → write a single message (**Behavior** step 5)
+   - Let me adjust the grouping → ask the user for the adjusted grouping via the question tool of your agent (`AskUserQuestion`), then return to step 2 with the new plan
+
+3. **Check the grouping before the index is touched.** List the staged paths with `git diff --cached --name-status --no-renames` — a rename shows up as its two halves, and both halves go into the same group. Every staged path belongs to exactly one group; a path in no group, or a rename split between groups, sends you back to step 2 with the problem named.
+   A file claimed by two groups is split by hunks: take its staged hunks with `git diff --cached -- <file>` now and assign every hunk to one group. A binary file has no hunks and goes whole into one group. A hunk that cannot be assigned with certainty → do not guess: stop before touching the index and return to step 2 — the user regroups or commits everything together.
+   Write every group's message by Workflow Step 7, print them all at once as plain text, then ask once with the same three options as **Behavior** step 6, before the first commit.
+4. **Snapshot the index, then commit group by group.** Never `git add` here: it stages the working-tree version of a file, so edits the user deliberately left unstaged would enter the commit.
+   - `git write-tree` — keep the printed id as `<snapshot>`: the staged state exactly as the user left it. Nothing is written to disk.
+   - `git reset -q` — the index returns to `HEAD`; the working tree is not touched.
+   - For each group, in order: `git restore --staged --source=<snapshot> -- <the group's paths>`, then `git commit` with that group's message. A file split by hunks enters through its hunks instead — `git apply --cached --recount -`, fed on stdin with the file's `diff --git` / `---` / `+++` header lines followed by that group's hunks as taken in step 3 — except in the last group that touches it, which takes the rest with the same `git restore` line.
+   - Print `INFO [commit] split: <n> groups, snapshot <first 8 characters of snapshot>` before the first group and `INFO [commit] group <i>/<n> committed: <short sha>` after each.
+   - A `git commit` or `git apply` that fails (a hook, a patch that does not apply) → stop the split, put the failed group and every later one back into the index with `git restore --staged --source=<snapshot> -- <their paths>`, and print `WARN [commit] split stopped at group <i>/<n>: <reason> — the uncommitted groups are staged again`.
+   - After the last group: `git diff --quiet HEAD <snapshot>` exits 0 when the commits hold exactly what was staged. Anything else → `WARN [commit] the split commits differ from what was staged — compare: git diff HEAD <snapshot>`.
+5. After all commits are done, run Post-commit push handling (Behavior step 8) — respects `git.skip_push_after_commit`, `no-push` and a plan's PR checkpoints
+
+## Important
+
+- Review large diffs carefully before committing
+- Treat `.unikit/ARCHITECTURE.md` as read-only context
+- NEVER add `Co-Authored-By` or any other trailer attributing authorship to the AI. Commits must not contain AI co-author lines
+- Conventional Commits prefix (`type(scope):`) is always in English; the subject and body text use the language from `.unikit/config.yaml` (`language.artifacts`)

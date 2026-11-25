@@ -1,0 +1,1 @@
+skills/webgpu-metal-debug-kit/SKILL.md

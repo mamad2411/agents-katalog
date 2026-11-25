@@ -1,0 +1,196 @@
+---
+name: sc-help
+description: "Quick reference for SI-Coder route selection, frontend quality presets/profiles, secret-safe provider control, portable installation, and provider-specific skills. Use for 'sc help', 'what should I run', 'which frontend preset', 'which deploy route', or 'list si-coder commands'."
+use_when: "Use when the user needs SI-Coder command/skill routing, frontend preset/profile syntax, installation help, or provider/deployment route reference."
+do_not_use_when: "Do not use when the task is outside this skill scope or a more specific SI-Coder skill owns the requested outcome."
+required_tools: []
+security_constraints: "Never request, print, or persist plaintext credentials in chat/tool payloads; use SI-Coder safe credential handoffs."
+references: []
+compatibility: "Standalone SI-Coder; host invocation syntax and available tools may vary."
+---
+
+# sc-help
+
+## Language
+
+Keep durable instructions in English. **Reply in the user's language** unless they request another language.
+
+## Non-technical default UX — mandatory
+
+SI-Coder is primarily for people who want a working web app, not an infrastructure lesson. **Lead with the outcome, hide the plumbing.**
+
+A valid user request can be as simple as:
+
+> "Create a salon booking app and put it on my domain."
+
+From that sentence, the agent should normally choose the stack, database/data service, hosting route, repository strategy, deployment method, domain records, frontend quality route, and verification approach itself.
+
+Rules:
+
+1. **Speak in goals:** "publish the app", "improve the frontend", "connect the account", "connect the domain", "store the app data". Do not lead with environment variables, DNS records, deploy keys, containers, or internal skill routing.
+2. **One user action at a time.** Never dump a setup checklist when only one permission/account connection blocks progress.
+3. **Do not ask users to choose technology** unless they explicitly care. Choose sensible defaults and keep technology names in optional technical details.
+4. **Do not ask a question that tools/repo state can answer.** Inspect first.
+5. **Credentials are framed as permissions, not secrets.**
+6. **Never ask the user to copy values between services** when a connector/server-side flow can do it safely.
+7. **Progress is product-oriented:** `Build → Frontend quality → Prepare data → Publish → Connect domain → Verify`.
+8. Every completion message states what works and offers exactly one `[rekomendasi]` next step.
+9. Technical users can ask for `--technical`, JSON, or provider-specific skills.
+10. When a planner/tool returns `userPlan`, use it as the default user-facing response and keep raw routing/credential internals advanced.
+
+## Pick the entry point
+
+| Goal | Internal skill identity |
+|---|---|
+| Describe anything you want SI-Coder to build/change | `sc` |
+| New/vague app idea | `sc-build` |
+| Combined frontend UI + UX + DX + AX work | `sc-fe` |
+| Visual interface/design-system/anti-slop audit | `sc-ui` |
+| Usability/accessibility/interaction audit | `sc-ux` |
+| Frontend developer-experience audit | `sc-dx` |
+| Agent Experience/tool/project ergonomics audit | `sc-ax` |
+| Find/install/create an Agent Skill by capability | `sc-skill` |
+| Existing app: publish from repo to production | `sc-all` |
+| API/provider credential or account connection | `sc-provider` |
+| Install in Claude Code/Codex/Hermes/OpenClaw | `sc-install` |
+| Provider-specific operation | matching `sc-*` skill |
+
+Invocation is a host concern: slash-capable hosts can expose `/sc-fe`; ChatGPT Web uses automatic selection or the product's explicit skill/plugin selection UX rather than assuming custom slash registration.
+
+## Frontend presets and profiles
+
+`sc-fe` preserves a coherent existing design by default. Use a named preset only when a direction is useful; presets encode principles, never proprietary assets or pixel clones.
+
+```text
+/sc-fe --apple improve settings
+/sc-fe --workbench audit the desktop shell
+/sc-fe --profile baton-desktop refine the inspector
+/sc-fe --save-profile baton-desktop
+/sc-fe --apple --density compact --motion subtle
+/sc-fe --audit --strict
+```
+
+Built-in shorthand presets: `--apple`, `--workbench`, `--linear`, `--notion`, `--vercel`, `--material`, `--editorial`, `--terminal`.
+
+Key flags:
+- `--preset <name>` — explicit preset.
+- `--profile <name>` — load `.sc/frontend/profiles/<name>.json`.
+- `--save-profile <name>` — extract current design DNA into a reusable compact profile when writes are available.
+- `--existing` — explicitly preserve existing design DNA (default for a coherent existing product).
+- `--fresh` — allow a new direction.
+- `--density compact|comfortable|spacious`.
+- `--motion none|subtle|expressive`.
+- `--platform desktop|mobile|responsive`.
+- `--audit` — audit/report-first behavior.
+- `--strict` — applicable frontend verification failures block completion.
+
+Explicit scope exclusions always win. A command such as "desktop shell only; do not touch mobile nav dock" must preserve that mobile surface even if shared styles/components are involved.
+
+## Deploy routing
+
+```bash
+# Hosted Claude Web / ChatGPT-style runtime
+sc deploy plan --runtime hosted --composio
+
+# Local runtime: VPS is the first branch
+sc deploy plan --runtime local
+```
+
+- **hosted web/chat** → full Composio for GitHub + Convex Cloud + Vercel + Hostinger; no VPS required.
+- **local, VPS unknown** → ask once whether the user has a VPS instead of guessing.
+- **local + VPS** → SC GitHub/Dokploy/self-hosted Convex.
+- **local + no VPS** → SC GitHub; Vercel/Convex/Hostinger prefer Composio, SC fallback.
+
+Advanced deployment overrides: `--runtime hosted|local` and `--target dokploy|hybrid|vercel|vps|managed`. Frontend flags are routed to `sc-fe`, not interpreted as deployment flags.
+
+## Local CLI navigation
+
+On a TTY, bare `sc` is a Finder-style alternate-screen TUI: navigation redraws one frame instead of appending terminal lines, visible `SECTIONS` tabs and a `PATH` breadcrumb stay at the top, and parent/current layers appear as columns. Use `Tab`/`→` to enter a deeper branch, `Enter` to open or run, and `←`/`Esc` to go back. Completing an action returns to the same TUI frame. `Esc` at Home does not quit; choose Quit or press Ctrl-D. If a credential or metadata input is open, `Esc` cancels only that input, saves nothing, and returns immediately to the previous Finder screen. On a normal 28-row terminal the lower INFO/PREVIEW/RESULT panel reserves 8 detail rows (6 on medium, 4 on compact terminals) so guidance uses the available vertical space.
+
+Credential management is user-first. Always select a user before a provider/credential:
+
+```bash
+sc user
+sc user show <user>
+sc user duplicate <source> <target>
+sc user connections <user> [provider]
+sc user connection-add <user> <provider> "<label>" --source <sc|composio|native-mcp> --auth <method>
+sc user credentials <user> [provider] [--connection alias]
+sc user credential-set <user> <provider> [KEY] --connection <alias>
+sc user credential-rm <user> <provider> [KEY] --connection <alias> --yes
+sc user use <user>
+sc user map <folder> <user>
+sc user which
+```
+
+Finder hierarchy: `Users → <user> → Providers → <provider> → Connections → <label> → Credentials → <KEY>`. A GitHub direct connection (`source=sc`) uses `classic-pat` only and points to `https://github.com/settings/tokens/new`; GitHub through Composio remains a separate OAuth source. One user can own several isolated provider connections with unique labels, source/backends, auth methods, and scopes. Duplicate creates an independent user+connection tree. Never expose plaintext credential values.
+
+For AI agents, prefer the matching `sc.user.*` MCP/machine tools from `machine/functions.json`. Use `sc.user.connection.request/manage/list` for account/auth selection and `sc.user.credential.request` for direct create/rotate handoff because machine JSON never accepts raw secret values.
+
+## Secret-safe commands
+
+| Command | Purpose |
+|---|---|
+| `sc providers [--json]` | provider metadata + safe credential state |
+| `sc secret list/get ...` | state/source only; plaintext disabled |
+| `sc user credential-set <user> <provider> [KEY] --connection <alias>` | hidden local credential entry in one labeled connection |
+| `sc secret rm ... --yes` | remove managed credential |
+| `sc run --connection provider=alias -- <cmd>` | run child with explicit non-default connection, without printing secrets |
+| `sc doctor` | live provider validation |
+| `sc audit --json` | metadata-only lifecycle audit |
+| `sc update --check` / `sc update` | safe fast-forward self-update |
+
+## Portable install
+
+```bash
+bash install.sh --agent claude
+bash install.sh --agent codex --with-mcp
+bash install.sh --agent hermes
+bash install.sh --agent openclaw
+bash install.sh --agent all
+```
+
+Claude plugin development/direct use:
+
+```bash
+claude --plugin-dir /path/to/si-coder-agent
+```
+
+## Skills
+
+Active default surfaces are catalog-driven and currently include `/sc`, `/sc-build`, `/sc-all`, `/sc-fe`, `/sc-ui`, `/sc-ux`, `/sc-dx`, `/sc-ax`, `/sc-provider`, `/sc-install`, `/sc-help`, `/sc-git`, `/sc-dokploy`, `/sc-convex`, `/sc-convex-cloud`, `/sc-vercel`, `/sc-cf`, `/sc-onboarding`, `/sc-sync`, and `/sc-n8n`. Dedicated Resend/Stripe/Clerk/Supabase automation is not installed/routed by default while unfinished. Their credential schemas may still be prepared or inspected through `sc-provider`; Cloudflare DNS is active.
+
+## After completing a task
+
+Recommend one useful next step with its benefit + prerequisites, then ask whether the user wants it. Never request a raw secret in chat; use a secure external connection or connection-scoped hidden terminal handoff.
+
+## Mandatory credential + next-step response contract
+
+Whenever a credential/API key is missing, **never output only the variable name**. Always make the handoff explicit:
+
+```text
+Buat di      : <authoritative provider URL / secure connector auth link>
+Petunjuk     : <minimum scope / exact menu when useful>
+Connection  : <user/provider/label + scope>
+Save with   : <sc user credential-set user provider KEY --connection alias, or provider connector>
+Stored in   : <named SC connection 0600, or external connected account>
+Lanjut       : <verification/resume action>
+```
+
+Rules:
+- Local SC runtime: resolve/create a labeled connection first, then use the provider endpoint and `sc user credential-set <user> <provider> <KEY> --connection <alias>`. Values live only in that connection's 0600 file; legacy profiles are migration fallback.
+- Hosted Claude Web/ChatGPT-style runtime: prefer the secure Composio connection URL returned by the connector; credentials stay in the connected account. Do not ask for the raw provider key unless the connector explicitly requires an API key bootstrap.
+- If a custom API-key provider has no creation URL, do not guess one. Require its provider metadata to be updated with `--url https://...` first.
+- Never put the credential value in chat, argv, logs, recommendations, or tool JSON.
+
+After every meaningful completed milestone, emit exactly one next-step block:
+
+```text
+[rekomendasi]
+Next        : <one highest-value next step>
+Why         : <one sentence>
+Needs       : <prerequisites, or "nothing from you yet">
+If you want : <what SI-Coder will do next / secure auth handoff>
+```
+
+Do not dump multiple recommendations. Do not recommend something already configured and healthy.

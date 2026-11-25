@@ -1,0 +1,56 @@
+---
+name: next-step
+description: "Use at every point of a conversation where one of this collection's skills would serve the person better than going on as is, and they have not named it: an idea still vague or choices left open (offer the interview), decisions worth keeping (a brainstorm board), agreement on something to build (a plan, or a swarm with its protocol filled in), a question to decide or a text to write from several viewpoints (a brainswarm), a run that just closed (its follow-up). Produces one offer in one line; never runs the skill unasked. Not for explaining how the collection works, mid-work or to a new person (help). Not for running any of those skills."
+---
+
+# Next step
+
+**The person should never have to know a skill's name to get its help.** You notice the moment
+one fits and offer it in one line, with why and what it would produce; the person says yes, no,
+or something else. A yes loads that skill; it takes over from there.
+
+## The moments
+
+| You notice | You offer | It produces |
+|---|---|---|
+| an idea still vague, several choices open, the person hesitating or contradicting an earlier answer | the `interview` skill: "Want me to interview you on this, one question at a time?" | the decisions settled one by one, a recommendation on each |
+| decisions taken in chat that someone will need later | the `brainstorm` skill: "Keep this as a board?" | a board in aiview: the decisions, diagrams, what was looked into |
+| agreement on something to build, larger than one sitting | the `write-plan` skill: "Write it as a plan?" | the plan, its phases and seats, run later on the board |
+| agreement on work that splits into parts or must be seen working, no plan needed | the `swarm` skill, **with the protocol filled in**: "Run it as build-verify: 3 builders, verifiers sized from the steps (2 here) each on its own instance, until ready (cap 5), effort low. Adjust or go?" | the run on the board, the merged branch |
+| a question to decide, options to explore, or a text to write, better from several viewpoints | the `brainswarm` skill, its protocol named: debate, brainstorm, editorial | the run's record in aiview |
+| a screen to build or change | the `design-prototype` skill | a prototype in the project's design language |
+| work on one subject going on past this session, with findings judged as it goes and no plan holding them | the `long-horizon` skill: "Keep this as a long-horizon document, so any session can resume it?" | the document in aiview: a summary and the elements, each with its status |
+| a project's conventions just decided, or about to be | the `write-conventions` skill | the rule in the conventions file |
+| two or more plans awaiting approval, or the person answering an approval request with a question | the `interview` skill's walkthrough: "Walk you through them before you approve, one part at a time?" | each plan understood part by part, its entries in its own log as `write-plan` step 9 says, the approval opening on what was left open |
+
+**At a run's close**, its follow-up: a brainstorm or a debate settled → a plan; a plan approved →
+its run, with build-verify when the result must be walked (with a prototype phase first when it changes a screen, an architecture phase when its modules must be defined); a run whose setup will recur → keep it
+as the project's `protocol-<name>` skill (the `orchestrate` skill's protocols); a delivery to go
+over together → the `validate-delivery` skill; a run that changed code, its verdict ready → the
+`simplify` skill on its range: "Simplify this run's range `<base>..<head>`, parity verified after?
+Its builders still know what they replaced; later it costs a fresh exploration."; the person asking
+where the dead code is with no range → the `simplify-rework` skill.
+
+**At a walkthrough's end**, finished or stopped, the questions the person asked → one question for
+the whole list, never one per item: the list with its answers, then where to keep them: an
+existing project document (named when one covers the subject), a new one through the
+`technical-writing` skill, the plan itself (in the section each answer belongs to), or nowhere;
+your recommendation marked, with why. Written only on the answer; assume no glossary.
+
+**Before a run that changed the repository closes**, every member waiting and the run still open:
+with `docs: none`, the docs phase never declined in this run, and a report that named a stale
+document → its docs phase (the `orchestrate` skill's `references/docs-phase.md`), folded into the
+close's proposal as its one line: "Bring `<the documents>` in line before closing? One task per
+document, existing ones only. Or close now." A no closes the run as planned. **At its close**, what
+the run added that no document describes → the `technical-writing` skill, once.
+
+## How you offer
+
+- **One line, one recommendation**, the moment it fits, not before: what you would run, why now,
+  what comes out. A second option only when two fit equally, named in the same line.
+- **A filled-in proposal beats a question**: a swarm offer names its protocol, seats, loop and
+  effort, so the person adjusts something concrete.
+- **Once per subject.** A no ends it for that subject; never ask again unless the person comes
+  back to it.
+- **Never while the person is mid-thought**: at a pause, after an answer, at a decision.
+- **The person's own request always wins**: they named a skill, you run that one.

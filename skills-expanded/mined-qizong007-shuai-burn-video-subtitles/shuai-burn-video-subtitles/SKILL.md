@@ -1,0 +1,119 @@
+---
+name: shuai-burn-video-subtitles
+description: "Turn a Chinese speech video into a subtitled MP4: extract audio and transcribe when no SRT exists, polish the SRT, review it in a local page, preview the style, and burn subtitles. Also use for subtitle review or burning an existing SRT. Requires libass-enabled ffmpeg for burning."
+---
+
+# Burn Video Subtitles
+
+Accept an MP4 alone or an MP4 with an existing UTF-8 SRT. Use an existing SRT as the source of truth; transcribe only when no SRT is available. If a reviewed `<stem>_polished.srt` already exists, use it rather than regenerating it. Keep raw transcription, polished subtitles, and the source MP4 separate. Do not overwrite them.
+
+Set `<skill-dir>` below to the directory containing this `SKILL.md`; do not assume a personal installation path.
+
+Commands below use POSIX shell syntax. On Windows, use `python` (or `py -3`) and the PowerShell examples in [references/environment.md](references/environment.md). Resolve paths with native path tools rather than copying shell assignments or backslash continuations into PowerShell.
+
+## 1. Transcribe when needed
+
+Run this skill's `scripts/transcribe_video.py` with `uv` and faster-whisper. It extracts 16 kHz mono WAV and writes `<stem>.srt`, `<stem>_timestamped.txt`, `<stem>_clean.txt`, and `<stem>_segments.json` beside the video. Prefer the small model for technical speech; if its output is too rough, try a larger model after reviewing the cost and time. The script refuses to replace existing outputs unless `--force` is explicitly passed.
+
+```bash
+SKILL="<skill-dir>"
+uv run --with faster-whisper --with opencc-python-reimplemented \
+  python "$SKILL/scripts/transcribe_video.py" input.mp4 \
+  --model Systran/faster-whisper-small
+```
+
+If `<stem>.srt` already exists, skip this step and keep that file unchanged. Do not use ASR to replace an existing user-supplied SRT.
+
+## 2. Polish the transcript
+
+Before polishing, read the user-supplied glossary, if any, and `<skill-dir>/local/glossary.md` if it exists. Explicit task instructions take precedence; use a supplied task glossary over conflicting local entries. If neither exists, continue without a glossary. The public [glossary example](references/glossary.example.md) explains how to create one; it is a template, not an active glossary. Use glossary entries as context-checked spelling candidates, never as unconditional replacements. Do not assume every speaker is the glossary's named creator. Keep private glossary content out of public documentation and commits, and update the local glossary only when the user asks. These files guide the model-based polishing pass; the ASR script does not load them as hotwords.
+
+Read the full raw SRT and make a second, model-based pass. Correct ASR errors, typos, names, technical terms, and awkward transcription artifacts against the audio/video and available project material. Verify uncertain words by listening; do not guess from a glossary. Preserve what the speaker actually said and keep the initial cue indexes and timecodes unchanged. Use simplified Chinese where appropriate. Do not turn speech into promotional copy or silently omit a point.
+
+Write `<stem>_polished.srt` without replacing the raw SRT. Normalize each cue with `srt_io.strip_terminal_punctuation` before saving the polished SRT; the file itself must follow the punctuation rule below, not only the review display. Compare cue count and timecodes with the raw file before segmentation, inspect the opening, middle, and ending, and review uncertain names and short cues against the audio. A raw SRT copied without a substantive check is not a completed polishing pass.
+
+Then make a separate segmentation pass before opening the review page: default to one line per cue, with at most **20 Hanzi of text width**. Split longer speech into consecutive cues by meaning and spoken pauses, keeping names and technical phrases intact. This pass may change cue count and timecodes; preserve the wording and the raw SRT. Use audio word timestamps when available to place boundaries, then check uncertain cuts against the video; do not time splits solely by character count. See the length rules below. If an existing reviewed SRT needs new segmentation, make a sibling SRT and preserve its saved review instead of resetting the work directory.
+
+Regenerate the readable derivatives from the final segmented SRT:
+
+```bash
+python3 "$SKILL/scripts/write_transcript_views.py" \
+  --srt input_polished.srt
+```
+
+This writes `<stem>_polished_timestamped.txt` and `<stem>_polished_clean.txt`. `--raw-srt input.srt` can verify unchanged timings before segmentation; omit it after deliberate splits or merges. Use `--force` only when updating these derived files after later subtitle edits. These TXT files follow the SRT; edit the SRT when wording changes.
+
+## 3. Review the subtitles
+
+Open the local review page with the polished SRT. The editor strips terminal punctuation from each cue before display. Do not skip the review page unless the user says 直接烧录 / 不用审核.
+
+The review UI uses the approved **shuai** wordmark with a red i dot in its top-left header (see [references/brand.md](references/brand.md)). It supports automatic local-time light/dark mode, a single sun/moon toggle, multi-selection, reversible hiding, merging adjacent cues, and undo/redo. See [references/preview-editor.md](references/preview-editor.md) for controls and save behavior.
+
+The top-right SRT dropdown switches among sibling SRT files, with separate review progress for each file in the same work directory. Hover it to read the full source path. **保存** persists the current review JSON; **另存为** exports the current visible cues as a separate SRT without marking the review saved or changing the selected source.
+
+```bash
+WORK="input.subtitle-work"
+python3 "$SKILL/scripts/preview_editor.py" \
+  --video input.mp4 \
+  --srt input_polished.srt \
+  --work-dir "$WORK"
+```
+
+Start the command in the background, verify `/`, `/manifest`, `/api/transcript`, and `/api/status`, then give the user the printed URL. Tell them to review the video and captions, edit wording and timing, click **保存**, and tell you when done. 保存 keeps the editor open for continued editing and repeated saves. Wait for their confirmation that review is complete and the latest edits are saved, as described in [references/preview-editor.md](references/preview-editor.md); a saved state alone is not permission to sync or burn. Preparing the page is not a save.
+
+After saving, sync edits and show the diff. Then update the polished transcript views:
+
+The page saves review JSON in `$WORK`; sync overwrites the specified polished SRT beside the video. Keep the raw SRT unchanged.
+
+Before syncing or burning after a file switch, read `/api/transcript` field `current` or `$WORK/subtitle-manifest.json` field `source_srt` to identify the selected version, and check `/api/status` for its saved review. Sync that active review to the intended reviewed SRT (or use its verified Save As export), then pass that exact SRT path to preview and burn. Do not infer the selected version from the original launch command or burn its unmodified source file merely because the review was saved.
+
+```bash
+python3 "$SKILL/scripts/sync_review.py" --work-dir "$WORK" --srt input_polished.srt
+python3 "$SKILL/scripts/write_transcript_views.py" --srt input_polished.srt --force
+```
+
+## 4. Preview and burn
+
+Render a short preview, inspect caption frames, and get style approval before encoding the full video. Never overwrite the source MP4 or SRT.
+
+The renderer validates the 20-Hanzi line limit before encoding, including with `--ass-only`. An overlong line reports its cue number: split and retime the SRT rather than shrinking the font, adding a line break, or increasing the limit to bypass the check. Pass `--max-line-hanzi N` only when the user requests a different boundary. A user-requested short preview may precede full subtitle review; keep it separate from the full burn, and include the problem cue if the requested duration permits.
+
+```bash
+python3 "$SKILL/scripts/render_subtitles.py" \
+  --video input.mp4 --srt input_polished.srt \
+  --output input_subtitle_preview.mp4 \
+  --ass "$WORK/preview-style.ass" --preview 10 --check-dir "$WORK"
+
+python3 "$SKILL/scripts/render_subtitles.py" \
+  --video input.mp4 --srt input_polished.srt \
+  --output input_subtitled.mp4 \
+  --ass "$WORK/preview-style.ass" --check-dir "$WORK"
+```
+
+If an SRT is supplied and the user explicitly asks for direct burning, use it without an unnecessary ASR or polishing pass. Respect their requested review and style boundaries.
+
+## Subtitle wording and segmentation
+
+- **Creator punctuation requirement:** Keep commas inside a cue, but remove terminal punctuation from the polished SRT itself. Only ellipses (`…`, `……`, `...`) and exclamation marks (`!`, `！`) may remain at the end. Remove terminal periods (`。`, `.`), commas, question marks, colons, semicolons, and closing quotes/brackets. Do not replace a removed period with an exclamation mark. Apply the same rule before review, after sync, and at render time via `srt_io.strip_terminal_punctuation`; reject a cue that becomes empty.
+- **Default length:** A line must contain no more than **20 Hanzi** and must fit the measured width of 20 Hanzi in the chosen caption font. English, numbers, spaces, and punctuation count by their actual displayed width, not as one Hanzi per Latin character. Split an overlong cue into successive subtitles at natural phrase boundaries; preserve the speech instead of deleting words. Keep a technical phrase such as `Claude Code` together. If a single name or term cannot fit, ask for a length/style exception rather than breaking its spelling. Explicit user limits take precedence.
+- Split speech at commas inside a cue when the pause supports it. Set plausible time boundaries by checking the video. Keep cues ordered and non-overlapping.
+- Keep complete names and technical phrases in one cue even when ASR split them. Merge adjacent cues and use their combined time span when needed.
+- Verify names against the source project's own files when available. Common terms such as `Codex`, `Claude Code`, `Agent`, `Skill`, and `MCP` are examples to check, not automatic replacements.
+- After syncing, confirm the SRT parses, each line meets the length limit, every cue ends without punctuation or with an allowed ellipsis/exclamation mark, and no phrase is split awkwardly. Cue timecodes may change during the user's review and segmentation pass.
+
+## Locked look
+
+Keep these values unless the user asks to change them:
+
+- Font: macOS uses `Hiragino Sans GB`; Windows uses Microsoft YaHei Bold / Microsoft YaHei, falling back to SimHei. `--font-file` and optional `--font-index` allow an installed Chinese font override. Keep slightly bold text (`Bold=-1` plus `\b1`).
+- Size: for horizontal video (`width > height`), `height * (96 / 2160)` (96 px at 3064×2160); otherwise `height * 0.0278`
+- Box: PIL-measured tight rounded rect, fill `&H1C1A1A&` at alpha `&H3D&`
+- Length: default maximum 20 Hanzi and 20 Hanzi of measured width per line; resolve overlong cues by semantic segmentation before review/rendering
+- Wrap: the `85%` horizontal / `70%` other-frame width remains a layout fallback for already length-checked text; it does not replace splitting overlong speech into consecutive cues
+- Bottom margin: `height * 0.075`
+
+Do not use a full-width black bar or protected PingFang paths.
+
+## Environment
+
+Read [references/preview-editor.md](references/preview-editor.md) for the review-page protocol, and [references/environment.md](references/environment.md) before the first run on macOS or Windows. Check Python 3.10+, Pillow, and libass-enabled FFmpeg. If port 8765 is taken, use the port printed by `preview_editor.py`; never kill an unknown process.

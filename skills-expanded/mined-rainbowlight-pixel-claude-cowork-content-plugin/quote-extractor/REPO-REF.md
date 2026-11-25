@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/rainbowlight-pixel/claude-cowork-content-plugin (path: content-repurposing/skills/quote-extractor/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Extracts the most quotable, shareable statements from content and formats them for social media use. Use when finding pull quotes, social proof, or highlight-worthy statements.

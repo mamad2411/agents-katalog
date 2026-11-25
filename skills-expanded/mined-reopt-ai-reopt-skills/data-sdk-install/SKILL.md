@@ -1,0 +1,99 @@
+---
+name: data-sdk-install
+description: |
+  Install or upgrade the public reopt Data SDK client/server suite in a consumer project, including opt-in error tracking (exception capture, breadcrumbs, releases, source maps via the `@reopt-ai/data-cli` `reopt-data` bin). Next.js App Router first, with React, vanilla browser, and Node routing. Triggers on "data-sdk install", "reopt analytics setup", "reopt data tracking", "data SDK upgrade", "reopt error tracking setup", "upload source maps to reopt", "reopt-data cli", "데이터 SDK 설치", "리옵트 분석 연동", "에러 트래킹 연동", "소스맵 업로드".
+target: "@reopt-ai/data-sdk-client"
+targetMinVersion: "0.2.0"
+---
+
+# reopt Data SDK Install
+
+> Read the installed package READMEs before writing integration code. The supported suite is `@reopt-ai/data-sdk-client` + `@reopt-ai/data-sdk-server`; `@reopt-ai/data-sdk-devtool` is optional; `@reopt-ai/data-cli` (bin `reopt-data`, Node 22+) is the build/CI tool for source maps and the event catalogue. `@reopt-ai/data-sdk` on npm is a **deprecated** meta-package — never install or import it.
+
+## When to apply
+
+Use for first installs, upgrades, and turning on error tracking in an app that already tracks. Default to a complete Next.js App Router integration; route React, vanilla, and Node-only requests to the matching README.
+
+## Step 1 — Inspect before changing
+
+1. Detect package manager, framework and versions, existing SDK imports, env names, `proxy.ts` / `middleware.ts`, provider/layout, server tracking, consent owner, tenant model, and whether a build step already emits source maps.
+2. Read the installed versions from package manifests. Supported floor: client/server `0.2.0`, optional devtool `0.2.0`, contract `0.7.0`; verified against client `0.9.0`, server `0.10.0`, contract `0.17.0`, devtool `0.3.0`, data-cli `0.2.0`, adapter `0.2.4`. Session replay needs client `0.5.0`+ and the server AI telemetry entry needs server `0.6.0`+. Keep client and server on the same release when both are installed. Recommend client `0.8.0`+ / server `0.9.0`+ (2026-10-25): they fix a client `0.7.0` page-hide flush regression and a server `waitUntil` detection defect, and server `0.9.0` drops the optional `@vercel/functions` peer. Client `0.9.0` / server `0.10.0` add payload privacy filtering, byte/age queue bounds, delivery diagnostics and a post-commit React provider (`useReoptClient()` starts `null`); automatic Next page views stop copying the query string — add `searchParamsAllowList` only for reviewed keys. Upgrading a client from `≤ 0.6.x` to `0.7.0` drops events still waiting in the old offline queue (0.7.0 re-keys it per write key and does not restore the legacy one); from server `0.8.0` a `getProfileId` answer of `null` is final and no longer falls back to the browser profile cookie. A `0.1.x` client still ingests, but it lacks the structured `$exception_list`, `captureException` options, breadcrumbs and `release` — upgrade before wiring error tracking. **Server `0.5.0` dropped its `reopt-data` bin**: a `postbuild` that calls `inject-chunk-ids` / `upload-sourcemaps` from the server package breaks on upgrade until `@reopt-ai/data-cli` is added as a dev dependency.
+
+## Step 2 — Pin agent rules
+
+No Data SDK package ships an agent-rules file as of the versions above. Use this skill's `agent-rules.md` fallback and place it in `AGENTS.md` (or `CLAUDE.md` only when AGENTS is absent) between:
+
+```
+<!-- BEGIN:reopt/data-sdk-agent-rules -->
+…fallback content…
+<!-- END:reopt/data-sdk-agent-rules -->
+```
+
+Replace only content inside existing markers.
+
+## Step 3 — Consumer setup
+
+1. **Registry** — packages are public npm. Remove only a project-level `@reopt-ai:registry=https://npm.pkg.github.com` override; preserve unrelated config and ask before user/global npm changes.
+2. **Packages** — install client for browser/React; server for Next server code or Node; devtool as a dev dependency only when requested; `@reopt-ai/data-adapter-apps-in-toss` (its `@reopt-ai/data-sdk-client` peer is **not** optional and tracks client minors — 0.2.2 stops at `^0.6.0`, 0.2.3 adds `^0.7.0 || ^0.8.0`, 0.2.4 adds `^0.9.0`; pick the adapter that covers the installed client — npm refuses a mismatch (`ERESOLVE`) and pnpm only warns, and never force it with `--legacy-peer-deps`, `--force` or `overrides`) only for an Apps-in-Toss WebView, where its README says to turn every reopt auto-capture off (`capture: { pageview: false, pageleave: false, scrollDepth: false, exceptions: false }`) and inject the Toss `send` function rather than importing the Toss SDK; `@reopt-ai/data-cli` as a dev dependency only when source maps or the catalogue-as-code workflow are wanted (it needs Node 22+ — check `engines` before adding it to a Node 20 CI image). Install optional peers only for surfaces in use.
+3. **Credentials** — connect an existing project. Do not create an Organization, Project, or API client. A browser receives only its public write key. Keep `clientId` + `clientSecret` in server-only code and gitignored env files. Credentials come from the user, never from another agent session: if they are missing, finish the integration fail-open and hand the user this checklist instead of asking in chat. (a) The project's console page `/dashboard/<orgId>/<projectId>/settings` → API client shows the write key and client ID to any project member. (b) The client secret is shown only when issued; reuse the stored copy. Rotating the write key or reissuing the secret (owners/admins) rejects the current value at once for every deployment using it — only on the user's explicit decision. (c) Production (`https://data.reopt.ai`) and staging (`https://data.reopt.io`) are separate deployments with separate projects and keys; a Preview build pointing at staging needs the staging project's values or stays disabled. (d) A Free organization includes no data points, so its events are refused; the project must belong to a plan with an ingest allowance. (e) The user writes the values into the gitignored env file (and the host's secret store); the agent then verifies without printing them.
+4. **Next.js default** — create one module-scope `createReopt()` factory, pass `getBootstrap()` into the client provider, mount `ReoptPageView` / optional `ReoptWebVitals`, and use `baseUrl: "/ingest"` in the browser with an absolute Data origin on the server.
+5. **Proxy** — compose `reoptProxy` after host/auth routing for responses rendered by this app. Preserve existing headers/cookies and ensure `/ingest/:path*` reaches the proxy even with a whitelist matcher — from client `0.8.0` a 404 there is a permanent refusal and the batch is dropped, not retried. From server `0.9.0` the proxy forwards only `/api/track`, `/api/replay/start` and `/api/replay/chunk`, strips the site's `Cookie` / `Authorization` headers and passes the `reopt-sdk` header through; a hand-written proxy must match.
+6. **Tenant shape** — static env values are fine for one project. For multi-tenant hosts, resolve write key and credentials per request on the server and pass only the resolved public key across the client boundary.
+7. **Fail-open** — missing analytics config may yield a disabled client, but application security and input validation remain fail-closed. Missing credentials block live verification, not app startup.
+
+## Step 4 — Error tracking (opt-in; ask before enabling on a customer site)
+
+Everything below is off by default. Turn on only what the user asked for, in this order:
+
+1. **Browser capture** — `capture: { exceptions: true }` sends `$exception` for uncaught errors and unhandled rejections; the parsers load as their own chunk. Keep the default per-type rate limit (`capture.exceptionRateLimit`, a token bucket of 10 / one back every 10s; it nests under `capture`, not at the config root) unless the user names a reason; never set it to `false` in production.
+2. **Handled errors** — `captureException(error, { level?, fingerprint?, properties? })` inside existing `catch` blocks that matter (checkout, auth, data loading). Do not wrap every call site; the server groups by stack, so one report per failure path is enough.
+3. **Server errors** — Next: `createOnRequestError()` in `instrumentation.ts`; add a `beforeCapture` hook when request context may carry PII. The plain Node client (`createReoptNode`) has no exception helper (still none in server 0.8.0) — do not hand-build one; report it as a gap.
+4. **Breadcrumbs** — `capture.exceptionSteps: true` records a `navigation` step per page view; the host adds `client.addExceptionStep({ category, message, data })` at meaningful actions (`category` is the closed union `fetch | navigation | click | console | custom`; ≤20 steps, 200-char message, 1 KB `data`). It is an **instance method** (reach the client via `getInstance()` / `getClient()` in vanilla code or `useReoptClient()` / `useReopt()` in React) — there is no root `addExceptionStep` export, so an import of that name fails `tsc`. Off by default because navigation history on every error is a privacy decision the host makes.
+5. **Release** — `init({ release })` or inject `__REOPT_RELEASE__` at build (commit sha / build id; from client `0.8.0` it is read as a bare identifier, so a bundler `define` works); on the server `createReopt({ release })` stamps only `track()` events — `createOnRequestError` takes no `release` key, so return it from the hook instead: `beforeCapture: () => ({ $release_id: <build id> })` (server README § 4; its options are `writeKey` / `baseUrl` / `clientId` / `clientSecret` / `resolve` / `disabled` / `beforeCapture`). This is what lets the dashboard mark regressions. Wire it before source maps.
+6. **Source maps** — production stacks are minified until maps are uploaded. The uploader is `@reopt-ai/data-cli` (`reopt-data`), **not** the server package (its bin was removed in server 0.5.0). Add a `postbuild`: `reopt-data sourcemap inject --dir <static dir>` then `reopt-data sourcemap upload --dir <static dir> --url-prefix <public asset URL> --project-id <id> --release <id>`; the organization key comes from `REOPT_DATA_ORG_KEY` (legacy `REOPT_DATA_API_KEY` / `--api-key` still accepted) — CI/server only. One deployment serving many projects uploads once per host app with `--path-prefix` + `--host-app` + `--organization-id` instead of `--url-prefix` + `--project-id`. The uploader keys maps by each chunk's `//# sourceMappingURL`; do not upload maps by their own filenames. Enabling browser source maps publishes them — confirm with the user first, and add `--delete-after-upload` when the maps must not stay in the served build (from data-cli `0.2.0` it also deletes the local maps the server already had, which `0.1.0` left behind). `--dry-run` needs no key: ship it in the committed script when the repo builds without credentials. A partial upload exits `6` (the old bin used `1`) — CI gates must treat both as failure.
+7. **Repository link** — optional: set the project's repository URL + default branch in Data project settings so frames deep-link to source.
+
+Tell the user: events sent before the upgrade are grouped only after a one-time backfill run by the Data project owner (`POST /api/cron/backfill-exceptions`), and maps resolve frames for events arriving after the upload.
+
+## Session replay (client `0.5.0`+; opt-in — ask before enabling on a customer site)
+
+Client `< 0.5.0` has no replay: a `sessionReplay` block, `setConsent("replay", …)` or `flushReplay()` there fails `tsc`. From `0.5.0` it ships (lazy `@rrweb/record` chunk), but the installed README still heads the section "npm release pending" — **gate on the installed version or on `sessionReplay` in the installed types, never on that heading.**
+
+Recording needs the project setting **and** both `analytics` and `replay` consent. Configure `sessionReplay: { enabled: true }`, grant `replay` only from the visitor's own recording decision, and keep it out of default grants: `consent.defaultConsent` is `true` for every listed category, so listing `"replay"` needs `defaultConsent: false`, and `setAllConsent(true)` flips every known category — an "accept all" button then grants recording. `flushReplay()` is an **instance** method (no root export). Built-in masks and blocks (`data-reopt-replay-block`, `data-reopt-private`, passwords, iframes; masked inputs/text) are additive only — never work around them; `blockSelector` adds more. `publicAssets` holds reviewed application-owned static files only (never visitor uploads, avatars, or personalized/authenticated resources — pixels and font metadata are not masked). Never log replay bodies or the `reopt-replay-token` upload grant.
+
+## Docs routing
+
+Paths are relative to each installed package root.
+
+| Task | Read |
+|---|---|
+| Vanilla, React, Next provider/hooks, config, capture, consent, path normalization | `@reopt-ai/data-sdk-client/README.md` |
+| Exceptions: `$exception_list`, throttling, breadcrumbs, `captureException` options | `@reopt-ai/data-sdk-client/README.md` → "`$exception_list` — the structured form" |
+| `release` / `__REOPT_RELEASE__` build injection | `@reopt-ai/data-sdk-client/README.md` → "Release tracking" |
+| Request-scoped tracking, bootstrap, proxy composition, multi-tenant resolvers, `onRequestError`, Node | `@reopt-ai/data-sdk-server/README.md` (English from 0.7.0 and canonical; the `README.ko.md` alongside it in 0.8.0 still carries the 0.7.0 text) |
+| Session replay options, limits, public assets; proxy forwarding | client `README.md` → "Session replay"; server `README.md` → "Browser session replay forwarding" |
+| AI SDK (`ai@7`) telemetry — `createReoptAiTelemetry` from `@reopt-ai/data-sdk-server/ai` (server `0.6.0`+) | server `README.md` → "7. AI observability" |
+| Source map CLI (`reopt-data sourcemap inject` / `upload`, credentials, exit codes, `--dry-run`) | installed `@reopt-ai/data-cli/README.md` → "Source maps in CI" (canonical); `@reopt-ai/data-sdk-server/README.md` § 4-1 for the Next.js shape |
+| Repository defaults for the CLI (`reopt-data config link` writes a committed `reopt-data.config.mjs` with project id, events file, sourcemap dir / prefixes — ids only, never keys) | `reopt-data config link --help` |
+| Event catalogue as code (`reopt-data event init` / `pull` / `diff` / `push` / `verify` / `types` / `history`) | installed `@reopt-ai/data-cli/README.md` → "Event catalogue as code"; hand the workflow to [data-event-catalog](../data-event-catalog/SKILL.md) |
+| What the installed CLI actually has | `reopt-data --help`. **Read the installed README, not GitHub.** Published `0.1.0` (2026-08-30) is `config`, `event` (v1 files only), `org`, `project`, `query`, `sourcemap inject\|upload`, plus `tools [--json]` / `mcp` (the same commands as JSON-Schema tools / a stdio MCP server — including `org create` / `rotate-key` and `project delete`). `0.2.0` (2026-10-25, contract 0.17.0) ships the whole upstream README: `login` / `status` / `logout` / `account show`, `completion`, `segment list\|get\|preview`, `org usage`, `sourcemap list\|delete\|list-platform\|delete-platform`, the Project-as-Code group (`definition pull\|diff\|verify\|push\|import\|unlink`, also as top-level aliases), catalogue v2 files and `event types --with-types`. Its platform commands (`org *`, `*-platform`) need the optional peers `@reopt-ai/brandapp-sdk@^4.7.0-rc.6` + `@better-auth/core` and exit 4 without them; everything else runs on the declared dependencies |
+| Payload privacy (`privacy.redactKeys` / `beforePersist`), queue bounds (`maxQueueBytes` / `maxEventAgeMs`), delivery state (`getDeliveryState` / `subscribeDelivery` / `useDeliveryState`), `searchParamsAllowList`, post-commit provider — client `0.9.0`+ / server `0.10.0`+ | client `README.md` → "Delivery recovery and query privacy"; server `README.md` → "Privacy, queue bounds and delivery diagnostics" |
+| Recording transport, panel, E2E store, production gating | `@reopt-ai/data-sdk-devtool/README.md` |
+| Assembled reference app (multi-tenant + proxy + consent + devtool + `/debug/errors` lab) | `reopt-ai/reopt-data-sdk-example` README — its `postbuild` may still show the pre-0.5.0 server bin; the data-cli README wins |
+
+## Safety
+
+- Never expose `clientSecret`, `REOPT_DATA_ORG_KEY` / `REOPT_DATA_API_KEY`, raw credential headers, captured PII, or a devtools batch on a public production page.
+- Do not invent cookie names, trust a browser-provided profile/session id, cache request bootstrap data, or create a server factory per request.
+- Do not enable the devtool in production unless the user explicitly identifies a controlled demo/staging environment.
+- Do not enable exception capture, breadcrumbs, session replay, or public source maps on a customer site without the user's explicit go-ahead; each changes what leaves the browser.
+- AI telemetry sends no prompt/response bodies by default; never set `captureContent: true` without an explicit request, and set `captureErrorMessages: false` where provider or tool errors can echo inputs.
+- Do not commit or push without explicit user authorization.
+
+## Verify
+
+1. Run the project's format/lint/type/build gates.
+2. Confirm `/ingest/api/track` passes through the real proxy and an accepted batch appears without exposing secrets.
+3. Verify one navigation pageview, identify/reset across login/logout, consent withdrawal, and one server event when those surfaces are installed.
+4. With error tracking on: throw one test error in a non-production environment and confirm an issue appears under the project's **Errors** page with `$exception_list` (and steps / release when enabled); after a maps upload, confirm a frame shows the original file:line. Remove the test data afterwards.
+5. If query credentials and project id are available, correlate one unique event from ingest to Query API; otherwise report that roundtrip as not run.

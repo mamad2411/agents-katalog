@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/nirholas/universal-crypto-mcp (path: vendor/ai-agents/phi-assistants/cookbook/02_agents/skills/sample_skills/git-workflow/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Git workflow guidance for commits, branches, and pull requests

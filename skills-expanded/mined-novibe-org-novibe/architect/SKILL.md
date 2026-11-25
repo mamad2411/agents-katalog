@@ -1,0 +1,83 @@
+---
+name: architect
+description: "Place one slice in the C4 model (LikeC4) by interviewing the driver on the decisions that change its structure, in arc42's views, touching only the layers the slice changes. No runtime view for a sequence a scenario pins, and an ADR only when a later slice would decide differently without it. Use after the spec, before code, when a slice brings a new component, framework, technology or integration."
+---
+
+# Architect
+
+**In:** the Gherkin spec at `features/<domain>/<feature>.feature`.
+**Out:** the slice placed in the **LikeC4 model** at `docs/architecture/` — plus one terse ADR in
+`docs/adrs/`, only when a crucial cross-cutting decision was made.
+
+**Write only the model** — no code, no diagram files.
+
+1. **Read the model** — none yet? This slice starts it, in the layout below, with just enough to
+   place the slice.
+2. **Grill the design into the model, only where the slice changes it** — in arc42's order:
+   context and scope, then the building blocks level by level, each box before its parts, then
+   deployment. Touch only the layers the slice changes, and say in one line which stay as they
+   are. A runtime view only when the order of the steps can be read neither from the relations nor
+   from a scenario — a sequence a scenario pins needs none. Ask in rounds, each question with your
+   recommendation; write each answer into the model before the next round.
+
+   **Ask with `AskUserQuestion`** — up to four questions a call, so a bigger round takes several
+   calls in a row; your recommendation is the first option, marked *(Recommended)*. A question
+   with nothing to choose between goes in plain text. No such tool in this session? Number the
+   questions and put your recommendation under each.
+
+   **Facts are yours, decisions are the driver's** — look up what the code and the model can tell
+   you; ask only what changes the structure: a new element, who talks to whom, the mechanism
+   between them, where something runs. A question about behaviour is the spec's: hand it back to
+   the requirements step, never settle it in the model.
+
+   **What nobody in the session can decide goes to its owner, never into a guess** — recommend
+   asking them, never a guessed choice marked *(Recommended)*. Ask the driver who decides, then
+   offer to record it in the planning tool, a child of the slice's ticket, assigned to them; no
+   tool connected, give the driver the question and its owner to plan. Place only what is decided:
+   the element it concerns waits for the answer, and nothing is modelled as if the driver had
+   chosen. The selected slice needs it? The slice waits too: hand back to the requirements step to
+   select one that doesn't.
+3. **ADR only if warranted** — default to none. Before writing one, ask: would a later slice
+   decide differently without it? If not, there is no ADR. Never one that says how a feature
+   behaves; a choice the driver made for this slice is answered in the model, not recorded again.
+   A decision that is cross-cutting? Recommend the ADR and ask the driver first. Then plain
+   [MADR](https://adr.github.io/madr/), kept short, next number in `docs/adrs/`.
+4. **Push** — once no question is open that someone in the session could decide, and the driver
+   agrees: commit as `arch: …` to the slice's branch and push.
+
+## Rules for the model
+
+- Views follow [arc42](https://arc42.org/overview/); its goals and quality live in `features/`,
+  its cross-cutting decisions in `docs/adrs/`.
+- A box with parts of its own gets a view at the next level.
+- A building-block view holds its subject's children and their direct neighbours. No element
+  appears at two levels in one view.
+- A runtime view holds only the elements that take a step.
+- **Say a fact once.** A description says what an element is, in one sentence. What it does to
+  another element, and by what mechanism, is a relation — never when, unless, or what the user is
+  told: that is the spec's. How a story runs is the feature file; a runtime view shows only
+  a sequence too complex to read from it. Why one feature is built this way needs no record; why
+  every feature must be is an ADR.
+- An ADR names the views it shaped, by view id; the model never names an ADR.
+- Applications share no storage; one reaches another only through its API.
+- Model your own parts. A library you use is a technology line; a package you write is a
+  `library`.
+- Where the system is headed is a view on this model, never a second model.
+- **An element takes the spec's word** for what it is, never a second one — the [ubiquitous
+  language](../../references/ubiquitous-language.md). A part the spec does not name takes the
+  field's term; when two are in use, offer them with their source and ask.
+
+## Layout
+
+- `likec4.config.mjs` (`defineConfig`, never JSON): the project, its summary in
+  `metadata.description`.
+- `models/base-model.c4`: element kinds, people, externals, the system and its applications.
+- `models/<part>.c4`: one per container or package, each `extend`ing its parent.
+- `models/deployment.c4`: where each part runs.
+- `views/views.c4`: every view.
+
+## Done when
+
+No question is open that someone in the session could decide; a decision waiting for its owner has
+kept its element out of the model. The driver agrees the model places the slice, and an ADR exists
+only if a crucial decision was made — often none.

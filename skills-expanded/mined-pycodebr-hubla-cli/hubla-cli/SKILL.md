@@ -1,0 +1,203 @@
+---
+name: hubla-cli
+description: Use when a user wants to consultar ou gerenciar sua própria conta Hubla pelo terminal, automação ou agente de IA usando o comando hubla-cli.
+license: MIT
+compatibility: Requer o executável hubla-cli instalado, acesso à internet e uma conta Hubla autorizada pelo usuário.
+metadata:
+  version: "0.4.1"
+---
+
+# Hubla CLI
+
+Use o `hubla-cli` como interface local para a conta Hubla autorizada pelo usuário. Prefira os comandos de alto nível e a saída JSON. Não tente reproduzir as requisições por `curl` quando o CLI já cobre o recurso.
+
+## Primeiro uso
+
+1. Verifique a instalação:
+
+```bash
+hubla-cli --version
+hubla-cli --json doctor
+```
+
+Antes do primeiro login, `doctor` retorna código 2 e informa que credenciais e conta ainda não foram validadas. Isso indica que o próximo passo é o login, não uma tentativa de contornar a autenticação.
+
+2. Verifique a sessão:
+
+```bash
+hubla-cli --json status
+```
+
+3. Se não houver login, não execute `hubla-cli login` pelo terminal interno do agente. Mostre ao usuário o comando abaixo para ele executar em um terminal separado:
+
+```bash
+hubla-cli login
+```
+
+Pare e aguarde o usuário responder `autenticado`. Só então execute:
+
+```bash
+hubla-cli --json status
+```
+
+O terminal separado deve usar o mesmo computador, usuário do sistema e ambiente em que o CLI foi instalado. Em uma VPS, o usuário deve executar o login por SSH nessa VPS. Um terminal local não compartilha credenciais com containers, sandboxes ou máquinas remotas.
+
+Nunca peça que a pessoa envie e-mail, senha, token ou código de autenticação pelo chat, em argumento de comando, arquivo, log ou variável escrita por você. O prompt de login mascara a senha com asteriscos. O CLI não salva a senha; guarda somente o token renovável no cofre do sistema ou, quando ele não existe, em arquivo privado do usuário.
+
+Para contas diferentes, use um perfil explícito e preserve o mesmo perfil nos comandos seguintes:
+
+```bash
+hubla-cli --profile trabalho login
+hubla-cli --profile trabalho --json status
+```
+
+`--profile` seleciona o login, não o negócio acessado. Perfis nomeados usam exclusivamente suas credenciais salvas e nunca herdam `HUBLA_EMAIL`/`HUBLA_PASSWORD` do ambiente padrão. Para um usuário somente colaborador, o CLI aceita 404 em `/business` apenas quando `/user/roleplay/my-access` confirma ao menos uma conta. Após o login pelo próprio usuário:
+
+```bash
+hubla-cli --profile trabalho --json account accessible
+hubla-cli --profile trabalho --account USER_ID --json status
+```
+
+Selecione `USER_ID` exatamente da lista de contas acessíveis. `--account` assume aquela conta **somente neste comando**, valida o retorno de `/user/roleplay/reference` e nunca salva o token da conta assumida. Repita `--profile` e `--account` em cada chamada seguinte. O fluxo foi validado com uma conta de colaborador real em consultas somente de leitura; permissões específicas e escritas dependem do acesso concedido. Não execute uma alteração sem conferir o perfil, o `userId` e a permissão da conta-alvo. Se a conta colaboradora ainda não estiver autenticada, peça ao usuário para executar `hubla-cli --profile trabalho login` em outro terminal e aguarde `autenticado`; nunca leia senhas de `.env`.
+
+## API pública oficial
+
+A Hubla está desativando o acesso aos BFFs do portal com login de usuário. Quando o usuário tiver um token de
+integração, prefira `--backend public` (só API pública) ou `--backend auto` (API pública no que ela cobre e portal
+no resto). Configure com `hubla-cli login --api-token` (o token é pedido de modo oculto; nunca o peça no chat) ou
+com `HUBLA_API_TOKEN` e `HUBLA_BACKEND` no ambiente. Cobertura, campos ausentes e diferenças: `docs/public-api.md`.
+Sem `start_date`, as vendas continuam vindo desde o início do histórico. Troca de turma, convites pendentes,
+finanças, conta, afiliados e Hubla Agents não existem na API pública.
+
+## Descoberta antes da execução
+
+Consulte o catálogo em vez de adivinhar nomes ou parâmetros:
+
+```bash
+hubla-cli --json schema
+hubla-cli --json schema sales
+hubla-cli --json schema sales list
+```
+
+O catálogo marca cada operação com `mutating: true` ou `false` e descreve os parâmetros em `snake_case`.
+
+## Leituras comuns
+
+```bash
+hubla-cli --json account show
+hubla-cli --json sales list --page-size 25
+hubla-cli --json sales list --search cliente@example.com
+hubla-cli --json sales get INVOICE_ID
+hubla-cli --json refunds list
+hubla-cli --json refunds get REFUND_ID
+hubla-cli --json subscriptions list --page-size 25
+hubla-cli --json subscriptions get SUBSCRIPTION_ID
+hubla-cli --json products list
+hubla-cli --json products offers PRODUCT_ID
+hubla-cli --json products cohorts PRODUCT_ID
+hubla-cli --json members list --product-id PRODUCT_ID
+hubla-cli --json finance balance
+hubla-cli --json finance forecast
+hubla-cli --json finance balance --currency USD
+hubla-cli --json agents list workflows
+hubla-cli --json agents list knowledge --page-size 10
+hubla-cli --json agents home --start-date 2026-09-01 --end-date 2026-09-27
+hubla-cli --json agents list conversations --page-size 10
+hubla-cli --json agents opportunities
+```
+
+Para pagamentos internacionais, use `sales list --wallet international` (minúsculas) e `finance wallet-report --currency USD --start-date ISO --end-date ISO`. O extrato deve ter no máximo 90 dias; valores em centavos assinados ficam na moeda original. Registros `movement` não entram nos totais `consolidated`, e `balanceNow` é saldo atual, não histórico. `--exchange-rate` inclui apenas a cotação atual de saque USD→BRL, não um câmbio histórico. `account.pending_terms` permite verificar se a carteira USD depende do termo `dollarWalletTerms`; não aceite termos sem autorização explícita.
+
+Hubla Agents fica no catálogo `agents_workflows`, `agents_conversations`, `agents_insights`, `agents_brains` (Second Brain), `agents_knowledge` (bases de conhecimento), `agents_personas` e `agents_channels`. Execute `hubla-cli --json schema agents_brains` e `call` para operações específicas. Listagem de conversas e consultas de insights usam POST de **leitura** já classificado no catálogo; envio de mensagem, sandbox, publicação, exclusão e demais alterações exigem `--confirm`. Os contratos são internos ao portal; confira IDs, corpo e permissões antes de escrever.
+
+Datas devem ser ISO 8601 com o fuso necessário para a pergunta do usuário:
+
+```bash
+hubla-cli --json sales list \
+  --start-date 2026-01-01T00:00:00-03:00 \
+  --end-date 2026-01-31T23:59:59-03:00
+```
+
+## Projeção de saldo para saque
+
+Sem uma data explícita, consulte o último dia do mês atual e do próximo mês:
+
+```bash
+hubla-cli --json finance forecast
+```
+
+Para uma ou mais datas específicas, repita `--date`:
+
+```bash
+hubla-cli --json finance forecast \
+  --date 2026-09-30 \
+  --date 2026-10-31
+```
+
+Use `projectedAvailableInCents` como total projetado. O comando soma `availableNowInCents`, `receivableReleasingInCents` e `reserveReleasingInCents`. Os recebíveis são reconciliados com o saldo atual da Hubla antes da resposta.
+
+A Hubla não expõe uma agenda futura da reserva de saldo. Por isso, `reserveReleasingInCents` distribui o saldo reservado atual pelas datas previstas das vendas conhecidas, usando a regra de 30 dias. A saída marca `reserveScheduleEstimated: true` e pressupõe que não haverá novas vendas, reembolsos ou chargebacks. Apresente esse componente como estimativa, nunca como garantia, e refaça a consulta quando a data estiver próxima.
+
+A taxa de saque não é descontada da projeção.
+
+## Cobertura completa
+
+Use `call` para qualquer método público exibido por `schema`. O objeto de parâmetros usa os nomes exatamente como aparecem no catálogo:
+
+```bash
+hubla-cli --json call analytics net_revenue \
+  --params '{"start_date":"2026-01-01T00:00:00-03:00","end_date":"2026-01-31T23:59:59-03:00","period":"daily"}'
+```
+
+Para exportação binária, `--output` é obrigatório. Escolha um caminho protegido:
+
+```bash
+hubla-cli --json call sales export \
+  --params '{"offer_ids":["OFFER_ID"],"has_selected_all":false}' \
+  --confirm --output ./vendas.xlsx
+```
+
+Use `api` apenas quando o recurso ainda não estiver no catálogo e quando o contrato exato da rota oficial estiver confirmado. O CLI bloqueia hosts externos. Toda chamada raw diferente de GET exige `--confirm`.
+
+## Operações que alteram dados
+
+`--confirm` é uma autorização para uma ação específica, não uma opção para tentar fazer um comando funcionar.
+
+Antes de qualquer operação com `mutating: true`:
+
+1. Leia o registro exato e valide conta, IDs, valores, moeda, datas e impacto.
+2. Mostre ao usuário o alvo, o payload e o efeito esperado sem expor dados pessoais desnecessários.
+3. Aguarde confirmação explícita para essa ação exata.
+4. Execute uma vez com `--confirm`.
+5. Leia novamente o mesmo alvo e compare o estado retornado.
+
+Exemplo:
+
+```bash
+hubla-cli --json sales get INVOICE_ID
+hubla-cli --json sales refund INVOICE_ID --confirm
+hubla-cli --json sales get INVOICE_ID
+```
+
+Não repita automaticamente reembolsos, saques, cancelamentos, alterações de acesso, mudanças de produto/oferta/turma, convites ou qualquer escrita após timeout, erro 5xx ou resposta ambígua. Pare e verifique o estado primeiro.
+
+## Regras de privacidade e integridade
+
+- Use somente a conta e o escopo autorizados pelo usuário.
+- Não imprima nem salve senha, token, cabeçalho `Authorization`, cookie, CAPTCHA ou código de MFA.
+- Minimize e redija e-mail, telefone, documento e outros dados pessoais nas respostas.
+- Não trate página vazia ou erro da Hubla como zero vendas, zero saldo ou ausência de acesso.
+- Paginação deve continuar até o total declarado pela resposta ou até uma página vazia, conforme o contrato do endpoint.
+- Preserve IDs, datas, moedas, status e valores literalmente; não os “corrija” por suposição.
+- Se a conta exigir CAPTCHA ou MFA que o CLI não conclua, use o fluxo oficial do portal Hubla. Não tente contornar a proteção.
+- O CLI usa APIs do portal que podem mudar. Em 404 ou 422, confira a versão instalada e o catálogo antes de propor uma rota raw.
+
+## Interface humana
+
+Quando o usuário quiser navegar sem montar comandos, abra a TUI de consultas:
+
+```bash
+hubla-cli tui
+```
+
+A TUI é somente leitura. Para automação e agentes, mantenha `--json` para receber o envelope estável `{ "ok": true, "data": ... }` ou `{ "ok": false, "error": ... }`.

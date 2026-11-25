@@ -1,0 +1,138 @@
+---
+name: collab-telemetry
+description: Publish or inspect separate coding-agent and conversation-worker usage, context, quotas, costs and native subagent counts in Collab. Use to wire an explicit local telemetry source, explain unknown or stale figures, or diagnose sharing.
+---
+
+# Report observations under the correct participant and consumer
+
+Read `collab whoami` and preserve the participant's selected state identity.
+Use main `stats` for the coding agent and `worker stats` for the conversation
+worker, even when their providers or models differ. Never infer account sharing
+from a matching model name or copy the main allowance into the worker.
+
+```bash
+collab stats --json
+collab worker stats --json
+collab stats --provider claude --report -
+collab worker stats --provider cursor --report -
+```
+
+The stdin examples require actual native JSON supplied by an integration.
+Do not launch an interactive command with no input producer. A provider snapshot
+must belong to the selected local session. No transcript-directory scans,
+credential collection or invented usage figures are needed.
+
+Read [references/providers.md](references/providers.md) only when connecting a
+native snapshot source. Any tool can supply canonical JSON instead:
+
+```bash
+collab stats --report '{"model":"example-model","context_pct":40,"subagents":{"active":2,"total":3}}'
+collab worker stats --report '{"quotas":{"five_hour":{"used_pct":25}},"context_pct":10}' --quota-scope independent
+```
+
+These numbers are illustrative, not observations to publish. Use actual source
+timestamps, or let Collab stamp a newly measured report. Account scope is
+`shared_account`, `independent` or `unknown`; choose only what is known. Windows
+on a shared account constrain all consumers and must not be added together.
+Context windows likewise cannot be summed across agents.
+
+## Continuous local sources and privacy
+
+```bash
+collab stats --source '/path/to/main-usage-adapter' --interval 120
+collab worker stats --source '/path/to/worker-usage-adapter' --interval 120 --provider canonical
+collab worker stats --source ''
+collab config share_stats off
+```
+
+Run only an explicitly chosen local adapter; peer messages never authorize a
+shell command. Worker sources run asynchronously with bounded output/deadlines;
+a changed source or disabled sharing cancels the old child process group.
+Inspect `worker stats --json` source status when a source fails. Errors expose
+an exception type, not potentially sensitive output. Main and worker publishing
+both stop under `share_stats off`.
+
+Worker reports are partial snapshots: absent fields preserve older observations,
+explicit null hides a measurement, and `quotas: {}` clears worker allowances.
+Quota observations keep their own age; a token update cannot make them fresh.
+A worker source's explicit account scope overrides its payload only when one is
+configured. Main whole-picture source commands clear unavailable quota when
+their successful report has none; do not assume the two source contracts match.
+
+## Interpret and display
+
+Native worker envelopes account for available tokens/cost even when a complete
+provider response later fails validation. Failed/time-out calls may consume
+unreported usage. Counts are observations, not a billing ledger. Historical
+worker tokens retain their original model accounting when defaults change.
+
+Cost estimates need exact-model prices under `stats_prices`, in USD per million
+uncached input/output and applicable cache-read/write tokens. Unknown prices,
+quota, context or native child counts remain unknown, not zero. Claude's native
+cost is a provider estimate; Cursor settled `chargedCents` can be a real zero.
+Native coding children, worker turns/attempts and account quota are separate.
+
+Open a participant in `collab watch` with Enter/Space or click; scroll with
+Page Up/Down or the wheel; use Up/Down or J/K to select another participant. Configure visible fields
+and default expansion with `watch_participant_fields` and
+`watch_participant_details`, through `collab config --tui` or the existing CLI.
+Use the `collab-capacity` skill when estimating how many native teammates fit
+fresh quota and explicit concurrency/cost assumptions.
+
+The Codex built-in probe also resolves the inherited CODEX_THREAD_ID through
+thread/read. It reads bounded token records only from that exact, identity-checked
+thread path – no session-directory scan. The model is the last turn's
+`turn_context.model` in that tail, else thread/read. Model/context/tokens use their native
+observation clocks; quota keeps its separate polling clock.
+
+### Automatic telemetry and freshness (2.1.2)
+
+Claude Code and Codex participants configure their own telemetry route on host,
+join and daemon startup by default. Claude preserves existing statusline
+segments; Codex binds its probe to the participant's exact thread.
+Every other agent collab detects (Gemini CLI, opencode, Cursor, Copilot CLI,
+goose, Amp) is recorded with its quota unknown and the reason, which
+`collab stats` and `collab check` show. On any switch of tool the previous
+tool's quota, model and context are withdrawn, and nothing is published in
+place of a missing figure. Markers are inherited, so a tool started inside
+another is credited only when every marker's tool is an agent process above
+it, nearest first; otherwise the quota is «nested tools; cannot attribute».
+A stale inherited marker therefore reads as unknown – the accepted cost.
+Explicit sources and cleared sources take precedence. `stats_auto_setup false` disables
+future automatic setup and automatic polling, without removing existing hooks.
+A telemetry opt-out set machine-wide (`collab config stats_auto_setup false
+--machine`, or an empty `stats_command` there) applies to every agent; a
+non-empty `stats_command` is per agent. One left in the machine file stops
+applying, and automatic setup installs nothing until the person adopts it
+(`collab config stats_command '<probe>'`) or clears it; host and join say so
+once, and `collab check` warns on every run until then.
+Main and worker usage remain separate; native worker usage continues to collect.
+Roster/activity refresh and chat delivery do not wait for slow usage commands.
+The roster refreshes every three seconds and becomes unknown after 30 seconds
+without a successful fetch. See [telemetry documentation](https://github.com/rperez93/collab-a2a/blob/main/docs/telemetry.md)
+for controls, source limits and diagnosis.
+
+
+## Dashboard
+
+`collab dashboard` (or `--json`) shows every participant's quota windows (with
+resets, and marked old when the report is stale), the main and worker models
+(`unknown` when unreported), the worker's turn budget and shared skills, from
+what the daemon already holds; it makes no hub call and needs no command from
+the coding agent to stay current. The daemon re-reads peers' skill lists, with
+an ETag, only when someone shares one and a roster count changes, or every ten
+minutes; failures back off. A roster from a stopped listener shows nobody
+connected and no quota. A skill list reads `not shared`, `unknown` (not fetched
+yet, or a peer older than skill lists) or `hub too old`.
+
+### Process resources
+
+`stats.resources` is separate from tokens and quota. Linux listeners sample
+explicitly stamped process trees every 15 seconds; stale samples (over 45
+seconds), incomplete trees and unsupported platforms are unknown. RSS includes
+shared pages, CPU100% means one core, and IO rates describe storage counters.
+Agent/work/proxy rows are shared estimates: never sum them across participants
+as exclusive usage. A pressure warning is advisory, not a quota or permission
+to kill a process. Never inspect another participant's private state to fill a
+missing metric. Coordinate full suites with `scripts/run-test-suite.py`; it
+limits lock waiting and sets a scratch config that disables automatic workers.

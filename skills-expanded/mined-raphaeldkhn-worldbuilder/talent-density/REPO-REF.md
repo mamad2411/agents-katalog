@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/raphaeldkhn/worldbuilder (path: talent-density/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: /talent-density — curious peers, not credentialed experts

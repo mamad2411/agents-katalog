@@ -1,0 +1,460 @@
+---
+name: write-helm-chart
+description: >
+  Create production-ready Helm charts for Kubernetes application deployment with templating,
+  values management, chart dependencies, hooks, and testing. Covers chart structure, Go
+  template syntax, values.yaml design, chart repositories, versioning, and best practices
+  for maintainable and reusable charts. Use when packaging a Kubernetes application for
+  repeatable deployments, parameterizing manifests for multiple environments, managing
+  complex multi-component applications with dependencies, or standardizing deployment
+  practices with versioned rollback capability across teams.
+license: MIT
+allowed-tools: Read Write Edit Bash Grep Glob
+metadata:
+  author: Philipp Thoss
+  version: "1.1"
+  domain: devops
+  complexity: intermediate
+  language: multi
+  tags: helm, chart, go-templates, kubernetes, packaging, deployment, templating
+---
+
+# Write Helm Chart
+
+Create production-ready Helm charts for deploying applications to Kubernetes.
+
+## When to Use
+
+- Need to package Kubernetes application for repeatable deployments
+- Want to parameterize manifests for different environments (dev/staging/prod)
+- Managing complex multi-component applications with dependencies
+- Sharing reusable deployment patterns across teams or organizations
+- Implementing versioned application releases with rollback capability
+- Need template-based configuration management for Kubernetes resources
+- Want to standardize deployment practices across projects
+
+## Inputs
+
+- **Required**: Kubernetes manifests for your application (deployment, service, etc.)
+- **Required**: Application name and version
+- **Required**: List of configurable parameters (image tag, replicas, resources, etc.)
+- **Optional**: Dependencies on other Helm charts (databases, message queues)
+- **Optional**: Pre/post-install hooks for migrations or setup
+- **Optional**: Chart repository URL for publishing
+- **Optional**: Values for different environments
+
+## Procedure
+
+> See [Extended Examples](references/EXAMPLES.md) for complete template files, values structures, and hooks.
+
+### Step 1: Initialize Chart Structure and Metadata
+
+Create the Helm chart directory structure and define chart metadata.
+
+**Install Helm:**
+```bash
+# Linux
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# macOS
+brew install helm
+
+# Windows (Chocolatey)
+choco install kubernetes-helm
+
+# Verify installation
+helm version
+```
+
+**Create chart structure:**
+```bash
+# Create new chart
+helm create my-app
+
+# Chart structure created:
+# my-app/
+#   Chart.yaml          # Chart metadata
+#   values.yaml         # Default configuration values
+#   charts/             # Chart dependencies
+#   templates/          # Template files
+#     deployment.yaml
+#     service.yaml
+#     ingress.yaml
+#     _helpers.tpl      # Template helpers
+#     NOTES.txt         # Post-install notes
+#   .helmignore         # Files to ignore
+
+# Or create from scratch
+mkdir -p my-app/{templates,charts}
+cd my-app
+```
+
+**Define Chart.yaml:**
+```yaml
+# Chart.yaml (excerpt - see EXAMPLES.md for complete file)
+apiVersion: v2
+name: my-app
+description: A Helm chart for deploying my-app to Kubernetes
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+- name: Platform Team
+  email: platform@example.com
+# ... (keywords, dependencies, kubeVersion - see EXAMPLES.md)
+```
+
+**Create .helmignore:**
+```text
+# .helmignore
+# Patterns to ignore when packaging chart
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.DS_Store
+.project
+.idea/
+*.tmproj
+.vscode/
+```
+
+**Expected:** Chart directory structure created with all required files. Chart.yaml contains complete metadata. Dependencies listed if applicable. Chart validates: `helm lint my-app`.
+
+**On failure:**
+- Check YAML syntax in Chart.yaml: `helm lint my-app`
+- Verify apiVersion is v2 (v1 deprecated)
+- Ensure version follows SemVer (x.y.z)
+- Check dependency repository URLs are reachable
+- Use `helm show chart <chart>` to inspect existing charts for examples
+
+### Step 2: Design values.yaml Structure
+
+Create well-organized values.yaml with sensible defaults and documentation.
+
+**Create comprehensive values.yaml:**
+```yaml
+# values.yaml (excerpt - see EXAMPLES.md for complete structure)
+global:
+  imageRegistry: ""
+image:
+  registry: docker.io
+  repository: mycompany/my-app
+  tag: ""
+replicaCount: 3
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  limits: {cpu: 1000m, memory: 512Mi}
+  requests: {cpu: 100m, memory: 128Mi}
+# ... (ingress, autoscaling, probes, persistence - see EXAMPLES.md)
+```
+
+See [EXAMPLES.md](references/EXAMPLES.md#step-2-valuesyaml--complete-structure) for the complete values.yaml structure and values.schema.json
+
+**Expected:** values.yaml organized logically with sections. All values documented with comments. Sensible defaults that work out-of-box. Schema validates value types. No hardcoded environment-specific values.
+
+**On failure:**
+- Validate YAML syntax: `yamllint values.yaml`
+- Check schema validation: `helm lint my-app`
+- Review against Helm best practices: `helm lint --strict my-app`
+- Ensure all template references have corresponding values
+- Test with minimal values: `helm template my-app --set image.repository=test`
+
+### Step 3: Create Template Files with Go Templating
+
+Write Kubernetes resource templates using Go template syntax and Helm functions.
+
+**Create deployment template:**
+```yaml
+# templates/deployment.yaml (excerpt)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "my-app.fullname" . }}
+  labels:
+    {{- include "my-app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  template:
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        # ... (see EXAMPLES.md for complete template with probes, volumes, etc.)
+```
+
+See [EXAMPLES.md](references/EXAMPLES.md#step-3-deploymentyaml--complete-template) for the complete deployment template
+
+**Create helper template file:**
+```yaml
+# templates/_helpers.tpl (excerpt)
+{{- define "my-app.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "my-app.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+# ... (labels, serviceAccountName, hpa.apiVersion - see EXAMPLES.md)
+```
+
+**Create conditional templates:**
+```yaml
+# templates/ingress.yaml (excerpt)
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "my-app.fullname" . }}
+# ... (see EXAMPLES.md for complete ingress and HPA templates)
+```
+
+See [EXAMPLES.md](references/EXAMPLES.md#step-3-helperstpl--complete-helper-functions) for complete _helpers.tpl and conditional templates
+
+**Expected:** Templates generate valid Kubernetes YAML. Conditionals work correctly (if/with). Helper functions produce expected output. Resources properly labeled and named. No hardcoded values in templates.
+
+**On failure:**
+- Test template rendering: `helm template my-app`
+- Check for template syntax errors: `helm lint my-app`
+- Validate Go template syntax carefully (dashes, spaces matter)
+- Use `helm template --debug` for detailed error messages
+- Test with different values files: `helm template my-app -f values-prod.yaml`
+- Verify output is valid Kubernetes YAML: `helm template my-app | kubectl apply --dry-run=client -f -`
+
+### Step 4: Add Hooks for Pre/Post-Install Actions
+
+Create hooks for database migrations, setup tasks, or cleanup.
+
+**Create pre-install hook for migrations:**
+```yaml
+# templates/hooks/pre-install-migration.yaml (excerpt)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "my-app.fullname" . }}-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+spec:
+  template:
+    spec:
+      containers:
+      - name: migration
+        image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        command: ["/app/migrate"]
+# ... (see EXAMPLES.md for test hook, pre-delete backup, NOTES.txt)
+```
+
+See [EXAMPLES.md](references/EXAMPLES.md#step-4-helm-hooks) for complete hook templates and NOTES.txt
+
+**Expected:** Hooks execute in correct order (weights determine sequence). Pre-install migration completes before deployment. Test hook validates deployment. Pre-delete hook runs cleanup. NOTES.txt provides helpful post-install information.
+
+**On failure:**
+- Check hook annotations syntax exactly matches Helm spec
+- Verify hook jobs have `restartPolicy: Never`
+- Review hook execution: `kubectl get jobs -n <namespace>`
+- Check hook logs: `kubectl logs job/<job-name> -n <namespace>`
+- Ensure hook-delete-policy appropriate (before-hook-creation, hook-succeeded, hook-failed)
+- Test hooks independently: `helm install --dry-run --debug my-app`
+
+### Step 5: Test and Package Chart
+
+Validate chart, run tests, and package for distribution.
+
+**Lint and validate chart:**
+```bash
+# Basic linting
+helm lint my-app
+
+# Strict linting
+helm lint --strict my-app
+
+# Test template rendering
+helm template my-app
+
+# Test with custom values
+helm template my-app -f values-prod.yaml
+
+# Validate against Kubernetes cluster (dry-run)
+helm install my-app my-app --dry-run --debug
+
+# Check for deprecated API versions
+helm install my-app my-app --dry-run | kubectl apply --dry-run=server -f -
+```
+
+**Create chart tests:**
+```bash
+# Run Helm tests
+helm install my-app my-app -n test --create-namespace
+helm test my-app -n test
+kubectl logs -n test -l "helm.sh/hook=test" --tail=-1
+
+# See EXAMPLES.md for complete test script (test-chart.sh)
+```
+
+**Package chart:**
+```bash
+# Update dependencies first
+helm dependency update my-app
+
+# Package chart
+helm package my-app
+
+# Creates: my-app-0.1.0.tgz
+
+# Verify package
+helm verify my-app-0.1.0.tgz
+
+# Generate index for repository
+helm repo index . --url https://charts.example.com/
+
+# Creates: index.yaml
+```
+
+**Create different values files for environments:**
+```yaml
+# values-dev.yaml (excerpt)
+replicaCount: 1
+resources:
+  limits: {cpu: 500m, memory: 256Mi}
+ingress:
+  enabled: true
+  hosts:
+  - host: my-app-dev.example.com
+    paths:
+    - path: /
+      pathType: Prefix
+
+---
+# values-prod.yaml (excerpt)
+replicaCount: 5
+autoscaling: {enabled: true, minReplicas: 3, maxReplicas: 10}
+ingress:
+  enabled: true
+  hosts:
+  - host: my-app.example.com
+    paths:
+    - path: /
+      pathType: Prefix
+  tls:
+  - secretName: my-app-tls
+    hosts:
+    - my-app.example.com
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      size: 50Gi
+    resources:
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+```
+
+Two shapes in that block are easy to get backwards. `ingress.hosts` is a list of **mappings** — the template renders `.host` and iterates `.paths` — while `tls[].hosts` is a list of **strings**, ranged as scalars. And `enabled: true` is required in each environment file because the base `values.yaml` ships `ingress.enabled: false` and the whole template is wrapped in that guard; omit it and the ingress renders nothing at all, silently.
+
+`replicaCount: 5` in the production file is not the production replica count. The Deployment renders `replicas:` only under `{{- if not .Values.autoscaling.enabled }}`, so with the autoscaler enabled the field is never emitted, the Deployment is created at the API server's default of **one** replica, and the HPA raises it to `minReplicas: 3` on its first reconcile — a brief window of under-provisioning worth knowing about on a cold install. The value is kept deliberately: it is what applies the moment autoscaling is switched off. Reading it as a live production setting is the mistake, and it is why the guard belongs in the deployment excerpt above rather than only in the complete template.
+
+See [EXAMPLES.md](references/EXAMPLES.md#step-5-environment-specific-values) for the complete values-dev.yaml and values-prod.yaml
+
+**Test with different environments:**
+```bash
+# Test development values
+helm install my-app-dev my-app -f values-dev.yaml --dry-run --debug
+
+# Test production values
+helm install my-app-prod my-app -f values-prod.yaml --dry-run --debug
+
+# Install to dev namespace
+helm install my-app my-app -f values-dev.yaml -n development --create-namespace
+
+# Install to prod namespace
+helm install my-app my-app -f values-prod.yaml -n production --create-namespace
+```
+
+**Expected:** Chart passes all lint checks. Template rendering produces valid Kubernetes YAML. Tests pass successfully. Chart packages without errors. Different values files work for each environment. Installation succeeds without warnings.
+
+**On failure:**
+- Review lint output for specific issues
+- Check template syntax errors with `--debug` flag
+- Verify all required values are set: `helm get values <release>`
+- Test dependency resolution: `helm dependency list my-app`
+- Validate packaged chart: `tar -tzf my-app-0.1.0.tgz`
+- Check for missing files in package
+
+
+### Step 6: Publish to Chart Repository
+
+Set up chart repository and publish versioned releases.
+
+**Options for publishing:**
+```bash
+# GitHub Pages
+git checkout -b gh-pages && mkdir charts
+cp my-app-0.1.0.tgz charts/
+helm repo index charts/ --url https://username.github.io/repo/charts
+
+# OCI registry (Helm 3.8+)
+helm registry login registry.example.com -u $USER -p $PASS
+helm push my-app-0.1.0.tgz oci://registry.example.com/charts
+
+# Install from repo
+helm repo add myrepo https://charts.example.com
+helm install my-app myrepo/my-app -f custom-values.yaml
+```
+
+See [Extended Examples](references/EXAMPLES.md) for ChartMuseum setup, release automation, and complete README template.
+
+**Expected:** Chart published to repository successfully. Chart discoverable via `helm search`. Installation works from repository. Versioning follows SemVer.
+
+**On failure:**
+- Verify repository URL accessible
+- Check index.yaml generated: `helm repo index --help`
+- For OCI registries, ensure authentication working
+- Test repository addition: `helm repo add test <url>`
+
+## Validation
+
+- [ ] `helm lint --strict my-app` reports no errors and no warnings
+- [ ] `helm template my-app | kubectl apply --dry-run=client -f -` accepts every rendered resource
+- [ ] Rendered output contains no hardcoded namespace, hostname, or environment value
+- [ ] Each environment values file renders: `helm install --dry-run --debug my-app my-app -f values-<env>.yaml`
+- [ ] `helm dependency update` run before packaging, and `charts/` matches `Chart.yaml`
+- [ ] `helm test` passes against a real install in a disposable namespace
+- [ ] `helm rollback my-app <previous-revision>` restores a working release
+
+## Common Pitfalls
+
+- **Whitespace chomping breaks rendering, not linting**: `{{-` and `-}}` consume surrounding newlines. A missing or extra dash produces YAML that is structurally wrong but syntactically plausible, so it survives `helm lint` and fails at apply time. Render every conditional block with `helm template --debug` before trusting it.
+- **Every image reference needs its own `| default .Chart.AppVersion`**: it is easy to add the fallback in the deployment template and forget it in hooks and sidecars. With `tag: ""` in values, a bare `{{ .Values.image.tag }}` renders `repo:` — an invalid reference that fails as `InvalidImageName`, not a silent fall back to `latest`. Grep every template for `.Values.image.tag` and confirm each one has the fallback.
+- **Hooks are not release-managed resources**: hook Jobs are not tracked in the release, so `helm rollback` does not revert them and `helm uninstall` does not remove them. Re-install does not collide, because the default `before-hook-creation` policy deletes the previous hook resource first — which is the actual trap: the failed migration Job you wanted to read is gone on the next attempt. Set `helm.sh/hook-delete-policy` deliberately.
+- **`version` vs `appVersion` confusion silently serves stale charts**: repositories index on `version`. Shipping a new `appVersion` without bumping `version` leaves `helm repo update` convinced nothing changed, and users keep installing the previous chart.
+- **`charts/` is not refreshed automatically**: `helm package` archives whatever dependency versions are already vendored. Skipping `helm dependency update` ships a stale subchart that only surfaces at install time.
+- **Values deep-merge, except lists, which are replaced wholesale**: a `-f` override merges maps key by key, so a partial `resources:` block inherits the untouched sibling keys from `values.yaml`. Lists do not behave that way — the `ingress.hosts` override in `values-dev.yaml` above discards the base list rather than appending to it, and there is no merge syntax that changes this. Render the result to confirm what the override actually produced.
+
+## Related Skills
+
+- `deploy-to-kubernetes` - Deploying the resources a chart templates
+- `setup-local-kubernetes` - Disposable cluster for chart testing before production
+- `manage-kubernetes-secrets` - Secret handling referenced from chart values
+- `implement-gitops-workflow` - ArgoCD/Flux delivery of packaged charts
+- `setup-container-registry` - OCI registry hosting for chart and image artifacts
+- `create-dockerfile` - Building the images a chart deploys

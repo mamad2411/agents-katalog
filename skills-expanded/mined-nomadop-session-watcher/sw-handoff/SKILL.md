@@ -1,0 +1,59 @@
+---
+name: sw-handoff
+description: Use when the user runs /sw-handoff or wants to carry over context before the context reset the host offers — prepares a structured handoff (keep/discard file decision + summary + next task) and returns a load token for the next segment.
+---
+
+# Session Watcher Handoff
+
+Prepare a handoff package so the next session can resume without re-reading what its first task needs, and without carrying what that task will not open.
+
+## Steps
+
+1. **Get turn skeleton** via the `get_turn_skeleton` tool → `{ snapshot_id, skeleton_path, notes_path, protocol }`. Follow the `protocol` sentence it returns; it states how the two files are filled.
+
+   - **The call fails** — an error instead of that shape, whatever its cause. Stop this run: report to the user that the turn skeleton could not be captured; do not produce or submit notes, and do not go on to `prepare_handoff`.
+
+   - A successful reply freezes the run: perform steps 2–7 using the returned metadata and existing context. Unverified facts remain in Blockers / risks; resolving them belongs to next_task.
+
+2. **Produce turn notes** you MUST follow [`NOTES.md`](NOTES.md) exactly for what each note says. Write them inline — do not delegate to a subagent.
+
+3. **Submit notes** via the `submit_turn_notes` tool with `snapshot_id`. The tool reads `notes_path` itself.
+
+   - **`invalid_notes`** — each `issues` entry names a `t`, and each one is one section of `notes_path`. Edit those sections and submit again, at most **three** times (four submissions in all). If the last one still rejects, stop and report to the user; do not loop.
+   
+   The other three codes stop this run. Report the error to the user and take no further step:
+   - **`stale_snapshot`** — snapshot is no longer current. Stop: report to the user; do not re-fetch the skeleton or re-produce notes.
+   - **`invalid_snapshot`** — the capture's source identity or required metadata is invalid, including a transcript that cannot be read. Stop: report to the user.
+   - **`storage_unavailable`** (`retryable: true`) — store temporarily unavailable. Stop: report to the user; they may re-run the skill when ready.
+
+4. **Fetch bucket data** via the `get_bucket_summary` tool and complete any explicitly requested runtime handoff actions before this call. Call `get_bucket_summary` once per handoff.
+
+5. **Select paths to keep.** The kept set is what the next task must have in hand before it can act. Candidates are the bucket summary plus any path this segment used that the bucket lacks. For each candidate, name the act of `next_task` that opens it; a candidate with no such act is not kept, whatever this segment did with it.
+   - The repo outlives the context reset and the conversation does not, so a file the next session can read on demand is kept only where that first act needs it in hand: the file the task edits, the test that guards it, the artifact under discussion.
+   - A blob under review is read by its reviewer, so what the next task needs is the review's return and the sources it cites.
+   - Use the returned `tokens` to estimate the kept total. Where one path carries more than half that total, state which act needs all of it, or keep its `symbols` alone. Unavailable or symbol-only costs may remain unknown, `prepare_handoff` returns the final total.
+
+   Always: `userOverride` decides that path; a `keep:` list in the arguments is kept verbatim; symbols come from `activeSymbols` into `paths_to_keep[].symbols`; memories, `CONTEXT.md`, `CLAUDE.md` stay off the list.
+
+6. **Select skills** — `skills_to_keep`: only skills actively guiding the workflow or required by next_task. Skip one-shot completed skills. Never include `sw-load` — it drives the load flow itself. If the user's `keep:` list includes skill names, use those directly.
+
+7. **Write the summary** you MUST following [`SUMMARY.md`](SUMMARY.md) exactly. Redact secrets as `[REDACTED]`
+
+8. **Prepare** via the `prepare_handoff` tool with:
+   - `paths_to_keep`: array from step 5
+   - `skills_to_keep`: array from step 6
+   - `summary`: from step 7
+   - `next_task`: the user's stated next step if the arguments give one; otherwise the line of work this segment was on, not a single step of it.
+   - `observed_segment`: segment value from step 4
+
+   Check `resolved_paths` in the response — where a path resolved wrong, re-issue with the absolute path.
+
+   **Revise an existing handoff** (fix paths, update summary): pass its `load_token` with only the parameters being changed; a passed `paths_to_keep` is the whole kept list, `skills_to_keep: []` clears the skills and `next_task: ""` clears the next task. Report whichever `load_token` comes back — an undelivered handoff keeps its token, a delivered one is immutable, so the revision is a new handoff under a new token.
+
+   The tools are the only path to the handoff: when the `prepare_handoff` call returns an error instead of a reply, report the failure to the user.
+
+9. **Report to user:** "Handoff prepared. Kept `<kept_tokens>` tokens. Token: `<token>`. Please use the context reset the host offers when ready."
+
+### Completion criterion
+
+Done when: `prepare_handoff` returned a `load_token`, you relayed it to the user, and the user acknowledged.

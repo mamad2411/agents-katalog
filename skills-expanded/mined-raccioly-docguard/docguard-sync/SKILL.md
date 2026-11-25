@@ -1,0 +1,144 @@
+---
+name: docguard-sync
+description: Keep canonical documentation ALWAYS UP TO DATE. Refreshes code-truth doc sections in place (mechanical, idempotent, preserves human prose) and flags the prose sections you must review when code changes.
+compatibility: Requires DocGuard CLI installed (npm i -g docguard-cli, or npx --yes docguard-cli@0.50.0)
+metadata:
+  author: docguard
+  version: 0.50.0
+  source: extensions/spec-kit-docguard/skills/docguard-sync
+---
+<!-- docguard:version: 0.50.0 -->
+
+# DocGuard Sync Skill
+
+## Running DocGuard
+
+Run `docguard` from PATH when it is installed. Otherwise run
+`npx --yes docguard-cli@0.50.0`, the release these instructions ship with, in its
+place. Every `docguard …` command below means one of the two.
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+You **MUST** consider the user input. If `--since <ref>` is provided, include the
+git diff context in your reasoning when reviewing prose sections.
+
+## Goal
+
+When code changes, re-derive the code-truth surface (endpoints, entities,
+screens, tech stack, env vars), refresh the matching `<!-- docguard:section
+source=code -->` blocks in canonical docs in place, and **review/refresh the
+human-written prose** in the same docs so it still describes reality.
+
+## Operating Constraints
+
+- **Mechanical refreshes do not need you.** DocGuard does them itself. Your job
+  is the prose sections flagged as "review" — where the human writing may no
+  longer match the new code reality.
+- **Never edit anything outside the marked `source=human` sections** in
+  generated docs. The markers protect human writing; respect them.
+- **Use the dry run first** to see what will change before applying.
+
+## Execution Flow
+
+### Step 1 — Preview what's stale
+
+```bash
+docguard sync 2>&1
+```
+
+Reads:
+- `↻` / `•` lines: code-truth sections that drifted (you don't need to write these).
+- `🤖 Prose to review` lines: human-written sections whose surrounding code changed — **these are yours**.
+
+### Step 2 — Apply the mechanical refresh
+
+```bash
+docguard sync --write 2>&1
+```
+
+Re-derives every code-truth section from the current code and rewrites only those
+markers. Idempotent — running again is a no-op when up to date.
+
+### Step 3 — Review the flagged prose
+
+For each `🤖 Prose to review` entry:
+
+1. Open the doc (e.g. `docs-canonical/API-REFERENCE.md`).
+2. Locate the `<!-- docguard:section id=<id> source=human -->` block.
+3. **Read the surrounding `source=code` section first** — that's the new truth
+   (e.g. the refreshed endpoint list, the refreshed screens table).
+4. Update the human prose so it still accurately describes that truth.
+   Examples of what to update:
+   - The API overview's endpoint count, or its description of the surface area.
+   - The Architecture overview when new components/services appeared.
+   - The Screens flows when new screens were added/removed/renamed.
+5. Stay inside the `source=human` markers — don't touch the code sections.
+
+### Step 4 — Verify
+
+```bash
+docguard guard
+docguard verify --evidence
+```
+
+Confirm there are no errors. If the API surface drifted (`API-Surface` failures),
+combine with `docguard fix --write` (the mechanical removal of stale endpoints).
+
+**Read the disposition on whatever guard still reports.** Each finding carries
+`disposition: act | escalate` (plus `confidence`, `evidence.status` and
+`parserTier` — see `guard --format json`):
+
+- **`act`** — DocGuard asserts a defect and names the correction. Sync or `fix --write` may clear it.
+- **`escalate`** — DocGuard observed a signal; the judgement is yours. **A sync is not an answer to one.** Rewriting prose, or re-running `sync --write` to move a timestamp, makes the message stop printing without anyone deciding anything. Read the code and the document, decide which side is wrong, and record that decision.
+
+FRS002 is the one you will hit most: "N code commits since the document was
+reviewed" counts commits exactly via `git log`, so it is `confidence: high`, yet
+it establishes only that a review is DUE. Recording a review date you did not
+earn is the failure mode; the timestamp is meant to attest that someone looked.
+
+### Step 5 — Loop
+
+The intended flow is `sync → guard → (fix if needed) → guard → commit`. Run sync
+again before opening a PR to make sure the memory is current.
+
+## What to do if `--since <ref>` is provided
+
+When `--since main` is given, DocGuard also lists the changed code files since
+that ref. Use that diff to:
+
+- Prioritize which prose sections to update first (the ones whose related code
+  files changed most).
+- Cite concrete change reasons in your prose updates ("Added `/api/orders`
+  endpoint in commit X" → update the API overview accordingly).
+
+## Common patterns
+
+| Symptom | Action |
+|---|---|
+| `↻ docs-canonical/API-REFERENCE.md → endpoints` | Code-truth refreshed by `--write`. No action needed. |
+| `🤖 docs-canonical/API-REFERENCE.md → overview` | Open the doc; update the `overview` prose to reflect the new endpoint set. |
+| `Skipped … not marked docguard:generated` | A default-path doc lacks whole-document ownership. Review before using `--force`; a mapped human doc still requires a unique `source=code` section. |
+| `malformed or duplicate docguard:section markers` | Stop. Repair ownership markers explicitly; `--force` cannot authorize the write. |
+| `Documentation memory is up to date` | Done — no drift. |
+| A guard finding with `disposition: escalate` survives the sync | Expected. Judge it and say what you decided; do not sync again to clear it. |
+
+## Anti-patterns (do NOT do these)
+
+- ❌ Editing inside `<!-- docguard:section source=code -->` — DocGuard will rewrite it on the next sync.
+- ❌ Removing the markers to "make the doc look cleaner" — that breaks future sync/regeneration.
+- ❌ Skipping `sync --write` and editing the code section by hand — let DocGuard do it.
+- ❌ Rewriting an evidence-bound human statement from generated code alone — rerun the declared predicate and review approved intent first.
+- ❌ Treating a `disposition: escalate` finding as drift to sync away — it is a decision someone owes, not a section that is out of date.
+- ❌ Stamping `<!-- docguard:last-reviewed -->` to silence a freshness escalation — the date attests that a human reviewed; writing it without reviewing makes the attestation false.
+
+## When DocGuard says it is old
+
+If DocGuard's output says its version was released more than 14 days ago, tell
+the user and offer to run `docguard upgrade`, which checks npm for a newer
+version only when it runs. Never upgrade DocGuard without the user's agreement,
+and never treat the note as a failure: it says a newer version may exist, not
+that one does.

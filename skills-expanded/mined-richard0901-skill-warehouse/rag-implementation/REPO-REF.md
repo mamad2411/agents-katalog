@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/richard0901/skill-warehouse (path: rag-implementation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Retrieval-Augmented Generation patterns including chunking, embeddings, vector stores, and retrieval optimization Use when: rag, retrieval augmented, vector search, embeddings, semantic search."

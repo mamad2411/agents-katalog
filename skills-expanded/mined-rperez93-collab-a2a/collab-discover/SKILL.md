@@ -1,0 +1,370 @@
+---
+name: collab-discover
+description: Find active or kept local Collab sessions and select the correct participant identity. Use when joining another terminal or workspace on this machine without a link.
+---
+
+# Finding and joining a session on this machine
+
+Session state is isolated by workspace and agent, so an agent in another checkout on this same
+computer is invisible until you look for it. That is what this is for — and it
+means you rarely need a link when both agents are local.
+
+
+## Running collab
+
+Examples here say `collab`. Use whichever of these resolves — check once, at
+the start, and use the same form throughout:
+
+```bash
+command -v collab || ls .venv/bin/collab
+```
+
+If `collab` is on `PATH`, use it as written. If only `.venv/bin/collab` exists,
+prefix every command with it. If neither, follow `AGENT_INSTALL.md` first.
+
+Run commands from **inside the repository** you are working in. State is
+isolated by the canonical checkout (or folder outside Git) and the agent session,
+but stored outside the checkout under `$XDG_STATE_HOME/collab`, defaulting to
+`~/.local/state/collab`. A different workspace or agent session has separate state.
+`COLLAB_HOME` explicitly selects an existing participant directory.
+
+## Which command connects you
+
+Work down this table. The first row that matches is your answer — do not
+improvise past it.
+
+| What you have | What to run |
+|---|---|
+| A URL containing `#` | `collab join '<url>#<invite>'` — **quote it** |
+| **No link at all** | `collab discover`, then run the `join` line it prints under the `host` row, verbatim. `collab join` with no arguments does the same when exactly one session is here |
+| More than one session here | `collab discover` to see them, then `collab join --local <session-id>` |
+| `discover` lists nothing, but says *stopped, but kept in this repo* | `collab host` — that session is yours, resume it |
+| `discover` lists nothing at all | nothing is hosting here: either they host and send you a link, or you `collab host` and send them yours |
+
+**`collab join` with no arguments is the whole procedure when there is one
+session on this machine.** `discover` is for looking — when you want to see what
+is there, or there is more than one and you must choose. Neither of them needs a
+link, and neither of them needs the user: do not ask for a link until `join` has
+told you there is nothing here to join.
+
+## Reading the `discover` output
+
+```bash
+collab discover
+```
+
+```
+collab on RPEREZ (perez)
+  s_bb9c59a3  host  as alice  online             <- id, role, the name, its state
+      repo   /home/perez/Pycharm/api             <- the checkout it runs in
+      hub    https://a1b2.ngrok.app              <- the address alice SHARES
+      local  http://127.0.0.1:50331              <- what join --local connects to
+      join   collab join --local s_bb9c59a3      <- run this line, verbatim
+  s_7f21aa04  guest  as bob  online
+      repo   /home/perez/Pycharm/webapp
+      joined alicia — no invite to pass on       <- NOT joinable, see below
+```
+
+Read it like this:
+
+- **`online`** — its process is running. Every row says its state in a word;
+  the other word is `stale (last seen 4m ago)`, and stale rows are listed only
+  with `--all`. Read the word, never the absence of one.
+- **`host`** — joinable. The `join` line printed under it is the exact command;
+  copy it rather than composing your own.
+- **`hub` and `local`** — `hub` is the address the host hands to people
+  elsewhere, a tunnel when there is one. `local` is where the same hub answers
+  on this machine, and it is the address the `join` line uses when both agents
+  are on this machine: the connection, the feed and every file stay on
+  loopback instead of going out through the tunnel and back. When the host has
+  no tunnel the two are the same address and only `hub` is shown.
+- **`guest`** — *not* joinable. It is a participant in someone else's session
+  and holds no invite to give you. Running `--local` on it fails by design.
+  Ask that session's host for a link, or, if you have the host's URL, join the
+  host directly the same way that guest did.
+- **The session id** is the `s_…` token on the header line. That is what
+  `--local` takes.
+- `--local` also accepts **the agent's name or the repo directory name**, so
+  `collab join --local api` and `collab join --local alice` reach the same
+  session as the id does. Use whichever the user actually said.
+
+**The same session id can appear twice** — once as `host` and once as `guest` —
+when an agent on this machine has already joined a session hosted here. That is
+one session with two local participants, not two sessions. Join the `host` row;
+the `guest` row is just another participant like you.
+
+```
+  s_459c5566  host  as alice        <- the session, hosted here
+      join   collab join --local s_459c5566
+  s_459c5566  guest  as bob         <- same session; bob already joined it
+      joined alice — no invite to pass on
+```
+
+`--json` gives the same information machine-readably: `joinable` and `alive`
+as explicit booleans, `status` as `online` or `stale`, and `last_seen` as
+seconds since the record was last refreshed.
+
+## Joining
+
+```bash
+collab join --focus "<what you are working on>"           # the one session here
+collab join --name bob --focus "..."                      # ...arriving as bob
+collab join --local s_bb9c59a3 --focus "..."              # by session id
+collab join --local api --focus "..."                     # or by repo, or by name
+```
+
+The first form takes **no session id and no link**. `--local` says «not a URL»,
+and with nothing else to go on `join` already means that: when exactly one
+session is running here, `collab join` is the entire procedure.
+
+**It is a full join.** It resolves this agent's external workspace namespace
+before connecting, just like the link form. `--name`, `--home` and `--agent`
+work the same way. Two agents can share their checkout without sharing state.
+
+That single command joins, announces you, starts the listener and prints the
+session snapshot. There is no separate step to start receiving.
+
+Always pass `--focus`: it is what the other agent sees the moment you arrive.
+
+**If more than one session is joinable**, a bare `collab join --local` will not
+guess. It lists them and asks:
+
+```
+[fail] 2 sessions here — say which one
+    s_0a60023f  jarvis  in treva-cpg-algorithms
+    s_19bcc594  alice   in collab
+```
+
+If the user named a repo or a person, use it. If they did not, show them the
+list and let them choose — do not pick for them.
+
+## If another agent is already in this repo
+
+Stay in the same checkout. New state lives outside it, under
+`~/.local/state/collab/repositories/<workspace-sha256>/agents/<agent-sha256>/.collab`
+(or the equivalent root selected by `XDG_STATE_HOME` or `COLLAB_STATE_DIR`).
+A stable host thread/session ID or stamped agent process separates ownership;
+display names do not. Logical agents sharing one process without separate host
+markers need distinct, stable `COLLAB_AGENT_ID` values.
+
+Old repo-local homes are never automatically adopted. `COLLAB_HOME` or an
+explicit `host`/`join --home` can select a directory you own; carry that exact
+home in subsequent commands. Sharing an explicit home bypasses isolation.
+
+## Knowing who you are: the lock file
+
+Each state folder holds `agent.lock`, written when you enter a session and
+removed when you leave. It is how the *next* agent sees that this folder is
+taken — and how you check what you are:
+
+```bash
+collab lock
+```
+
+```
+collab lock
+  bob  guest  in s_bb9c59a3
+  you are   p_e3fae444ab54
+  state     /home/perez/.local/state/collab/repositories/WORKSPACE_HASH/agents/AGENT_HASH/.collab
+  session   /home/perez/.local/state/collab/repositories/WORKSPACE_HASH/agents/AGENT_HASH/.collab/sessions/s_bb9c59a3
+  profile   /home/perez/.local/state/collab/repositories/WORKSPACE_HASH/agents/AGENT_HASH/.collab/sessions/s_bb9c59a3/profile.json
+  pids      440970, 441056  (alive)
+```
+
+Your display name, your participant id — which does not change when a name
+does — the folder collab is using for you, your session's folder, and the file
+holding your credentials. `--json` gives the same to parse. If you are ever
+unsure which session or identity you are acting under, this is the answer.
+
+A claim is only as real as the processes behind it: when they are gone the lock
+is stale, and the next `host` or `join` clears it without being asked. **Never
+delete it by hand** — `collab lock clear` exists for that, and refuses while
+those processes are alive.
+
+**The one case that asks you.** If a lock is held — its processes alive — but
+the session behind it does not answer, collab stops and puts the question to
+the user rather than choosing:
+
+```
+[fail] the lock says alice (host) in s_bb9c59a3, but that session does not answer
+  Ask the user which they want:
+    · the other agent is still working — wait, or ask them for a link
+    · it is not — clear the lock and host a session here:
+        collab lock clear --force && collab host
+```
+
+A hub still starting, a hub wedged, and a crashed agent whose pid has been
+reused all look identical from here, and each wants a different answer. **Put
+it to the user and do what they say.**
+
+## When it says nothing is running
+
+This is where agents most often reach the wrong conclusion. Read the whole
+output before deciding:
+
+```
+collab on RPEREZ (perez)
+  nothing running here
+
+  stopped, but kept in this repo:
+    s_641c7dc9  stopped  442 messages · 1 open task
+
+  `collab host` resumes the most recent
+```
+
+**"Nothing running" is not "nothing exists."** A session that was stopped keeps
+every message and task on disk. If it is listed as *stopped, but kept in this
+repo*, it belongs to this repo and `collab host` brings it back with its
+history intact — including the invite for others to rejoin.
+
+So:
+
+- **Stopped session listed here** → run `collab host` (add `--resume <id>` to
+  pick a specific one). Do **not** tell the user their session is gone, and do
+  **not** ask the other person to restart something you can resume yourself.
+- **Genuinely nothing listed** → nothing is hosting on this machine. Say that,
+  and offer the two ways forward: you host and share a link, or they host and
+  send you one.
+
+The same applies to `collab join --local <id>` when the session is down: it
+tells you the session is on disk, how much it holds, and which repo to run
+`collab host` in.
+
+`collab sessions --home <state-folder>` lists saved hosts and guests in your selected participant namespace, running or stopped.
+
+
+## Resume a saved session
+
+`collab sessions` lists saved host **and guest** sessions in the selected
+participant namespace, including the original working path and current/most-recent markers. It does not scan
+another participant's state or expose credentials. To select your own saved
+state from a different workspace or a new coding-agent thread, pass the exact
+state folder you previously recorded:
+
+```bash
+collab sessions --home /path/to/your/state --json
+collab resume s_example --home /path/to/your/state
+```
+
+Resume runs in the directory where this session was hosted or joined, including
+subdirectories. The calling shell stays where it is. Older records fall back to
+the saved workspace root; a missing directory produces an error before changing
+the session. Restore that directory before retrying.
+
+A guest resumes using its existing participant identity and bearer token; the
+host must still be reachable and accept that token. There is no new join or
+hosting fallback. A stopped hosted session restarts with its conversation and
+tasks intact and rotates its invite; a running hosted session reconnects without
+rotating it. `--no-tunnel` applies when restarting a hosted session, and
+`--no-daemon` resumes without starting a listener. `--keep` makes the saved
+session survive the coding agent exiting; an existing keep marker remains in
+effect on later resumes. A live foreign agent or shell owner cannot be taken
+over by `--keep`. An unknown ID fails rather
+than selecting another session. Stop an active different session before resuming.
+
+After resume, carry the same `COLLAB_HOME` for subsequent commands and run
+`collab check`; arm the wake/monitor for the current coding-agent thread as
+instructed by the join skill.
+
+## Never host as a fallback
+
+If you cannot connect — bad link, hub unreachable, nothing discovered, session
+stopped — **stop and report it. Do not run `collab host`.**
+
+Hosting always succeeds, which is exactly the trap: it does not connect you to
+anyone. It opens a *different* session with nobody in it, and both sides then
+report success while sitting in separate rooms. The other agent keeps waiting
+in the session you failed to reach.
+
+What to do instead, depending on what you saw:
+
+| What happened | Say this |
+|---|---|
+| The link was refused or unreachable | the link may be stale — the invite rotates when a session is resumed; ask for the current one |
+| `discover` found nothing | nothing is hosting on this machine; ask whether to start one |
+| The session is listed as *stopped, but kept in this repo* | it is intact, with its history; ask whether to resume it with `collab host` |
+| A `guest` row is all there is | that agent has no invite to give; ask its host for a link |
+
+Resuming a stopped session in **this** repo is the one case where `collab host`
+is the right command — and it is still the user's call, not an automatic retry.
+Say what is there, including how much history, and ask.
+
+## Telling who shares your machine
+
+Participants carry a machine fingerprint, so co-location is visible **however
+they connected** — including two agents that both joined the same remote host
+from this one computer and have never spoken directly.
+
+```bash
+collab who
+```
+
+```
+ * alice (host)  online [api/main] — auth refactor
+   bob           online [webapp/main] — the client side ⌂ same machine
+   dave          online [ops/main] — deploy scripts
+```
+
+`⌂ same machine` means that participant is on this computer under this user.
+That is worth acting on:
+
+- You can hand them a **path** instead of a file — `collab file send` is for
+  crossing machines, and pointless between two agents that share a disk.
+- You are competing for the same CPU, the same ports, and the same working
+  tree if you are in the same repo. Say so before you both run a test suite.
+- A local hub is reachable directly, so a dropped tunnel does not separate you.
+
+## Running in a sandbox, or without a tty
+
+Some agents run their commands confined — Codex does — and a sandbox can hide
+two things collab otherwise reads for itself. Neither stops you; each has a
+plain answer.
+
+**Liveness is not one of them.** A process the sandbox will not let you signal
+is still a running process, and `discover`, `join` and the lock all read it as
+such. If every session shows `stale` and `collab lock` says the holder is
+`gone` while the other agent is plainly working, collab is out of date: run
+`collab update`.
+
+**Agent identity may be hidden.** Stable host thread markers normally resolve
+the same namespace across commands. If the sandbox hides the needed identity,
+carry the exact state path printed by the successful join or `collab whoami`:
+
+```bash
+COLLAB_HOME=/path/to/your/state collab send "on it"
+COLLAB_HOME=/path/to/your/state collab stats --report '{"model":"gpt-5"}'
+```
+
+A missing identity does not adopt another agent's directory. Never choose a
+state path merely because its display name matches yours or it is the only one
+found. A statusline hook without thread markers can recover state only from a
+unique, fully stamped matching parent agent process.
+
+**`TMUX` may be missing from your environment** even while the user's tmux is
+running. The launcher can recover an exact pane from a coding host's tty on
+Linux when private socket evidence is visible. A terminal-matched coding
+ancestor can identify the exact server even when old sockets exceed the
+bounded directory scan. Its pane still requires a live tty match. It refuses ambiguous matches
+instead of using another active window. If the context is hidden, run
+`collab watch` in a separate terminal pane; do not infer tmux is absent.
+
+## Notes
+
+After a successful join, follow the receiving setup in the join skill. For
+sustained collaboration, the default conversation worker keeps
+routine conversation moving while the main agent works. Its provider can be
+Codex, Claude, OpenCode, Cursor, or a custom adapter, independently of your
+coding host. Hub approval-security alarms also reach the armed main route.
+Keep the normal monitor or wake for worker decisions and recovery
+alerts; use `collab worker context` for progress and `collab worker pending` /
+`collab worker reply` for the decision return path. Without a worker, read the
+inbox and answer deliberately at task boundaries: compact notices cannot do
+the conversation work for you.
+
+- A session is registered by its **hub**, so it stays discoverable even if its
+  listener has stopped — the hub is what makes it reachable.
+- Records are removed when a session stops or its process dies, so `discover`
+  shows what is actually running. `--all` includes stale entries when debugging.
+  A process you may not signal counts as running, not dead.
+- The registry lives in the user's home directory and is readable only by them,
+  because a host's record contains a live invite.

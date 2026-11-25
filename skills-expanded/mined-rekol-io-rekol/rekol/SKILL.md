@@ -1,0 +1,63 @@
+---
+name: rekol
+description: Persistent memory at $REKOL_HOME (falls back to $MEMORY_HOME). Trigger on "remember"/"save"/"forget", on a user correction, on a noun matching topics/<noun>.md or activity matching when/when-<activity>.md, or when a question might have a canonical source.
+---
+
+# rekol
+
+Memory root: `$REKOL_HOME` (falls back to `$MEMORY_HOME`). Layers: `always/`, `when/`, `topics/`, `knowledge/`. Index: `REKOL.md` (always-on), `.index/INDEX.md` (auto-generated).
+
+## Behavioral rules
+
+These five directives govern every memory interaction. The mechanics that follow show *how* to run them.
+
+1. **Search, don't guess.** Before answering a question, recommending a path/command/ID/env name/canonical reference, or writing a new memory, run `rekol search` first. In-context reasoning goes stale; a curated source may already exist. Search is the first move, not the fallback.
+2. **Ground every answer.** Answer from what memory actually returned, and cite the provenance (the `file_path` + line range, or the session `jsonl_path` + line). If the answer isn't in memory, say so plainly — "I don't have that in memory" — and offer to capture it. Never present an in-context guess as a remembered fact. **Never confabulate.**
+3. **Hedge on absence.** A `rekol search` miss, an unmatched filename, or an unfamiliar command means *you didn't find it* — not that it doesn't exist. Built-in commands and capabilities aren't fully enumerable to you, so never flatly tell the user something is "not available." Hedge: "not registered that I can see, but built-in commands aren't fully enumerable to me — try it and we'll confirm." (Distinct from grounding: grounding governs *facts in memory*; hedging governs *capabilities you couldn't enumerate*.)
+4. **Capture as you go.** When a surprise, correction, or validated approach would help a future session, capture it — and tell the user in one line what you saved. See *Capture* below for the bar and the commands.
+5. **Ask only after searching.** Before asking the user for information you might already have — a path, an ID, a preference, a prior decision — run `rekol search` first; the answer may already be in memory. Split asks into *knowledge* (look it up — don't ask what you can retrieve) vs *judgment* (ask the user). When you do ask, ground it: prefer disambiguation from what memory holds ("did you mean A, B, or C?") over an open "how do I do that?". Precision over eagerness — stay silent and just answer on a strong hit; only ask when search genuinely misses or the call is a judgment one.
+
+## Retrieve — prefer the vector index over reading whole files
+
+Reading full topic files for a single fact wastes context. The index already stores heading-scoped chunks with line ranges; one `rekol search` call returns the most-relevant snippets across all files. Use it as the **first** lookup, not the fallback.
+
+1. `REKOL.md` is already in context — scan for trigger pointers.
+2. **Default lookup: `rekol search "phrase" --top 5 --json`.** The result is a JSON object with these keys: `query` (the input), `memory` (array of curated hits — authoritative, read first), `sessions` (array of transcript hits — supplementary, lower-priority), `is_promotion_candidate` (bool — true when memory was queried, returned nothing, and sessions hit; signals something worth capturing), and `sources_queried` (which tiers were actually searched). For each memory hit, use `file_path` + `line_start`/`line_end` to read just that range when you need surrounding context. For each session hit, use `jsonl_path` + `line_number` to locate the message in the original transcript. Only read the whole file when the chunk is genuinely insufficient.
+3. **Direct file read** when you already know the exact filename (e.g. `topics/<noun>.md` matches the user's noun verbatim, or `when/when-<activity>.md` matches the activity).
+4. **Last-resort grep**: `grep -rE "^(tags|aliases):" "${REKOL_HOME:-$MEMORY_HOME}"` for keyword lookup if search and direct match both miss.
+
+### Dedupe before writing (rule 1 applied to capture)
+
+When the search you ran before capturing surfaces a near-duplicate, **update** that file instead of creating a new one. The capture flow has cosine-similarity conflict detection, but pre-empting it avoids round-trips and keeps the layer count clean.
+
+## Bring in existing history
+
+When a user wants to seed REKOL from work that already exists, map their phrasing to these commands. Run the command, then confirm with a `rekol search` so the user can verify ingestion worked.
+
+| The user says… | Run | What it does |
+| --- | --- | --- |
+| "Index my past Claude Code sessions" / "index my history" | `rekol session-index --incremental` (or `--full` to force a re-walk of everything). On a brand-new install, `rekol init` wraps this with a confirm prompt. | Ingests `~/.claude/projects/**/*.jsonl` transcripts into the sessions index so `rekol search` surfaces past work. |
+| "Import my notes from ~/Documents/ObsidianVault" | `rekol import ~/Documents/ObsidianVault` | Converts a tree of text files into synthetic transcripts under `claude_projects_dir`, then chains `session-index --incremental` to ingest them. |
+| "What do you remember about <X>?" | `rekol search "<X>" --top 5 --json` | Searches curated memory + transcripts; use it to confirm an index/import actually landed. |
+
+`rekol import` is a **mechanical conversion** — it turns your documents into searchable transcript text. It is **not** an LLM reading your notes and filing them into `always/`/`when/`/`topics/` layers. Curating notes into durable layered memory is still done with `rekol capture` (manually or proactively), one fact at a time.
+
+## Capture — proactive, not silent
+
+The capture protocol (rule 4) in practice: capture surprises, corrections, and validated approaches as a side effect of getting work done — not just on explicit "remember this." Always tell the user **what** was captured/changed in one line so they can audit without going hunting.
+
+The bar: *would a future session genuinely benefit from knowing this?* Don't capture trivia.
+
+1. Propose layer + filename + frontmatter (`name`, `description`, `type`, `tags`, `aliases`, `see_also`).
+2. `rekol capture --layer <L> --file <name>.md --name "..." --description "..." [--tags a,b] [--aliases x,y]`
+3. Update `REKOL.md` only if the memory deserves always-on status.
+
+After hand-edits to memory files (Edit/Write tool, not `rekol capture`), run `rekol index update` so the vector DB stays in sync with the markdown.
+
+`created`/`updated` are auto-stamped as ISO-8601 datetimes with offset (e.g. `2026-05-14T15:30:00-04:00`); `valid_from` stays date-only.
+
+`always/` has an 8 KB hard cap — overflow goes to `topics/` or `when/`.
+
+## Stale-fact maintenance
+
+When you observe that a memory is stale (file path moved, cluster decommissioned, person's role changed, command renamed), fix it as soon as you see it. Don't wait for the user to flag it. Update the file and run `rekol index update`. Mention the fix in your response so the user can audit.

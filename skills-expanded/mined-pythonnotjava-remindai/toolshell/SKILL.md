@@ -1,0 +1,409 @@
+# ToolShell - 大模型工具外壳技能
+
+> 当此技能激活时，你将获得受控的文件操作、Shell命令执行和持久记忆能力。
+
+## 触发条件
+
+只要用户在设置里选了工作目录，本技能的 `tools.json` 与这份说明就会被**自动加载**——
+不需要用户额外开启，也不依赖 `memory.json` 是否存在（`memory.json` 只决定权限模式与记忆开关）。
+没有工作目录（纯对话模式）时，ToolShell 的读写/执行工具不会被提供。
+
+## 启动流程
+
+`memory.json` 由**应用本身**在构建上下文时读取并生效，你不需要（也不必）自己去读它。
+你需要知道的是它决定了三件事：权限模式、记忆是否自动存储、记忆是否自动召回。
+
+激活后你按下面的顺序理解自己的处境即可：
+
+1. 当前工作目录已在系统提示词里给出，所有相对路径基于它解析
+2. 权限模式已确定（normal 由应用弹窗确认，auto 直接执行）
+3. 若开启了长期召回，相关历史记忆已经由应用**自动**追加到你的上下文里（表现为一条 `role=system` 的"自动召回的相关记忆"消息）
+4. 直接开始工作
+
+## 配置字段
+
+工作目录下的 `memory.json`（由"新建工作目录"对话框或设置页写入），字段全部为小写：
+
+| 字段 | 值 | 含义 |
+|------|-----|------|
+| `mode` | `"normal"` | 写/删/执行类操作前由**应用弹窗**向用户确认 |
+| `mode` | `"auto"` | 完全自主，直接执行所有操作（仍受受保护路径约束） |
+| `long_term_recall` | `true/false` | 每轮用户消息前是否语义召回历史记忆 |
+| `long_term_store` | `true/false` | Agent 回复完成后是否自动提取并存储长期记忆 |
+| `embeddings` | `true/false` | 是否启用 Qdrant 向量库（关闭则记忆降级为 SQLite 关键词匹配） |
+
+> 记忆的读写由应用侧的 Hook 自动完成；你也可以显式调用
+> `toolshell_memory_store` / `toolshell_memory_recall` 主动存取。
+
+## 操作模式行为
+
+### normal 模式
+
+需要确认的只有"写文件 / 删文件 / 执行命令 / 跑 Python / 跑 JS / Office 写改删 / worktree 开始·结束·回退"这几类
+（权威集合见应用代码 `kApprovalRequiredTools`）。确认动作由**应用的权限对话框**完成——用户点"允许"才会执行。
+
+你要做的是：
+- 调用工具即可，**不要**在回复里打印"是否执行? [y/N]"之类的伪确认文本，用户根本不会回答它
+- 被拒绝时会收到 `status=denied` 类错误，据此调整方案，不要反复重试同一操作
+
+### auto 模式
+
+所有操作直接执行，无需确认。但仍遵守下面的安全边界。
+
+
+## 安全边界 (两种模式均生效)
+
+### 绝对禁止操作的路径
+- `.git/` 目录（保护版本控制完整性）
+- `.env` / `.env.*` 文件（保护敏感凭证）
+- `node_modules/`（避免破坏依赖）
+- `*.pem` / `*.key` 私钥文件（保护密钥安全）
+
+### 跨目录操作
+**允许**读取和操作工作目录之外的路径（例如读取其他项目文件、访问用户文档等），但：
+- **写入/删除/执行**操作在 normal 模式下会触发权限确认
+- auto 模式下跨目录的破坏性操作直接执行，请谨慎使用
+
+跨目录场景示例：
+- 读取另一个项目的配置文件
+- 分析用户桌面上的文档
+- 备份文件到其他目录
+
+## 技能去向决策（创建技能前必读）
+
+当用户要求"做一个技能 / 写个 skill / 固化某流程"时，先判断技能该落在**项目级**还是**全局**，规则如下，**不要自作主张往全局装**：
+
+| 用户怎么说 | 技能去向 | 落点 |
+|---|---|---|
+| **直接**要求做技能（没说任何命令） | **项目级**（默认） | `.toolshell/skills/<技能名>/` |
+| 消息以 `/skill-temp` 开头 | **项目级**（显式） | `.toolshell/skills/<技能名>/` |
+| 消息以 `/skill-cti` 开头 | **全局** | 先 `.toolshell/_staging/` 搭建测试，再装到 `Skills/` |
+
+核心原则：
+- **默认局部**。用户没有显式说"装到全局 / 复用到所有项目 / `/skill-cti`"时，一律建在 `.toolshell/skills/`，只在当前工作目录生效，**绝不**调用 `toolshell_install_skill` 往全局装。
+- 只有用户**显式**表达"全局可复用"意图或使用 `/skill-cti` 命令时，才走全局安装流程。
+- 拿不准时按局部处理，并可一句话告知用户"已建为项目技能，如需全局复用可用 /skill-cti"。
+
+## 项目级临时技能 (.toolshell/skills/)
+
+当你需要为**当前工作目录**创建一个专属的、可复用的技能时（例如把一段常用流程固化成工具，或为这个项目沉淀一套操作规范），按以下约定放置，应用会在下次构建上下文时自动加载：
+
+```
+<工作目录>/.toolshell/skills/<技能名>/
+    SKILL.md       # 必需：技能说明与使用指南（会注入到系统提示词）
+    tools.json     # 可选：自定义工具定义（OpenAI function 格式）
+```
+
+规则：
+- **必需** `SKILL.md`，缺失则该目录不会被识别为技能
+- `tools.json` 可选；若提供，其中声明的工具会一并注册，仍通过 toolshell 执行并受权限约束
+- 这类技能**只在所属工作目录下生效**，恒定处于激活状态，无需用户在技能页手动启用
+- 切换到其他工作目录后自动消失，不影响全局技能
+- 不要把项目技能放到其他位置（如工作目录根、随意命名的文件夹）——只有 `.toolshell/skills/` 会被扫描
+
+创建技能后，告知用户该技能已就绪、将在新对话或下一轮上下文构建时自动加载。
+
+## /skill-temp 工作流 (创建项目级技能)
+
+当用户消息以 `/skill-temp` 开头时（后面跟着对所需技能的描述），在**当前工作目录**创建一个项目级技能，**不**装到全局：
+
+1. 在 `.toolshell/skills/<技能名>/` 用 `toolshell_write` 写入 `SKILL.md`（必需，写清用途、触发条件、使用指南）；若需要自定义工具，再按 OpenAI function 格式写 `tools.json`（可选）。
+2. 若技能含可执行逻辑，可用 `toolshell_run_python` / `toolshell_run_js` / `toolshell_exec` 跑个最小用例自测。
+3. 告知用户：该技能已建为**项目级技能**，仅在当前工作目录生效、恒定激活、跟随工作目录，下一轮上下文构建时自动加载；如需提升为全局可复用技能，可用 `/skill-cti`。
+
+**不要**对 `/skill-temp` 的产物调用 `toolshell_install_skill`——它就该留在工作目录里。
+
+
+## /skill-cti 工作流 (创建·测试·安装到全局)
+
+当用户消息以 `/skill-cti` 开头时（后面跟着对所需技能的描述），按以下三步闭环执行，目标是产出一个**全局可复用**的技能：
+
+### 1. 创建 (Create)
+
+在工作目录下的 **staging 目录** `.toolshell/_staging/<技能名>/` 搭建技能骨架：
+- `SKILL.md`（必需）：清晰写明技能用途、触发条件、使用指南
+- `tools.json`（可选）：若技能需要自定义工具，按 OpenAI function 格式声明
+
+用 `toolshell_write` 写入这些文件。
+
+> 为什么用 `.toolshell/_staging/` 而**不是** `.toolshell/skills/`？
+> `.toolshell/skills/` 会被扫描成"项目级临时技能"并恒定激活——若把 /skill-cti 的产物放那里，
+> 它既会作为项目技能加载、装到全局后又会作为全局技能加载，造成**双重加载**（工具名注册两遍）。
+> `_staging` 不会被扫描，纯粹用于搭建/自测；装到全局后该目录会被自动清理。
+
+### 2. 测试 (Test)
+
+安装到全局**之前**必须自测，确认技能可用：
+- 校验 `SKILL.md` 内容完整、`tools.json`（若有）为合法 JSON
+- 若技能含可执行逻辑，用 `toolshell_run_python` / `toolshell_run_js` / `toolshell_exec` 跑一个最小用例验证
+- 自测失败则修正后重测，**不要**带着已知问题安装
+
+### 3. 安装到全局 (Install)
+
+自测通过后，调用 `toolshell_install_skill`，把 staging 技能目录提升为**全局技能**：
+
+```
+toolshell_install_skill(source_dir="<staging 技能目录绝对路径>", name="<技能名>")
+```
+
+- 全局技能落在应用的 `Skills/` 目录，**不是** `.toolshell/`
+- 安装后该技能出现在技能页，由用户自行开关，可在任意工作目录复用
+- 安装成功后 `.toolshell/_staging/<技能名>/` 会被**自动清理**，不在工作目录留副本
+- 安装成功后告知用户技能名、用途，并提示可在技能页管理与开关
+
+注意区分两类技能去向：
+- **仅本目录长期使用的项目规范** → 放 `.toolshell/skills/`（项目级，跟随工作目录，恒定激活）
+- **沉淀为全局可复用能力**（/skill-cti 的目标）→ 在 `.toolshell/_staging/` 搭建并自测，再用 `toolshell_install_skill` 装到全局 `Skills/`，由用户开关
+
+## 记忆系统
+
+### 存储位置
+
+记忆由应用统一管理，**不在工作目录里落 `.db` 文件**：
+
+- 语义向量：Qdrant 本地实例的 `global_memory` collection（需配置嵌入模型）
+- 持久备份：应用数据库 `memory_entries` 表（SQLite）
+- 两者双写；Qdrant 不可用时自动降级为 SQLite 关键词检索
+
+### 何时存储记忆
+
+写入由 `MemoryStoreHook` 在每轮回复完成后自动触发（LLM 提取），你也可以显式调用
+`toolshell_memory_store`。值得记的内容：
+
+- **fact**: 用户陈述的事实、项目约定、技术选型
+- **decision**: 做出的决策及原因
+- **context**: 项目背景、架构信息
+- **error**: 踩过的坑、失败的方案
+- **outcome**: 任务完成结果
+
+### 重要性评分
+
+- 0.8~1.0: 核心架构决策、用户强调的偏好
+- 0.5~0.7: 一般性上下文、中等重要的事实
+- 0.1~0.4: 临时信息、琐碎细节
+
+判断标准: 这条信息6个月后还有价值吗? 是 → ≥0.7
+
+### 何时召回记忆
+
+- `long_term_recall=true` 时由应用在每轮消息前**自动**召回（topK=5，相似度阈值 0.5）
+- 用户问"之前我们做过什么"、或遇到可能有历史决策的问题时，可主动调用 `toolshell_memory_recall`
+
+### 版本与失效
+
+被新事实取代的旧记忆不会物理删除，而是标记 `superseded` 并在检索时降权/过滤——
+所以"用户改口了"这类情况你直接存新值即可，不必先去删旧的。
+
+### 向量检索 (可选)
+
+见上文 `memory.json` 的 `embeddings` 字段：开启则需要应用的设置里已配置好嵌入模型
+（Base URL / API Key / 模型名），否则记忆只在 SQLite 上做关键词匹配。
+
+## 工具使用指南
+
+本技能下你实际拥有的是 `toolshell_*` 系列工具（**不是**通用的 Read/Write/Bash）：
+
+### 文件读取
+用 `toolshell_read`（支持 offset/limit 分段读）。读过的关键文件路径记到记忆里。
+需要同时看多个文件时，用 `toolshell_run_parallel` 一次并发读，别一问一答。
+
+### 文件写入
+`toolshell_write(path, content, mode)`，`mode` ∈ `create` / `overwrite` / `append`（默认 overwrite）。
+
+- normal 模式：调用后由应用弹窗确认，用户点了才真正写入
+- auto 模式：直接写入
+
+**长内容建议**：单次调用里塞几万字符的 content 会让请求体变大、也更容易被输出长度上限截断。
+推荐做法是**分块 append**——先 `create` 写第一段，再多次 `append` 追加后续段落；
+或先写到临时文件、再用 `toolshell_exec` / `toolshell_run_python` 做拼接。
+
+> ⚠️ 不要照抄 `cat > file << 'HEREDOC'` 这种写法：Windows 上的 shell 是
+> PowerShell / cmd，不支持 heredoc。要生成大文件请优先用 `append`，
+> 或 `toolshell_run_python` 里用 Python 写文件（跨平台可靠）。
+
+### 命令执行
+用 `toolshell_exec(command, cwd?, timeout?, env?)`。它会自动选择 shell
+（Windows: pwsh > powershell > cmd；Linux/macOS: bash > sh）。
+
+- **没有命令白名单**：`adb` / `gradle` / `npm` / `ffmpeg` …… 只要能跑就直接跑。
+- **输出是「开头 + 结尾」两段**（中间过长处会标 `…[中间省略 N 字节]…`）。
+  构建/安装失败的根因通常在开头，先看第一处 `error`。
+- **超时会强杀整棵进程树**（退出码非 0），所以别用会一直跑的命令等超时：
+  日志跟踪用 `adb logcat -d -t 500`，大输出用 `... | Select-Object -Last 200`，
+  或重定向到文件后再 `toolshell_read`。
+- **多步任务写进一段脚本一次执行**（同一个 `toolshell_exec` 里串联），
+  比"命令 → 看结果 → 再命令"省好几轮预算。
+- 需要按次传环境变量时用 `env`（多设备时指定 `{"ANDROID_SERIAL": "xxxx"}`）。
+- 命令失败时把错误信息记进记忆 (type=error)。
+
+### 后台任务（长驻命令）
+`toolshell_exec_background(command)` 起进程后**立刻返回** `job_id`，输出写进
+`<项目根>/.toolshell/jobs/<job_id>.log`。适合 `adb logcat`（不带 `-d`）、
+`flutter run`、`npm run dev`、`tail -f`、本地服务、长时间监听。
+
+- 看输出：`toolshell_job_output(job_id, tail_bytes?)` → `job_status` 为
+  `running` / `exited`（带 `exit_code`）/ `killed`，附日志尾部。轮询间隔 1~2 秒，
+  别空转刷屏。
+- 结束：`toolshell_job_kill(job_id)`，整棵进程树一起杀。
+- 一次性命令仍用 `toolshell_exec`；同时最多 8 个后台任务，用完记得 kill。
+
+### Android 装机 / 调试（一条龙）
+1. `system_probe(category="android")` 看 adb、SDK 与设备；多设备时记下 serial，后续每条命令都带 `-s`。
+2. **装应用用 `android_install_apk(path=..., serial=...)`，不要用 `adb install` 干等**。
+   国产 ROM 会在手机上弹"安装确认"（vivo：风险检测结果 + 「已了解风险」勾选框 → 「继续安装」；
+   小米/OPPO 类似）。`adb install` 会被这个弹窗卡住直到超时；这个工具会边装边读屏，
+   自动勾选风险确认、点继续安装，返回 `installed` / `output` / `steps`。
+3. 卡住或想自己控制时：`android_ui_dump()` 读当前屏幕控件（文本 + 坐标 + 是否可勾选），
+   再 `android_tap(text="已了解风险")` 或 `android_tap(x=630, y=2100)` 点掉。
+   **不要靠截图判断**——截图是 PNG，你看不了；`android_ui_dump` 是文本，能直接读。
+4. 启动并确认前台：`adb shell am start -n <pkg>/.MainActivity`，
+   `adb shell dumpsys window | findstr mCurrentFocus`。
+5. 崩溃日志：`toolshell_exec_background("adb logcat")` → 复现 → `toolshell_job_output` →
+   `toolshell_job_kill`；一次性看历史用 `adb logcat -d -t 500`。
+6. 留证：`adb exec-out screencap -p > shot.png`（给人看，不是给模型看）。
+
+### 文件删除
+用 `toolshell_delete`。normal 模式必须确认，auto 模式直接执行但请记进记忆。
+
+## 会话结束
+
+会话结束时:
+- 如果 MIND=true: 记忆保留
+- 如果 MIND=false: 生成本次会话摘要存为一条 fact，清除其他记忆
+
+## Python 代码执行
+
+使用 `toolshell_run_python` 工具可以直接执行 Python 代码。
+
+### 行为规则（必须遵守）
+
+当用户要求"画图"、"绘制"、"用matplotlib"、"运行Python"、"执行代码"、"数据分析"、"可视化"等涉及 Python 运行的需求时：
+1. **必须**调用 `toolshell_run_python` 工具实际执行代码
+2. **禁止**仅输出代码文本让用户自行运行
+3. 执行后根据返回的 `images` 和 `stdout` 组织回复
+4. 纯文本输出（如计算结果）直接引用 `stdout` 内容展示
+5. 有图片时用 Markdown 图片语法 `![描述](图片路径)` 嵌入回复
+
+### 图片自动捕获
+
+工具会自动拦截 `plt.show()` 和 `plt.savefig()` 调用，将图片保存为 PNG 文件。
+返回结果中 `images` 字段包含生成的图片路径列表。
+
+### 在回复中展示图片
+
+当 `images` 不为空时，**必须**在回复中用 Markdown 图片语法展示:
+
+```
+![图表描述](file:///C:/Users/.../fig_1.png)
+```
+
+### 返回格式
+
+```json
+{
+  "status": "ok",
+  "exit_code": 0,
+  "stdout": "程序输出...",
+  "stderr": "",
+  "images": ["C:/Users/.../fig_1.png", "C:/Users/.../fig_2.png"],
+  "truncated": false
+}
+```
+
+### 注意事项
+- matplotlib 使用 Agg 后端（无窗口弹出）
+- 无需手动 `plt.savefig()`，直接 `plt.show()` 即可自动保存
+- 需要系统已安装 Python 及所需库（matplotlib 等）
+- 代码在项目根目录下执行
+- 执行需用户确认（normal 模式）
+
+## 并行子调用 (toolshell_run_parallel)
+
+当一次决策中需要发起**多个互不依赖**的调用时（同时读几个文件、同时按不同模式搜索、读文件的同时跑一条只读命令），用 `toolshell_run_parallel` 一次并发发起，而不是逐个串行等待。
+
+### 使用方式
+
+```json
+{
+  "calls": [
+    {"tool": "toolshell_read", "args": {"path": "a.txt"}},
+    {"tool": "toolshell_read", "args": {"path": "b.txt"}},
+    {"tool": "toolshell_exec", "args": {"command": "adb shell pm list packages | findstr remind"}}
+  ]
+}
+```
+
+### 自动分流（框架负责，不用你操心）
+
+- **互不冲突**的子调用并发执行；
+- **需要用户确认的**（normal 模式下的写/删/执行）自动串行，一次一个弹窗；
+- **会互相影响的目标**自动串行并保持原始顺序：同一文件的读/写/删、同一条命令、同一段 Python/JS 代码；
+- 响应里的 `parallel_count` / `serial_count` / `serialized` 会告诉你哪些被串行了。
+
+### 限制（必须遵守）
+
+- 单批最多 8 个子调用，超出会被拒绝(`TOO_MANY_CALLS`)
+- 不允许嵌套 `toolshell_run_parallel`（会放大并发数、失去预算约束），否则整批拒绝(`PARALLEL_NOT_ALLOWED`)
+- 参数缺失或格式不对（如 `calls` 不是数组、某项缺少 `tool` 字段）会被拒绝(`INVALID_ARGS`)
+
+### 返回格式
+
+```json
+{
+  "status": "ok",
+  "count": 3,
+  "results": [
+    {"tool": "toolshell_read", "args": {...}, "result": {...}},
+    {"tool": "toolshell_read", "args": {...}, "result": {...}},
+    {"tool": "toolshell_search", "args": {...}, "result": {...}}
+  ]
+}
+```
+
+单个子调用异常不会中断整批，会在对应结果项中以 `error` 字段体现。
+
+## Worktree 隔离 (实验性修改不污染主工作区)
+
+当你要做的改动**探索性强、可能失败、或影响面较大**（大范围重构、尝试一个不确定的实现方案、升级有兼容风险的依赖等），可以先开一个隔离的 Git 工作树，把改动限制在里面，验证通过再合并回主分支，不满意就直接丢弃——不会弄乱用户当前看到的主工作目录。
+
+**这是默认能力，不需要任何配置开启**。是否使用、什么时候用，完全由你自己判断；框架不会自动检测"风险操作"并强制你进入隔离模式，也不会在你没调用工具时静默切换目录。
+
+### 前提条件
+
+- 系统上必须能执行 `git`。**检测不到 git 时这 7 个 worktree 工具根本不会出现在你的工具列表里**
+  （应用在构建上下文阶段就把它们摘掉了，以免你看到工具却调不通），此时不要尝试调用。
+- 工作目录必须是一个 git 仓库(有 `.git`)。不是的话调用会返回 `NOT_GIT_REPO`，可先用 `toolshell_exec` 执行 `git init`（如果用户希望这么做）。
+
+### 使用方式
+
+1. **开始隔离**：调用 `toolshell_worktree_start(name="简短描述")`。成功后会新建分支 `toolshell-wt/<name>_<时间戳>`，工作树落在 `<工作目录>/.toolshell/worktrees/<name>_<时间戳>/`。**从这次调用之后，你的所有 `toolshell_read`/`toolshell_write`/`toolshell_exec` 等操作都会自动定向到这个隔离工作树**，不需要你手动拼接路径或切换 cwd。
+
+2. **正常工作**：在隔离状态下按平时的方式操作文件、跑命令、测试——效果和平时完全一样，只是发生在隔离的工作树里。
+
+3. **结束隔离**：
+   - 满意了 → `toolshell_worktree_finish(action="merge")`：自动提交工作树里的未保存改动，合并回主分支，清理工作树和分支。若主工作目录此时有未提交的改动，会拒绝合并(避免冲突)并提示你先处理，工作树内容不会丢失。
+   - 不满意 → `toolshell_worktree_finish(action="discard")`：直接丢弃工作树和分支，改动全部消失，主工作目录完全不受影响。
+
+结束后自动恢复对主工作目录的正常操作，不需要额外操作。
+
+### 存档点：走偏了就回退，不必丢掉整个实验
+
+除了 start/finish，你还有 5 个配套工具（全部只作用于隔离工作树）：
+
+| 工具 | 用途 |
+|---|---|
+| `toolshell_worktree_checkpoint(label=...)` | 打一个存档点（commit），供之后回退 |
+| `toolshell_worktree_list_checkpoints()` | 列出已有存档点 |
+| `toolshell_worktree_revert(checkpoint=...)` | **硬回退**到某个存档点（`reset --hard` + `clean -fd`，会丢弃未存档改动） |
+| `toolshell_worktree_diff(detail=false, paths=[...])` | 看工作树相对主分支改了什么；默认只给 `--stat`，`detail=true` 才返回完整 diff |
+| `toolshell_worktree_list(include_history=false)` | 列出当前工作目录关联的 worktree 会话（活跃 / 历史） |
+
+建议节奏：**start → 干活 → checkpoint（跑通一个阶段就存一次）→ 走偏了 revert → 满意后 finish(merge)**。
+`checkpoint` / `list_checkpoints` / `diff` / `list` 是无损操作，不需要用户确认；
+`start` / `finish` / `revert` 需要确认（会改 git 历史或不可逆丢改动）。
+
+### 注意事项
+
+- 同一时间只支持一个活跃的隔离工作树；开始新的隔离前应先结束上一个。
+- 隔离工作树位于 `.toolshell/worktrees/` 下，属于框架内部约定目录，不要把它当作可长期存放代码的地方——它是临时的，merge/discard 后就没了。
+- 隔离期间用户在界面上看到的"当前工作目录"不会改变(只是内部执行落点变了)；完成后主动告知用户你做了哪些改动、是否已合并。

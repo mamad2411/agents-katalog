@@ -1,0 +1,67 @@
+---
+description: Work a work product — bare = the roster of the project's work products, with a name = iterate its specification and make its file
+argument-hint: "[name] [project-slug]"
+---
+
+Role: the one door to a work product (CLAUDE.md, Document kinds;
+POS.1520, SOL.0640). A work product is two files in `work/`: the
+specification `work/<name>.spec.md`, the way and the why, and the file
+`work/<name>.<ext>`, the content, named by the work alone. Shared
+mechanism is cited and never repeated here: one write per round
+(CLAUDE.md, prime directive 9),
+versioning with history (Versioning & status), the two ways of
+composing (Working methods, Handing over and Elicitation interview).
+The language is this skill's: the specification follows the artefacts,
+in the project's language (prime directive 6), the file is in whatever
+language the work needs, said in `## Making`. The shape of the
+specification is `templates/work.md`.
+
+**Bare `/work` — the roster.**
+1. Infer the current project from context ($0 may be a slug; if
+   ambiguous, ask).
+2. Remake the ledger, `python scripts/forge-ledger.py <slug>`, read
+   its Work table and list each work product: its file,
+   the specification with its version, the inputs, when it was made
+   and its state (`current` | `stale` | `by hand`).
+3. Recommend a next step only where the conversation suggests one.
+
+**`/work <name>` — work the specification and make the file.**
+1. Resolve `work/<name>.spec.md`. If it does not exist, its birth is
+   a step of its own on the principal's word (CLAUDE.md, Working
+   methods, Step by step): the specification from `templates/work.md`
+   as v0.1, its companion `work/<name>.spec.history.md` from
+   `templates/history.md`; the ledger's Work table reads the
+   specification and its history (Made `—`, state `stale` until a
+   record says otherwise).
+2. Read the inputs the specification names, by ID and by path, as they
+   stand; the intent with the project's threads where it is among them.
+3. Work the specification with the principal, the way he chooses,
+   handed over or found together (CLAUDE.md, Working methods, Handing
+   over and Elicitation interview). The specification
+   cites and never copies; assumptions are ASM items and open matters
+   TBC items with an owner, by the ID scheme of CLAUDE.md; `## Making`
+   says how the file is made from it.
+4. Reflect the round back and write once, on the principal's word:
+   the specification rewritten for coherence, unused placeholders and
+   the template's comments deleted but the line that names the
+   template (CLAUDE.md, Templates); the records appended to the
+   companion,
+   among them the state record `stale` as `templates/history.md` has
+   it when a making stood before (POS.1630). Approval of the specification (1.0
+   and on) is the principal's word, as the house scheme has it.
+5. Make the file on the principal's word, in the same round or a
+   later one, as `## Making` says: `work/<name>.<ext>`, carrying of the
+   specification only what `## Making` says it carries. Then the
+   making's record in the specification's history, as
+   `templates/history.md` has it. A file the principal has worked by
+   hand and does not want remade is `by hand` on his word, the
+   record as the template has it; Claude never remakes it
+   on his own judgement — he names it and offers. A file by hand carries
+   the states of the work and its wording; a change of the way or the
+   why made in it, its task, its inputs, its method or what it
+   assumes, is carried into the specification in the same round and
+   written with it, the record in the specification's history naming
+   the change of the file (POS.1520).
+6. Remake the ledger, `python scripts/forge-ledger.py <slug>`, and
+   end by naming what was written and where, and what the ledger's
+   Work row says.

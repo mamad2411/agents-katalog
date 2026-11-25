@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/sergeeey/claude-cod-top-2026 (path: skills/extensions/ai-hyp-gate/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: /ai-hyp-gate — AI Hypothesis Verification Gate

@@ -1,0 +1,38 @@
+---
+name: fable-design-options
+description: Evidence-grounded design option generation for technical architecture, migrations, APIs, data models, safety controls, operational changes, and implementation plans. Use when the user asks for options, tradeoffs, design review, migration strategy, or a decision memo grounded in the current codebase.
+---
+
+# Fable Design Options
+
+Generate options after reading the actual system. Avoid abstract architecture advice when source evidence is available.
+
+For ECF-style governed runs, use `../../references/ecf-run-contract.md`. For large or high-risk design-option tasks, use real Codex subagents when the runtime exposes a subagent tool and the user has not opted out; treat architecture, migration, API, data model, security/privacy/money/data/API, operational, release, or cross-module decisions as large by default. Otherwise run `single-agent multi-lens` and say why no subagents were used when workflow trace is requested.
+
+Use the centralized capability-aware profiles in `../../references/model-support.md` and `../../config/model-profiles.json`. Keep model and reasoning selections configurable, preserve explicit overrides, and record the requested and actual coordinator model and effort and requested and actual worker model plus any fallback. Request parallel delegation only for useful disjoint lenses; report `single-agent multi-lens` when no workers ran. The coordinator owns synthesis and final verification. Never claim a model, effort or subagent ran without runtime evidence.
+
+## Workflow
+
+1. Clarify the decision, constraints, authority boundaries, and success criteria from the prompt and repo instructions.
+2. Declare the ECF run mode when the user asks for ECF, subagents, or a receipt.
+3. Read the relevant implementation, callers/importers, tests, docs, and operational surfaces.
+4. Identify hard constraints: public contracts, migration compatibility, security/privacy rules, performance needs, deploy boundaries, and rollback requirements.
+5. Produce 2-4 viable options. Include a conservative option and a higher-leverage option when both are realistic.
+6. For each option, state:
+   - implementation shape
+   - benefits
+   - risks
+   - migration/rollback path
+   - tests or probes needed
+   - evidence that makes it fit or not fit the repo
+7. Recommend one option only after comparing it against the constraints.
+
+## Evidence Safety
+
+Never print raw secrets, tokens, private keys, wallet keys, credential files, or `.env` values. Redact secret-like values and cite only the file/path/key name needed to explain the issue.
+
+## Output
+
+Use a short decision memo. Separate facts from judgment. Call out unknowns that would change the recommendation.
+
+When requested, include a compact `Workflow Trace` with mode, ECF contract status, lenses covered, spawned agents or no-subagent reason, verification method, and coverage gaps.

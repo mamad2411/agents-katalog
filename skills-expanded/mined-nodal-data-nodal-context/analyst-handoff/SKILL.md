@@ -1,0 +1,73 @@
+---
+name: analyst-handoff
+description: Capture analytics knowledge from an analyst who is changing roles, leaving, or transferring domain ownership, producing governed ACF context and eval seeds through context-interview. Use only for an intentional knowledge-transfer or analyst-transition request.
+---
+
+Approval contract: new and changed context stays on a named working branch and
+has no authored approval status. Human-reviewed protected merge grants definition
+approval; consult the live authority through the runtime for the exact revision
+and freshness. Missing/expired authority evidence prevents governance certification;
+it does not by itself prohibit an explicitly approved, unverified read-only analysis.
+Known revoked definitions or materially stale dependencies still require resolution.
+Explicit branch-test mode is proposed context only. Query/notebook result
+verification is separate from definition approval; retain source and review
+evidence. See the context-interview SPEC approval-through-merge contract.
+
+
+# Analyst Handoff
+
+Run a time-bounded, transition-focused form of `context-interview`. The departing
+analyst's knowledge must become reviewable context and ground-truth examples, not
+a transcript that another analyst has to rediscover later.
+
+## Dependency and ownership
+
+Use the sibling `context-interview` skill for repository discovery/scaffolding,
+the confirmation ladder, ACF authoring, eval-seed harvesting, live verification,
+and validation. If that skill is unavailable, stop and ask the user to install the
+complete Nodal Analytics package; do not invent a second ACF workflow.
+
+The human remains the owner of every confirmed definition. Warehouse and dashboard
+access remain read-only. Never request or handle credentials.
+
+## Handoff overlay
+
+1. Establish the transition date, available session time, domains being handed
+   off, current owner, and intended successor or escalation role. Do not infer a
+   company or person's identity from schema names.
+2. Locate or create the context repo through `context-interview`, then read its
+   current domain roster and open drafts. Prefer finishing high-risk existing
+   drafts before opening low-value new domains.
+3. For each domain, apply the prompts in `references/handoff-checklist.md` through
+   the normal selection/confirmation ladder. Work in batches of one to three and
+   show progress.
+4. Every confirmed disambiguation emits an eval seed. Record rejected credible
+   readings in intent and shape exclusions. Use a negative-kind seed only for a
+   correctly declined/escalated question, with its declared reason. Unconfirmed recollections remain drafts with a
+   named follow-up owner or role.
+5. Run the normal per-domain live verification where time and tools allow. A
+   missing connection degrades to semantic capture; it never turns recollection
+   into verified truth.
+6. Validate the context repo and finish with a handoff coverage report.
+
+Carry explicit open decisions, method decision rationales, family/alias choices,
+stale seeds and pending Stage 6 observations into the successor's agenda. Notebook
+knowledge can become a statically imported draft method, followed by human review
+and independent Stage 5 verification when authorized and available. Do not treat
+an import, a simulation or a departing analyst's recollection as an execution.
+Keep raw observations and execution evidence local; confirmed metric/method/seed
+records preserve the actual approver and date.
+
+## Coverage report
+
+Report by domain:
+
+- confirmed definitions and eval seeds added;
+- remaining drafts and why they are unresolved;
+- dashboards/reports and operational deadlines;
+- known wrong approaches and data-quality traps;
+- successor or escalation owner;
+- verification completed, unavailable, or still required.
+
+Do not claim the handoff is complete while a load-bearing domain has no successor,
+contains unresolved contested definitions, or lacks a clearly named follow-up.

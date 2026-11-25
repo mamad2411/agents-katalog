@@ -1,0 +1,91 @@
+---
+name: guard-it
+description: Check a change against the repo's compliance rules, security policy, secret and dependency policy, and report findings by severity. Use when running a compliance or security pre-flight, before a PR is marked ready or when the user asks to add or tune a compliance rule.
+---
+
+# guard-it
+
+Two layers, one rule set:
+
+| Layer | Where | Enforced by |
+|-------|-------|-------------|
+| Mechanical (a regex decides) | `.compliance-rules/checks.json` plus built-in secret rules | do-it hooks, on every edit and every `git commit` |
+| Judgement | `.compliance-rules/*.md`, `SECURITY_POLICY.md`, `docs/agents/compliance/` | this skill, run by `prove-it` or on request |
+
+`DO_IT_COMPLIANCE_DIR` moves the rules directory (see the track-it skill's
+CONFIG.md).
+
+## Check a change
+
+1. **Scope.** The change under review: from `prove-it`, its diff and untracked
+   files; on request, `git diff HEAD` plus untracked files, or the range the
+   user names.
+2. **Mechanical.** Run the hook scanner over the same change so nothing the
+   hooks would catch is missed:
+
+   ```bash
+   node <this skill's dir>/scripts/scan.mjs [--since <ref>]
+   ```
+
+3. **Absent inputs.** Name an input that is missing instead of passing it
+   over: `.compliance-rules/` (no judgement rules to apply),
+   `SECURITY_POLICY.md`, and a dependency manifest for a changed package. Each
+   absent input is an **unverified** axis, never a pass. In a run, put the gap
+   in the run's limits so the digest prints it under "not checked";
+   `work.mjs run set <slug> limits '<json array>'` replaces the list, so pass
+   the existing entries back with the new one:
+
+   ```bash
+   work.mjs run set <slug> limits '["no .compliance-rules/: judgement rules not checked"]'
+   ```
+
+4. **Rules.** Read every `*.md`, `*.yaml` and `*.yml` in the rules directory,
+   plus `SECURITY_POLICY.md` (root or `docs/`) when present. Apply each rule to
+   the change. A rule's stated severity sets the group: HIGH or none stated is
+   **Must**, MEDIUM is **Should**, LOW is **Nice**. A breach of the security
+   policy is **Must**.
+5. **Dependencies.** For changed manifests: no `*` or unbounded `>=` ranges,
+   no unofficial registries, cross-check `.dependency-audit.json` when it
+   exists.
+
+Report one line per finding, grouped Must, Should, Nice, then a one-line
+count:
+
+```text
+MUST  src/api/client.ts:42  hardcoded-secret: read it from the environment
+```
+
+Concrete `file:line`, never the secret value itself, the smallest fix. A
+calling skill (prove-it, sweep-it) takes these findings into its own report.
+
+A step that did not run (the scanner errors or prints nothing it should, a rules
+file cannot be read) is **unverified**, never an empty list: report
+`Unverified: <why>` for it, so the caller does not read "no findings" as clean.
+
+## Add a mechanical rule
+
+On request, or when `retro-it` decides a recurring mistake belongs here,
+write a `checks.json` entry in this format:
+
+```json
+[
+  {
+    "id": "no-console-log",
+    "severity": "MEDIUM",
+    "pattern": "console\\.log\\(",
+    "files": [".ts", ".tsx"],
+    "message": "Use the project logger."
+  },
+  { "id": "jwt", "disabled": true }
+]
+```
+
+- `severity`: HIGH blocks the edit; MEDIUM and LOW are reported to the agent.
+- `filePattern` instead of `pattern` matches the edited path.
+- `{"id": "<built-in id>", "disabled": true}` turns off a built-in rule.
+- A line containing `do-it: allow` is skipped; say why whenever you use it.
+
+Show the entry and a line it would catch; add it only when the user agrees.
+Then prove it: run `node scripts/scan.mjs` (in this skill's directory) on the
+case it targets to show it fires, and on the current tree to show it does not
+flood existing code with hits.

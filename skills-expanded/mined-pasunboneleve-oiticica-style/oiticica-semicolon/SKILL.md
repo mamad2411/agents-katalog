@@ -1,0 +1,83 @@
+---
+name: oiticica-semicolon
+description: Apply Oiticica's semicolon concept in modern English with concise rules, objective rubrics, and concrete contrast.
+---
+
+# Oiticica Semicolon
+
+Use this skill when reviewing or rewriting English prose where semicolon is the controlling issue.
+
+Source concept: The semicolon separates related clauses where a comma is too weak and a period too final.
+
+## Clarity-Fault Aggregate Mode
+
+When `$oiticica-clarity-faults` invokes this skill as one component of a seven-fault audit, apply this skill's Rules and Objective Rubric but defer response shape, length, comparison, and revision decisions to the aggregate skill. Do not emit this skill's standalone `Principle`, `Preserve`, `Weak`, `Fault`, `Better`, `Why`, or `Rubric` sections in aggregate mode.
+
+## Rules
+
+- Use semicolons for successive conditions before a conclusion, strong adversative turns, parallel clauses with omitted words, and list items that contain internal commas.
+- Do not use a semicolon between unrelated sentences.
+- Do not use a comma splice where a semicolon or period is required.
+- Prefer a comma when the clauses are short and lightly joined.
+
+## Review Shape
+
+Use the source-model shape for strong models:
+
+```markdown
+Principle:
+<oiticica-semicolon: one sentence naming the concept>
+
+Preserve:
+<supplied example text>
+
+Why:
+<why the model satisfies the concept>
+
+Rubric:
+<at least two objective checks, each marked Pass or Fail>
+```
+
+Use the repair shape for weak passages:
+
+```markdown
+Principle:
+<oiticica-semicolon: one sentence naming the concept>
+
+Weak:
+<small passage or paraphrase>
+
+Fault:
+<name the exact broken relation>
+
+Better:
+<corrected version>
+
+Why:
+<explain how the revision restores the relation>
+
+Rubric:
+<at least two objective checks, each marked Pass or Fail>
+```
+
+Start `Principle` with the exact skill name `oiticica-semicolon`.
+If the prompt says source-model or source-model paraphrase, copy the supplied example in `Preserve` and do not use repair headings.
+
+## Objective Rubric
+
+- Both sides of the semicolon are grammatically compatible.
+- The relation is contrast, parallelism, sequence, or complex listing.
+- A comma would be ambiguous or too weak.
+- A period would break a useful relation.
+
+Pass only when every applicable check passes. If correctness fails, fix or name that failure before judging style.
+
+## English Rule
+
+Apply modern English grammar, punctuation, morphology, idiom, and prosody. Do not transfer Portuguese orthography or grammar into English.
+
+## Source Boundary
+
+Source notes live in `references/notes.md`.
+Do not invent source quotations. If an example is labeled as a paraphrase or invented passage, preserve that boundary in the review.
+When a task asks for a `Preserve` section, copy the supplied example text exactly; do not replace it with imagined source prose.

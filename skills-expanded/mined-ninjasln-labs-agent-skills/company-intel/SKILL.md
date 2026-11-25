@@ -1,0 +1,486 @@
+---
+name: company-intel
+description: >-
+  Research a company, industry, or competitor set using web search and seven analytical
+  lenses. Use when you need structured intel that feeds downstream PM skills.
+slug: company-intel
+version: 1.1.1
+displayName: company-intel
+---
+
+# Company Intel
+
+## Purpose
+
+Research engine that builds deep, structured understanding of companies, industries, and competitor sets. Produces a stable output format that you can hand off to other skills and agents to generate battlecards, SWOT analyses, positioning statements, PESTEL assessments, market sizing, and workshop content.
+
+This is not a generic encyclopedia lookup. Every section pushes toward commercial understanding, product implications, and actionable intelligence. The output is a research primitive — structured data other skills consume — not a final deliverable.
+
+## Input
+
+**Works best with:** The research target: a company, an industry, or a set of competitors.
+**Also useful:** The downstream use (battlecard, SWOT, positioning, market sizing) so the research emphasizes the right lenses, plus any constraints on depth or recency.
+
+Anything supplied with the invocation itself — text after the skill name, a pasted context dump, or an appended `ARGUMENTS:` line — counts as answers already given. Use it and skip whatever it covers; don't re-ask.
+
+**Arriving empty-handed? That works too.** The workflow opens by asking for the target and what the intel will feed.
+
+**Example invocation:** `Research Figma and its top 3 competitors — output feeds a positioning workshop next week.`
+
+## Shortest Worked Example
+
+**Precondition:** a named company; web search available for primary sourcing.
+**Invocation:** the example line above.
+**Output excerpt (what you should see):**
+
+```markdown
+## 2. How It Makes Money
+Subscription revenue from team plans (~70% of ARR), plus enterprise seats.
+Seasonal trough in Q3 hiring cycles. [Fact — FY2025 annual report]
+
+## 11. Sources and Confidence
+- FY2025 annual report (investor relations) — Section 2
+- 3 executive appointments, last 12 months — Section 9 [Inference: platform shift]
+```
+
+**Done when:** every section pushes past description to PM implication, every factual claim carries a source, and inferences are labeled.
+
+## Failure Exits (closed set)
+
+- **No web access / search fails:** say so in one line, then produce the skeleton (all 11 section headers) filled from supplied context only, every claim tagged [UNVERIFIED—NEEDS SOURCE] — don't present recall as research.
+- **Search returns nothing on the target:** state "no public signal found on [X] in [lens N]" per empty lens — an empty Section 9 (Strategic Signals) is a valid finding, not a failure.
+- **Target isn't a company** (a product name, a person, a topic): one-line restate ("that's a product of [company] / an industry — proceed at sector level?"), ask one question, don't research the wrong entity.
+- **Ambiguous entry point:** ask the one clarifying question from Key Concepts; don't guess between single-company and competitor-set modes.
+- **Reference files missing** (`references/worked-examples.md`, `references/downstream-composition.md` not found): `ls` this skill's directory and report the missing file — don't improvise the 11-section structure.
+
+## Wrong → Fix (quick table)
+
+| Wrong | Fix |
+|---|---|
+| Output reads like a Wikipedia summary | Push each section to "what does this mean for product decisions?" |
+| Features listed without outcomes | Answer: what problem, for whom, what behavioral change |
+| "The CEO said X" with no citation | Source + date + outlet (e.g., "Q1 2026 earnings call, Seeking Alpha transcript") |
+| One run, never refreshed | Set a rerun cadence; lead the rerun with "What's Changed" |
+| Inference presented as fact | Label it: "Inference based on [evidence]" |
+
+## Completion Checklist (done = all checkable)
+
+- [ ] Entry point detected and stated (single / sector / set / discover)
+- [ ] All 11 sections present (12 for competitor sets), none left as bare headers
+- [ ] Every factual claim has source + date; inferences labeled Fact / Inference / Assumption
+- [ ] Section 9 includes at least one of: patent, hiring, or leadership signals — or an explicit "no significant signal" finding
+- [ ] Sections older than 18 months flagged
+- [ ] Handoff menu offered at the end
+
+## Key Concepts
+
+### Four Entry Points
+
+The skill auto-detects entry point from the user's input. If ambiguous, ask one clarifying question: "Is this about a specific company, an industry, or a set of competitors?"
+
+**Single Company** — User names a company (e.g., "Helix Motion Systems," "Brightwater Biologics" — or any real company). Produce the full 11-section output for that company.
+
+**Industry/Sector** — User names an industry, sector, or niche (e.g., "clinical data management," "embedded finance," "upstream oil and gas"). Establish broad industry context, narrow into the segment, and connect findings to PM implications. Use the same 11-section structure adapted for sector-level analysis.
+
+**Named Competitor Set** — User names 2-5 companies (e.g., "Compare Helix Motion, Northfield Automation, and Corvid Industrial"). Produce individual 11-section outputs for each company, then add a **Section 12: Cross-Company Comparison** that synthesizes across the set.
+
+**Discover Competitors** — User names a company plus the word "competitors" (e.g., "helix-motion.com competitors" or "Helix Motion Systems competitors"). The skill:
+1. Researches the named company first — enough to understand what it does, who it serves, and what market it plays in (a lightweight pass through Lenses 1-4)
+2. Identifies 3-5 likely competitors based on that research, citing why each is a competitor (direct, adjacent, substitute, or emerging disruptor)
+3. Presents the list for confirmation: "Based on my research, [Company]'s closest competitors appear to be [A, B, C, D, E]. Want me to run the full competitor set on these, or adjust the list first?"
+4. Once confirmed, proceeds with the Named Competitor Set flow — full 11-section output for each company plus Section 12 cross-company comparison
+
+The user can also provide a URL instead of a company name (e.g., "helix-motion.com"). The skill should resolve the URL to the company, research accordingly, and proceed.
+
+---
+
+### Seven Research Lenses
+
+These lenses structure all analysis. Apply every lens to every entry point.
+
+**Lens 1 — Financial Landscape and Business Outcomes**
+How the entity makes money. Major revenue streams and cost drivers, margin pressures, growth levers, retention and expansion dynamics, capital intensity, seasonal or cyclical patterns, major risks to performance.
+
+**Lens 2 — Market Offer and Business Model**
+How the entity creates and captures value. Target markets, buyers, users, influencers, administrators, and blockers. How segments differ. Multi-sided or multi-stakeholder dynamics.
+
+**Lens 3 — Product Portfolio and Product Outcomes**
+Major offers, product families, services, platforms, channels. Bundled solutions, ecosystem plays. Digital versus human-assisted components. Legacy versus emerging offers. Distinction between business line, offer, product, feature set, service layer, and enabling platform.
+
+**Lens 4 — Competitive Dynamics**
+Direct competitors, adjacent competitors, substitutes, emerging disruptors. Where differentiation is won or lost.
+
+**Lens 5 — Rising Trends and Strategic Concerns**
+Market trends, regulatory forces, technology shifts (especially AI and automation), operational constraints, buyer expectation changes, threats from consolidation or commoditization.
+
+**Lens 6 — How Product Management Works Here**
+Product-led vs sales-led vs service-led behavior. Centralized vs federated product structures. Platform vs solution orientation. Roadmap and innovation posture. Compliance or governance overhead. Discovery maturity, data maturity, experimentation maturity, AI maturity. Cross-functional friction. Label inferences clearly.
+
+**Lens 7 — Strategic Signals**
+Three signal types — always check all three:
+- **Patent activity:** Recent filings and grants via patent databases. Technology domains, R&D clusters, gaps between patent activity and public product narrative.
+- **Hiring signals:** Roles open in volume, skills and tools in job descriptions, seniority being hired, language that reveals product culture (discovery, outcomes, AI-native, regulatory, experimentation).
+- **Leadership changes:** C-suite and product leadership arrivals or departures in the last 12-18 months. Origin of new leaders (platform companies, consulting, competitors). New CPO, CTO, or CDO roles created, eliminated, or restructured. Board-level changes.
+
+Sharp heuristics for reading the product organization specifically:
+- **CPO/VP Product tenure:** a new product leader hired in the last 12-18 months almost always means the prior approach failed — read what they were hired *from* (platform company? consultancy? competitor?) as the intended correction.
+- **PM job postings as culture documents:** how they define the PM role — outcome language vs. feature/roadmap language, discovery expectations, who PMs report to — reveals how product actually works there better than any About page.
+- **Employee-review themes:** clusters around "roadmap chaos," "priorities change weekly," or "product vs. engineering tension" are Lens 6 evidence — community-tier confidence, labeled, but often the earliest honest signal.
+
+**Reading organizational distress (optional deepening, for engagement or partnership prep).** When the
+intel supports a conversation with the company — a partnership, a sales motion, a job interview — add
+the distress read: what's the most likely **presenting problem** (what they'd say is wrong) versus the
+probable **underlying problem** (what the evidence suggests is actually wrong)? Was there a **trigger
+event** — missed guidance, a failed launch, a reorg, a new executive inheriting a mess? Calibrate the
+distress level: *doing fine and optimizing* → *knows something's wrong* → *in trouble and doesn't know
+it yet*. Label the whole read as Inference; it's the most useful and least certain section in the file.
+
+---
+
+### Key Distinctions to Maintain
+
+Always be disciplined about these — collapsing them produces shallow analysis:
+- market vs segment
+- buyer vs user
+- product vs service
+- business outcome vs product outcome vs output
+- strategy vs tactics
+- discovery vs delivery
+- platform vs application
+- signal vs assumption
+- revenue growth vs market share growth vs customer lifetime value improvement vs cost reduction
+
+---
+
+### Tensions Worth Surfacing
+
+Highlight conflicts and tradeoffs wherever they appear:
+- growth vs compliance
+- scale vs customization
+- digital self-service vs high-touch service
+- standardization vs domain-specific workflow
+- innovation vs legacy burden
+- AI ambition vs governance reality
+- customer value vs internal efficiency
+- short-term revenue vs long-term platform investment
+
+---
+
+### Why This Works
+
+- **Web-grounded:** Uses live search, not training-data recall — output includes citations
+- **PM-native:** Every section connects to product management implications, not just business facts
+- **Composable:** Stable output format that downstream skills can parse and consume
+- **Repeatable:** Same input next quarter produces fresh intel — the delta is the story
+- **Signal-driven:** Strategic signals (patents, hiring, leadership) are often the most honest data available — they reveal what a company is actually doing, not what it says it's doing
+
+---
+
+### Anti-Patterns
+
+- **Not a Wikipedia summary:** Push past "what they do" to "what this means for product decisions"
+- **Not financial analysis:** Focus is product strategy and commercial dynamics, not valuation or stock picks
+- **Not a prompt generator:** The output is actual research with citations, not prompts for a future session
+- **Not a one-time exercise:** Design for quarterly refresh — run it again, compare the delta
+
+---
+
+### Research Expectations
+
+**Use web search actively.** This skill requires live data gathering, not recall from training data. Search for and cite:
+- Investor relations materials, annual reports, earnings transcripts
+- Company product pages and official strategy pages
+- Regulatory disclosures and filings
+- Patent databases (Google Patents, USPTO)
+- Company careers pages and job aggregators (LinkedIn, Indeed, Glassdoor)
+- Executive appointment announcements and leadership change coverage
+- Industry analysts (Gartner, Forrester, IDC) and reputable news coverage
+
+**Cite sources.** Every factual claim should include a source. Use the library's canonical evidence
+labels from [`autonomous-investigation`](../autonomous-investigation/SKILL.md): **Fact**
+(source-supported), **Inference** (evidence-based interpretation), **Assumption** (working guess).
+When you're inferring — especially on Lens 6 (PM culture) and Lens 7 (strategic signals) — show the
+basis: "Inference based on [evidence]."
+
+**Source priority ladder.** Primary (filings, earnings calls, investor docs) → credible secondary
+(major business press, trade publications) → community (Glassdoor, review sites, forums — lower
+confidence) → inferred signals (job postings, announcements). State where each claim sits.
+
+**Recency matters.** Prioritize sources from the last 12-24 months. Flag anything older than 18
+months explicitly.
+
+**Do not sanitize.** Brutal product reviews, public criticism of leadership, employee accounts of
+roadmap chaos — it all belongs in the file, labeled and sourced. Intelligence that flatters the
+subject is marketing; the reader needs the real picture.
+
+## Application
+
+### Step 1: Detect Entry Point
+
+Determine from user input:
+- **Single company** → proceed to Step 2 with one entity
+- **Industry/sector** → proceed to Step 2, adapt sections for sector-level analysis
+- **Named competitor set** (2-5 companies listed) → proceed to Step 2 for each company, then Step 3
+- **Discover competitors** (one company + "competitors") → proceed to Step 1b, then Step 2 for each, then Step 3
+- **URL provided** (e.g., "helix-motion.com") → resolve to company name, then detect entry point from any additional context
+
+If ambiguous, ask one question: "Is this about a specific company, an industry, or a set of competitors?"
+
+If the user provides additional context (e.g., "I'm preparing for a client engagement with them" or "we compete with them in the SMB segment"), use that context to weight which lenses get deeper treatment.
+
+---
+
+### Step 1b: Discover Competitors (when entry point is "discover competitors")
+
+1. **Research the named company** using web search. Do a lightweight pass through Lenses 1-4 — enough to understand what the company does, who it serves, what market it plays in, and how it creates value.
+
+2. **Identify 3-5 likely competitors** based on that research. For each, state:
+   - Company name
+   - Why it's a competitor (direct, adjacent, substitute, or emerging disruptor)
+   - One-sentence description of how it competes
+
+3. **Present the list for confirmation:**
+
+   "Based on my research, [Company] is [brief description — what it does and who it serves].
+
+   Its closest competitors appear to be:
+   1. **[Competitor A]** — [relationship: direct/adjacent/substitute/disruptor]. [Why.]
+   2. **[Competitor B]** — [relationship]. [Why.]
+   3. **[Competitor C]** — [relationship]. [Why.]
+   4. **[Competitor D]** — [relationship]. [Why.]
+   5. **[Competitor E]** — [relationship]. [Why.]
+
+   Want me to run the full competitor set analysis on these? You can also add, remove, or swap any before I proceed."
+
+4. **Once confirmed,** proceed to Step 2 for each company (including the original), then Step 3 (cross-company comparison).
+
+---
+
+### Step 2: Research and Produce Output
+
+Use web search to gather data across all seven lenses. Produce the following 11-section output:
+
+```markdown
+## 1. What This Entity Is
+[Business definition, founding, market position, scale. What makes it distinct.]
+
+## 2. How It Makes Money
+[Revenue streams, cost structure, margin dynamics, financial logic.
+Seasonal or cyclical patterns. Growth levers and risks.]
+
+## 3. Who It Serves
+[Buyers, users, influencers, administrators, blockers.
+Segment differences. Multi-stakeholder complexity.]
+
+## 4. What It Sells or Delivers
+[Core value propositions. Key offers in plain language.
+How the offer creates value for the customer.]
+
+## 5. Key Product Lines or Offers
+[Mapped by product family, platform, service, channel.
+Digital vs human-assisted. Legacy vs emerging.
+Distinguish: business line, offer, product, feature set,
+service layer, enabling platform.]
+
+## 6. Business and Market Pressures
+[Competitive forces, regulatory pressure, technology shifts,
+operational constraints. Name the tensions.]
+
+## 7. Competitors and Alternatives
+[Direct competitors, adjacent competitors, substitutes,
+emerging disruptors. Where differentiation is won or lost.]
+
+## 8. Important Trends and Risks
+[Macro forces, buyer expectation shifts, AI and automation impact,
+consolidation or commoditization threats.]
+
+## 9. Strategic Signals
+[Patent activity: recent filings, technology domains, R&D bets.
+Hiring signals: volume roles, skills language, seniority patterns.
+Leadership changes: arrivals, departures, origins, new roles created.
+Include sources for each signal.]
+
+## 10. What This Means for Product Management
+[PM implications: org dynamics, discovery maturity, delivery model,
+cross-functional friction, AI readiness. Product-led vs sales-led.
+Likely PM challenges. Domain-specific skills PMs would need.
+Label inferences.]
+
+## 11. Sources and Confidence
+[List all sources used, organized by section.
+Flag assumptions and inferences explicitly.
+Note any sections where data was thin or unavailable.]
+```
+
+**Quality checks for every section:**
+- Does it push past description to implication?
+- Does it name specific tensions, not just facts?
+- Are sources cited?
+- Is inference labeled?
+
+---
+
+### Step 3: Cross-Company Comparison (Competitor Set Only)
+
+When the entry point is a competitor set, produce individual Section 1-11 outputs for each company, then add:
+
+```markdown
+## 12. Cross-Company Comparison
+
+### Where They're Betting Differently
+[Patent clusters, hiring patterns, leadership hires that diverge.
+Which companies are investing in AI, which in services,
+which in platform plays.]
+
+### Where They're Converging
+[Same platform moves, same market pivots, same talent profiles.
+When everyone zigs together, that's table stakes — not differentiation.]
+
+### Gaps and White Space
+[What none of them are covering. Segments underserved.
+Capabilities nobody is building. Buyer needs unaddressed.]
+
+### Tensions That Play Out Differently
+[e.g., Company A chose scale over customization;
+Company B chose the opposite. Who's winning, and for whom?]
+
+### PM Implications Across the Set
+[What a PM at each company would face differently.
+Which org is better set up for discovery?
+Which is most constrained by legacy?]
+```
+
+---
+
+### Step 4: Handoff Menu
+
+After producing the output, offer the user a handoff menu. Each option names what gets built and which skill or agent consumes the research:
+
+"Your research is ready. What do you want to build from it?
+
+1. **Competitive battlecard** — I'll structure a head-to-head comparison for your sales or strategy team
+2. **SWOT analysis** — I'll run strengths, weaknesses, opportunities, and threats using the research as input
+3. **Positioning statement** — Use `positioning-statement` skill with this company/market context loaded
+4. **PESTEL assessment** — run a PESTEL pass over the trends and pressures from Sections 6 and 8
+5. **Market sizing (TAM/SAM/SOM)** — size the opportunity from the market and segment data in Sections 2-3
+6. **Research prompts for deeper investigation** — Generate 3-5 targeted research prompts per lens for a follow-up session
+7. **PM briefing memo** — Condense the 11 sections into a 1-page executive summary for a PM audience
+8. **Workshop discussion guide** — Extract teachable tensions and case study angles for training use
+
+Select a number, combine them (e.g., '1 and 4'), or describe what you need."
+
+---
+
+### Rerun Pattern (Executive Signal Refresh)
+
+When the user reruns the skill on a previously researched entity — or asks for a quarterly refresh —
+run it as a delta investigation, not a regeneration:
+
+- **Read the prior output fully before searching**; diff against it. Focus web search on the period
+  since (typically the last 90 days), prioritizing primary sources: earnings transcripts, filings,
+  investor days, direct executive interviews. Quote executives *exactly* — never fabricate quotes,
+  figures, or guidance.
+- Lead with a **"What's Changed"** summary before any full sections. For each material shift, use the
+  Then/Now form:
+  - **Then:** what the prior run recorded
+  - **Now:** the new signal — "exact quote or observation" (source, date, URL)
+  - **Reading:** what this suggests for strategy or product (labeled Inference)
+  - **Confidence:** high / medium / low
+- Include a **Dropped Language** subsection: initiatives, phrases, or metrics the company *stopped*
+  mentioning quarter over quarter. What leaders stop saying is often the strongest signal — a
+  transformation program that vanishes from the earnings script died without a press release. Read
+  earnings materials as strategy documents, not finance rituals: separating narrative shifts from
+  metric shifts is the skill.
+- In Section 9 (Strategic Signals), highlight delta from prior run: new hires, new patents, leadership moves
+- Flag sections where nothing material changed: "No significant change since [prior date]" — and if
+  the quiet is sustained across runs, note the quiet as its own signal.
+
+The user does not need to say "refresh" — if the agent has prior output in context, it should default
+to delta-first reporting. For monitoring a whole competitor *set* at lower depth, hand off to
+[`competitive-intel-watch`](../competitive-intel-watch/SKILL.md); this refresh goes deep on one company.
+
+See [`examples/executive-signal-refresh.md`](examples/executive-signal-refresh.md) for a full worked
+refresh (fictional, industrial) — Then/Now shifts, a Dropped Language read that carries the headline, and quiet
+sections graded rather than padded. [`examples/executive-signal-refresh-saas.md`](examples/executive-signal-refresh-saas.md)
+is the SaaS sibling, where the vocabulary to watch changes — tier names, "self-serve," NRR framing —
+but the pattern holds.
+
+## Examples
+
+Two worked excerpts (single company · competitor set) plus the anti-pattern example live in
+[`references/worked-examples.md`](references/worked-examples.md).
+
+## Common Pitfalls
+
+### Pitfall 1: Surface-Level Description Without Implications
+**Symptom:** Summary reads like a Wikipedia article or press release.
+**Consequence:** No actionable intelligence. Downstream skills get nothing useful.
+**Fix:** Push every section toward "what does this mean for product decisions?" If a fact doesn't connect to a tension, tradeoff, or PM implication, it's not pulling its weight.
+
+### Pitfall 2: Skipping Strategic Signals
+**Symptom:** Analysis draws only from press releases and About pages. Sections 1-8 are solid; Section 9 is empty or generic.
+**Consequence:** You're seeing what the company *says* it's doing, not what it's *actually* doing. Patents, hiring, and leadership changes are often the most honest signals available.
+**Fix:** Always search patents, hiring, and leadership as a required step — even if the results are thin. "No significant patent activity found" is a signal too.
+
+### Pitfall 3: Confusing Outputs With Outcomes
+**Symptom:** Listing features or products without explaining what results they produce for customers or the business.
+**Consequence:** Section 5 becomes a product catalog instead of strategic intelligence.
+**Fix:** For every offer, answer: what problem does it solve, for whom, what outcome does it improve, and what behavioral change does it create?
+
+### Pitfall 4: No Citations
+**Symptom:** "The CEO said the company is focused on AI." No source, no date, no context.
+**Consequence:** Unverifiable claims. Downstream consumers can't trust the research.
+**Fix:** Cite source and date. "CEO Jane Doe stated X in Q1 2026 earnings call (Source: Seeking Alpha transcript, Feb 2026)."
+
+### Pitfall 5: Treating All Industries as Identical
+**Symptom:** Generic PM frameworks applied without domain calibration. "They should do more discovery" without acknowledging that discovery in defense contracting looks nothing like discovery in consumer SaaS.
+**Consequence:** Section 10 is useless to anyone who actually works in the domain.
+**Fix:** Identify what makes PM *different* in this specific domain — regulatory overhead, buyer/user separation, capital intensity, sales cycle length, service dependency.
+
+### Pitfall 6: One-Time Exercise, Never Refreshed
+**Symptom:** Intel gathered once, never updated. Decisions made on 18-month-old hiring signals.
+**Consequence:** Stale intelligence is worse than no intelligence — it creates false confidence.
+**Fix:** Set a rerun cadence (quarterly for active competitors, annually for industry context). When rerunning, lead with "What's Changed."
+
+## Downstream Composition Guide
+
+For other skill authors and agent builders consuming this output — the 11/12-section structure,
+per-section downstream use, and which sections to pass to which consumer — see
+[`references/downstream-composition.md`](references/downstream-composition.md).
+
+## References
+
+### Related Skills
+- Lighter-weight company profile (executive quotes, product strategy) — this skill is deeper and broader, producing structured output for downstream consumption
+- **[autonomous-investigation](../autonomous-investigation/SKILL.md)** (Workflow) — The evidence-label and confidence protocol this skill's research follows
+- **[intelligence-collection-disciplines](../intelligence-collection-disciplines/SKILL.md)** (Component) — OSINT/FININT/HUMINT source tables and signal chains behind Lenses 1, 6, and 7
+- **[competitive-intel-watch](../competitive-intel-watch/SKILL.md)** (Workflow) — Breadth sibling: monitors the whole competitor set on a cadence while this skill goes deep on one entity
+- PESTEL analysis template (optional companion activity) — consumes Sections 6 and 8 from company-intel
+- De-risk / measurement scan (optional companion activity) — benefits from Sections 6 and 8 as context input
+- Market sizing TAM/SAM/SOM (optional companion activity) — consumes Sections 2, 3, 5
+- SaaS business-health diagnosis (optional companion activity) — consumes Section 2
+- **[positioning-statement](../positioning-statement/SKILL.md)** (Component) — Positioning; consumes Sections 3, 4, 7
+- Go-to-market channel analysis (optional companion activity) — consumes Sections 2, 3, 7
+- **[proto-persona](../proto-persona/SKILL.md)** (Component) — Persona creation; consumes Section 3
+
+### Research Sources
+- Company investor relations pages — Annual reports, earnings transcripts, forward-looking statements
+- Patent databases — Google Patents, USPTO
+- Job aggregators — LinkedIn, Indeed, Glassdoor (hiring signals)
+- Industry analysts — Gartner, Forrester, IDC
+- Regulatory filings — SEC (US), Companies House (UK), relevant sector regulators
+- News coverage — Reuters, Bloomberg, industry-specific publications
+
+### Provenance
+- Adapted from Dean Peters' company-profile-executive-insights-research prompt and TAM-SAM-SOM prompt generator in the product-manager-prompts repo
+- Incorporates the Seven Research Lenses framework developed for Productside enterprise PM training
+
+---
+
+## 中文速览（Quick Guide）
+
+- **做什么**：用网络检索＋七个分析透镜产出结构化的公司／行业／竞对情报（11 节固定结构），是喂给下游技能的研究原语，不是百科式概述。
+- **何时用**：需要为 battlecard、SWOT、定位、市场规模等下游工作准备结构化情报时。
+- **核心步骤**：定目标与下游用途 → 按 11 节结构逐节检索与推断 → 每条事实带来源、推断打标签 → 汇总「来源与置信度」节。
+- **国内可达性边界**：主流程依赖网络搜索，且正文 Research Sources 多为境外源（投资者关系页、SEC、Reuters 等）——不可达时用可访问的公开中文渠道替代，并在来源节如实标注渠道与置信度；搜索完全不可用时按 Failure Exits 降级为 11 节骨架＋`[UNVERIFIED—NEEDS SOURCE]`，不把模型记忆当检索结果。
+

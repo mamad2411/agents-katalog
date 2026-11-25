@@ -1,0 +1,78 @@
+---
+name: plasmidfinder
+description: >
+  PlasmidFinder — CGE in silico replicon / plasmid typing from assemblies or reads
+  (BLAST/KMA vs PlasmidFinder DB). Use for Inc/replicon markers on isolates and HQ
+  genomes. Route via cge-finders / microbial-mining; plasmid ST → pmlst; complement
+  genomad, plasmaag, mob-suite.
+license: MIT
+metadata:
+  metagenomics.category: "analysis-tools"
+  metagenomics.tags: "PlasmidFinder, CGE, plasmid, replicon, Inc, typing, MGE"
+  metagenomics.upstream: "https://github.com/genomicepidemiology/plasmidfinder"
+  metagenomics.stage: "mining"
+  metagenomics.maturity: "reviewed"
+  metagenomics.upstream-version: "3.0.3"
+  metagenomics.last-reviewed: "2026-10-18"
+  metagenomics.command-status: "CLI reviewed against upstream source; not executed here"
+---
+
+# PlasmidFinder
+
+Upstream: [genomicepidemiology/plasmidfinder](https://github.com/genomicepidemiology/plasmidfinder) ·
+DB: [plasmidfinder_db](https://bitbucket.org/genomicepidemiology/plasmidfinder_db)
+
+## Citation
+
+Carattoli, A. *et al.* In Silico Detection and Typing of Plasmids using
+PlasmidFinder and Plasmid Multilocus Sequence Typing. *Antimicrob. Agents
+Chemother.* **58**, 3895–3903 (2014). https://doi.org/10.1128/AAC.02412-14
+
+See also [docs/references.md](https://github.com/PKU-EMBL/Metagenomics-Skills/blob/main/docs/references.md) and `cge-finders`.
+
+## Analytical thinking
+
+PlasmidFinder matches **replicon** sequences (Inc/rep families as represented
+in the CGE DB). A hit supports plasmid **type presence**, not a complete
+circular plasmid or host linkage. Database historically strong for
+Enterobacterales / selected Gram+ sets — weak for open environmental plasmidomes.
+
+Prefer `genomad` / `plasmaag` for metagenomic plasmid contig discovery;
+`mob-suite` for MOB/relaxase + reconstruction; PlasmidFinder for CGE-compatible
+replicon typing on isolates.
+
+## How to run
+
+```bash
+set -euo pipefail
+DB=${PLASMIDFINDER_DB:?set PLASMIDFINDER_DB to the pinned database checkout}
+[[ -s assembly.fasta && -d "$DB" ]] || exit 2
+python -m plasmidfinder --help >/dev/null
+mkdir -p plasmidfinder_out plasmidfinder_tmp
+python -m plasmidfinder -i assembly.fasta -o plasmidfinder_out \
+  -tmp plasmidfinder_tmp -p "$DB" -x -j plasmidfinder_out/results.json
+test -s plasmidfinder_out/results.json
+# Use staramr instead when one combined Res/Point/Plasmid report is intended.
+```
+
+This block targets the reviewed `plasmidfinder.py` interface; pin the script and database commits together and archive the complete output directory.
+
+## Decision tree
+
+```text
+Plasmid claim?
+├─ CGE replicon typing → plasmidfinder
+├─ Plasmid scheme ST → pmlst
+├─ Combined isolate AMR+plasmid report → staramr
+├─ Multi-DB screen (incl. plasmidfinder DB) → abricate
+├─ Contig plasmid/virus scores (meta) → genomad
+├─ Plasmid MAG recovery → plasmaag
+├─ MOB / relaxase typing → mob-suite
+└─ ARG on plasmids → resfinder / rgi ∩ plasmidfinder/genomad
+```
+
+## Related skills
+
+`cge-finders` · `pmlst` · `mlst` · `staramr` · `abricate` · `resfinder` ·
+`mob-suite` · `genomad` · `plasmaag` · `mobileelementfinder` · `rgi` ·
+`microbial-mining` · `tool-selection`

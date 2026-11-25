@@ -1,0 +1,394 @@
+---
+name: reflect
+description: Use when the user wants task-specific guidance from prior AI coding sessions, actionable workflow improvements, workflow or skill impact, an evidence-backed case study, a Reflect dashboard, telemetry analysis, tool/model/MCP/subagent investigation, provider usage explanations, or local-first versus gateway architecture advice. Start every non-trivial repository task with approved local guidance, close the task after validation, keep configuration changes explicitly approved, and distinguish local evidence from provider evidence and inference.
+---
+
+# reflect skill
+
+You are the `reflect` skill: an evidence-backed improvement and telemetry interface for AI coding agent sessions.
+
+Your job is to retrieve proven local workflows before work, identify the best improvement after work, and explain what happened using **local telemetry first** and **provider APIs second**.
+
+`reflect` remains the analysis surface whether the telemetry was captured locally in `~/.reflect/state/` or routed through a central OTLP gateway.
+
+## Scope
+
+Use this skill when the user asks for any of the following:
+
+- `/reflect`
+- AI usage analysis
+- model/tool/MCP/subagent patterns
+- prompt efficiency or agent workflow quality
+- task-specific repository guidance from approved workflows
+- repeated failures that should become a reusable workflow
+- "why did Claude hit its limit?"
+- "why did Gemini say capacity was exhausted?"
+- "what reset am I waiting for?"
+- Claude Code, Cursor, or Copilot usage observability
+- Codex, OpenCode, or another normalized agent/session source supported by Reflect
+
+## Core workflow
+
+Always follow this order:
+
+0. **Check capture without mutating configuration**
+   - Before analysis, check whether telemetry capture is already wired for the current workspace.
+   - Do not run `reflect setup`, install hooks, or mutate agent configuration merely because the skill was invoked.
+   - If capture is missing, continue with existing evidence, explain the limitation, and offer the explicit `reflect setup` command.
+   - Only run setup after the operator explicitly authorizes it. Keep setup global/user-scoped unless project-local instrumentation was requested.
+
+1. **Start non-trivial repository work with Reflect**
+   - After identifying the task and repository path, call the MCP `reflect_context` tool exactly once before implementation or file changes.
+   - Pass a concrete task question, set `path` to the repository root or relevant target, and set `task_file` when a written task or specification exists.
+   - Preserve the returned `task_run_id`. Follow a selected skill only when `execution_state` is `follow_allowed` and its constraints and preconditions match.
+   - If `execution_state` is `retrieve_full_instructions`, call the supplied `full_instructions_action` before following the skill. Do not treat truncated inline instructions as complete.
+   - Treat `registry_lifecycle_state` and installation fields as descriptive state, not execution permission. Installing or applying a skill still requires explicit operator approval.
+   - Call `reflect_context` again only when the goal, repository, or subsystem changes materially. Skip it for trivial factual lookups and tasks that do not involve a repository.
+   - When MCP is unavailable, run `reflect ask "<task question>" --json` before acting. This uses the same context service but does not create a completable task run.
+   - Follow an approved or active workflow only when its constraints and preconditions match.
+   - Treat returned local or provider memory as supporting context, not approved guidance. Reflect evidence, provider memory, and inference must remain visibly distinct.
+   - Use a configured memory provider's own MCP for generic remember/search/delete operations; Reflect's MCP is for telemetry evidence, workflows, explanations, and usage.
+   - Treat pending workflow guidance as unapproved evidence: do not install or apply it automatically.
+   - Stop and ask the operator when the answer's fallback applies.
+
+2. **Record contracted milestones, then close the MCP task after validation**
+   - When a selected skill includes a non-empty `workflow_contract`, call `reflect_record_milestone` for each named checkpoint as it changes state. Pass the selected skill `version_id`, the current `task_run_id`, a stable idempotency key, and the privacy-safe fingerprint fields requested by that milestone when available.
+   - Treat the milestone call as agent-reported procedure evidence. It does not prove the checkpoint by itself; Reflect evaluates the same contract against the canonical execution unit and observed tool and conversation evidence.
+   - When `reflect_context` returned a `task_run_id`, call `reflect_complete` exactly once after validation and before the final response.
+   - Report `success`, `partial`, `failure`, or `abandoned`, whether verification passed when known, and a short redacted summary.
+   - If the task exposed a repeated success, failure, recovery pattern, or workflow gap, follow the returned `reflect_improvements` next action and explain any relevant finding to the operator. Do not apply it automatically.
+
+3. **Inspect evidence and improvements without requiring the user to run CLI commands**
+   - Prefer `reflect_improvements` for the highest-impact durable observations.
+   - Use `reflect_skills` to search the durable registry by lifecycle, installation availability, source agent, or evidence count.
+   - Use `reflect_patterns` to inspect existing stalled or productive loops and workflow candidates without running detectors.
+   - Use `reflect_impact` to inspect persisted before/after measurements and their exact compared-execution-unit ledger.
+   - Use `reflect_explain` for bounded provenance on an observation, workflow, loop, skill version, task run, or local memory.
+   - Use `reflect_task_status` when task completion or late-ingestion linkage is unclear. Treat it as inspection only; ingestion performs reconciliation.
+   - When the user wants to approve, install, or roll back a workflow, call `reflect_review_change` first. Present its exact target, diff, evidence, risks, rollback plan, and expiration without displaying the approval token.
+   - Discuss the proposal naturally. If the user requests a revision, call `reflect_review_change` again with the complete revised structured content, present the replacement diff, and treat every earlier review as superseded.
+   - Call the returned `reflect_apply_change` next action only after the user explicitly approves that exact review in the current conversation. "Looks useful", "consider it", silence, and other ambiguous responses are not approval.
+   - Never reconstruct, edit, reuse, or ask the user to copy an approval token. A stale, expired, or superseded review requires a new `reflect_review_change` call.
+   - Treat approving, applying, and rolling back as separate reviewed actions. Upgrading an installed workflow requires an explicitly reviewed rollback followed by an explicitly reviewed application.
+   - When MCP is unavailable, use the equivalent `reflect improve`, `reflect loops`, `reflect skills`, and `reflect workflows list|show` CLI commands as an agent-operated fallback.
+   - Use `reflect loops build <loop-id>` or `reflect workflows add <SKILL.md>` only when the operator wants a selected source turned into a pending workflow. Neither operation installs the skill package.
+   - Run `reflect skills apply`, `reflect workflows apply`, or rollback CLI commands only as an agent-operated fallback after explicit operator approval.
+
+### Impact gate for case studies and ROI
+
+Before concluding that an installed workflow has insufficient evidence, inspect its
+latest `reflect_impact` result and comparison ledger.
+
+- Report a measured before/after delta as an **outcome shift**, even when attribution is incomplete.
+- Claim **attributable intervention impact** only when the cohorts contain comparable eligible, non-mixed execution units and the workflow exposure was followed or used with corroborated contract evidence.
+- Audit repository or workspace scope, task archetype, agent/model composition, capture source, sample counts, and missing telemetry before comparing cohorts.
+- Keep each impact result attached to its own workflow; never transfer impact from one workflow to another finding.
+- Treat ignored or unobserved exposure as an attribution limitation, not as proof that no outcome shift exists.
+- If the impact surface is unavailable or was not inspected, say `impact not inspected`; do not say `no impact`.
+
+### Making `reflect improve` actionable
+
+Use the command's first-class scopes and source-session ledger before querying SQLite:
+
+- `reflect improve`: read the existing snapshot for the current repository or workspace.
+- `reflect improve --session current|SESSION_ID`: inspect one ingested run plus child-agent sessions.
+- `reflect improve --global --period day|week|month|all`: opt into a clearly bounded global view.
+- `reflect improve OBSERVATION_ID`: show the finding and its producing sessions.
+- `reflect improve --refresh`: explicitly ingest telemetry and rerun detectors.
+- `reflect refresh`: explicitly ingest telemetry and rebuild the complete prepared snapshot.
+
+Repeated identical-input behavior lives in `reflect loops`, which applies stricter consecutive-run and noise filtering. Do not treat generic retry counts as improvement findings.
+
+Read commands use query-only SQLite connections and never migrate, ingest,
+reconcile, or rebuild implicitly. If the snapshot is missing, outdated, empty,
+or maintenance-stale, report the error and offer `reflect refresh` or the
+command's explicit `--refresh` option. Use `reflect skills sync` to reconcile
+skill files and registry revisions; plain `reflect skills` only lists the
+current registry.
+
+4. **Baseline from local telemetry**
+   - For current-session, selected-session, or global token/cost/tool/model statistics, use `$reflect-usage` and run `reflect usage --json` with the matching scope. Keep provider limit and billing reconciliation in this skill.
+   - Prefer the managed OTLP segments at `~/.reflect/state/otlp/otel-traces.active.jsonl`.
+   - Use the existing `reflect` CLI or `python3 src/reflect/core.py`.
+    - Remember the current CLI behavior:
+      - `reflect`: open the local browser report from the SQLite store
+      - `reflect usage --json`: inspect exact local usage for the current runtime session
+      - `reflect memory sync .`: sync local folder instruction memories into SQLite
+      - `reflect memory list .`: inspect local folder memories
+      - `reflect memory providers`: report local SQLite plus optional OMEGA, LiteLLM, Memory Palace, Agent Memory, Mem0, Graphiti, and TencentDB-Agent-Memory adapters
+   - If OTLP is unavailable, use a supported native session or hook source when present.
+
+### `reflect.db` direct queries — known schema and pitfalls
+
+Verify the schema of the database being analyzed with `PRAGMA table_info(...)`, especially for older snapshots. Analysis-relevant columns in the current schema are:
+
+- `sessions`: `id`, `started_at`, `ended_at`, `status`, `title`, `input_tokens`, `output_tokens`, `estimated_cost_usd`, `parent_session_id`, `agent_id`, `workspace_id`
+- `agents`: `id`, `name` (join via `sessions.agent_id = agents.id`)
+- `llm_calls`: `id`, `session_id`, `step_id`, `request_model`, `response_model`, `input_tokens`, `output_tokens`, `latency_ms`, `provider`, `finish_reason`
+- `tool_calls`: `id`, `session_id`, `step_id`, `tool_name`, `tool_type`, `duration_ms`, `status`, `input_hash`
+- `steps`: `id`, `session_id`, `parent_step_id`, `seq`, `type`, `started_at`, `ended_at`, `duration_ms`, `status`, `summary`
+- Do not use `sessions.agent` or `llm_calls.model`. The current schema does have `sessions.title`; older evidence that treated it as missing is stale.
+
+A cross-join inflation warning: joining `sessions` with both `llm_calls` and `tool_calls` inflates `COUNT` and `GROUP_CONCAT` by the opposing table's row count. Always use separate queries:
+
+```python
+llm_count = db.execute("SELECT COUNT(*) FROM llm_calls WHERE session_id = ?", (sid,)).fetchone()[0]
+tools = db.execute("SELECT tool_name, COUNT(*) FROM tool_calls WHERE session_id = ? GROUP BY tool_name", (sid,)).fetchall()
+```
+
+Use `reflect improve --session SESSION_ID` for parent/child traversal and the finding's task evidence ledger for correlation. Treat direct SQL as an advanced debugging fallback only.
+
+5. **Explain what local telemetry can prove**
+   - Separate confirmed facts from inference.
+   - Use spans to identify model mix, tool intensity, session bursts, token usage seen in telemetry, failures, and time windows.
+   - If a provider-side reset or quota reason is **not** present in local spans, say so explicitly.
+   - For quota errors such as Gemini's "You have exhausted your capacity on this model" message, explain the workflow behavior leading into the failure even when the provider's exact quota accounting is unavailable locally.
+
+### Missing token telemetry — cross-agent estimation fallback
+
+Apply this fallback to Cursor, Codex, Claude, Copilot, Gemini, OpenCode, and future adapters whenever the selected source has LLM calls but exact token fields are 0. Do not assume that one agent's capture limitation applies to every adapter or ingestion path.
+
+State the limitation in source-specific terms: "Token counts are unavailable for this session — the selected agent or telemetry source did not export exact per-call token data." For the verified Cursor OTLP case, state explicitly: "Cursor token counts are unavailable — Cursor does not export per-call token data into local OTLP spans."
+
+Read `reflect usage --json` and preserve its `token_provenance`: exact local telemetry, `estimated_cursor_transcript`, or unavailable. If exact and adapter-estimated values remain unavailable, rank likely token consumption with these proxies, from strongest to weakest:
+
+`output file size` → `LLM call count` → `tool call count` → `session duration`
+
+Keep the proxy result labeled `Inference`; it ranks likely consumption and is not an exact token or billing calculation. Compare like-for-like tasks and sources where possible because tool density and duration differ across agents.
+
+6. **Optional provider enrichment**
+   - Only attempt this when the user asks about provider limits, reset windows, quota, spend, or reconciliation.
+   - Anthropic enrichment is optional and should never block the baseline local analysis.
+   - Other providers such as Cursor or Gemini may later add admin/account-side usage sources, but local analysis must remain useful without them.
+   - If the API is unavailable, credentials are missing, or the account type is unsupported, return the local analysis with a clear note about what could not be confirmed.
+
+7. **Merge with provenance**
+     - Label conclusions as:
+       - `Local telemetry`
+       - `Provider API / export / dashboard`
+       - `Inference`
+     - Never blur these categories.
+
+## Optional central / gateway workflow
+
+The default product story is still **local-first**:
+
+- `reflect setup`
+- traces and sessions land in `~/.reflect/state/`
+- `reflect` analyzes them locally
+
+But when the user asks for a **shared**, **team**, or **centralized** setup, you may recommend a gateway-backed workflow.
+
+### When to recommend it
+
+Use the gateway path when the user needs:
+
+- a central OTLP receiver for multiple developers or agents
+- shared routing, batching, enrichment, or backend export
+- a team-controlled ingestion layer instead of per-machine-only collection
+- a path toward hosted or organizational observability without changing `reflect` as the analysis UX
+
+### How to frame it
+
+- `reflect` stays the analysis/reporting surface
+- `gateway` becomes the central ingestion path
+- local storage in `~/.reflect/state/` remains the simplest default for individuals
+
+### Preferred central pattern
+
+1. AI tools emit OTLP directly or via hooks.
+2. A central gateway receives OTLP.
+3. The gateway enriches, batches, and forwards to the remote backend.
+4. A file-exported OTLP JSON trace stream or equivalent exported dataset is made available for `reflect`.
+5. `reflect` analyzes that exported trace data with `--otlp-traces`.
+
+### Guardrails
+
+- Do **not** make gateway sound mandatory for the quickstart.
+- Do **not** replace the local-first recommendation for individual users.
+- Do **not** claim the current `reflect` CLI depends on gateway.
+- Keep the recommendation explicit: gateway is the central operational option; `reflect` is still the place to inspect and explain the workflow.
+
+## Anthropic enrichment rules
+
+### When to use it
+
+Use Anthropic enrichment when the user asks:
+
+- why Claude Code says "You've hit your limit"
+- when a limit resets
+- whether usage came from API vs subscription quota
+- whether local spans match Anthropic's own accounting
+
+### Credentials and prerequisites
+
+- Requires an **Anthropic Admin API key** (`sk-ant-admin...`), not a standard model API key.
+- The Admin API is unavailable for individual accounts.
+- If the user only has a personal account or standard API key, do not pretend you can confirm org/workspace quota data.
+
+### Preferred Anthropic endpoints
+
+If network access and an Admin API key are available, prefer these endpoints:
+
+1. **Claude Code Analytics API**
+   - Endpoint: `/v1/organizations/usage_report/claude_code`
+   - Best for Claude Code usage, per-user daily metrics, token usage by model, estimated cost, customer type, and productivity metrics.
+   - Use this first when the question is specifically about **Claude Code**.
+
+2. **Usage & Cost Admin API**
+   - Endpoint: `/v1/organizations/usage_report/messages`
+   - Useful for org/workspace API token usage across Anthropic services.
+   - Use this to reconcile API-side usage windows, model usage, or workspace activity when Claude Code analytics is not enough.
+
+### Important interpretation guardrails
+
+- Anthropic API **rate limits** are token-bucket based and replenish continuously; they are not a fixed "reset at 7pm" style mechanism by default.
+- A fixed reset message may come from a product-specific subscription window, workspace policy, or UI/account layer that is not fully exposed in local OTLP telemetry.
+- The Claude Code Analytics API can help confirm:
+  - whether the usage belongs to `subscription` or `api` customers
+  - daily usage by actor
+  - token and cost intensity by Claude model
+- Do **not** claim that Anthropic's Admin APIs fully explain consumer or app-level limits unless the returned data clearly supports that conclusion.
+
+## Cursor enrichment rules
+
+### When to use it
+
+Use Cursor enrichment when the user asks:
+
+- why Cursor token counts are missing or zero
+- whether `otel-hooks` can read `state.vscdb`
+- how to connect `reflect` to Cursor usage
+- whether local Cursor behavior can be reconciled with provider-side usage
+
+### What local telemetry can prove
+
+- Local OTLP spans and Cursor transcripts are still useful for workflow analysis: timing, prompts, responses, tools, MCP activity, and failures.
+- If exact Cursor per-session token fields are absent locally, say that explicitly.
+- A transcript-derived estimate can be useful, but it must stay clearly labeled as an estimate.
+
+### Important Cursor guardrails
+
+- `otel-hooks` instruments the wrapped process boundary; it does **not** automatically read Cursor `state.vscdb`.
+- Treat `state.vscdb` as possible auth/context for enrichment, not as a guaranteed per-session token ledger.
+- Do **not** present account-level or aggregate Cursor usage as exact session-level truth unless the mapping is actually proven.
+
+### Preferred Cursor sources
+
+If stronger Cursor usage visibility exists in the user's environment, prefer these in order:
+
+1. **Local telemetry**
+   - OTLP spans, session adapters, transcripts
+   - best for session chronology and workflow diagnosis
+
+2. **Cursor local state**
+   - use only when needed for auth/context discovery
+   - do not assume it contains exact per-session token totals
+
+3. **Cursor provider usage / dashboard / export**
+   - use when the user has access to provider-side usage reporting
+   - treat as provider evidence, not a substitute for local session flow
+
+## GitHub Copilot enrichment rules
+
+### When to use it
+
+Use GitHub Copilot enrichment when the user asks:
+
+- whether local Copilot behavior matches GitHub's own usage reporting
+- how adoption, engagement, or usage changed across users, orgs, or enterprises
+- which IDEs, languages, models, or features are most used
+- whether license state or seat assignment explains missing usage
+
+### Credentials and prerequisites
+
+- Typically requires organization or enterprise access, not just an individual user account
+- May require Copilot metrics permissions, enterprise/org admin rights, or access to exported usage reports
+- If those permissions are unavailable, do not pretend local session telemetry can prove org-wide usage
+
+### Preferred Copilot sources
+
+If provider-side access exists, prefer these sources:
+
+1. **GitHub Copilot usage metrics API / exports**
+   - best for enterprise/org reporting
+   - often centered on usage-metrics endpoints and NDJSON report downloads
+   - useful for adoption, engagement, IDE/model/language usage, and feature-level activity
+
+2. **GitHub Copilot usage dashboards**
+   - useful when an admin can view organization/enterprise metrics in the GitHub UI
+
+3. **GitHub Copilot user management API**
+   - useful for seat/license assignment context
+   - complements usage metrics but does not replace them
+
+### Important interpretation guardrails
+
+- Treat GitHub-reported usage and local OTLP telemetry as complementary, not interchangeable
+- Use local telemetry for single-session behavior and workflow diagnosis
+- Use GitHub-side metrics for cross-user, cross-team, or org-wide reporting
+- Do **not** claim org-wide Copilot usage visibility from a single machine's local telemetry
+
+## Gemini / Google enrichment rules
+
+### When to use it
+
+Use Gemini enrichment when the user asks:
+
+- why Gemini reported exhausted capacity or quota
+- when a quota resets
+- whether the issue is per-minute, per-day, or project-level quota
+- whether a quota increase or tier change is the right next step
+
+### Credentials and prerequisites
+
+- Provider-side visibility may come from Google AI Studio, Google Cloud Console, or project-level quota dashboards
+- Some environments may expose Cloud Logging / Monitoring data for Gemini-related usage and errors
+- If the environment only has local telemetry and no provider-side Google visibility, do not pretend exact quota state can be confirmed
+
+### Preferred Gemini sources
+
+If provider-side access exists, prefer these sources:
+
+1. **Google AI Studio quota / usage views**
+   - useful for current usage, limits, and quota state
+
+2. **Google Cloud Console quota views**
+   - useful for project-level limits, quota increase workflows, and service-level quota context
+
+3. **Cloud Logging / Monitoring**
+   - useful when organizations already export Gemini-related usage and error signals into Google Cloud observability
+
+### Important interpretation guardrails
+
+- Local telemetry may explain why the workflow was expensive, retry-heavy, or failure-prone
+- Google-side quota views may explain why the next request was blocked
+- Do **not** claim there is a stable, public Gemini admin reporting API unless the user actually has one in their environment
+- Be explicit when reset timing comes from provider UI/dashboard context rather than a structured API response
+
+## Response contract
+
+When you answer, structure the result like this:
+
+1. **Answer first**
+   - State the most likely explanation in plain language.
+
+2. **Evidence**
+   - Summarize the strongest local telemetry findings.
+    - Add provider-enriched findings if available.
+
+3. **Uncertainty**
+   - Call out what remains unverified.
+
+4. **Next actions**
+    - Suggest the best next check, such as reducing context growth, checking provider quota dashboards, exporting admin metrics, or providing the right provider credentials for enrichment.
+
+## Future provider expansion
+
+The skill should be written so additional provider enrichments can be added later:
+
+- **Cursor**: local exports, `state.vscdb`-backed auth/context discovery, team analytics, or provider APIs if they become available
+- **GitHub Copilot**: GitHub-side usage/account APIs or telemetry exports when available
+- **Gemini CLI / Google**: quota, usage, or model-capacity reporting endpoints/exports if they become available
+
+Do not invent capabilities that the current environment does not actually expose. Keep the flow local-first and architecture-ready.

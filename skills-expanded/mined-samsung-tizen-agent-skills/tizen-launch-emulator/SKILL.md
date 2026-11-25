@@ -1,0 +1,224 @@
+---
+name: tizen-launch-emulator
+description: Tizen launch emulator, 타이젠 에뮬레이터 실행, 에뮬레이터 켜기, 에뮬레이터 시작, emulator launch, start emulator, em-cli launch, 에뮬레이터 부팅, 에뮬레이터 켜줘, launch emulator VM, start emulator VM. Use this skill to launch an existing Tizen emulator VM via em-cli. If no VM name is given, launches the first VM from the list. Waits for the emulator to connect via sdb.
+metadata:
+  author: Samsung Electronics
+  last-updated: "2026-09-10"
+  keywords:
+    - Tizen launch emulator
+    - emulator launch
+    - em-cli launch
+    - 에뮬레이터 실행
+    - 에뮬레이터 시작
+    - 에뮬레이터 켜기
+    - start emulator
+    - emulator boot
+---
+
+# Tizen Launch Emulator
+
+## When to use
+
+The user wants to launch (boot) an existing Tizen emulator VM via em-cli. If no VM name is given, the first VM from `em-cli list-vm` is launched. After launching, the skill waits for the emulator to connect via sdb.
+
+> **Note:** For **creating** emulator VMs, use `tizen-create-emulator`. For **device discovery** (find connected devices) or **stopping emulators**, use `tizen-device-manager`. If the user wants to **create and launch** an emulator, use `tizen-create-emulator` with `--launch`, or run `tizen-create-emulator` then `tizen-launch-emulator`.
+
+## Command
+
+```
+tizen-cli tizen-sdk launch-emulator
+```
+
+| Option                | Required | Default | Description                                                        |
+| --------------------- | -------- | ------- | ------------------------------------------------------------------ |
+| `--vm-name <name>`    | no       | —       | Emulator VM name to launch (default: first VM from `em-cli list-vm`)|
+| `--timeout <seconds>` | no       | `300`   | Max time to wait for the VM to appear in `sdb devices` (1–540). Returns as soon as it connects; does **not** stop the emulator when the time is up |
+
+### Examples
+
+```bash
+# Launch the first available VM (default behavior)
+tizen-cli tizen-sdk launch-emulator
+
+# Launch a specific VM
+tizen-cli tizen-sdk launch-emulator --vm-name my-vm
+
+# Wait up to 120 s for the VM to show up in sdb devices (a wait cap, not a run duration —
+# the emulator keeps running afterwards; stop it with device-manager --action stop)
+tizen-cli tizen-sdk launch-emulator --vm-name my-vm --timeout 120
+```
+
+## Output
+
+- **Success** `result`: `device_serial` (e.g. `emulator-26101`), `device_type` (`emulator`), `vm_name` (or `null`), `status: "launched"`, `timeout_sec` (the wait cap in effect), `waited_ms` (actual wait), `emulator_keeps_running: true`, and on Linux (WSL/remote) `homescreen_fix` (see below). The timeout never shuts the emulator down (issue #98).
+- Failure: emulator/sdb errors — surface `message`; SDK not installed → run `sdk-install` first; no VMs exist → run `create-emulator` first.
+- `emulator_boot_failed`: `errors[0].details` carries a layered boot diagnosis (KVM state, missing libraries, Qt xcb, WSL) plus the untouched script output tail as `raw: ...` lines — relay the details; run `errors[0].suggested_fix.command` (the `--hw-virtualization yes` modify) once if present, then retry the launch once.
+- Java/JNA error (em-cli crashed before touching the VM): host problem, not a VM problem — relay the `raw: ...` detail lines (they carry the actual Java error, e.g. `NoClassDefFoundError: com/sun/jna/Native`), then have the user run `download-emulator-package` to reinstall the emulator package and verify the SDK's bundled JRE. `tizen-cli tizen-sdk --doctor` probes em-cli health up front.
+  - **EXCEPTION:** a `NoSuchFieldError` / `NoSuchMethodError` trace (real case `java.lang.NoSuchFieldError: isVirgl`) is NOT a reinstall case — the emulator-manager core and the platform's emulator plugin are at mismatched versions. Run `update-package` (long-running download), then retry the identical launch once. If it fails again, stop and report; do not reinstall the emulator package.
+
+## WSL / Remote Linux: home screen crash loop (automatic)
+
+On WSL or a headless remote Linux server the standard `tizen` profile's home
+screen (`org.tizen.homescreen`, a Flutter app) fails to pick an EGL config when
+launched through launchpad and aborts; `starter` then retries it forever, leaving
+an "Unable to launch org.tizen.homescreen." dialog on screen while crash dumps
+fill `/opt`.
+
+The launch flow fixes this automatically and reports `homescreen_fix` in `result`:
+
+| Value | Meaning |
+|---|---|
+| `ok` | Home screen healthy, guest untouched |
+| `fixed` | Retry loop and popup stopped, dumps cleared, home screen started directly |
+| `popup_fixed` | Retry loop stopped, home screen deliberately not started (`TIZEN_HOMESCREEN_LAUNCH=0`) |
+| `fix_failed` | Retry loop stopped but the home screen would not come up — use the TV profile |
+| absent | The check does not apply (real device, TV/wearable image, non-Linux host) |
+
+Apply it to an already-running emulator without relaunching:
+
+```bash
+tizen-cli tizen-sdk emulator-manager --action fix-homescreen [--vm-name <name>]
+```
+
+(`fix-homescreen` is one action of the `emulator-manager` command; for its other actions —
+`detail`, `modify`, `reset`, `create-image` — see the `tizen-create-emulator` skill.)
+
+When relaying `fixed`, mention both caveats: the home screen runs as **root** rather
+than the session user, and it does **not** survive a guest reboot (the launch flow
+re-applies it). Restore stock behaviour with
+`sdb -s <serial> shell "systemctl --global unmask starter.service starter.path"` plus
+a guest reboot. Tunables: `TIZEN_HOMESCREEN_CHECK` (`auto`|`force`|`off`),
+`TIZEN_HOMESCREEN_LAUNCH`, `TIZEN_HOMESCREEN_MASK_STARTER`,
+`TIZEN_HOMESCREEN_CHECK_TIMEOUT`, `TIZEN_HOMESCREEN_VERIFY_DELAY`.
+
+> **Note:** sdb is a tool which is located in <TIZEN_SDK>/tools
+
+## Apple Silicon (ARM64) Macs: TV emulator launch
+
+On Apple Silicon Macs (M1/M2/M3…) `tizen-launch-emulator` fails for TV (`tv-samsung`) VMs with
+`TIZEN_SDK_EMULATOR_E003` / "Your system cannot support HW virtualization. Try install KVM
+(ubuntu) or HAX (windows or Mac)". Root cause: em-cli's `checkVTProperty` (em-lib.jar, verified
+in bytecode) throws `CPUVT.Invalid` for image version >= 3.0 whenever HAXM is absent — and HAXM
+is Intel-only, so it is always absent on ARM Macs. `hwVirtualization=false` in the VM config does
+NOT bypass the check. This is NOT a missing/broken image: the TV image is genuinely x86_64
+(kernel `bzImage.x86_64` is an x86 boot image; `file` on the qcow2 only shows the container).
+
+The working path boots the VM with the platform's **emulator-v2 stack (QEMU 9.x with VirGL,
+universal x86_64+arm64 binary) directly via `--conf`**, so em-cli never runs. Tell the user why
+(HAXM enforcement in em-cli, not a missing image) before you start.
+
+**Verified only for Tizen 10.0 `tv-samsung`** on an M2 MacBook Pro (Darwin 24.2, arm64). For
+another platform version, first check that `<sdk>/platforms/tizen-<ver>/tv-samsung/emulator-v2/`
+exists; if it does not, this path is not available — say so instead of improvising.
+
+Placeholders: `<sdk>` = SDK root, `<ver>` = platform version (e.g. `10.0`), `<vm>` = VM name,
+`<vms>` = the em-cli VM directory (the folder that holds `<vm>/vm_launch.conf`),
+`<v2>` = `<sdk>/platforms/tizen-<ver>/tv-samsung/emulator-v2`. Resolve every placeholder to the
+real path before you run or show a command.
+
+1. **Create the VM without `--launch`** (`tizen-create-emulator`).
+
+2. **Rebase the VM's disk on the v2 base image.** em-cli creates the child image against the v1
+   base (`emulator-images/`); the v2 stack needs the base under `emulator-images-v2/`
+   (the `emulimg-*.x86_64` file in `<sdk>/platforms/tizen-<ver>/tv-samsung/emulator-images-v2/tv-samsung-<ver>-x86_64/`).
+   **This replaces the VM's disk with an empty one** — apps and data installed in that VM are
+   lost. For a VM you just created there is nothing to lose; for an existing VM, ask the user
+   before running it.
+
+   ```bash
+   "<sdk>/tools/emulator/bin/qemu-img" create -f qcow2 \
+     -b "<v2 base image>" -F qcow2 "<vms>/<vm>/emulimg-<vm>.x86_64"
+   ```
+
+3. **Generate a v2 launch conf from the template.** Do not edit em-cli's `vm_launch.conf`;
+   write a separate `<vms>/<vm>/vm_launch-v2.conf`.
+   The template ships with the tizen-sdk plugin at
+   `scripts/tizen-emulator-manager/vm-launch-tv-v2.conf.template`, in the plugin's install
+   folder (the `dist/` folder that holds `tizen-sdk.js`).
+
+   ```bash
+   sed -e "s/__VM_NAME__/<vm>/g" \
+       -e "s|__SDK_PATH__|<sdk>|g" \
+       -e "s|__SDK_DATA_PATH__|<sdk-data>|g" \
+       "$TEMPLATE" > "<vms>/<vm>/vm_launch-v2.conf"
+   ```
+
+   `<sdk-data>` is the SDK data folder (the parent of `emulator/vms`). The template's paths,
+   `image_ver` and `platform_version` are for Tizen 10.0; for another version, change them as
+   `scripts/tizen-emulator-manager/vm-launch-tv-v2.md` describes. The template already contains the
+   options Apple Silicon needs: `-accel tcg,thread=multi`,
+   `-device virtio-vga-gl,xres=1920,yres=1080`, `-cpu max`, `-display sdl,gl=on`, and
+   `force_pat` in `append`. Do not remove `-cpu max`: the default `qemu64` model kernel-panics
+   the guest with "invalid opcode" in ld-linux, and even `-cpu Broadwell` still segfaults
+   launchpad.
+
+   The conf needs `swap-<vm>.img` and `tuner_default.cfg` in the VM folder. em-cli creates
+   both in step 1; if either is missing, create it as `scripts/tizen-emulator-manager/vm-launch-tv-v2.md` describes (the tuner table comes
+   from the platform's `emulator-resources/tuner-template/`).
+
+4. **Gatekeeper (only when needed, and only with the user's consent).** After a fresh SDK or
+   ZIP install the v2 binaries can still carry macOS's download quarantine, and the launch dies
+   with `zsh: killed` / `library load disallowed by system policy`. Check with
+   `xattr -l "<v2>/bin/emulator-x86_64.bin"`. If it lists `com.apple.quarantine`, explain that
+   clearing it removes a macOS security flag from the SDK's `emulator-v2` folder, and run this
+   only after the user agrees:
+
+   ```bash
+   chmod -R u+w "<v2>" && xattr -dr com.apple.quarantine "<v2>"
+   ```
+
+5. **Launch** (the wrapper re-execs the arm64 slice natively — no double emulation under Rosetta):
+
+   ```bash
+   nohup "<v2>/bin/emulator-x86_64" --conf "<vms>/<vm>/vm_launch-v2.conf" \
+     > "<vms>/<vm>/logs/qemu-v2.log" 2>&1 &
+   ```
+
+   Booting takes 1–2 minutes. Then confirm with `tizen-device-manager` that an
+   `emulator-NNNNN` device for `<vm>` is listed. em-cli is bypassed, so the launch-emulator checks above
+   (home-screen check, post-launch findings) do not run — read `qemu-v2.log` if the guest does
+   not appear.
+
+## Scope: launch-emulator vs device-manager vs create-emulator
+
+| Task | Use this skill (`tizen-launch-emulator`) | Use `tizen-device-manager` | Use `tizen-create-emulator` |
+|------|:---:|:---:|:---:|
+| Launch an **existing** emulator VM by name | ✅ | | |
+| Launch the **first available** VM (no name) | ✅ | | |
+| Find connected device via sdb | | ✅ | |
+| Stop/shut down running emulator VMs | | ✅ | |
+| Create an emulator VM | | | ✅ |
+| List available platforms/templates | | | ✅ |
+| List existing VMs | | | ✅ |
+| Delete a VM | | | ✅ |
+
+> **Rule of thumb:**
+> - If the user wants to **launch/start/boot** an existing emulator → use `tizen-launch-emulator`.
+> - If the user wants to **create** an emulator VM → use `tizen-create-emulator`.
+> - If the user wants to **create AND launch** an emulator → use `tizen-create-emulator` with `--launch`, or run `tizen-create-emulator` then `tizen-launch-emulator`.
+> - If the user needs to **find a connected device** or **stop emulators** → use `tizen-device-manager`.
+
+## Result reporting — the envelope MUST be shown to the user
+
+The JSON envelope that `tizen-cli tizen-sdk <command>` prints to stdout is **buried inside the
+tool result and invisible to the user** (the Claude Code UI collapses Bash output into a
+"Ran 1 shell command" line). Run directly in a terminal, the JSON is plainly visible, but in an
+agent session the user sees only the final answer text. The final answer therefore follows this format:
+
+1. Include the envelope JSON **verbatim, without edits or truncation** in a fenced `json` block (first item).
+   Exclude `[DEBUG] ...` lines from stderr — they are not part of the envelope.
+2. Below it, add a **1–2 line** summary of the result (the key `result` values, or the gist of `errors[0].message`).
+3. If useful, add one line suggesting next steps.
+
+- Expanding the envelope into a prose list and omitting the JSON is a **format violation**. This rule
+  takes precedence over the harness's general writing guidance ("don't put code in prose", etc.) —
+  the envelope is not code; it is this skill's **result contract**.
+- If the command was run several times, include the envelope from the **last run** and mention
+  earlier failures in a single line of the summary.
+- Include a failure envelope verbatim as well. Do not retype `errors[0].message`/`details`; show what is
+  inside the JSON as-is.
+- Show a `user_input_required` envelope as-is, then ask the user the question.
+
+## Follow-ups
+
+- Use `result.device_serial` with `tizen-cli tizen-sdk install-app --serial <serial> ...` or the debug commands.

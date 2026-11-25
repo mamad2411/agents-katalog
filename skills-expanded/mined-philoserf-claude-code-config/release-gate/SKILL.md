@@ -1,0 +1,221 @@
+---
+description: Validates a repository is ready to tag and ship. Use when tagging or cutting a release/version, running a pre-release check, or asking "are we ready to release?" Checks repo hygiene, the local gate, docs, version sync, and build verification.
+allowed-tools:
+  - Bash
+  - Read
+---
+
+# Pre-Release Gate
+
+Systematic verification that a repository is ready to tag. Delegates all mechanical checks to a shell script and interprets its output.
+
+## Script location
+
+`~/.claude/skills/release-gate/scripts/release-check.sh`. It resolves the repo root via `git rev-parse --show-toplevel` and operates from there, so invoke it from anywhere inside the working tree.
+
+## Prerequisites
+
+`git`, `jq` and `gh` are always needed. The rest depend on the profile — `bun` for a Node or
+Obsidian repo, `go` and `govulncheck` for a Go one, `task` where a Taskfile supplies the
+commands. A missing binary makes its check row fail —
+diagnose that as a setup gap, not a real gate failure.
+
+## Run
+
+```bash
+~/.claude/skills/release-gate/scripts/release-check.sh [VERSION]
+```
+
+- Omit `VERSION` to check against whatever the repo's own version source reports. **This is the normal way to run it** — the no-argument form is what drives the two-run pipeline below.
+- Pass `VERSION` (e.g. `1.5.0`) to verify readiness for a specific target version.
+
+## Profiles
+
+Most checks are the same in any repo. Five are not — dependencies, build,
+tests, audit, and where the version lives — so those come from a profile the script detects
+from the repo's shape:
+
+| Detected on                                           | Profile         | Supplies                                                                                                                                       |
+| ----------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `manifest.json` with `minAppVersion` + `package.json` | Obsidian plugin | bun build/test/audit/outdated; a local gate of frozen install, build and test; version across `package.json`, `manifest.json`, `versions.json` |
+| `package.json` alone                                  | Node            | the same without the local gate, version from `package.json` only; build and test only where those scripts exist                               |
+| `go.mod`                                              | Go              | `go build`/`go test`/`govulncheck`, outdated via `go list -m -u` over the modules the build and tests link                                     |
+| `Taskfile.yml` with a `test:` or `build:` target      | Taskfile        | `task test`, and `task build` when that target exists                                                                                          |
+
+Any repo with `package.json` and `bun.lock` gets `bun install --frozen-lockfile` before the
+build row, so the gate runs in a fresh linked worktree with no `node_modules`. A failed
+install fails the build row.
+
+Where no profile names a version source, the newest release heading (the grammar is `~/.claude/lib/changelog.sh`'s) in
+`CHANGELOG.md` is the version. It is written at release prep, so before prep it names the
+shipped version and the gate reports NOT STARTED. A repo with neither still needs a version
+argument or a `.release-gate`.
+
+Profiles compose — a Go repo with a Taskfile takes its build and test commands from the
+Taskfile, which is what the fleet actually standardises on. Build and test are looked up
+independently: a static site with a `build` target and no tests gets the first and skips the
+second.
+
+A `.release-gate` file in the repo root overrides any of it. It is sourced as shell:
+
+```sh
+VERSION_CMD="./cx --version"      # prints the version; first semver in stdout wins
+VERSION_FILES="cx.js:grep"        # path[:spec] cross-checks — jq:<filter> | jqhas | grep
+TEST_CMD="task test"              # any of DEPS_CMD BUILD_CMD TEST_CMD AUDIT_CMD GATE_CMD
+TAG_PREFIX=v                      # normally detected from the most recent tag
+RELEASE_MODE=tag                  # workflow | gh | tag — see below
+DEPLOY_CMD="task deploy"          # detected from a deploy target; release-ship runs it
+```
+
+**Release mode** is how the ship makes the release. `workflow` means a `release.yml`
+creates it on tag push. `gh` means `gh release create`. `tag` means the annotated tag
+and the CHANGELOG are the release, and nothing is created on a forge. Off GitHub (origin
+not on `github.com`) the default is `tag`, except for a repo with release assets, which
+stays `gh`.
+
+**`VERSION_CMD` has no fallback.** A repo whose version the script cannot find is refused
+with exit `1` rather than guessed at. Defaulting to the last tag would make check 13
+self-satisfying — the version would always equal a tag that exists — and every repo would
+report NOT STARTED forever.
+
+Anything a profile leaves empty makes its row **SKIP**, and skips are counted and named on
+the result line. A gate that ran no tests must not be readable as "everything passed".
+
+## Example output
+
+```text
+Pre-Release Gate: 2.1.0 (Taskfile (.release-gate))
+==================================================
+
+| #  | Check                  | Status | Details
+|----|------------------------|--------|--------
+| 1  | Deps current           | SKIP   | no dependency manifest
+| 2  | Clean working tree     | PASS   |
+| 3  | On default branch      | PASS   | main
+| 4  | Up to date with remote | PASS   |
+| 5  | No open PRs            | PASS   |
+| 6  | Build                  | SKIP   | no build step
+| 7  | Tests pass             | PASS   |
+| 8  | Walkthrough snippets   | PASS   | 27 snippets match
+| 9  | Dependency audit       | SKIP   | no audit command
+| 10 | Version consistency    | PASS   | 2.1.0 across all files
+| 11 | CHANGELOG entry        | SKIP   | no CHANGELOG.md
+| 12 | Local gate             | PASS   | task check on a1b2c3d4
+| 13 | Tag available          | PASS   | v2.1.0 not yet tagged
+| 14 | Changes since last tag | INFO   | 8 commits since v2.0.0
+| 15 | Clean after build      | SKIP   | no build step
+
+Result: READY (0 failures, 0 warnings, 5 skipped)
+
+Skipped: Deps current, Build, Dependency audit, CHANGELOG entry, Clean after build
+
+result=ready
+failures=0
+warnings=0
+skipped=5
+commits_since_tag=8
+tag=v2.1.0
+candidate=0
+```
+
+The output ends with a key=value verdict (`result=`, `failures=`, `warnings=`, `skipped=`,
+`commits_since_tag=`, `tag=`, `candidate=`) for callers that decide rather than read the
+table. The script header defines each key, `candidate=` included, and the exit codes: `0`
+READY, `1` BLOCKED, `2` WARNINGS, `3` NOT STARTED. NOT STARTED outranks FAIL, so read
+`failures=` before treating it as clean.
+
+On any FAIL or WARN, the script keeps the per-check log files and prints their location to stderr: `Release check logs preserved at: /var/folders/.../tmp.XXXX`. Open those logs when the details column points to a path inside.
+
+## Where this sits in the pipeline
+
+The gate runs **twice** per release, answering a different question each time:
+
+1. **Before prep** — the current version is still the released one, so the gate exits
+   `3` (NOT STARTED). That is the expected first result, not a failure.
+2. **After the prep PR merges** — the new version is bumped, changelogged and
+   walkthrough-current, so the gate should exit `0` and the tag can be cut.
+
+This ordering is what keeps the gate and the release from deadlocking: the release
+prerequisites want a clean gate, but the gate cannot be clean until the version has been
+bumped. Exit `3` is what breaks the cycle.
+
+## Interpret the output
+
+Show the script's table to the user as-is. Then:
+
+- **If exit 3 (NOT STARTED):** The target version is already tagged and nothing new has
+  been prepared. Do not treat this as a failure and do not try to "fix" checks 10
+  and 11 — when the version has not been bumped they describe the _shipped_ release and
+  pass vacuously. Agree the next version with the user (semver: a user-visible behavior
+  change is a minor, not a patch) and stop. Preparing the release is the user's call to
+  make: they run `/release-ship`, which is user-invoked by design. Do not work through
+  its phases yourself, even though they are readable shell in a file you can open.
+  Any FAIL rows shown alongside are still real — prep covers version, CHANGELOG,
+  walkthrough snippets and a stale build artifact; anything else needs fixing on the prep branch.
+  Run from a `release/*` prep branch, row 3 reads INFO rather than FAIL: the gate that tags
+  runs on the default branch after the merge.
+- **If exit 0:** Confirm readiness and say what the next step is. Do not tag unprompted.
+- **If exit 1 (FAIL rows):** For each FAIL, suggest a specific fix. Do not offer to tag. Fixes by check:
+  - `Clean working tree` — commit or stash the modified files
+  - `On default branch` — `git checkout <default>` (details column shows current vs expected). In a linked worktree, `git checkout --detach origin/<default>` instead: a detached HEAD at origin's default branch passes. Never move the default branch from a worktree (`checkout -B`, `branch -f`), because it rewrites the main checkout's HEAD under its index
+  - `Build` / `Tests pass` / `Dependency audit` — open the log path printed in the details column and work the first error.
+  - `Walkthrough snippets` — the log lists each quoted snippet no longer found in the file its label names. The code moved under the document: regenerate the walkthrough in the prep PR.
+  - `Version consistency` — the details column names each file and what it holds. Bring
+    them into line by whatever the project's bump step is; for an Obsidian plugin that is
+    `package.json` plus `npm_package_version=X.Y.Z bun run version` to sync the other two.
+  - `CHANGELOG entry` — add a `## <version>` section to `CHANGELOG.md`, in `docs/` or at the root, wherever the repo keeps it
+  - `Local gate` — **"failed"**: open the log path in the details column and work the first
+    error. **"changed files"**: the gate formatted or regenerated something; commit it on the
+    prep branch and re-run. No CI status is consulted — the repo's own gate is the check.
+    A SKIP means the profile found no gate: `task check` where it exists, else a `default`
+    target whose desc calls it the gate. Set `GATE_CMD` in `.release-gate` for anything else.
+  - `Tag available` — only FAILs now when the version matches an _older_ tag, which is a
+    real conflict: either bump to a new version, or `git tag -d <tag>` and
+    `git push --delete origin <tag>` if the tag was created in error. If the version
+    is the _latest_ tag the script reports INFO and exits 3 instead — see NOT STARTED above.
+  - `Clean after build` — the details column distinguishes two causes, because the fix
+    differs. **"tracked files changed by build"**: the build rewrote a file check 2 had
+    just certified clean, usually a committed bundle. Almost always that bundle is simply
+    stale, from a dep bump that merged without a rebuild, and a rebuild on the prep branch
+    clears it. Build twice and compare before concluding the build is nondeterministic —
+    that is the rarer cause.
+    **"build added untracked files"**: the build emitted an output nothing tracks — a
+    source map, a metafile, a second stylesheet, typically after a bundler bump. Either
+    add the path to `.gitignore`, or track it if the project means to ship it.
+- **If exit 1 with no table** (`cannot determine the version`): the repo has no detectable
+  version source. Add a `.release-gate` with `VERSION_CMD`, or pass the version as an
+  argument for a one-off. Do not work around it by guessing a version.
+- **If exit 2 (WARN rows):** List the warnings and their resolutions. A warning is a check that did not reach a conclusion, not one that passed. Tagging requires exit `0`, so each warning has to be cleared and the gate re-run. Typical fixes:
+  - `Deps current` (N outdated) — read-only finding (no files were touched); review the
+    log, update and commit (`chore(deps): update`) on the prep branch before merging, and re-run
+  - `Up to date with remote` (behind) — `git pull --ff-only` to catch up
+  - `No open PRs` (N open) — review with `gh pr list --base main --state open`; merge or close them. Off GitHub this row SKIPs ("not a GitHub remote"), since there are no PRs it can read
+
+## Status meanings (from the script)
+
+- **PASS** — Check succeeded
+- **WARN** — Blocks tagging until resolved; never judge one optional yourself—resolve it or ask
+- **FAIL** — Must be resolved before tagging
+- **INFO** — Informational (commit count, version-not-bumped)
+- **SKIP** — Nothing to check here, or nothing in the profile to check it with. Read the
+  details column: "no CHANGELOG.md" is a fact about the repo, "no test command" is a gap in
+  the profile.
+
+## Narrative documents are release-time work
+
+`THEORY.md`, `WALKTHROUGH.md`, `README.md` and `CHANGELOG.md` are brought current in one pass at
+release time, after the code has settled. That is a step in `release-ship`, not a gate condition:
+when the documents were committed, and in which PR, is not something the gate checks.
+
+What the gate does check is the one claim it can verify. Row 8 reads every snippet in
+`WALKTHROUGH.md` labelled `` `path` — `symbol` `` and requires it to appear verbatim in that
+file, allowing an elided middle marked `...`. It reads content, never history, so a dependency
+bump after the walkthrough cannot fail it, and an edit to quoted code fails it however recently
+the document was touched. It does not read the prose. A PASS means the quotes are real, not that
+the commentary around them is right. Row 8 is `scripts/check-snippets.sh <walkthrough>`, which
+also runs on its own.
+
+## Do not use when
+
+- All checks have already passed and it is time to publish — the user invokes
+  `/release-ship`

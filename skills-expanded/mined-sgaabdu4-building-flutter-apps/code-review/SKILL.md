@@ -1,0 +1,17 @@
+---
+name: code-review
+description: Review PR, branch, commit, working-tree or pasted-diff changes for concrete defects and fidelity to intended behavior. Also use when explicitly asked to independently challenge a prepared plan, diagnosis or verification claim.
+---
+
+# Code Review
+
+Load the review method; an independent review also loads challenge.md.
+
+```mermaid
+flowchart LR
+  R[references/review.md] -->|Independent / adversarial review| C[references/challenge.md]
+  R -->|Diff touches sign-in, permissions, API keys, payments, uploads or personal data| S[Security Review]
+  click R "references/review.md"
+  click C "references/challenge.md"
+  click S "../security-review/SKILL.md"
+```

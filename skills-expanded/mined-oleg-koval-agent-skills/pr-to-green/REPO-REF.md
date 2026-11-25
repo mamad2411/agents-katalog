@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/oleg-koval/agent-skills (path: adapters/claude/olko-github-pr/skills/pr-to-green/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: PR to Green

@@ -1,0 +1,383 @@
+---
+name: electron-best-practices
+description: >-
+  Guide AI agents through Electron app development with React including security patterns,
+  type-safe IPC, React integration, packaging with code signing, and testing. Keywords:
+  electron, electron-vite, electron-forge, contextBridge, IPC, security, react, packaging,
+  code signing, notarization, playwright, desktop app. Use when building secure Electron
+  apps with React/TypeScript (IPC, packaging, testing).
+slug: electron-best-practices
+version: 1.2.0
+displayName: electron-best-practices
+---
+
+# Electron + React Best Practices
+
+## 中文速览（Quick Guide）
+
+- **做什么**：给出用 React 开发 Electron 应用的安全、类型安全 IPC、进程集成、打包签名公证与测试模式，并提供分析、生成脚手架与类型的参考件。
+- **何时用**：写主／preload／渲染进程代码、配置 electron-vite 或 Forge、搭 IPC、做 contextBridge／sandbox／CSP 安全、签名公证、或用 Playwright 测 Electron 应用时；不用于 Tauri、纯 Web 应用、Electron 20 以下版本或非 React 渲染框架。
+- **核心步骤**：①先套安全默认（contextIsolation、sandbox、关闭 nodeIntegration，主渲染通信全走 contextBridge）②按 `references/` 取模式：类型化 IPC、进程分离、React 集成 ③用 `electron-vite` 或 Forge 打包并做代码签名／公证 ④用 Playwright 端到端与 Jest／Vitest 单测验证。
+- **国内可达性**：模式、参考文档与模板都在本包内（`references/`、`assets/templates/`），无需联网即可套用；正文里的可选动作需外部环境——GitHub Actions 矩阵构建、以及 `deno run` 跑 `scripts/` 下的便捷脚本，缺失时直接按正文的可观察出口处理并说明哪一步未跑。
+
+Guide AI agents in building secure, production-ready Electron applications with React. This skill provides security patterns, type-safe IPC communication, project setup guidance, packaging and code signing workflows, and tools for analysis, scaffolding, and type generation.
+
+## When to Use This Skill
+
+Use this skill when:
+- Generating Electron main, preload, or renderer process code
+- Configuring electron-vite or Electron Forge
+- Setting up IPC communication between processes
+- Implementing security patterns (contextBridge, sandbox, CSP)
+- Packaging, signing, and notarizing desktop applications
+- Testing Electron apps with Playwright
+- Designing multi-window architectures
+
+Do NOT use this skill when:
+- Building Tauri apps (different paradigm, use Tauri-specific guidance)
+- Building pure web apps with no desktop requirements
+- Targeting Electron versions below 20 (security defaults differ)
+- Using non-React renderer frameworks (use framework-specific skills)
+
+## Core Principles
+
+### 1. Security First Architecture
+
+Modern Electron security relies on three defaults that became standard in Electron 20+: context isolation, sandbox mode, and nodeIntegration disabled. Disabling any of them allows XSS attacks to escalate to full remote code execution. All main-renderer communication must flow through contextBridge:
+
+```typescript
+// preload.ts - SECURE pattern
+contextBridge.exposeInMainWorld('electronAPI', {
+  loadPreferences: () => ipcRenderer.invoke('load-prefs'),
+  saveFile: (content: string) => ipcRenderer.invoke('save-file', content),
+  onUpdateCounter: (callback: (value: number) => void) => {
+    const handler = (_event: IpcRendererEvent, value: number) => callback(value);
+    ipcRenderer.on('update-counter', handler);
+    return () => ipcRenderer.removeListener('update-counter', handler);
+  }
+});
+```
+
+Set Content Security Policy via HTTP headers for apps loading local files, restricting script sources to `'self'`.
+
+### 2. Type-Safe IPC Communication
+
+The invoke/handle pattern is preferred over send/on for request-response communication, providing proper async/await semantics and error propagation. For typed channels, use a mapped type pattern:
+
+```typescript
+type IpcChannelMap = {
+  'load-prefs': { args: []; return: UserPreferences };
+  'save-file': { args: [content: string]; return: { success: boolean } };
+};
+```
+
+For complex applications, electron-trpc provides full type safety using tRPC's router pattern with Zod validation:
+
+```typescript
+export const appRouter = t.router({
+  greeting: t.procedure
+    .input(z.object({ name: z.string() }))
+    .query(({ input }) => `Hello, ${input.name}!`),
+});
+```
+
+Error handling across the IPC boundary requires attention because Electron only serializes the `message` property of Error objects. Wrap responses in a `{ success, data, error }` result type to preserve full error context.
+
+### 3. Modern Project Setup
+
+The recommended stack uses electron-vite for development and Electron Forge for packaging. electron-vite provides a unified configuration managing main, preload, and renderer processes with sub-second dev server startup and instant HMR. Electron Forge uses first-party Electron packages for signing and notarization.
+
+```
+src/
+├── main/           # Main process (Node.js environment)
+│   ├── index.ts
+│   └── ipc/        # IPC handlers
+├── preload/        # Secure bridge via contextBridge
+│   ├── index.ts
+│   └── index.d.ts  # TypeScript declarations for exposed APIs
+└── renderer/       # React application (pure web, no Node access)
+    ├── src/
+    └── index.html
+```
+
+### 4. React Integration Patterns
+
+React 18's concurrent features work normally in Electron's Chromium-based renderer. Strict Mode's double-invocation of effects catches IPC listener leaks that would otherwise cause memory issues. Always return cleanup functions from effects that register IPC listeners:
+
+```typescript
+useEffect(() => {
+  const cleanup = window.electronAPI.onUpdateCounter((value) => {
+    setCount(value);
+  });
+  return cleanup;
+}, []);
+```
+
+For multi-window applications, the main process should serve as the single source of truth for shared state. Use electron-store for persistence combined with IPC broadcasting so any window's mutation updates all others.
+
+## Quick Reference
+
+| Category | Prefer | Avoid |
+|----------|--------|-------|
+| Security | `contextBridge.exposeInMainWorld()` | `nodeIntegration: true` |
+| IPC | `invoke/handle` pattern | `send/on` for request-response |
+| Preload | Typed function wrappers | Exposing raw `ipcRenderer` |
+| Build tool | electron-vite | webpack-based toolchains |
+| Packaging | Electron Forge | Manual packaging |
+| State | Zustand + electron-store | Redux for simple apps |
+| Testing | Playwright E2E | Spectron (deprecated) |
+| Updates | electron-updater | Manual update checks |
+| Signing | CI-integrated code signing | Unsigned releases |
+| CSP | HTTP headers, `'self'` only | No CSP |
+| Error handling | Result type `{success, data, error}` | Raw Error across IPC |
+| Multi-window | Main process as state hub | Direct window-to-window |
+
+## Code Generation Guidelines
+
+When generating Electron code, follow these patterns:
+
+### BrowserWindow Creation
+
+```typescript
+const win = new BrowserWindow({
+  webPreferences: {
+    preload: path.join(__dirname, '../preload/index.js'),
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+  },
+});
+```
+
+Always enable contextIsolation and sandbox. Never enable nodeIntegration. The preload path must resolve to the built output location.
+
+### IPC Handler Module
+
+```typescript
+export function registerFileHandlers(): void {
+  ipcMain.handle('save-file', async (_event, content: string) => {
+    try {
+      await fs.writeFile(filePath, content);
+      return { success: true, data: filePath };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+}
+```
+
+Group related handlers into modules. Use the result type pattern for all return values. Validate all arguments received from the renderer process.
+
+## Common Anti-Patterns
+
+Avoid these patterns when generating Electron code:
+
+| Anti-Pattern | Problem | Solution |
+|--------------|---------|----------|
+| `nodeIntegration: true` | XSS escalates to full RCE | Keep disabled (default) |
+| Exposing `ipcRenderer` directly | Full IPC access from renderer | Wrap in contextBridge functions |
+| Missing `contextIsolation` | Renderer accesses preload scope | Keep enabled (default since Electron 12) |
+| No code signing | OS security warnings, Gatekeeper blocks | Sign and notarize for all platforms |
+| `BrowserWindow` without sandbox | Preload has full Node.js access | Enable sandbox (default since Electron 20) |
+| Unvalidated IPC arguments | Injection attacks from renderer | Validate with Zod or manual checks |
+| `0.0.0.0` server binding | Network-exposed local server | Always bind to `127.0.0.1` |
+| Missing CSP headers | Script injection vectors | Set strict CSP via HTTP headers |
+| No IPC error serialization | Lost error context across boundary | Use Result type pattern |
+| Spectron for testing | Deprecated, Electron 13 max | Use Playwright |
+
+See `references/security/security-checklist.md` for the full security audit checklist.
+
+## Scripts Reference
+
+### analyze-security.ts
+
+Analyze Electron projects for security misconfigurations:
+
+```bash
+deno run --allow-read scripts/analyze-security.ts <path> [options]
+
+Options:
+  --strict    Enable all checks
+  --json      Output JSON for CI
+  -h, --help  Show help
+
+Examples:
+  # Analyze a project
+  deno run --allow-read scripts/analyze-security.ts ./src
+
+  # Strict mode for CI pipeline
+  deno run --allow-read scripts/analyze-security.ts ./src --strict --json
+```
+
+### scaffold-electron-app.ts
+
+Scaffold a new Electron + React project with secure defaults:
+
+```bash
+deno run --allow-read --allow-write scripts/scaffold-electron-app.ts [options]
+
+Options:
+  --name <name>     App name (required)
+  --path <path>     Target directory (default: ./)
+  --with-react      Include React setup
+  --with-trpc       Include electron-trpc
+  --with-tests      Include Playwright tests
+
+Examples:
+  # Basic app with React
+  deno run --allow-read --allow-write scripts/scaffold-electron-app.ts \
+    --name "my-app" --with-react
+
+  # Full setup with trpc and tests
+  deno run --allow-read --allow-write scripts/scaffold-electron-app.ts \
+    --name "my-app" --with-react --with-trpc --with-tests
+```
+
+### generate-ipc-types.ts
+
+Generate TypeScript type definitions from IPC handler files:
+
+```bash
+deno run --allow-read --allow-write scripts/generate-ipc-types.ts [options]
+
+Options:
+  --handlers <path>  Path to IPC handler files
+  --output <path>    Output path for type definitions
+  --validate         Validate existing types match handlers
+
+Examples:
+  # Generate types from handlers
+  deno run --allow-read --allow-write scripts/generate-ipc-types.ts \
+    --handlers ./src/main/ipc --output ./src/preload/ipc-types.d.ts
+
+  # Validate types in CI
+  deno run --allow-read scripts/generate-ipc-types.ts \
+    --handlers ./src/main/ipc --validate
+```
+
+## Additional Resources
+
+### Security
+- `references/security/context-isolation.md` - contextBridge and isolation patterns
+- `references/security/csp-and-permissions.md` - Content Security Policy configuration
+- `references/security/security-checklist.md` - Full security audit checklist
+
+### IPC Communication
+- `references/ipc/typed-ipc.md` - Typed channel map patterns
+- `references/ipc/electron-trpc.md` - tRPC integration for full type safety
+- `references/ipc/error-serialization.md` - Result types across IPC boundary
+
+### Architecture
+- `references/architecture/project-structure.md` - Directory organization
+- `references/architecture/process-separation.md` - Main, preload, and renderer roles
+- `references/architecture/multi-window-state.md` - Shared state across windows
+
+### React Integration
+- `references/integration/react-patterns.md` - useEffect cleanup, Strict Mode
+- `references/integration/state-management.md` - Zustand and electron-store patterns
+
+### Packaging & Distribution
+- `references/packaging/code-signing.md` - Platform-specific signing workflows
+- `references/packaging/auto-updates.md` - electron-updater configuration
+- `references/packaging/bundle-optimization.md` - Size reduction techniques
+- `references/packaging/ci-cd-patterns.md` - GitHub Actions matrix builds
+
+### Testing
+- `references/testing/playwright-e2e.md` - Playwright Electron support
+- `references/testing/unit-testing.md` - Jest/Vitest multi-project configuration
+- `references/testing/test-structure.md` - Test organization patterns
+
+### Tooling
+- `references/tooling/electron-vite.md` - Build tool configuration
+- `references/tooling/electron-forge.md` - Packaging and distribution
+- `references/tooling/tauri-comparison.md` - When to choose Tauri instead
+
+### Templates
+- `assets/templates/main-process.ts.md` - Main process starter template
+- `assets/templates/preload-script.ts.md` - Preload script with contextBridge
+- `assets/templates/ipc-handler.ts.md` - IPC handler module template
+- `assets/templates/react-root.tsx.md` - React root component template
+
+### Configuration Examples
+- `assets/configs/electron-vite.config.ts.md` - electron-vite configuration
+- `assets/configs/forge.config.js.md` - Electron Forge configuration
+- `assets/configs/tsconfig.json.md` - TypeScript configuration presets
+- `assets/configs/playwright.config.ts.md` - Playwright Electron test config
+
+### Complete Examples
+- `assets/examples/typed-ipc-example.md` - End-to-end typed IPC walkthrough
+- `assets/examples/multi-window-example.md` - Multi-window state management
+
+## Minimal Worked Example
+
+**Precondition:** an Electron + React app with the secure defaults above (`contextIsolation: true`, `sandbox: true`, preload via contextBridge).
+
+**Invocation:** "Wire up saving a file from the renderer, with errors shown to the user instead of swallowed."
+
+**Outcome excerpt (main process registers → preload exposes → renderer invokes and surfaces the error state):**
+
+```typescript
+// src/main/ipc/save-file.ts — main process registers the handler
+ipcMain.handle('save-file', async (_event, content: string) => {
+  try {
+    await fs.writeFile(filePath, content);
+    return { success: true, data: filePath };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+```
+
+```typescript
+// src/preload/index.ts — preload exposes exactly this one function
+contextBridge.exposeInMainWorld('electronAPI', {
+  saveFile: (content: string) => ipcRenderer.invoke('save-file', content),
+});
+```
+
+```tsx
+// renderer — invoke, then map the Result type to a user-visible state
+async function handleSave(content: string) {
+  const result = await window.electronAPI.saveFile(content);
+  if (!result.success) {
+    setStatus({ kind: 'error', message: `Couldn't save file: ${result.error}` });
+    return;
+  }
+  setStatus({ kind: 'saved', path: result.data });
+}
+```
+
+The handler never lets a rejection escape as a raw `Error` — the Result type crosses the boundary, and the renderer maps `error` to a visible state per Surfacing Errors to Users below.
+
+## Surfacing Errors to Users
+
+The Result type pattern is for the IPC boundary; the renderer still has to show something a human can act on. When generating code:
+
+- Map every IPC failure to a user-visible state: inline message near the triggering control (forms), toast or banner (background operations), error boundary (render crashes) — never swallow the rejected promise.
+- Show cause plus next step, not just "an error occurred": e.g. `Couldn't save file: disk is full. Free up space or choose another location.` Include the error `message` from the Result type (it crossed the boundary for this purpose), but never raw stack traces.
+- Distinguish retryable from fatal: network/offline failures get a Retry action; permission and validation failures get instructions instead of a retry button.
+- Log full context (channel name, args shape) to the main process log; show only the summarized message in the UI.
+
+## Script Failure Exits
+
+All three bundled scripts run under Deno. Each failure has an observable symptom and an exit:
+
+| Symptom | Cause | Action |
+|---------|-------|--------|
+| `command not found: deno` | Deno not installed | Install Deno (see deno.com), or proceed manually: apply the patterns in `references/` and `assets/templates/` by hand — the scripts are conveniences, not prerequisites. Do not silently skip a requested scaffold/analysis; tell the user which step was not run. |
+| `PermissionDenied` reading a path | Missing `--allow-read` (or `--allow-write` for scaffold/type-gen) | Re-run with the flags shown in Scripts Reference above — they are the documented minimum. |
+| `analyze-security.ts` exits non-zero on `--strict --json` | Checks failed (that is the report, not a crash) | Treat the JSON output as findings to fix, not an environment error. A crash prints a stack trace instead of the JSON report. |
+| `generate-ipc-types.ts --validate` exits non-zero | Existing type definitions no longer match handlers | Regenerate types, then re-run `--validate` to confirm exit 0. |
+| `scaffold-electron-app.ts` refuses to write | Target directory not empty or missing `--name` | Supply the required `--name`, or point `--path` at an empty directory; the script does not overwrite existing files. |
+| Runtime: a network request from the app fails (timeout/offline, visible in main-process log) | Transient outage or unreachable host | Retry a bounded number of times (e.g. 2-3 with backoff), then degrade to a user-visible error state with a Retry action per Surfacing Errors to Users — never retry in an unbounded silent loop. |
+
+## Wrong Way → Fix (FAQ)
+
+| Wrong way | Observable symptom | Fix |
+|-----------|--------------------|-----|
+| Enabling `nodeIntegration` "just for one window" | Renderer can `require()` — security checklist flags it | Keep it disabled; expose exactly the needed functions via contextBridge. |
+| `send/on` for a request-response call | Race-prone replies, no awaited result | Use `invoke/handle`. |
+| Passing an `Error` object across IPC | Renderer receives `{}`-like object with no message | Return the Result type `{ success, data, error }`. |
+| Loading a remote URL in a `BrowserWindow` without CSP | Content Security Policy checklist item fails | Set strict CSP via HTTP headers, `'self'` only for local content. |
+| Testing with Spectron | Deprecated, stops at Electron 13 | Use Playwright (`references/testing/playwright-e2e.md`). |
+| Using this skill for a Tauri or pure-web app | Guidance does not apply to the runtime | Stop; the When NOT to Apply boundaries above name these runtimes. |

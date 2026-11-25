@@ -1,0 +1,52 @@
+---
+name: drug-interaction
+description: Apply drug interaction in an AI workflow with explicit scope, domain constraints, validation, and documented failure handling.
+metadata:
+  source: skills/16-domain-specific/drug-interaction.md
+  category: 16-domain-specific
+---
+
+![Dependency Status](https://img.shields.io/endpoint?url=https://samotech.github.io/skills-tree/badges/skills-16-domain-specific-drug-interaction.json)
+
+**Category:** Domain-Specific
+**Skill Level:** `advanced`
+**Stability:** stable
+**Added:** 2026-04
+
+### Description
+Detects clinically significant drug-drug and drug-food interactions by checking pairs and combinations against curated interaction databases. Classifies severity (contraindicated / major / moderate / minor), explains the mechanism, and suggests safe alternatives where available.
+
+### Example
+```python
+DRUG_DB = {
+    frozenset(["warfarin", "ibuprofen"]): {"severity": "major", "effect": "increased bleeding risk"},
+    frozenset(["ssri", "tramadol"]): {"severity": "contraindicated", "effect": "serotonin syndrome"},
+    frozenset(["metformin", "alcohol"]): {"severity": "moderate", "effect": "lactic acidosis risk"},
+}
+
+def check_interactions(drugs: list[str]) -> list[dict]:
+    drugs = [d.lower() for d in drugs]
+    findings = []
+    for pair, info in DRUG_DB.items():
+        if pair.issubset(set(drugs)):
+            findings.append({"pair": list(pair), **info})
+    return findings or [{"result": "no known interactions"}]
+
+print(check_interactions(["Warfarin", "Ibuprofen", "Metformin"]))
+```
+
+## Failure Modes
+
+- **Database staleness:** interactions checked against an outdated database; interaction evidence changes frequently, so record the database version and check date with every result.
+- **Incomplete regimen coverage:** pairwise checks missing multi-drug combinations or modifying factors (renal impairment, pregnancy, food).
+- **Severity misclassification:** mapping a contraindicated pair to a lower class because of an edge-case note; classifications must follow the database's stated hierarchy.
+- **Explanatory drift:** mechanism or management text going beyond curated database content into clinical recommendation.
+- **Patient-context gaps:** missing weight, age, renal function, or lab context; the output is a screening aid for professionals, never a dosing decision.
+
+## Evidence
+The canonical skill file is the authoritative repository implementation. Repository schema, validation workflows, and the Agent Skills projection contract define structural conformance. Domain-specific factual claims must remain traceable to supplied or independently verified authoritative sources.
+
+### Related
+- 16-domain-specific
+- input-guardrails
+- output-guardrails

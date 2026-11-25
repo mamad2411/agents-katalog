@@ -1,0 +1,237 @@
+---
+name: reorganize
+description: "Migrate vault structure : either full 5-folder → 8-folder migration, or subfolder organization for flat notes. Use only when the user explicitly wants to restructure the entire vault layout — manual only, high impact. Do NOT use for: moving a single note (do it directly), processing inbox (use consolidate), or routine note organization."
+schedulable: false
+---
+
+# Reorganize Vault
+
+This skill handles two scenarios:
+
+- **Legacy migration** (old 5-folder → new 8-folder structure): adds `02-areas/`, `04-resources/`, `05-agent/`, renumbers archive/logs. Run this if your vault was set up before the 8-folder layout.
+- **Subfolder migration** (original purpose, unchanged): moves flat notes into kebab-case subfolders within their existing folders.
+
+---
+
+## Before You Begin
+
+**Check vault version:** Read `onebrain.yml`. If the `folders.areas` key is absent, this vault uses the old structure and needs full migration : run the Full Migration section first. If `folders.areas` is present, skip to the Subfolder Migration section.
+
+**Important:** Obsidian wikilinks (`[[Note Name]]`) resolve by filename regardless of path : moving files does NOT break any existing links in your vault.
+
+---
+
+## Full Migration (5-folder → 8-folder)
+
+Only run if `onebrain.yml` is missing `folders.areas`.
+
+1. Create new folders: `02-areas/`, `04-resources/`, `05-agent/memory/`
+2. Rename `03-archive/` → `06-archive/`: move all contents preserving `YYYY/MM/` structure
+3. Rename `04-logs/` → `07-logs/`: move all contents preserving `YYYY/MM/` structure
+4. Classify existing `02-knowledge/` notes:
+   - If tags include `research`, `summary`, or `reference` in frontmatter → move to `04-resources/[same subfolder]`
+   - If frontmatter has a `source:` field matching `/research`, `/summarize`, or `/reading-notes` → move to `04-resources/[same subfolder]`
+   - Otherwise → keep in `03-knowledge/` (treat as synthesized content)
+   - Notes that cannot be automatically classified → list them and ask the user before moving
+5. Verify `05-agent/MEMORY-INDEX.md` exists; if not, create an empty MEMORY-INDEX.md with the standard frontmatter (`total_active: 0`, `total_needs_review: 0`, `updated: YYYY-MM-DD`)
+6. Update `onebrain.yml` with all 8 keys:
+   ```yaml
+   folders:
+     inbox: 00-inbox
+     projects: 01-projects
+     areas: 02-areas
+     knowledge: 03-knowledge
+     resources: 04-resources
+     agent: 05-agent
+     archive: 06-archive
+     logs: 07-logs
+   ```
+7. Report: files moved to `04-resources/`, files kept in `03-knowledge/`, files needing manual review
+
+---
+
+## Subfolder Migration
+
+Move existing flat notes into category-based subfolders (kebab-case, max 2 levels). Run this once after upgrading to a version of OneBrain that uses subfolders.
+
+### Step 1: Scan for Flat Notes
+
+Find notes that are directly in a top-level folder (not already in a subfolder):
+
+- `[projects_folder]/*.md` : glob top-level only (not `[projects_folder]/**/*.md`)
+- `[areas_folder]/*.md` : glob top-level only
+- `[knowledge_folder]/*.md` : glob top-level only
+- `[resources_folder]/*.md` : glob top-level only
+- ~~`[logs_folder]/*-session-*.md`~~ — Removed in v2.4.0. Session logs now live under `[logs_folder]/session/YYYY/MM/`; `/update` migration owns the 07-logs structure end-to-end. `/reorganize` no longer touches `[logs_folder]/`.
+
+**Legacy 07-logs structure guard (post-v2.4.0)**: before scanning anything else, check whether `[logs_folder]/YYYY/MM/` contains any of `*-session-*.md`, `*-checkpoint-*.md`, or `*-update-*.md` files. If yes → **abort immediately** with the message: `⚠️ 07-logs structure outdated — run /update first to migrate, then re-run /reorganize.` Do not proceed; do not touch any folder. The /update Step 0 migration owns this structure transition; running /reorganize on a half-migrated vault would leave session logs stranded outside `session/`.
+
+Also check `[archive_folder]/*.md` for any flat archive files.
+
+Exclude `.gitkeep` files.
+
+Report:
+──────────────────────────────────────────────────────────────
+📁 Proposed Reorganization
+──────────────────────────────────────────────────────────────
+🗂️  [knowledge_folder]/ ({N} notes)
+🗂️  [resources_folder]/ ({N} notes)
+🗂️  [areas_folder]/ ({N} notes)
+🗂️  [projects_folder]/ ({N} notes)
+🗂️  [archive_folder]/ ({N} archive files)
+
+If nothing is found:
+✅ Nothing to do — vault already organized into subfolders.
+
+---
+
+### Step 2: Propose Subfolder Assignments
+
+For each note, analyze its content and frontmatter to suggest a subfolder:
+
+**For `[knowledge_folder]/`, `[resources_folder]/`, `[areas_folder]/`, and `[projects_folder]/` notes:**
+- Read the file's title, tags, and first paragraph
+- Suggest a kebab-case subfolder path (max 2 levels, e.g. `programming/python`, `health/fitness`)
+- Group notes with the same suggested subfolder together
+
+**For `[archive_folder]/` flat files:**
+- Use today's date for archiving: `YYYY/MM`
+- Or read the note's `created:` frontmatter if present and use that date instead
+
+Present the full migration plan:
+
+```
+──────────────────────────────────────────────────────────────
+📁 Proposed Reorganization
+──────────────────────────────────────────────────────────────
+🗂️  {folder}/ ({N} notes)
+  {Note name}          →  {subfolder}
+  {Note name}          →  {subfolder}
+
+🗂️  {folder}/ ({N} notes)
+  {Note name}          →  {subfolder}
+──────────────────────────────────────────────────────────────
+{N} notes total · Proceed?
+```
+
+If more than 40 notes total, show the first 40 and add:
+  (showing 40 of {N} — run /reorganize again to continue)
+
+---
+
+### Step 3: Let User Adjust
+
+Say:
+> Does this look right? You can:
+> - **Approve all** : move everything as proposed
+> - **Adjust a note** : tell me the note name and where to put it instead
+> - **Skip a note** : tell me which ones to leave in place
+> - **Cancel** : do nothing
+
+Wait for response. Apply any requested adjustments before proceeding.
+
+---
+
+### Step 4: Execute Moves
+
+For each approved move:
+
+1. Ensure the target subfolder exists (`[target_folder]/[subfolder]`). Most portable: `node -e "require('fs').mkdirSync(process.argv[1], { recursive: true })" -- "[target_folder]/[subfolder]"`. Native shell forms also work: `mkdir -p` (Bash), `New-Item -ItemType Directory -Force` (PowerShell — **never** `mkdir -p` here), `mkdir` (cmd). Existing-directory errors are non-fatal.
+2. Move the file from `[source_path]` to `[target_path]`. Use `mv` on Bash, `Move-Item` on PowerShell, `move` on cmd.
+3. Confirm each move silently; report errors immediately
+
+Process notes by folder (all knowledge, then resources, then areas, then projects, then archive).
+
+---
+
+### Step 5: Summary
+
+Report:
+✅ Moved {N} notes into subfolders.
+
+- Moved N notes in `[knowledge_folder]/` into N subfolders
+- Moved N notes in `[resources_folder]/` into N subfolders
+- Moved N notes in `[areas_folder]/` into N subfolders
+- Moved N notes in `[projects_folder]/` into N subfolders
+- Moved N files in `[archive_folder]/` into YYYY/MM folders
+- Skipped N notes (left in place)
+
+All existing wikilinks (`[[Note Name]]`) still work : Obsidian resolves links by filename, not path.
+
+Want to run `/connect` to find new connections between your organized notes?
+
+```
+onebrain search reindex
+```
+
+---
+
+### Step 6: Write Log Entry
+
+Follow `../_shared/audit-log-format.md` (canonical frontmatter, append-per-day algorithm, run-section heading, failure mode) with:
+
+- **Filename:** `YYYY-MM-DD-reorganize.md` — one file per day. Applies whether the run was a Full Migration (5-folder → 8-folder), a Subfolder Migration, or both.
+- **Tags:** `[audit-log, reorganize]`
+- **Skill:** `/reorganize`
+- **Per-skill discriminator in frontmatter:** `mode: full | subfolder | both`
+- **No-op runs:** if the scan found nothing to do (already organized), skip writing — there is nothing to log.
+
+Per-skill body template (canonical `## Run HH:MM` heading; metadata in first bullet):
+
+```markdown
+## Run HH:MM
+
+- Mode: subfolder
+- Files moved: N
+- Folders created: M
+
+### Files moved
+- `03-knowledge/ai-thought.md` → `03-knowledge/ai/AI Thought.md`
+- `03-knowledge/python.md` → `03-knowledge/dev/Python.md`
+... (full list)
+
+### Folders created
+- `03-knowledge/ai/`, `03-knowledge/dev/`
+
+### Wikilinks repaired
+- N links updated across M notes (preserved targets via Obsidian)
+```
+
+---
+
+## Progress reporting
+
+This skill is long-running. Emit a 1-line status update after each major step so the user can see progress in real time.
+
+**In-session format:**
+
+```
+→ [step N/M] <action being taken>
+```
+
+**Examples:**
+
+```
+→ [step 1/6] scanning flat notes...
+→ [step 2/6] proposing subfolder structure...
+→ [step 3/6] showing user diff preview...
+→ [step 4/6] (awaiting confirmation)...
+→ [step 5/6] moving files in batches...
+→ [step 6/6] updating MEMORY-INDEX + wikilinks...
+```
+
+**Rules:**
+- Emit one line per major step (NOT per sub-step or tool call)
+- M = total steps known up front (count them before starting)
+- Status lines use `→ [step N/M]` prefix exactly so they're visually distinct from skill output
+- Do NOT emit heartbeats for fast operations (< 5 seconds)
+
+---
+
+## Known Gotchas
+
+- **Wikilinks are path-independent in Obsidian.** Moving files does NOT break `[[Note Name]]` links — Obsidian resolves by filename, not path. The skill already notes this, but it is the most common user concern; reassure proactively before executing moves.
+
+- **Full migration: classification of old `02-knowledge/` notes into `03-knowledge/` vs `04-resources/` is imperfect.** Notes without explicit source frontmatter require judgment. When uncertain, err on the side of keeping notes in `03-knowledge/` — the user can always move them to `04-resources/` later via /consolidate.
+
+- **40-note batch limit.** If the vault has more than 40 flat notes, the skill shows the first 40 and offers to continue on the next run. Inform the user upfront if the vault is large.

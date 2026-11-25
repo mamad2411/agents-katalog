@@ -1,0 +1,246 @@
+---
+name: governance
+description: >
+  Manage openEHR specification governance: releases, change requests (CR/PR), versioning, and
+  lifecycle states (Planning, Development, Trial, Stable, Paused, Retired). This skill should be
+  used when the user asks to create, tag, or fix a release, update release entries in
+  `manifest.json`, raise or progress a CR/PR, classify a change as a Fix, Minor change or Major
+  change, promote a spec's status, propose a new spec, or explain the SEC change process. Not
+  for amendment entries (amendment-record), pre-release document review (review), local previews
+  (authoring), or clinical/archetype governance.
+---
+
+# openEHR Specification Governance
+
+This skill covers the change process, release management, and lifecycle governance for
+openEHR specifications. It is based on the official governance documents at
+specifications.openehr.org/governance.
+
+**Change workflow trial.** On 2026-11-09 the SEC approved a new change workflow as a one-month
+trial, until 2026-12-09: every change to a Trial or Stable specification is a Fix, a Minor
+change or a Major change, decided by approvals on the pull request or, for Major changes,
+by an SEC vote. Follow it; the published Change Process page still describes the earlier
+process. The full rules are in `references/change-workflow.md`.
+
+## Related Skills
+
+- **authoring** — document scaffolding, repo layout, boilerplate structure
+- **amendment-record** — detailed amendment record authoring conventions
+- **review** — pre-release quality review of spec documents (the `spec-reviewer` and `xref-auditor` subagents run it across a whole spec or component)
+
+## Specification Lifecycle States
+
+Every specification follows a formal lifecycle:
+
+```
+Planning → Development → Trial → Stable
+                                    ↓
+                                  Paused → Retired
+```
+
+| State | Duration | Format | Versioning | Change Management |
+|-------|----------|--------|------------|-------------------|
+| **Planning** | 6 months max | Wiki | 0.y.z | Informal |
+| **Development** | 18 months max | Wiki | 0.y.z | Optional CRs |
+| **Trial** | 2 years max | HTML + computable | x.y.z | Formal CRs |
+| **Stable** | Unbounded | HTML + computable | x.y.z | Formal CRs |
+| **Paused** | Unbounded | HTML + computable | paused | CRs only for state changes |
+| **Retired** | Unbounded | Frozen version | n/a | None |
+
+The Specifications Editorial Committee (SEC) reviews promotion criteria three months before
+target dates. Unmet criteria may trigger a single three-month extension; subsequent failure
+results in retirement.
+
+The `spec_status` field in `manifest.json` and `manifest_vars.adoc` carries this state in upper case (for example `DEVELOPMENT`, `TRIAL`, `STABLE`, `PAUSED`, `RETIRED`; the full list is in `../authoring/references/manifest-spec-entry.md`). Keep both copies identical. To promote a spec, confirm that the SEC has approved the promotion, then set `spec_status` identically in both files.
+
+## Versioning
+
+openEHR uses three-part semantic versioning (`x.y.z`):
+
+- **Patch (z)**: Error corrections and minor additions that do not change semantics
+- **Minor (y)**: Significant additions that do not change existing semantics
+- **Major (x)**: Semantic changes requiring potential software upgrades or data migration
+
+Documentation-only corrections (typos, clarifications) receive a revision number update
+without triggering a new release number.
+
+## Artifact Types
+
+### Problem Reports (PRs)
+
+- Raised by **anyone** on the public `SPECPR` Jira tracker
+- Document issues, bugs, or requirements against existing specifications
+- Any SEC member can pick a PR up at any time; there is no fixed review round
+- Reference format in specs: `{spec_tickets}/SPECPR-NNN[SPECPR-NNN^]`
+
+### Change Requests (CRs)
+
+- Created **only by SEC members** on component-specific Jira trackers (e.g., `SPECRM`, `SPECAM`)
+- Each CR documents a specific modification to one or more specifications
+- CRs reference the PRs they address
+- Reference format in specs: `{spec_tickets}/SPECRM-NNN[SPECRM-NNN^]`
+- If the user is not an SEC member, direct them to raise a PR on the `SPECPR` tracker instead
+- A Major change (see Change Workflow) always has a CR; a Fix or a Minor change does not need one
+
+## Change Workflow
+
+Three levels, sized to the change. Small changes are decided on the pull request; only Major
+changes go to an SEC vote. Details, qualifying lists and the vote rules:
+`references/change-workflow.md`.
+
+| | Fix | Minor change | Major change |
+|---|---|---|---|
+| What | A correction, or a new entry in a list meant to grow | Compatible: everything that conforms today still conforms | New in kind, or breaking |
+| Ticket | Problem Report, optional | Problem Report | Change Request (SEC members only); optionally a Problem Report, if related to one |
+| Decided by | One SEC approval on the pull request | Two SEC approvals, then one week's notice on Discourse; a veto moves it up to a Major change | SEC vote, then three SEC approvals on the pull request |
+
+Classify in two steps: a correction or a new entry in a list meant to grow is a **Fix**; a
+compatible change that adds nothing new in kind is a **Minor change**; everything else is a
+**Major change**. The size of the diff does not matter, and when in doubt go one level up.
+An SEC member who disagrees with the level moves the change up before the merge; nobody can
+block a change alone.
+
+A Major change goes: a Change Request ticket, candidate solutions, an optional 30-day ballot on Discourse for an
+impactful change, the SEC vote (at least half of the members present and two-thirds of those
+in favour, or two-thirds of the members on the ticket), then a pull request with three SEC
+approvals confirming the text matches the vote.
+
+Releases are not voted on. A minor or major release goes to a 30-day community ballot on
+Discourse before it is published; a patch release does not. Label pull requests `fix`,
+`minor` or `major` so the SEC can list them.
+
+When one change needs pull requests in several repositories (text, BMM, schemas, OpenAPI), the
+one with the specification text is the **collection pull request**: it lists the others, they
+link back, approvals are given on it once and count for all, and the SEC votes once on the
+Change Request, never per pull request. Merge them together, the collection last.
+
+**Change checklist.** Before opening the pull request(s), go through
+`references/change-checklist.md`, in this order: the BMM first when a class, attribute, function
+or invariant changes (then regenerate the class tables), the hand-written text, the examples,
+the downstream artefacts (ITS-BMM mirrors, XML and JSON schemas, OpenAPI, the ADL and AQL
+grammars, the terminology), and Archie. A step that is not affected is still checked, and the
+collection pull request records the result in one line.
+
+**Release allocation.** The Fix Version says which release carries a solved ticket. Only people
+with the Jira Resolve Issues permission can set it, and it is set in two cases only:
+
+1. **Solved → `Release NEXT`.** When a ticket (Problem Report or Change Request) is closed as
+   Fixed or Done, it gets the `Release NEXT` version of every component its merged pull requests
+   touched, one per component: on `SPECPR` `<Component> Release NEXT` (`RM Release NEXT`,
+   `AM Release NEXT`, `ITS-XML Release NEXT`), on a component tracker `Release NEXT` (on
+   `SPECITS` one per ITS: `Release XML NEXT`, `Release REST NEXT`, `Release JSON NEXT`,
+   `Release BMM NEXT`). Three merged pull requests in three
+   components give three Fix Versions. Never pick a numbered version here: whether the next
+   release is 1.2.0 or 1.1.1 is only decided at release time.
+2. **Release number settled → numbered version.** The SEC moves the `Release NEXT` tickets it
+   takes into the release to the numbered version (`RM Release 1.2.0`), and adds the tickets it
+   wants in the release on top.
+
+No Fix Version means not solved and not in any release. Do not set one when a pull request is
+opened, or on a ticket closed as Won't Do or Duplicate. Also set **Component/s** to the affected
+specification (`RM - EHR IM`, `AM - ADL2`), one per specification touched. Use only versions and
+components that exist; when a component has no `Release NEXT` version yet, say so and leave the
+field for the user (never create one).
+
+### Jira Ticket Flow: Merge → Close with Release NEXT
+
+A CR or PR ticket closes when its change is merged, as the change workflow says ("merging
+closes it"). The release does not wait on the ticket's status: the Fix Version is what lists
+the ticket in the release.
+
+1. **Open the pull request**: set Component/s; leave the Fix Version empty.
+2. **Close on merge**: once every pull request for the ticket is merged, set the Fix Version to
+   `Release NEXT` of each component they touched (Release allocation above), comment with the
+   merged pull request(s) (tracker-writing skill), and close the ticket with resolution Fixed
+   (Done for a Change Request). Set the Fix Version before the Close transition: a Closed
+   ticket cannot be edited, and on a component tracker it cannot be reopened either. Won't Do
+   and Duplicate get no Fix Version. While a pull request
+   for the ticket is still open, the ticket stays open.
+
+A ticket must never end Closed without a resolution: Jira then counts it as Unresolved in every
+filter, and the direct "Closed" transition sets none. So:
+
+- **`SPECPR`**: "Vorgang lösen" (Resolve, id 5) with `resolution` Fixed, then "Vorgang
+  schließen" (Close, id 701), which keeps the resolution.
+- **Component trackers** (`SPECRM`, `SPECAM`, ...): walk the CR to Resolved with the transitions
+  below (Approve sets the resolution), then "Closed" in the same go.
+
+Tickets still Resolved from the old flow (Resolve, release, Close) can be closed now.
+
+The SPEC CR trackers' workflow, with the transition names and the fields each one requires:
+
+| Transition | From → To | Set on the way |
+|---|---|---|
+| Assign | Open → Analysis | Affects Version/s, Analyst (Fix Version/s stays empty; if Jira insists, `Release NEXT`) |
+| Commence | Analysis → In Progress | Due date, Priority, Impact Analysis |
+| Start Review | In Progress → In Review | Change Description (what changed, with the PR link) |
+| Approve | In Review → Resolved | resolution Done or Fixed, Fix Version/s `Release NEXT`; SEC members record their vote in the Acceptance field first |
+| Closed | any → Closed | nothing, so no resolution either; use it only from Resolved |
+
+Impact Analysis and Change Description are rich-text fields: via the API they take an ADF
+document, not a plain string. Set every field in the table even when a transition does not
+force it, so the ticket reads the same as the others in the tracker. A direct "Closed"
+transition exists from every state; never use it from Open, Analysis or In Progress, which leaves
+the ticket without Fix Version, resolution and change description.
+
+## Release Process
+
+Releases organize changes by component. The SEC defines release identifiers and delivery
+dates, allocating CRs to releases.
+
+### Release Naming
+
+- Releases: `Release-N.N.N` (e.g., `Release-1.0.4`)
+- Fix releases: `Release-N.N.NvM` (e.g., `Release-1.0.4v1`) — for post-release corrections
+
+### Steps to Create a Release
+
+Read `references/release-checklist.md` for the full step-by-step checklist.
+
+The high-level process:
+
+1. **Jira** (an SEC task, not doable from the repo): once the release number is settled, the SEC moves the `Release NEXT` tickets it takes to the numbered version and adds the others it wants in (see "Release allocation"). Ask the user to confirm that every ticket with that version is closed with a resolution, and that the saved searches exist, then continue.
+1. **Ballot** (minor and major releases): draft the Discourse post from `references/ballot-post.md` for the user to publish; wait for the 30 days to pass and the comments to be answered before tagging.
+2. **manifest.json**: Set the release date, verify `spec_status` for each spec, ensure Jira links are correct, and prepend the next-cycle `releases` entry with an empty `date`.
+3. **Git**: Create a release branch (`Release-N.N.N`), publish in release mode with the exact command in the checklist (do not use `/openehr-specs:publish`; it builds previews only), commit, and create the annotated tag. Ask the user before pushing.
+4. **Webhook**: The push triggers the specifications.openehr.org server to pull and deploy.
+5. **Jira** (a user task): once deployed, mark the numbered version (`RM Release 1.2.0`)
+   released. `Release NEXT` stays and keeps the solved tickets the release did not take.
+
+### Steps to Fix a Release
+
+Follow the Fix Release section of `references/release-checklist.md`.
+
+## Creating a New Specification
+
+New specifications are proposed via PR or CR. The SEC verifies:
+- Identifier assignment (the `id` field)
+- Structural placement within the specification library
+- Scope consistency with existing specifications
+- Component location
+
+To scaffold the document and its `manifest.json` entry once identifier and placement are agreed,
+follow the **authoring** skill ("Creating a New Specification Document").
+
+### Required Structure
+
+All specifications must include:
+- Front matter: identifier, version, amendments, copyright
+- Introduction: purpose, related documents, status, tools, change history
+- Main content
+- References
+- Internationalization considerations (where relevant)
+
+### Entry Paths
+
+1. **Mature external offering**: SEC assesses maturity; may start at Trial or Stable
+2. **New development**: Starts at Planning state with 0.y.z versioning
+
+## Roles
+
+| Role | Responsibility |
+|------|---------------|
+| **SEC** (Specifications Editorial Committee) | Decides Major changes by vote, defines releases, promotes specs |
+| **SEC members** | Approve Fixes and Minor changes on the pull request, vote on Major changes, raise Change Requests |
+| **Component Maintainer** | Supervises component specs |
+| **Community** | Raises PRs, comments in release ballots and on announced Minor changes on Discourse |

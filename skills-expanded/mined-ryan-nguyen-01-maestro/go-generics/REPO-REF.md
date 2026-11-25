@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ryan-nguyen-01/maestro (path: maestro-adlc/.claude/skills/go-generics/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when deciding whether to use Go generics, writing generic functions or types, choosing constraints, or picking between type aliases and type definitions. Also use when a user is writing a utility 

@@ -1,0 +1,302 @@
+---
+name: setup-repo
+description: Scaffold or migrate a research project repository to comply with GUIDELINES-research-project.md — detects existing files, proposes mappings, merges CLAUDE.md, and optionally installs a pre-commit hook.
+argument-hint: "<repo-path>"
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+---
+
+# Setup Research Repository Skill
+
+Bring a git repository into compliance with the research project guidelines. Works for both empty repos (pure scaffolding) and existing repos (file detection, mapping, migration).
+
+## Input
+
+- **$0** (required): Path to the repository root. Expands `~` to `$HOME`. If relative, prepend `$HOME/`.
+
+## Workflow
+
+### Step 1: Validate Repository
+
+1. Expand and resolve the path.
+2. Verify it is a directory: `test -d <repo-path>`. If not, stop:
+   ```
+   ❌ Directory not found: <repo-path>
+   ```
+3. Verify it is a git repository: `test -d <repo-path>/.git`. If not, ask:
+   ```
+   ⚠️  <repo-path> is not a git repository.
+   Initialise with `git init`? [Y/n]
+   ```
+   If yes, run `git init <repo-path>`. If no, stop.
+
+---
+
+### Step 2: Detect Existing Files
+
+Scan the repo for files that may already fulfil each guideline role. Use Glob and Grep together — first match by filename, then by content patterns.
+
+**Roles and detection heuristics:**
+
+| Role | File should live at | Name patterns | Content patterns |
+|------|-------------------|---------------|-----------------|
+| Roadmap | `docs/roadmap.md` | `*roadmap*`, `*plan*`, `*research-plan*`, `*proposal*` | `## Research Question`, `## Hypothesis`, `## Phase`, `## Validation` |
+| Log | `log.md` | `*log*`, `*journal*`, `*diary*`, `*notebook*` | `## [20`, `**What:**`, `**Why:**`, `**How:**` |
+| Findings | `docs/findings.md` | `*findings*`, `*conclusions*`, `*discoveries*`, `*results-summary*` | `## Finding`, `**Implication`, `**Phase:**` |
+| Dashboard | `docs/dashboard.md` | `*dashboard*`, `*summary*`, `*status*`, `*progress*` | `## Status`, `## Next Steps`, `## Completed` |
+
+**Search procedure for each role:**
+1. `Glob("**/<pattern>*.md")` across the repo root, excluding `node_modules/`, `.git/`, `results/`
+2. For each candidate found, read the first 30 lines and check for content patterns
+3. Score each candidate (1 point per name match, 2 points per content pattern match); rank by score
+4. Keep top candidate per role (score > 0); flag as "no candidate found" if score = 0
+
+Also check whether the guideline files already exist at their canonical paths:
+- `docs/roadmap.md`, `log.md`, `docs/findings.md`, `docs/dashboard.md`, `docs/index.html`
+
+---
+
+### Step 3: Present Mapping Proposal
+
+Display a clear table of what will happen and ask for confirmation before touching anything:
+
+```
+📋 Repository analysis: <repo-path>
+──────────────────────────────────────────────────────────────
+Role            Current location              Action
+──────────────────────────────────────────────────────────────
+Roadmap         research/plan.md              → move to docs/roadmap.md
+Log             NOTES.md                      → move to log.md
+Findings        [not found]                   → create docs/findings.md (skeleton)
+Dashboard       [not found]                   → create docs/dashboard.md (skeleton)
+GUIDELINES.md   [not found]                   → copy from marketplace template
+CLAUDE.md       CLAUDE.md (exists)            → merge research project section in
+Pre-commit hook [not installed]               → optional, ask separately
+──────────────────────────────────────────────────────────────
+
+Proceed? [Y/n/edit]
+```
+
+- **Y**: execute as shown
+- **n**: abort, no changes made
+- **edit**: ask the user to correct specific mappings (e.g. "log is actually progress.md") then re-display and confirm
+
+---
+
+### Step 4: Execute File Operations
+
+Execute only after confirmation. For each role:
+
+#### 4a. Files to move/rename
+
+```bash
+mkdir -p <repo-path>/docs
+git mv <current-path> <target-path>   # use git mv if file is tracked
+# fallback: mv <current-path> <target-path>  if untracked
+```
+
+#### 4b. Skeleton files to create (for missing roles)
+
+**`docs/roadmap.md` skeleton:**
+```markdown
+# Research Roadmap
+
+## Research Question
+
+> *[State the central question this project aims to answer]*
+
+## Hypothesis
+
+> *[State the primary hypothesis. Add sub-hypotheses below as needed.]*
+
+### Sub-hypothesis 1
+...
+
+## Validation Phase Tree
+
+## Phase 1: <Name>
+
+**Goal:**  
+**Depends on:** —  
+**Method:**  
+**Success criterion:**  
+**Scripts:**  
+**Status:** pending  
+```
+
+**`log.md` skeleton:**
+```markdown
+# Execution Log
+
+_Append-only. New entries go at the top. Format: What / Why / How / Findings._
+
+---
+```
+
+**`docs/findings.md` skeleton:**
+```markdown
+# Key Findings
+
+_Numbered findings crystallized from phase executions. See `log.md` for full details._
+
+---
+```
+
+**`docs/dashboard.md` skeleton:**
+```markdown
+# Project Dashboard
+
+_Generated by `/research-map`. Do not edit manually._
+```
+
+Also create `results/` directory if absent:
+```bash
+mkdir -p <repo-path>/results
+touch <repo-path>/results/.gitkeep
+```
+
+#### 4c. Copy GUIDELINES.md
+
+Copy the guidelines file bundled with this skill:
+
+```bash
+cp "${CLAUDE_PLUGIN_ROOT}/GUIDELINES-research-project.md" <repo-path>/GUIDELINES.md
+```
+
+`${CLAUDE_PLUGIN_ROOT}` resolves to the installed skill directory, so this works regardless of where the marketplace is located on the machine. If the copy fails for any reason, warn and skip — user can copy manually from the skill directory.
+
+---
+
+### Step 5: Handle CLAUDE.md
+
+#### Case A — No existing CLAUDE.md
+
+Create `<repo-path>/CLAUDE.md` from the research project template below.
+
+#### Case B — CLAUDE.md already exists
+
+1. Read the existing `CLAUDE.md` in full.
+2. Check whether it already contains a research project guidelines section (look for keywords: `GUIDELINES.md`, `end-of-phase`, `roadmap.md`, `log.md`, `findings.md`).
+   - If all three keywords are present: the file already covers the guidelines. Append only a short reminder block at the bottom (see "Reminder block" below) and note what was added.
+   - If partially covered: merge by inserting the missing sections in the most logical position, preserving all existing content and formatting style.
+   - If not covered at all: append the full research project section (see below) after the last existing section, preserving all original content.
+3. Write the merged result back with Edit.
+4. Show a diff summary: which sections were added, which were preserved unchanged.
+
+**Never delete or rewrite existing CLAUDE.md content.** Merge only — add what is missing.
+
+---
+
+**Research project CLAUDE.md section** (append or use as full content for new files):
+
+```markdown
+# <PROJECT_NAME> — Research Project
+
+This repository follows the research project guidelines in `GUIDELINES.md`.
+Read `GUIDELINES.md` before making any structural changes.
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `docs/roadmap.md` | Research question, hypotheses, phase tree — update when phases change |
+| `log.md` | Append-only execution journal — new entries at top |
+| `docs/findings.md` | Crystallized findings — update after each phase analysis |
+| `docs/dashboard.md` | Project summary — regenerated by `/research-map`, do not edit manually |
+| `docs/index.html` | HTML dashboard for GitHub Pages — regenerated by `/md-to-html` |
+
+## End-of-Phase Checklist
+
+After completing and analysing any research phase, always run these steps before committing:
+
+1. Verify outputs exist in `results/` or `results/<phase-name>/`
+2. Mark phase `Status: complete` in `docs/roadmap.md`; add any new phases discovered
+3. Append a new entry to `log.md` (What / Why / How / Findings)
+4. Add or update findings in `docs/findings.md`
+5. Regenerate dashboard: `/research-map .`
+6. Regenerate HTML: `/md-to-html docs/dashboard.md --style=report --output=docs/index.html`
+7. Commit: `git add results/ log.md docs/ && git commit -m "phase(<N>): <description>"`
+
+**No phase is complete until all seven steps are done and committed.**
+
+## Critic Reviews
+
+When a review is received, save it as `docs/review-YYYY-MM-DD-<source>.md`, update
+`docs/roadmap.md` to reflect any restructuring, append a `log.md` entry explaining
+the decision, then regenerate the dashboard.
+```
+
+**Reminder block** (used when CLAUDE.md already covers the guidelines):
+```markdown
+<!-- research-project-guidelines: enforced via GUIDELINES.md -->
+<!-- End-of-phase checklist: results/ → roadmap.md → log.md → findings.md → /research-map → /md-to-html → commit -->
+```
+
+---
+
+### Step 6: Optional Pre-commit Hook
+
+Ask:
+```
+Install a pre-commit hook that warns when results/ has changes but log.md is unchanged? [Y/n]
+```
+
+If yes, write `<repo-path>/.git/hooks/pre-commit`:
+
+```bash
+#!/bin/bash
+# Research project: warn if results/ changed but log.md not staged
+if git diff --cached --name-only | grep -q '^results/'; then
+  if ! git diff --cached --name-only | grep -q '^log\.md$'; then
+    echo "⚠️  Warning: results/ has staged changes but log.md is not staged."
+    echo "   Did you forget to update the execution log?"
+    echo "   Run 'git add log.md' or use 'git commit --no-verify' to bypass."
+    exit 1
+  fi
+fi
+```
+
+```bash
+chmod +x <repo-path>/.git/hooks/pre-commit
+```
+
+---
+
+### Step 7: Output Summary
+
+```
+✅ Repository setup complete: <repo-path>
+──────────────────────────────────────────────────────────────
+Files moved/created:
+  ✓ docs/roadmap.md      [moved from research/plan.md]
+  ✓ log.md               [moved from NOTES.md]
+  ✓ docs/findings.md     [created — skeleton]
+  ✓ docs/dashboard.md    [created — skeleton]
+  ✓ results/             [created]
+  ✓ GUIDELINES.md        [copied from marketplace template]
+  ✓ CLAUDE.md            [merged — 1 section added, existing content preserved]
+  ✓ .git/hooks/pre-commit [installed]
+
+Next steps:
+  1. Review and fill in docs/roadmap.md — add your research question and hypothesis
+  2. Enable GitHub Pages: Settings → Pages → Source: docs/ branch main
+  3. Install recommended skills:
+       /plugin marketplace add ~/skill-marketplace
+       /plugin install run-research@anaderi-skills
+       /plugin install research-map@anaderi-skills
+       /plugin install md-to-html@anaderi-skills
+  4. Start your first phase and follow the end-of-phase checklist in CLAUDE.md
+```
+
+---
+
+## Error Handling
+
+| Error | Action |
+|-------|--------|
+| Path not found | Stop with clear message |
+| Not a git repo, user declines init | Stop |
+| `git mv` fails (untracked file) | Fall back to `mv`, warn that file is not yet tracked |
+| File already at canonical path | Skip move, note "already in place" in summary |
+| GUIDELINES.md not found in marketplace | Warn and skip; list manual copy command |
+| CLAUDE.md merge produces conflict | Show both versions, ask user to resolve manually |
+| Pre-commit hook already exists | Ask before overwriting |

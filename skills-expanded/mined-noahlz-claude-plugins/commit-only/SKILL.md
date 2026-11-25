@@ -1,0 +1,90 @@
+---
+name: commit-only
+description: Commit staged changes with an AI-generated message. No cost metrics. Use when the user asks to commit without cost tracking.
+effort: low
+allowed-tools:
+  - AskUserQuestion
+  - Bash(git *)
+  - Read
+  - Grep
+
+---
+
+Create a git commit with Claude attribution.
+
+Activate only when user invokes `/commit-only` or asks to commit (e.g. "commit", "commit my changes", "just commit", "commit without costs").
+
+## Rules
+
+- **DELEGATE_TO**: Read the referenced file with the Read tool, then execute its instructions exactly. Never improvise or guess commands.
+- **Narration**: Only narrate steps marked STEP_DESCRIPTION. Execute all others silently — do NOT output or summarize intermediate values.
+
+---
+
+## Checklist
+
+```
+- [ ] 0. Pre-flight check
+- [ ] 1. Detect or generate commit message
+- [ ] 2. Get user approval
+- [ ] 3. Create commit
+- [ ] 4. Display summary
+```
+
+## 0. Pre-flight check
+
+Halt if git commands already ran in this turn.
+
+## 1. Detect or Generate Commit Message
+
+Check conversation for an existing `Proposed commit message:` block (e.g. from `/preview-commit-message`).
+
+**If found:** Extract COMMIT_SUBJECT and COMMIT_BODY from the ━━━-delimited block. Skip to Step 2.
+
+**If not found:**
+
+DELEGATE_TO: `${CLAUDE_PLUGIN_ROOT}/references/stage_and_analyze.md`
+
+DELEGATE_TO: `${CLAUDE_PLUGIN_ROOT}/references/message_guidelines.md`
+
+Store COMMIT_SUBJECT and COMMIT_BODY. Produce no output yet — the message is displayed in Step 2 via the AskUserQuestion `question` field.
+
+## 2. Get User Approval
+
+Obtain user approval via **AskUserQuestion** before proceeding. The commit message MUST be embedded in the question field (see reference) — this overrides the Narration silent rule.
+
+DELEGATE_TO: `${CLAUDE_PLUGIN_ROOT}/references/message_approval.md`
+
+- "use_full" or "use_subject_only" → Step 3
+- "request_revisions" → return to Step 1
+
+## 3. Create Commit
+
+**STEP_DESCRIPTION**: "Creating git commit"
+
+Verify APPROVAL_STATUS is "use_full" or "use_subject_only". If not, exit.
+
+The final `-m` adds the Claude attribution trailer as its own paragraph so git parses it as a trailer.
+
+**If COMMIT_BODY is non-empty:**
+```bash
+git commit -m "{{COMMIT_SUBJECT}}" -m "{{COMMIT_BODY}}" -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
+```
+
+**If COMMIT_BODY is empty:**
+```bash
+git commit -m "{{COMMIT_SUBJECT}}" -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
+```
+
+```bash
+git rev-parse --short HEAD  # store as COMMIT_SHA
+```
+
+If git commit fails, display the error and exit.
+
+## 4. Display Summary
+
+```
+✅ Committed: {COMMIT_SHA}
+   {COMMIT_SUBJECT}
+```

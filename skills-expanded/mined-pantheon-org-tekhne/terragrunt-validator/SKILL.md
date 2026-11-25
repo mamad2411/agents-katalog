@@ -1,0 +1,716 @@
+---
+name: terragrunt-validator
+description: Comprehensive toolkit for validating, linting, testing, and automating Terragrunt configurations, HCL files, and Stacks. Use this skill when working with Terragrunt files (.hcl, terragrunt.hcl, terragrunt.stack.hcl), validating infrastructure-as-code, debugging Terragrunt configurations, performing dry-run testing with terragrunt plan, working with Terragrunt Stacks, or working with custom providers and modules.
+---
+
+# Terragrunt Validator
+
+## Philosophy
+
+- Validate the whole dependency graph, not one unit: a unit that passes alone can still fail against its dependencies.
+- Read the best practices reference before judging a configuration, so every finding is measured against a stated standard.
+- Treat custom providers and modules as unknowns until their documentation, at the exact version in use, has been read.
+- Prefer the Terragrunt 0.93+ CLI (`run --all`, `hcl fmt`, `dag graph`) and strict mode so deprecated syntax is caught early.
+- Report each checklist item as pass or fail, because an unverified item is not a pass.
+
+## When to Use
+
+- Validating `terragrunt.hcl`, `root.hcl`, `env.hcl` or `terragrunt.stack.hcl` files before a plan or apply.
+- Debugging Terragrunt configuration errors such as dependency, include or `generate` block failures.
+- Running format, lint (tflint), security (Trivy or Checkov) and dry-run plan checks in one pass with `scripts/validate_terragrunt.sh`.
+- Reviewing a configuration against the best practices checklists for includes, dependencies, security and DRY.
+- Detecting custom providers and modules that need documentation lookup, using `scripts/detect_custom_resources.py`.
+
+## When Not to Use
+
+- Generating new Terragrunt configurations: use the `terragrunt-generator` skill instead.
+- Validating plain Terraform or OpenTofu projects with no Terragrunt files: use `terraform-validator`.
+- Applying or destroying infrastructure: this skill validates and plans, it does not deploy.
+- Judging runtime behaviour of deployed resources, which static validation and a dry-run plan cannot show.
+
+> **Note:** This skill is designed for **Terragrunt 0.93+**. For version compatibility details and command migration guidance, see `references/version_compatibility.md`.
+
+## Core Capabilities
+
+### 1. Comprehensive Validation Suite
+
+Run the comprehensive validation script to perform all checks at once:
+
+```bash
+bash scripts/validate_terragrunt.sh [TARGET_DIR]
+```
+
+**What it validates:**
+- HCL formatting (`terragrunt hcl fmt --check`)
+- HCL input validation (`terragrunt hcl validate --inputs`)
+- Terragrunt configuration syntax
+- Terraform configuration validation
+- Linting with tflint
+- Security scanning with Trivy (or legacy tfsec)
+- Dependency graph validation
+- Dry-run planning
+
+**Environment variables:**
+- `SKIP_PLAN=true` - Skip terragrunt plan step
+- `SKIP_SECURITY=true` - Skip security scanning (Trivy/tfsec)
+- `SKIP_LINT=true` - Skip tflint linting
+- `TG_STRICT_MODE=true` - Enable strict mode (errors on deprecated features)
+
+**Example usage:**
+```bash
+# Full validation
+bash scripts/validate_terragrunt.sh ./infrastructure/prod
+
+# Skip plan generation (faster)
+SKIP_PLAN=true bash scripts/validate_terragrunt.sh ./infrastructure
+
+# Only validate, skip linting and security
+SKIP_LINT=true SKIP_SECURITY=true bash scripts/validate_terragrunt.sh
+```
+
+### 2. Custom Provider and Module Detection
+
+Use the detection script to identify custom providers and modules that may require documentation lookup:
+
+```bash
+python3 scripts/detect_custom_resources.py [DIRECTORY] [--format text|json]
+```
+
+**What it detects:**
+- Custom Terraform providers (non-HashiCorp)
+- Remote modules (Git, Terraform Registry, HTTP)
+- Provider versions
+- Module versions and sources
+
+**Output formats:**
+- `text` - Human-readable report with search recommendations
+- `json` - Machine-readable format for automation
+
+**When custom resources are detected:**
+
+> **CRITICAL: You MUST look up documentation for EVERY detected custom resource (both providers AND modules). See the "Documentation Lookup" section in the Validation Workflow below for the complete mandatory process.**
+
+### 3. Step-by-Step Validation
+
+For manual or granular validation, use these individual commands:
+
+#### Format Validation
+```bash
+cd <target-directory>
+terragrunt hcl fmt --check
+
+# To auto-fix formatting
+terragrunt hcl fmt
+```
+
+#### Configuration Validation
+```bash
+# Check HCL syntax and formatting
+terragrunt hcl fmt --check
+
+# Note: In Terragrunt 0.93+, for deeper configuration validation,
+# initialize and validate (requires actual resources/credentials):
+# terragrunt init && terragrunt validate
+```
+
+#### Terraform Validation
+```bash
+# Initialize if needed
+terragrunt init
+
+# Validate
+terragrunt validate
+```
+
+#### Linting with tflint
+```bash
+# Initialize tflint (if .tflint.hcl exists)
+tflint --init
+
+# Run linting
+tflint --recursive
+```
+
+#### Security Scanning with Trivy (Recommended)
+
+> **Note:** tfsec has been merged into Trivy and is no longer actively maintained.
+> Use Trivy for all new projects.
+
+```bash
+# Using Trivy (recommended)
+trivy config . --severity HIGH,CRITICAL
+
+# With tfvars file
+trivy config --tf-vars terraform.tfvars .
+
+# Exclude downloaded modules
+trivy config --tf-exclude-downloaded-modules .
+
+# Legacy: Using tfsec (deprecated)
+tfsec . --soft-fail
+```
+
+**Alternative:** Security Scanning with Checkov
+```bash
+# Scan directory
+checkov -d . --framework terraform
+
+# Scan with specific checks
+checkov -d . --check CKV_AWS_21
+
+# Output as JSON
+checkov -d . --output json
+```
+
+#### Dependency Graph Validation
+```bash
+# Note: graph-dependencies command replaced with 'dag graph' in Terragrunt 0.93+
+# Validate and display dependency graph
+terragrunt dag graph
+
+# Visualize dependencies (requires graphviz)
+terragrunt dag graph | dot -Tpng > dependencies.png
+```
+
+#### Dry-Run Planning
+```bash
+# Single module
+terragrunt plan
+
+# All modules (new syntax - Terragrunt 0.93+)
+terragrunt run --all plan
+
+# Legacy syntax (deprecated)
+# terragrunt run-all plan
+```
+
+### 4. Multi-Module Operations
+
+For projects with multiple Terragrunt modules, use `run --all` (replaces deprecated `run-all`):
+
+```bash
+# Validate all modules
+terragrunt run --all validate
+
+# Plan all modules
+terragrunt run --all plan
+
+# Apply all modules
+terragrunt run --all apply
+
+# Destroy all modules
+terragrunt run --all destroy
+
+# Format all HCL files
+terragrunt hcl fmt
+
+# With parallelism
+terragrunt run --all plan --parallelism 4
+
+# With strict mode (errors on deprecated features)
+terragrunt --strict-mode run --all plan
+
+# Or via environment variable
+TG_STRICT_MODE=true terragrunt run --all plan
+```
+
+### 5. HCL Input Validation (New in 0.93+)
+
+Validate that all required inputs are set and no unused inputs exist:
+
+```bash
+# Validate inputs
+terragrunt hcl validate --inputs
+
+# Show paths of invalid files
+terragrunt hcl validate --show-config-path
+
+# Combine with run --all to exclude invalid files
+terragrunt run --all plan --queue-excludes-file <(terragrunt hcl validate --show-config-path || true)
+```
+
+### 6. Strict Mode
+
+Enable strict mode to catch deprecated features early:
+
+```bash
+# Via CLI flag
+terragrunt --strict-mode run --all plan
+
+# Via environment variable (recommended for CI/CD)
+export TG_STRICT_MODE=true
+terragrunt run --all plan
+
+# Check available strict controls
+terragrunt info strict
+```
+
+**Specific Strict Controls:**
+
+For finer-grained control, use `--strict-control` to enable specific controls:
+
+```bash
+# Enable specific strict controls
+terragrunt run --all plan --strict-control cli-redesign --strict-control deprecated-commands
+
+# Via environment variable (comma-separated)
+TG_STRICT_CONTROL='cli-redesign,deprecated-commands' terragrunt run --all plan
+
+# Available strict controls:
+# - cli-redesign: Errors on deprecated CLI syntax
+# - deprecated-commands: Errors on deprecated commands (run-all, hclfmt, etc.)
+# - root-terragrunt-hcl: Errors when using root terragrunt.hcl (use root.hcl instead)
+# - skip-dependencies-inputs: Improves performance by not reading dependency inputs
+# - bare-include: Errors on bare include blocks (use named includes)
+```
+
+### 7-11. CLI Commands and Features
+
+Terragrunt 0.93+ includes many new CLI commands and features. For detailed documentation on:
+- Render configuration and info print
+- Find and list units
+- Run summary and reports
+- Terragrunt Stacks (GA in v0.78.0+)
+- Exec command for running arbitrary programs
+- Feature flags for safe infrastructure changes
+- Experiments for unstable features
+
+See `references/cli_commands.md` for complete usage and examples.
+
+## Validation Workflow
+
+Follow this workflow when validating Terragrunt configurations:
+
+### Step 0: Read Best Practices Reference (MANDATORY FIRST STEP)
+
+> **You MUST read the best practices reference file BEFORE starting validation. This is not optional.**
+
+```bash
+# Read the best practices reference file first
+cat references/best_practices.md
+```
+
+This ensures you understand the patterns, anti-patterns, and checklists you will verify.
+
+### Initial Assessment
+
+1. **Understand the structure:**
+   ```bash
+   tree -L 3 <infrastructure-directory>
+   ```
+
+2. **Identify Terragrunt files:**
+   ```bash
+   find . -name "*.hcl" -o -name "terragrunt.hcl"
+   ```
+
+3. **Detect custom resources:**
+   ```bash
+   python3 scripts/detect_custom_resources.py .
+   ```
+
+### Documentation Lookup (MANDATORY for ALL detected custom resources)
+
+> **CRITICAL: If ANY custom providers or modules are detected, you MUST look up documentation for EACH ONE. Do not skip any.**
+
+**For custom providers:**
+- **Option A - Context7 MCP (Preferred):** Use Context7 for structured documentation lookup
+  - Step 1: Resolve library ID: `mcp__context7__resolve-library-id` with provider name (e.g., "datadog terraform provider")
+  - Step 2: **REQUIRED** - Fetch documentation: `mcp__context7__get-library-docs` with the resolved library ID
+  - Use `topic: "authentication"` or `topic: "configuration"` for targeted docs
+- **Option B - WebSearch:** Search for provider documentation
+  - Query format: `"{provider_source} terraform provider documentation version {version}"`
+  - Example: `"mongodb/mongodbatlas terraform provider documentation version 1.14.0"`
+
+**For custom modules (EQUALLY IMPORTANT - DO NOT SKIP):**
+- **Terraform Registry modules:**
+  - Use Context7: `mcp__context7__resolve-library-id` with module name (e.g., "terraform-aws-modules vpc")
+  - Then fetch docs with `mcp__context7__get-library-docs`
+  - Or visit `https://registry.terraform.io/modules/{source}/{version}`
+- **Git modules:** Use WebSearch with the repository URL to find README or documentation
+- **HTTP modules:** Investigate the source URL for documentation
+- Pay attention to version compatibility with your Terraform/Terragrunt version
+
+**Documentation lookup workflow:**
+```text
+a) Run detect_custom_resources.py
+b) For EACH custom provider/module:
+   - Note the exact version
+   - Use Context7 MCP:
+     1. mcp__context7__resolve-library-id with libraryName: "{provider/module name}"
+     2. mcp__context7__get-library-docs with:
+        - context7CompatibleLibraryID: "{resolved ID}"
+        - topic: "authentication" (for auth requirements)
+        - topic: "configuration" (for setup requirements)
+   - OR use WebSearch with version-specific queries
+   - Review documentation for:
+     * Required configuration blocks
+     * Authentication requirements (API keys, credentials)
+     * Available resources/data sources
+     * Known issues or breaking changes in the version
+c) Apply learnings to validation/troubleshooting
+d) Document findings if issues are encountered
+```
+
+**Example using Context7 MCP:**
+```text
+# 1. Detect custom resources
+python3 scripts/detect_custom_resources.py ./infrastructure
+# Output: Provider: datadog/datadog, Version: 3.30.0
+
+# 2. Resolve library ID
+mcp__context7__resolve-library-id with libraryName: "datadog terraform provider"
+# Result: /datadog/terraform-provider-datadog
+
+# 3. Fetch authentication docs (REQUIRED)
+mcp__context7__get-library-docs with:
+  context7CompatibleLibraryID: "/datadog/terraform-provider-datadog"
+  topic: "authentication"
+
+# 4. Fetch configuration docs
+mcp__context7__get-library-docs with:
+  context7CompatibleLibraryID: "/datadog/terraform-provider-datadog"
+  topic: "configuration"
+```
+
+### Validation Execution
+
+1. **Run comprehensive validation:**
+   ```bash
+   bash scripts/validate_terragrunt.sh <target-directory>
+   ```
+
+2. **Review output for errors:**
+   - Format errors → Fix with `terragrunt hcl fmt`
+   - Configuration errors → Check terragrunt.hcl syntax and inputs
+   - Terraform validation errors → Check .tf files or generated configs
+   - Linting issues → Review tflint output and fix
+   - Security issues → Review tfsec output and address
+   - Dependency errors → Check dependency blocks and paths
+   - Plan errors → Review Terraform configuration and provider setup
+
+### Best Practices Check (REQUIRED - Must Complete All Checklists)
+
+> **You MUST verify each checklist item below and document the result (✅ pass or ❌ fail). Incomplete verification is not acceptable.**
+
+**Perform explicit best practices verification using `references/best_practices.md`:**
+
+   **Configuration Pattern Checklist - verify each item:**
+   ```
+   [ ] Include blocks: Child modules use `include "root" { path = find_in_parent_folders("root.hcl") }`
+   [ ] Named includes: All include blocks have names (not bare `include {}`)
+   [ ] Root file naming: Root config is named `root.hcl` (not `terragrunt.hcl`)
+   [ ] Environment configs: Environment-level configs named `env.hcl` (not `terragrunt.hcl`)
+   [ ] Common variables: Shared variables in `common.hcl` read via `read_terragrunt_config()`
+   ```
+
+   **Dependency Management Checklist:**
+   ```
+   [ ] Mock outputs: ALL dependency blocks have mock_outputs for validation
+   [ ] Mock allowed commands: mock_outputs_allowed_terraform_commands includes ["validate", "plan", "init"]
+   [ ] Explicit paths: Dependency config_path uses relative paths ("../vpc" not absolute)
+   [ ] No circular deps: Run `terragrunt dag graph` to verify no cycles
+   ```
+
+   **Security Checklist:**
+   ```
+   [ ] State encryption: remote_state config has `encrypt = true`
+   [ ] State locking: DynamoDB table configured for S3 backend
+   [ ] No hardcoded credentials: Search for patterns like "AKIA", "password =", account IDs
+   [ ] Sensitive variables: Passwords/keys use `sensitive = true` in variable blocks
+   [ ] IAM roles: Provider uses assume_role instead of static credentials
+   ```
+
+   **DRY Principle Checklist:**
+   ```
+   [ ] Generate blocks: Provider and backend configs use `generate` blocks
+   [ ] Version constraints: terragrunt_version_constraint and terraform_version_constraint set
+   [ ] Reusable locals: Common values in shared files, not duplicated
+   [ ] if_exists: Generate blocks use appropriate if_exists strategy
+   ```
+
+   **Quick grep checks to run:**
+   ```bash
+   # Check for hardcoded AWS account IDs
+   grep -r "[0-9]\{12\}" --include="*.hcl" . | grep -v mock
+
+   # Check for potential credentials
+   grep -ri "password\s*=" --include="*.hcl" .
+   grep -ri "api_key\s*=" --include="*.hcl" .
+
+   # Check for dependencies without mock_outputs
+   grep -l "dependency\s" --include="*.hcl" -r . | xargs grep -L "mock_outputs"
+
+   # Check for terragrunt.hcl files in non-module directories (anti-pattern)
+   find . -name "terragrunt.hcl" -not -path "*/.terragrunt-cache/*" | head -20
+   ```
+
+### Troubleshooting
+
+**Common issues and resolutions:**
+
+**Issue:** Module not found
+```bash
+rm -rf .terragrunt-cache
+terragrunt init
+```
+
+**Issue:** Provider authentication errors
+- Check provider configuration in generated files
+- Verify environment variables or credentials
+- Review provider documentation from WebSearch
+
+**Issue:** Dependency errors
+- Check dependency paths are correct
+- Ensure mock_outputs are provided for validation
+- Review dependency graph with `terragrunt dag graph`
+
+**Issue:** State locking errors
+```bash
+terragrunt force-unlock <LOCK_ID>
+```
+
+**Issue:** Unknown provider or module parameters
+- Re-run custom resource detection
+- Use WebSearch to look up current documentation
+- Check version compatibility
+
+**Issue:** Generate block conflicts (file already exists)
+```
+ERROR: The file path ./versions.tf already exists and was not generated by terragrunt.
+Can not generate terraform file: ./versions.tf already exists
+```
+**Solution:** This occurs when static `.tf` files exist that conflict with Terragrunt's `generate` blocks. Either:
+- Remove the conflicting static files (`versions.tf`, `provider.tf`, `backend.tf`)
+- Or use `if_exists = "skip"` in the generate block to not overwrite existing files
+```bash
+# Remove conflicting files
+rm -f versions.tf provider.tf backend.tf
+rm -rf .terragrunt-cache
+```
+
+**Issue:** Root terragrunt.hcl anti-pattern warning
+```
+WARN: Using `terragrunt.hcl` as the root of Terragrunt configurations is an anti-pattern
+```
+**Solution:** In Terragrunt 0.93+, the root configuration file should be named `root.hcl` instead of `terragrunt.hcl`. Rename the file:
+```bash
+mv terragrunt.hcl root.hcl
+# Update include blocks in child modules to reference root.hcl
+```
+
+## Best Practices Integration
+
+Reference the comprehensive best practices guide for detailed recommendations:
+
+```bash
+# Read the best practices reference
+cat references/best_practices.md
+```
+
+**Key best practices to check:**
+- ✅ Use `include` for shared configuration
+- ✅ Provide mock_outputs for dependencies
+- ✅ Use `generate` blocks for provider config
+- ✅ Enable state encryption and locking
+- ✅ Use environment variables for dynamic values
+- ✅ Specify version constraints
+- ✅ Avoid hardcoded values
+- ✅ Use meaningful directory structure
+- ✅ Enable security features (encryption, IAM roles)
+
+**When validating, check for anti-patterns:**
+- ❌ Hardcoded credentials or account IDs
+- ❌ Missing mock outputs
+- ❌ Overly deep directory nesting
+- ❌ Duplicated configuration across modules
+- ❌ Missing version constraints
+- ❌ Unencrypted state
+
+Refer to `references/best_practices.md` for complete examples and detailed guidance.
+
+## Tool Requirements
+
+**Required:**
+- terragrunt (>= 0.93.0 recommended for new CLI)
+- terraform or opentofu (>= 1.6.0 recommended)
+
+**Optional but recommended:**
+- tflint - HCL linting
+- trivy - Security scanning (replaces tfsec)
+- checkov - Alternative security scanner (750+ built-in policies)
+- graphviz (dot) - Dependency visualization
+- jq - JSON parsing
+- python3 - For custom resource detection script
+
+**Deprecated tools:**
+- tfsec - Merged into Trivy, no longer actively maintained
+
+**Installation commands:**
+```bash
+# macOS
+brew install terragrunt terraform tflint trivy graphviz jq
+
+# Install Trivy (recommended security scanner)
+brew install trivy
+
+# Install Checkov (alternative security scanner)
+pip3 install checkov
+
+# Legacy tfsec (deprecated - use trivy instead)
+# brew install tfsec
+
+# Linux - Trivy
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Linux - Checkov
+pip3 install checkov
+
+# Verify installations
+terragrunt --version
+trivy --version
+checkov --version
+```
+
+## Automated Workflows
+
+### CI/CD Integration
+
+Example validation in CI/CD pipeline:
+
+```bash
+#!/bin/bash
+# ci-validate.sh
+
+set -e
+
+echo "Installing dependencies..."
+# Install terragrunt, terraform, tflint, tfsec
+
+echo "Detecting custom resources..."
+python3 scripts/detect_custom_resources.py . --format json > custom_resources.json
+
+# Could integrate with automated documentation lookup here
+
+echo "Running validation suite..."
+SKIP_PLAN=true bash scripts/validate_terragrunt.sh .
+
+echo "Validation complete!"
+```
+
+### Pre-commit Hook
+
+Example pre-commit hook for local development:
+
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit
+
+# Format check
+terragrunt hcl fmt --check || {
+    echo "HCL formatting issues found. Run: terragrunt hcl fmt"
+    exit 1
+}
+
+# Quick HCL syntax validation (Terragrunt 0.93+)
+# Note: For full validation, use: terragrunt init && terragrunt validate
+# But that requires credentials. HCL format check catches syntax errors.
+
+echo "Pre-commit validation passed!"
+```
+
+## Troubleshooting
+
+For detailed troubleshooting guidance including debug mode, common error patterns, and resolution steps, see `references/troubleshooting.md`.
+
+## Output Interpretation
+
+For detailed guidance on interpreting validation output, success/warning/error indicators, see `references/output_interpretation.md`.
+
+## Advanced Usage
+
+For advanced topics including custom validation rules, security policies, and dependency graph analysis, see `references/advanced_usage.md`.
+
+## Anti-Patterns
+
+### NEVER validate only the current unit in isolation
+
+- **WHY:** Terragrunt dependency chains mean a unit may validate cleanly on its own but fail when its dependencies have incompatible outputs or missing inputs; isolated validation misses integration errors.
+- **BAD:** Run `terragrunt validate` in a single leaf unit directory and treat a clean result as full validation.
+- **GOOD:** Use `terragrunt run --all validate` from the relevant parent directory to validate all units in the dependency graph together.
+
+### NEVER skip `--terragrunt-log-level debug` when diagnosing HCL function errors
+
+- **WHY:** HCL function evaluation errors produce cryptic messages at default log levels; debug mode shows the evaluated function calls and helps pinpoint the exact source of the failure.
+- **BAD:** Attempt to debug `path_relative_to_include()` or `find_in_parent_folders()` errors using the default log level output.
+- **GOOD:** Add `--terragrunt-log-level debug` (or set `TG_LOG=debug`) to get the full HCL evaluation trace and locate the offending expression.
+
+### NEVER accept `terragrunt validate` passing as equivalent to `terraform validate`
+
+- **WHY:** Terragrunt's validate wraps Terraform validate but may not catch all HCL parsing errors in `terragrunt.hcl` includes; the two tools validate different layers of the configuration stack.
+- **BAD:** Skip `terraform validate` and rely solely on `terragrunt validate` as the complete validation signal.
+- **GOOD:** Run `terragrunt validate` for Terragrunt-level HCL and input checks, then run `terraform validate` (or `terragrunt init && terragrunt validate`) for Terraform provider schema validation.
+
+### NEVER ignore `dependency` mock output warnings in plan output
+
+- **WHY:** Mock output substitution warnings signal that the plan result is based on placeholder values; if mock types differ from actual outputs, the plan is unreliable and the apply will fail.
+- **BAD:** Dismiss `mock_outputs` substitution warnings in `terragrunt plan` output as expected and harmless.
+- **GOOD:** Verify that mock output types exactly match actual dependency outputs after the dependency has been applied at least once; update mocks if types change.
+
+### NEVER start validating before reading the best practices reference
+
+- **WHY:** The checklists in `references/best_practices.md` define what a pass looks like; validating without them produces findings measured against memory rather than the stated standard.
+- **BAD:** Run `bash scripts/validate_terragrunt.sh` and report on its output alone.
+- **GOOD:** Read `references/best_practices.md` first, then run the script and record each checklist item as pass or fail.
+
+### NEVER skip documentation lookup for a detected custom provider or module
+
+- **WHY:** Custom providers and modules have their own required configuration, authentication and version-specific breaking changes, so errors cannot be diagnosed without them.
+- **BAD:** Run the detection script, see a non-HashiCorp provider listed, and move straight on to validation.
+- **GOOD:** Look up documentation for every detected provider and module at its exact version, then apply what it says to the validation.
+
+### NEVER leave a `dependency` block without `mock_outputs`
+
+- **WHY:** Without mocks, `validate` and `plan` fail for any dependency that has not been applied, so the configuration cannot be checked in CI.
+- **BAD:** a `dependency "vpc"` block that sets only `config_path`.
+- **GOOD:** Add `mock_outputs` and set `mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]` on every dependency block.
+
+### NEVER hardcode credentials or account IDs in HCL files
+
+- **WHY:** HCL files are committed to version control, so a hardcoded key or account ID leaks to everyone with repository access.
+- **BAD:** `password = "hunter2"` or a literal 12-digit AWS account ID in `inputs`.
+- **GOOD:** Read values from environment variables or `assume_role`, and run the grep checks for `password =`, `api_key =` and 12-digit IDs before signing off.
+
+### NEVER use the deprecated `run-all` command or a root `terragrunt.hcl` in 0.93+ configurations
+
+- **WHY:** `run-all` and a root file named `terragrunt.hcl` are deprecated; strict mode turns them into errors, and the root name triggers an anti-pattern warning.
+- **BAD:** `terragrunt run-all plan` with `include { path = find_in_parent_folders() }` pointing at `terragrunt.hcl`.
+- **GOOD:** `terragrunt run --all plan`, with the root renamed to `root.hcl` and a named `include "root"` block.
+
+### NEVER leave static `.tf` files beside a `generate` block that writes the same file
+
+- **WHY:** Terragrunt refuses to overwrite a file it did not generate, so the run fails with "already exists and was not generated by terragrunt".
+- **BAD:** A hand-written `versions.tf`, `provider.tf` or `backend.tf` in a directory whose `generate` block produces the same name.
+- **GOOD:** Remove the static files and clear `.terragrunt-cache`, or set `if_exists = "skip"` in the generate block.
+
+## References
+
+### Scripts
+
+- `scripts/validate_terragrunt.sh` - Comprehensive validation suite
+- `scripts/detect_custom_resources.py` - Custom provider/module detector
+
+### References
+
+- `references/best_practices.md` - Comprehensive best practices guide
+- `references/version_compatibility.md` - Terragrunt version compatibility and CLI migration
+- `references/cli_commands.md` - Detailed CLI commands, Stacks, feature flags, experiments
+- `references/troubleshooting.md` - Debug mode and common error patterns
+- `references/output_interpretation.md` - Validation output indicators
+- `references/advanced_usage.md` - Custom rules, security policies, dependency analysis
+
+### External Documentation
+
+- [Terragrunt Documentation](https://terragrunt.gruntwork.io/docs/)
+- [Terraform Best Practices](https://www.terraform-best-practices.com/)
+- [Terraform Registry](https://registry.terraform.io/)

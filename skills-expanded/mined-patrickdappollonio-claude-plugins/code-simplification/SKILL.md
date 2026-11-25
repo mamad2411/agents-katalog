@@ -1,0 +1,369 @@
+---
+name: code-simplification
+description: >-
+  Use when code works but is harder to read, maintain, or extend than it should be — after a feature lands, when review flags complexity, or on deep nesting, long functions, high cyclomatic complexity, near-duplicate functions, dead code, unclear names, or tests that guard no behavior — and the complexity should come down without changing behavior.
+---
+
+# Code Simplification
+
+## Overview
+
+Simplify code by reducing complexity while preserving exact behavior. The goal is not fewer lines — it's code that is easier to read, understand, modify, and debug. Every simplification must pass one test: **"Would a new team member understand this faster than the original?"**
+
+This skill is language-agnostic: it works on patterns (nesting, naming, duplication, dead code), not on any one language's idioms. Apply it using the idioms of whatever language and codebase you're in.
+
+## Read the Companion Files First
+
+This skill ships in two layers. `SKILL.md` carries the rules and a short summary of each step; four files beside it carry the full procedures:
+
+- `evidence-gathering.md` — model-tier routing, handoff packets, verifying findings
+- `cyclomatic-complexity.md` — counting, tools, the split procedure
+- `equivalent-functions.md` — diff → callers → propose → merge
+- `comments.md` — the comment digest
+
+**The first time you use this skill in a session, read all four before doing anything else** — before scoping, before reading the target code, before answering a question about it. The summaries in this file are reminders for a reader who has already seen the full text; they are not a substitute for it. Re-read the relevant file again at the step that names it. If the files are missing, say so — do not proceed as if the summaries were the whole skill.
+
+## When to Use
+
+- After a feature is working and tests pass, but the implementation feels heavier than it needs to be
+- During code review when readability or complexity issues are flagged
+- When you encounter deeply nested logic, long functions, or unclear names
+- When refactoring code written under time pressure
+- After merging changes that introduced duplication or inconsistency
+
+**When NOT to use:**
+
+- Code is already clean and readable — don't simplify for the sake of it
+- You don't understand what the code does yet — comprehend before you simplify
+- The code is performance-critical and the "simpler" version would be measurably slower
+- The module is about to be rewritten — simplifying throwaway code wastes effort
+
+## Determine the Scope First
+
+Default to **recently modified code**: the current session's edits, the working diff (`git diff HEAD`), or the current branch's changes. Only widen the scope when the user explicitly names a file, module, or the whole codebase. Unscoped simplification creates noisy diffs and risks regressions in code nobody asked you to touch.
+
+## The Five Principles
+
+### 1. Preserve Behavior Exactly
+
+Don't change what the code does — only how it expresses it. All inputs, outputs, side effects, error behavior, ordering, and edge cases must remain identical. If you're not sure a simplification preserves behavior, don't make it.
+
+```
+ASK BEFORE EVERY CHANGE:
+→ Does this produce the same output for every input?
+→ Does this maintain the same error behavior?
+→ Does this preserve the same side effects and ordering?
+→ Do all existing tests still pass without modification?
+→ Is there a test, written BEFORE the change, that would fail if the answer to any of these were "no"?
+```
+
+"Semantically equivalent" is a claim, and a claim is proven by a test that existed before the edit and still passes after it — see *Prove Equivalence With a Test That Predates the Change*. Reasoning about equivalence, however careful, is not proof.
+
+### Dead code the change itself added goes out with its test
+
+When the scope is a branch or a diff, find its base: the starting commit the user or a plan names, else `git merge-base HEAD <default branch>`. Code and tests that are not on the base are the change's own draft. Nobody outside it has ever relied on them. "Behavior" is what the callers in the code can reach, and "existing tests" are the tests on the base.
+
+When the diff adds a path that no call site in the code can reach — a guard for a state no caller passes, a fallback for a value no caller produces, a branch no input reaches — and a test the diff also adds is the only thing that reaches it, that test is not a caller. It is part of the dead path. Remove the path and that test in one change, run the remaining tests, and name the deleted test in the report. This is the *Dead code* row below, not bending a test, and it is not a question for the user: no user, caller, or test on the base can see it go. Confirm three things first:
+
+1. `git log -S'<a line of the path>' <base>..HEAD` shows the diff added it.
+2. Every call site outside the tests is listed, each with the reason it cannot reach the path: what it passes, read from the code. Judge "cannot reach" from the values the code builds and stores, such as an id set by the constructor or a key the store assigns. "A record might arrive malformed someday" is not a call site.
+3. Every test on the base passes unchanged afterwards.
+
+Two cases stay as they are. A test on the base is a pin and passes unmodified, always. A branch-new test of behavior a caller can reach is a pin too: never edit its expected value to make a reshape pass.
+
+### 2. Follow Project Conventions
+
+Simplification means making code more consistent with **this** codebase, not imposing external preferences. Before simplifying, read the project's instructions file (CLAUDE.md, AGENTS.md, CONTRIBUTING, style guides) and study how neighboring code handles similar patterns — imports, declaration style, naming, error handling, type/annotation depth. Match them, even where you'd personally write it differently.
+
+Simplification that breaks project consistency is not simplification — it's churn.
+
+### 3. Prefer Clarity Over Cleverness
+
+Explicit code beats compact code whenever the compact version requires a mental pause to parse. A five-line conditional a reader scans in two seconds is simpler than a one-line nested ternary they have to decode. Dense chained one-liners that build a structure in a single expression are usually clearer as a named intermediate step. When in doubt, write the boring version.
+
+### 4. Maintain Balance
+
+Simplification has a failure mode: over-simplification. Watch for these traps:
+
+- **Inlining too aggressively** — removing a helper that gave a concept a name makes the call site harder to read
+- **Combining unrelated logic** — two simple functions merged into one complex function is not simpler
+- **Removing "unnecessary" abstraction** — some abstractions exist for extensibility or testability, not complexity
+- **Removing error handling or validation** — cleaner-looking is not a reason; behavior must hold. A check that no call site can trip, added by the change in scope, is dead code, not validation; see *Dead code the change itself added goes out with its test*
+- **Optimizing for line count** — fewer lines is not the goal; faster comprehension is
+
+### 5. Scope to What Changed
+
+Simplify the code in scope; leave the rest alone. No drive-by refactors, no "improving" adjacent code, no reformatting files you pass through. Every changed line should trace back to a simplification you can name.
+
+## The Simplification Process
+
+### Step 1: Understand Before Touching (Chesterton's Fence)
+
+Before changing or removing anything, understand why it exists. If you see a fence across a road and don't know why it's there, don't tear it down — first learn the reason, then decide whether the reason still applies.
+
+```
+BEFORE SIMPLIFYING, ANSWER:
+- What is this code's responsibility?
+- What calls it? What does it call?
+- What are the edge cases and error paths?
+- Are there tests that define the expected behavior?
+- Why might it have been written this way? (Performance? Platform constraint? Historical reason?)
+- What does git blame / history say about its original context?
+```
+
+If you can't answer these, you're not ready to simplify. Read more context first.
+
+### Step 2: Identify Simplification Opportunities
+
+Scan for these patterns — each is a concrete signal, not a vague smell:
+
+**Structural complexity:**
+
+| Pattern | Signal | Simplification |
+|---------|--------|----------------|
+| Deep nesting (3+ levels) | Hard to follow control flow | Invert conditions into guard clauses / early returns, or extract helpers |
+| Long functions (50+ lines) | Multiple responsibilities | Split into focused functions with descriptive names |
+| High cyclomatic complexity (>10 decision points) | Too many paths to test one by one | Split along decision clusters — see *Cyclomatic Complexity* |
+| Two functions with the same shape | Same branches and calls, different names or literals | Propose a merge — see *Roughly Equivalent Functions* |
+| Nested conditionals-in-expressions | Requires a mental stack to parse | Replace with explicit branching or a lookup table |
+| Boolean parameter flags | `doThing(true, false, true)` | Replace with named options or separate functions |
+| Repeated conditionals | Same check in multiple places | Extract to a well-named predicate |
+
+**Naming and readability:**
+
+| Pattern | Signal | Simplification |
+|---------|--------|----------------|
+| Generic names | `data`, `result`, `temp`, `val`, `item` | Rename to describe the content: `userProfile`, `validationErrors` |
+| Abbreviated names | `usr`, `cfg`, `btn`, `evt` | Use full words unless the abbreviation is universal (`id`, `url`, `api`) |
+| Misleading names | A "get" that also mutates state | Rename to reflect actual behavior |
+| Comments explaining "what" | `// increment counter` above an increment | Delete the comment — the code says it |
+| Comments explaining "why" | `// Retry because the API is flaky under load` | Keep these — they carry intent the code can't express |
+| Comments narrating history or a session | "used to", "pass 2", `F7`, "per review" | Rewrite as a present-tense constraint or delete — see *Comments* |
+| Comments counting things that live elsewhere | "the 7 tests", "both fields", "the three callers" | Name the set (file, tag, pattern, invariant) so the comment grows with it — see *Comments* |
+
+**Redundancy:**
+
+| Pattern | Signal | Simplification |
+|---------|--------|----------------|
+| Duplicated logic | Same 5+ lines in multiple places | Extract to a shared function |
+| Dead code | Unreachable branches, unused variables, commented-out blocks, a guard no call site can trip | Remove (after confirming it's truly dead); a branch-new test that only reaches it goes with it |
+| Unnecessary wrappers | A layer that adds no value over what it wraps | Inline it; call the underlying thing directly |
+| Over-engineered patterns | Factory-for-a-factory, strategy-with-one-strategy, config nobody sets | Replace with the simple direct approach |
+| Manual re-implementation | Hand-rolled loop/branching for something the language or stdlib does idiomatically | Use the idiom the codebase already uses elsewhere |
+
+### Step 3: Apply Changes Incrementally
+
+Make **one simplification at a time** and run the tests after each change. Never batch several simplifications into a single untested edit — when something breaks, you need to know which change caused it. "Extracted four helpers" is four changes, not one.
+
+```
+FOR EACH SIMPLIFICATION:
+1. Confirm a test pins the behavior you are about to reshape (write one first if not — see below)
+2. Run it: it must pass on the ORIGINAL code
+3. Make the change
+4. Run the test suite
+5. Tests pass → keep it, move to the next
+6. Tests fail → revert and reconsider (do NOT modify the tests to make them pass)
+```
+
+**Keep refactoring separate from feature work.** A change that refactors and adds a feature is two changes — split them into separate commits or PRs.
+
+**The Rule of 500:** if a refactoring would touch more than ~500 lines, invest in automation (codemods, structured search-and-replace, AST transforms) instead of hand-editing. Manual edits at that scale are error-prone and exhausting to review.
+
+### Step 4: Verify the Result
+
+After the pass, step back and evaluate the whole:
+
+```
+COMPARE BEFORE AND AFTER:
+- Is the simplified version genuinely easier to understand?
+- Did you introduce any pattern inconsistent with the codebase?
+- Is the diff clean and reviewable, with nothing unrelated mixed in?
+- Would a teammate approve this change as a net improvement?
+```
+
+If the "simplified" version is harder to understand or review, revert it. Not every simplification attempt succeeds, and reverting is a valid outcome.
+
+## Gathering the Evidence
+
+Finding (which functions are complex, which pairs share a shape, who calls what) is cheap work; comprehending (why, and whether a change is safe) is expensive work. Route them differently:
+
+- **Ask the user once** how many subagents may run in parallel and which model tiers are available, before fanning out. Their tokens, their machine.
+- **Cheap tiers find, premium tiers decide.** Pattern finding goes to Haiku, Sonnet, or Luna; equivalence judgment, the change itself, and verification stay on Opus, Fable, Sol, or Terra (medium–max). On a single-model harness, find with `grep`/`rg` and the project's complexity tool instead of reading.
+- **Verify every finding yourself.** A subagent's report is a lead, not a fact: open the location, recount the number, re-diff the pair, re-run the test. A finding you have not reproduced is a hypothesis.
+- **Every subagent is one-shot.** One task, one report, then it ends. A follow-up goes to a new subagent with the earlier result in its prompt; never resume or message one that has reported, and never leave one waiting — an idle agent's cache expires within minutes, and the next message pays for its whole history again. A finder running a slow tool (a full build, a long analyzer run) starts it in the background with output to a log and checks it with a wait capped at three minutes until it finishes.
+
+**Read `evidence-gathering.md` before spawning any subagent** — it has the routing table, the handoff-packet template, and the stop conditions.
+
+## Prove Equivalence With a Test That Predates the Change
+
+Every change this skill makes — a renamed variable, a flattened conditional, a split function, a merged pair — must be semantically equivalent to what it replaced. The only accepted proof is **TDD applied to refactoring**:
+
+```
+1. Before touching the code, write (or locate) tests that pin its CURRENT behavior:
+   the normal cases, every branch you can reach, the error paths, and the edge cases
+   (empty input, zero, missing keys, malformed data). Write each expected value
+   down as a literal; assert only what a caller can observe.
+2. Run them against the ORIGINAL code. They must pass. A test that fails here is
+   describing behavior the code does not have — fix the test, not the code.
+3. Make the simplification.
+4. Run the same tests, unmodified. They must still pass.
+```
+
+A test that passes before and after is the evidence. A test written *after* the change proves only that the new code does what the new code does.
+
+**If the repository has no tests — or none cover the code in scope — stop and ask the user before creating any.** Adding a test file, a test framework, or a test dependency is a decision about their project, not yours. Ask once, with the specifics: which functions you want to pin, what framework you would use, and what the tests would live under. The simplification waits for the answer — do not make the change first and ask afterwards, and do not treat silence as a decline. Deadline pressure, "keep it moving", and "it's a small change" do not waive this — a missing test is exactly when a refactor silently changes behavior.
+
+If the user declines tests, say plainly that the change is unproven, use a throwaway differential check (old function vs. new function over the same inputs) as the best remaining evidence, report what it covered, and keep the change mechanical. Do not present a deleted script as proof: it guards nothing once it is gone, and the next person who edits the function inherits none of it.
+
+**What the pinning tests are not:** they are not a rewrite of the test suite, not a coverage project, and not a place to fix behavior you dislike. A characterization test records what the code does today — including the odd edge case — because today's behavior is what "equivalent" means.
+
+**A pin that cannot fail is not evidence, and neither is one that fails for the wrong reason.** Three shapes of test defeat the proof above, and all look thorough. A test is a pin only when it fails on a regression of the behavior it guards, and only then:
+
+- **The test works out its own answer.** The expected value is produced by the same logic as the code: the formula typed again in the test, a production helper or constant called to build it, an expected structure assembled by running the code's own pieces. Both sides then move together, so the test passes before the change, after it, and after a change that broke something. Write the expected value down instead. For a pinning test the source is the original code's output, captured once and frozen as a literal; for a new helper it is a value worked out from the rule on a small input. "The helper keeps the test consistent with the code" is the fault, not a defense of it. The throwaway differential check is not this fault: old and new are two implementations, and they can disagree.
+- **The test pins how, not what.** It asserts which helper was called, in what order, a constant against its own value, or a whole output (every word of a message, every field of a record) when one fact in it matters. It goes red on a rewrite that changes nothing a caller sees — which is every change this skill makes — and the only way forward is then to edit the test, which destroys the proof. Pin what a caller can observe: return values, errors, the effects on collaborators, the facts a message carries. Before keeping a pin, name a behavior-preserving rewrite that would turn it red; if you can, loosen it. Odd edge cases are still pinned, because a caller can observe them.
+  - **A count is how, unless someone outside the code is promised it.** A test that asserts how many times a query, subquery, helper, mock, or file read ran pins the code's own work: one harmless extra query turns it red, and the fix is always to bump the number, so it guards nothing. A count is kept only when the number is a contract: a consumer is promised it (the card is charged once, one email goes out) or an upstream dependency fixes it (the gateway accepts at most three submissions per transaction). A call count on a collaborator is not an "effect on a collaborator" unless that number is promised. Only a requirement, a plan line, a documented API, or an upstream dependency's contract makes a promise; the test's own name, a feature the code happens to have, and "caching is the point" do not. A cache is pinned by what it returns, not by counting reads: change what the source would return between two calls and assert the second call still gets the first value. When the worry is work that grows with input (a query per row), pin that it does not grow: run the same call on one row and on many and assert the two counts are equal, never a literal count. Pin the result a caller reads instead: the rows, the returned value, the error.
+- **The test guards nothing that can change.** No edit to the code can turn it red. It tests the platform instead of the code: a `<button>` renders, a click event fires, a stdlib call works, a value has the type the compiler already enforces. It mocks the unit under test and asserts what the mock returns. Or it guards code that no longer exists: a removed feature is still gone, a moved module is absent from its old path. Removed code never changes, so nothing there can regress. Before keeping a pin, name an edit to the code that would turn it red; if there is none, it guards nothing.
+
+**Flag existing tests that have any of the three faults, and copies.** When you locate the tests that cover the code in scope, check each one against the three shapes above before relying on it. A tautological test (one that works out its own answer), a change detector (one that pins how, including a count of internal work), or an empty test (one that guards nothing that can change) is not a pin, so the function counts as uncovered until a test that can fail sits beside it. A test that guards the same behavior as another sound test is a copy. Report every such test: file, test name, which fault, and the fix. The fix is the literal its expected value should be, the observable fact it should assert instead, or deletion, together with any production code that exists only for that test (a cache reset or a getter exported for tests). A test that also covers behavior a caller relies on is rewritten against that behavior, never deleted. Do not rewrite or delete it unasked: it is outside the simplification, and a test edited in the same diff as a refactor muddies the proof. Check only the tests that cover code in scope; this is not a sweep of the suite.
+
+**When the user asks to clean up the tests themselves,** the report becomes the change, and the scope is the tests the user names. Deleting a test on the base is then their request, not a bent pin. Apply each fix as its own step and run the suite after each. Done means every remaining test fails on a regression and only on a regression, no two tests guard the same behavior, and no production code exists only for tests. Keep refactors of the code out of that diff.
+
+## Cyclomatic Complexity
+
+Count the independent paths: **1, plus 1 for each `if`, `elif`/`else if`, `case`, loop, `catch`, ternary, and `&&`/`||` inside a condition.** The number is roughly how many tests the function needs, which is why high values go untested.
+
+| Complexity | Meaning | Action |
+|---|---|---|
+| 1–10 | Straightforward | Leave it unless another pattern applies |
+| 11–20 | Hard to test fully | Look for a split along decision clusters |
+| 21+ | Effectively untestable as one unit | Split — this is not optional |
+
+Report the number before and after. Split along *decision clusters* into pure, individually testable functions, and never into once-called helpers that just relocate lines. **Read `cyclomatic-complexity.md` before splitting a function** — it has the tools per ecosystem, the split procedure, and the fragmentation trap.
+
+## Roughly Equivalent Functions
+
+Two functions with the same control-flow skeleton and the same calls, differing only in names or literals, were written twice. A merge is a **proposal to the user, never a reflex**: diff them line by line, count the callers of both, then propose the unified signature and wait. Behavioral differences — error handling, validation, mutation — end the review; they are not equivalent. **Read `equivalent-functions.md` before proposing a merge.**
+
+## Comments
+
+Comments on touched lines are in scope. The rule: **a comment earns its place by carrying information the code does not, about the code as it is now, in as few lines as that takes.** Cover it with your hand — if the code is no poorer, delete it. Present tense, not history; two lines above a declaration, and a prose comment over four lines is a question for the user, not a keep; never name a field the body reads or a helper it calls; no session-scoped identifiers (finding numbers, pass labels, task IDs, phase names); no counts of things that live elsewhere ("the 7 tests", "both fields") — name the set so the comment grows with it; verify anything a comment names. A comment telling a future editor what to do ("never", "always", "keep in step") enforces nothing: it becomes an assertion in the existing test that runs the code, with one line of fact left behind. **Read `comments.md` before writing or rewriting a comment.** The standalone `appropriate-comments-code` skill is the full treatment.
+
+## Core Pattern Example
+
+The single most portable simplification — flattening nested conditionals into guard clauses. The shape is identical in every language:
+
+```python
+# Before: the happy path is buried three levels deep
+def process(data):
+    if data is not None:
+        if data.is_valid():
+            if data.has_permission():
+                return do_work(data)
+            else:
+                raise PermissionError("No permission")
+        else:
+            raise ValueError("Invalid data")
+    else:
+        raise TypeError("Data is None")
+
+# After: reject early, then the happy path reads top-to-bottom
+def process(data):
+    if data is None:
+        raise TypeError("Data is None")
+    if not data.is_valid():
+        raise ValueError("Invalid data")
+    if not data.has_permission():
+        raise PermissionError("No permission")
+    return do_work(data)
+```
+
+Same errors, same behavior, same edge cases — only the shape changed.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "It's working, no need to touch it" | Working code that's hard to read will be hard to fix when it breaks. Simplifying now saves time on every future change. |
+| "Fewer lines is always simpler" | A one-line nested conditional is not simpler than a five-line explicit branch. Simplicity is comprehension speed, not line count. |
+| "I'll just quickly simplify this unrelated code too" | Unscoped simplification creates noisy diffs and risks regressions in code you didn't intend to change. Stay focused. |
+| "The types make it self-documenting" | Types document structure, not intent. A well-named function explains *why* better than a signature explains *what*. |
+| "This abstraction might be useful later" | Speculative abstraction is complexity without value. Remove it; re-add it when a second use actually appears. |
+| "The original author must have had a reason" | Maybe — check the history (Chesterton's Fence). But complexity is often just the residue of iteration under pressure. |
+| "I'll refactor while adding this feature" | Mixed changes are harder to review, revert, and understand in history. Separate them. |
+| "The tests need a small tweak to pass" | Tests failing means you changed behavior. Revert the simplification, don't bend the tests. |
+| "Removing the guard deletes a test, so the user has to approve it" | Not when the guard and the test are both new in the change and no call site reaches the guard. That test is part of the dead path, not a pin. Remove both, run the rest, and report it. |
+| "It changes what the function does when called directly" | Only the test calls it that way. Behavior is what the code's own callers reach. |
+| "I can't prove the state is impossible, data comes from elsewhere" | Read what the call sites pass and how the code stores it. "Someday a record might arrive malformed" is not a caller. |
+| "I don't delete tests without asking" | That covers tests on the base. A test this change wrote for a path this change wrote is its own draft. |
+| "There are no tests and we ship tomorrow, so I'll just be careful" | Careful is not proof. Ask the user for permission to add pinning tests; if they decline, say the change is unproven. Pressure is when refactors break things. |
+| "I built the expected value with the project's own helper, so the test stays consistent" | Then the test and the code share one source and cannot disagree. Freeze a literal. |
+| "A test already covers this function, so it's pinned" | Only if it can fail. Check it for all three faults first; a tautological, change-detecting, or empty test is flagged in the report and leaves the function uncovered. |
+| "The test checks the old module is gone, so the removal stays removed" | Removed code never changes, so that test can never catch a regression. Flag it for deletion. |
+| "Another test covers it too, but more tests is safer" | A copy fails with the original and adds a second edit to every change of that behavior. Flag it. |
+| "The test is called 'caches preferences', so calling the loader once is the contract" | A test name is not a promise. Pin the cache by its result: change what the source returns between two calls and assert the second call still gets the first value. |
+| "The query count is an effect on the database, so it is observable" | No caller reads it. It goes red on a harmless extra query and gets bumped. Pin the rows; if growth is the worry, assert the count is the same for one row and for many. |
+| "Asserting the full output is the most thorough pin" | It pins wording and layout no caller relies on, and goes red on the next harmless rewrite. Pin the facts a caller reads. |
+| "I verified it with a throwaway script, then cleaned up" | A deleted check guards nothing. The next edit to that function has no test. Either the tests stay, or the report says the change is unpinned. |
+| "I split it into helpers, so it's simpler" | Only if each helper decides one nameable thing and has its own tests. Relocating lines into once-called helpers with vague names is fragmentation. |
+| "Those two functions are basically the same, I'll merge them while I'm here" | Merging crosses scope and changes an API surface. Diff them, count callers, propose it. A near-duplicate is sometimes two things that change for different reasons. |
+| "Complexity is subjective" | It is a count. Count the decision points, report the number before and after. |
+| "The subagent already checked it" | A finder's report is a lead. Open the location, recount, re-diff, re-run — then act. |
+| "I'll spin up a dozen agents, it's faster" | Faster for you, paid by the user. Ask how much parallelism they want, and use cheap tiers for finding. |
+| "The summary in SKILL.md is enough, I'll skip the companion file" | The summary is a reminder of text you are supposed to have read. Read the four files on first use, and the named one again at its step. |
+| "Reading the whole module is more thorough than grepping" | For finding, grep is thorough and cheap. Read whole files for meaning, not for locating. |
+| "The comment explains the history of this fix" | The reader sees today's code. State the constraint in the present tense; the story goes in the commit message. |
+| "The count is accurate, I just checked" | Accurate today; nothing re-checks it when the next one lands. Name the set instead. |
+
+## Red Flags — Stop and Reassess
+
+- A simplification requires modifying tests to pass (you likely changed behavior)
+- You are about to ask the user whether to remove a guard, fallback, or branch that this change added, no call site reaches, and only a branch-new test exercises
+- A pin that asserts how many times a query, helper, or mock ran, where no consumer or upstream dependency is promised that number
+- The "simplified" code is longer and harder to follow than the original
+- You're renaming things to match your preferences rather than project conventions
+- You're removing error handling or validation because "it makes the code cleaner"
+- You're simplifying code you don't fully understand
+- You're batching many simplifications into one large, hard-to-review change
+- You're touching code outside the requested scope without being asked
+- You started scoping or reading code before reading the four companion files this session
+- You are about to change a function that no test covers and you have not asked about adding one
+- You are creating tests in a repo that has none without asking
+- Your proof of equivalence is a script you intend to delete
+- A pinning test's expected value is computed (arithmetic, a production helper, an imported constant) instead of written down
+- A pinning test would go red on a rewrite that changes nothing a caller can observe
+- You are relying on an existing test you have not checked for all three faults, or you found one and left it out of the report
+- A pin asserts the platform, the type system, a mock of the unit under test, or the absence of removed code
+- You are merging two functions you have not diffed line by line, or without checking their callers
+- A function's complexity went *up* in a helper you extracted (you moved the tangle, not untangled it)
+- A comment you wrote says "used to", "per review", names a finding or pass number, or is longer than two lines above a declaration
+- A comment you kept over four lines because "every sentence is a rule", or one that names fields the body reads or helpers it calls
+- A comment you wrote or kept counts tests, callers, fields, or cases that live elsewhere ("the 7 tests", "both", "all three")
+- A comment you kept tells a future editor "never", "always", or "keep in step" with no test that fails when ignored
+- You are about to edit on the strength of a subagent's finding you have not opened and confirmed yourself
+- You fanned out subagents without asking the user how many, or used a premium model to grep
+- You are about to message a subagent that already reported, or you told one to wait for your next instruction
+
+## Verification Checklist
+
+After completing a simplification pass:
+
+- [ ] All four companion files were read on first use this session, and the relevant one re-read at its step
+- [ ] All tests on the base pass **without modification**; any test deleted was branch-new and reached only a dead path the change added, and the report names it
+- [ ] Every reshaped function is pinned by a test that existed **before** the change and passes after it
+- [ ] Every expected value in a test you wrote is a literal, and no pin asserts call order, a count of internal work no consumer or upstream is promised, a constant's own value, or a whole output where one fact matters
+- [ ] Every existing test covering the code in scope was checked for all three faults and for copies; each one found is in the report with its fix, and none was edited unasked
+- [ ] If the user asked to clean up the tests, each remaining test fails on a regression and only on one, no two guard the same behavior, and no production code exists only for tests
+- [ ] If the repo had no tests, the user was asked before any were created; if they declined, the report says the change is unproven and what the differential check covered
+- [ ] Cyclomatic complexity was reported before and after for any function you split, and no extracted helper is more complex than the piece it replaced
+- [ ] Each extracted helper decides one nameable thing and has its own tests
+- [ ] Any function merge was proposed with the diff and caller count before being made, and every caller was updated
+- [ ] Every finding that became a change was reproduced by the model running this skill — location opened, numbers recounted, pairs re-diffed, tests re-run
+- [ ] Subagent fan-out and model tiers matched what the user agreed to; finding went to cheap models or grep, judgment to premium; every subagent one-shot, follow-ups sent to new ones
+- [ ] Comments on touched lines survive the cover test, are present-tense, fit in two lines above a declaration, name no field or helper from the body, cite nothing session-scoped, count nothing that lives elsewhere, and instruct no future editor without a test behind it
+- [ ] Build succeeds with no new warnings; linter/formatter passes
+- [ ] Each simplification was applied and tested as its own incremental change
+- [ ] The diff is clean — no unrelated changes mixed in
+- [ ] Simplified code follows project conventions (checked against the project's instructions file and neighboring code)
+- [ ] No error handling was removed or weakened
+- [ ] No dead code was left behind (unused imports, unreachable branches, orphaned helpers)
+- [ ] A teammate reviewing the diff would call it a net improvement

@@ -1,0 +1,176 @@
+---
+name: event-driven-architecture
+description: >
+  Choosing facts, asynchronous commands or request/response across services; then designing
+  choreography/orchestration, payload authority, evolution horizon and consumer runtime.
+  Use when a broker masks synchronous outcome dependence, workflows are unreconstructable,
+  consumers read back every event, or publish and database commit form a dual write. Delivery,
+  idempotency, ordering, outbox mechanics and schema evolution remain in their owning skills.
+---
+
+# Event Driven Architecture
+
+## Purpose
+
+Decide whether two components should exchange a **fact** or a **call**. An event is an
+immutable observation about something that happened in the publisher's domain
+(`OrderPlaced`); a command is an instruction to a named recipient with an expected outcome
+(`ShipOrder`); request/response can carry a command or a query and returns an outcome. An
+asynchronous command can return outcome later through status, callback or event. This
+is a coupling decision, not a technology one, and the honest answer is often
+request/response. A broker can carry request/reply, but it retains the outcome dependency
+and adds transport, correlation, timeout and reply-recovery costs that need justification.
+
+The failure this prevents is the distributed monolith: services that talk only over a broker
+yet cannot be released independently, because one team's event is another team's function
+call in disguise. The second is the flow that exists nowhere — every step is a handler,
+the sequence is emergent, and answering "why did this order never ship" means reconstructing
+it from logs.
+
+## Workflow
+
+Reuse the user/business outcome, existing interaction and accepted delivery, latency,
+ownership and recovery constraints before asking questions. Ask only for unresolved facts
+that change the choice or next check. Keep an adequate existing interaction; a migration or
+new broker is not implied by this skill. During repair, preserve authorized mitigation and
+its recovery window rather than restarting architecture discovery.
+
+1. **Name the semantic contract, not just the tense.** Past tense is a useful event smell;
+   imperative naming suggests a command. Verify ownership, recipient, whether rejection is
+   possible, and whether the message remains meaningful with no consumer.
+2. **Ask when and where the outcome is needed.** An outcome needed in the current latency
+   budget favors request/response. Deferred completion may use an addressed async command
+   with status/callback; independent reactions to a fact favor events.
+   Follow the actual response and subsequent query route: acceptance, publication, business
+   completion and visibility in a separate read model are different observations. A broker
+   acknowledgement does not make that read model current. Use the acceptance/visibility
+   decision in `references/choosing-the-style.md` when a caller must read its own change.
+3. **Choose coordination from flow semantics.** Independent reactions can choreograph. A
+   branching business workflow needing explicit state, deadlines, compensation or one
+   recovery owner favors orchestration—participant count alone is not a threshold.
+   Map independent logical reactions to separate subscriptions/progress; distinguish them
+   from interchangeable replicas sharing work. A shared Kafka group or queue is not broadcast
+   to every handler. See `references/choosing-the-style.md` for the topology decision.
+4. **Design the payload.** Decide what the event carries versus what the consumer fetches,
+   and name the authority for the current value — `references/event-design.md`.
+5. **Fix the compatibility direction and the window.** Historical reader support follows the
+   oldest data that can reappear from topics (including compacted current values), archives
+   or DLQs; old-reader/new-writer overlap follows deployment and consumer support policy.
+   These are not one additive duration;
+   use `schema-evolution-and-compatibility` for the format-specific contract.
+6. **Prove the commit boundary.** A local DB transaction does not include an ordinary broker
+   send. Use an outbox/CDC, an explicitly enlisted XA resource, or a broker-local transaction
+   whose exact boundary fits; “before versus after commit” alone leaves a failure window.
+7. **Choose the consumer's runtime last** — long-lived process or FaaS — from throughput,
+   burst shape and whether a partition assignment must be held.
+
+Inspect broker/client, serializer and Java/framework versions plus retention, replay and retry
+configuration before implementation advice. Integration events do not require an authoritative
+event store; adopting that storage model is a separate `event-sourcing` decision. The envelope reference uses Java 16+ record syntax;
+preserve the target rather than upgrading it. For an architecture change, deliver the interaction
+choice, logical subscriber topology, outcome/recovery owner, commit boundary, reader/writer
+horizon and a confirming failure/compatibility case. When completion or freshness matters,
+name the response/query observation that establishes it. A narrow naming or contract review
+needs only the relevant subset.
+If material facts are missing, state a conditional choice and the smallest contract/configuration
+evidence needed to resolve it. Retaining the existing design is a valid result. Record
+consequential changes through the project's ADR convention; a routine choice needs only a
+concise rationale. Distinguish proposed verification from executed results.
+
+## Decision block
+
+```text
+Publish an event when:
+- the producer completes this work without requiring the consumer's immediate outcome
+- the message records a fact in the producer's authority and consumers decide how to react
+Reasons an asynchronous event path may pay for itself (not a mandatory conjunction):
+- independent consumer availability with an acceptable backlog
+- adding readers without changing the producer
+- required fan-out, retained replay or independent scaling
+Avoid events when:
+- a required immediate consumer outcome is being hidden behind fact-shaped messages
+- there is one known recipient, the message is semantically a command, and no buffering,
+  replay or asynchronous completion requirement justifies the broker
+- the message asks a recipient to accept or reject work: model that command and its outcome
+- the boundary has no independent lifecycle/scaling/resilience driver and the broker only
+  obscures a synchronous dependency
+Prefer request/response instead when:
+- the interaction is a query. Publishing an event to ask a question is a request/response
+  interaction requiring correlation, timeout and reply lifecycle; model it as such
+- the outcome must be surfaced to a user inside the current request
+- the consumer count is one and stable, and the added broker is pure operational surface
+One consumer does not make a fact a command; asynchronous availability can still justify it.
+```
+
+## Rules
+
+- Events can reduce synchronous **temporal** coupling while increasing schema, semantic,
+  operational and retention coupling. Maintain consumer ownership/usage evidence where
+  possible; a schema registry checks structural compatibility, not business meaning.
+- New readers must read or transform historical events within the supported replay horizon;
+  old readers must tolerate new events for their supported deployment overlap. Seven-day
+  topic retention alone establishes neither every reader's support duration nor archive/DLQ
+  replay limits; compact-only topics can retain an old schema in a key's latest value
+  indefinitely. Archives can use versioned
+  upcasters/migrations; “forever” is a costly policy, not a default.
+- Adding a subscriber is a capacity and governance change when it adds broker reads,
+  fan-out or shared downstream load. Budget quotas, PII access and replay impact per consumer;
+  it does not automatically multiply load on the publisher.
+- **Anti-pattern — the event that is a command.** `ShipOrder` published to a topic with one
+  subscriber. Observable shapes: an imperative name; exactly one consumer that must exist; a
+  correlation id used to wait synchronously for a reply topic. Model it explicitly as an async
+  command with an outcome contract, or use request/response when the caller is actually blocked.
+- **Anti-pattern — the distributed monolith.** Observable shapes: a release checklist naming
+  two services; a consumer that breaks when a producer adds a field; a shared library of event
+  classes that every service must upgrade in lockstep. Publishing over a broker did not
+  decouple anything; the schema is a compile-time dependency wearing a wire format.
+- **Anti-pattern — projection without authority or recovery.** Event-carried state transfer with no named
+  authority for the current value: each consumer keeps its own projection, they diverge, and
+  no service can answer "what is true now". Name the owner of each entity and how a consumer
+  resyncs after a gap. Recovery must cover the snapshot-to-stream boundary and deletions;
+  naming a read API or compacted topic alone does not establish that coverage.
+- **Anti-pattern — publish inside the transaction.** A `send()` between the write and the
+  commit publishes facts that may never become true; a `send()` after the commit loses them on
+  a crash. For independent sends, these are dual-write windows: select an atomic publication
+  intent (such as outbox/CDC) or an explicitly supported transaction boundary, then test
+  relay/retry recovery and duplicates (`delivery-semantics`). Atomic publication intent does
+  not atomically apply the remote consumer's effect.
+- End-to-end redelivery is common but product/configuration boundaries differ: at-most-once,
+  at-least-once and transactional broker-local processing all exist. Handlers that may see a
+  duplicate must be repeat-safe:
+  the guarantee vocabulary is `delivery-semantics`, the handler technique is `idempotency`.
+  Never write "exactly-once" about an event pipeline without naming the boundary.
+- Choreography needs durable observability: event ID, causation ID, trace context and business
+  correlation identity have different roles. Preserve occurrence identity in messages and
+  propagate correlation/trace metadata; bound metric-label dimensions instead of reducing
+  identity uniqueness. Retain a queryable event/workflow view where the business must answer
+  current status, and keep per-event IDs out of ordinary metric labels.
+- Orchestration's cost is a component that knows the flow and its workflow policy. Keep
+  participant-local invariants with their actual owners; duplicating those rules in the
+  coordinator creates drift. Judge the responsibility boundary, not the presence of business
+  rules in an orchestrator.
+- **FaaS is a placement/runtime decision, not an architecture.** Pricing, cold starts,
+  concurrency, batching, retry/partial-batch behavior, maximum duration, connection reuse and
+  ordering are provider/event-source specific. Execution environments may reuse pools, while
+  burst scaling can multiply them; managed pollers can preserve per-partition order. Compare
+  measured end-to-end latency, backlog recovery, connection quotas and control limits against
+  a long-lived consumer.
+
+## References
+
+- [CloudEvents 1.0.2 specification](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md)
+- [Transactional outbox](https://microservices.io/patterns/data/transactional-outbox.html): local atomic publication intent and duplicate relay delivery.
+- [AWS Lambda with Kafka event sources](https://docs.aws.amazon.com/lambda/latest/dg/with-kafka-configure.html)
+
+- [Choosing the style](references/choosing-the-style.md) — events versus commands versus
+  request/response with the condition that selects each, acceptance versus read visibility,
+  independent subscriptions versus
+  competing replicas, choreography versus orchestration
+  compared on debuggability, coupling, failure handling and participant count, and the FaaS
+  versus long-lived-consumer decision with the Java cold-start considerations. Read when
+  deciding how two components should communicate, diagnosing a stale read after a successful
+  write, adding/scaling a subscriber, or when a saga is being designed.
+- [Designing an event](references/event-design.md) — naming, fat versus thin payloads and the
+  read-back stampede, the event schema as a contract with unknown consumers, which direction
+  of compatibility events actually need, and what belongs in the payload versus what must be
+  fetched. Read before publishing a new event type or changing an existing one.

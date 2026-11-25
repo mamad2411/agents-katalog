@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ronmkr/promptbook (path: skills/technical/cpp-testing/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosing failing or flaky tests, or adding coverage/sanitizers.

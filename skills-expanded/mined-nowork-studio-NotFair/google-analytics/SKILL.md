@@ -1,0 +1,8 @@
+---
+name: google-analytics
+description: Analyze connected Google Analytics 4 traffic, acquisition, engagement, landing pages, ecommerce, events, and conversions, and safely manage supported GA4 key events or custom dimensions through NotFair MCP. Use for GA4, Google Analytics, traffic or conversion drops, channel attribution, realtime activity, report requests, measurement configuration, or Analytics MCP setup.
+---
+
+# Canonical NotFair workflow
+
+Read [`../../analytics/google-analytics/WORKFLOW.md`](../../analytics/google-analytics/WORKFLOW.md) completely, then follow it as the active workflow. Resolve every relative reference from that file against `../../analytics/google-analytics/`.

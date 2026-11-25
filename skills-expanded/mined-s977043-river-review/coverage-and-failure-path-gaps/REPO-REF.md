@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/s977043/river-review (path: plugin-dist/river-review/skills/downstream/coverage-gap/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Find missing tests for critical paths, edge cases, and failure handling in changed code.

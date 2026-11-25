@@ -1,0 +1,258 @@
+---
+name: positioning-statement
+description: >-
+  Create a Geoffrey Moore-style positioning statement. Use when clarifying who you serve,
+  what problem you solve, your category, and why you're different from alternatives.
+slug: positioning-statement
+version: 1.1.0
+displayName: positioning-statement
+---
+
+# Positioning Statement
+
+## Purpose
+Create a Geoffrey Moore-style positioning statement that clearly articulates who your product serves, what need it addresses, how it's categorized, what benefit it delivers, and how it differs from alternatives. Use this when you need to align stakeholders on product strategy, guide messaging, or test if your value proposition is crisp and defensible.
+
+This is not a tagline or elevator pitch—it's a strategic clarity tool that forces you to make hard choices about target, need, and differentiation.
+
+## Input
+
+**Works best with:** The product and its target customer.
+**Also useful:** The unmet need, product category, primary benefit, and nearest alternative — the skill drafts from what you give and asks only for what's missing.
+
+Anything supplied with the invocation itself — text after the skill name, a pasted context dump, or an appended `ARGUMENTS:` line — counts as answers already given. Use it and skip whatever it covers; don't re-ask.
+
+**Arriving empty-handed? That works too.** The skill asks for product and target customer first, then works through the Moore template slots.
+
+**Example invocation:** `Positioning statement for LaunchDarkly-style feature flags aimed at platform engineering leads at 200+ eng orgs.`
+
+## Key Concepts
+
+### The Geoffrey Moore Framework
+From *Crossing the Chasm*, Moore's framework splits positioning into two parts:
+
+**Value Proposition:**
+- **For** [target customer]
+- **that need** [underserved need]
+- [product name]
+- **is a** [product category]
+- **that** [benefit statement]
+
+**Differentiation Statement:**
+- **Unlike** [primary competitor or competitive alternative]
+- [product name]
+- **provides** [unique differentiation]
+
+### Why This Structure Works
+- **Forces specificity:** You can't say "for everyone" or "unlike all competitors"
+- **Exposes assumptions:** If you can't fill in "unlike X," you may not have defensible differentiation
+- **Focuses on outcomes, not features:** "That reduces churn by 40%" beats "that has analytics"
+- **Category anchors perception:** Saying "is a CRM" vs. "is a workflow tool" changes how buyers evaluate you
+
+### Anti-Patterns (What This Is NOT)
+- **Not a tagline:** "Positioning" ≠ "Nike: Just Do It"
+- **Not a feature list:** Don't say "that provides AI, automation, and integrations"
+- **Not generic:** "For businesses that need efficiency" = positioning theater
+- **Not aspirational fluff:** "That revolutionizes productivity" without specifics is noise
+
+### When to Use This
+- Defining a new product or major pivot
+- Aligning exec/founder/PM/marketing on strategy
+- Testing if your differentiation is real or imagined
+- Before writing PRDs, launch plans, or sales collateral
+
+### When NOT to Use This
+- For internal tools with captive users (positioning is for markets)
+- When you're still in problem validation (position after you know the problem)
+- As a substitute for customer research (this synthesizes insights, doesn't create them)
+
+---
+
+## Application
+
+Use `template.md` for the full fill-in structure.
+
+### Step 1: Gather Context
+Before drafting, ensure you have:
+- **Target customer segment:** Demographics, behaviors, role (not just "SMBs" or "developers")
+- **Underserved need:** Pains, gains, jobs-to-be-done (reference [`jobs-to-be-done`](../jobs-to-be-done/SKILL.md) if needed)
+- **Product category:** How buyers mentally file your solution (CRM, analytics platform, etc.)
+- **Competitive landscape:** Direct competitors AND substitute behaviors (e.g., "Excel" is often the real competitor)
+
+**If missing context:** Use discovery interviews, market research, or customer interviews to fill gaps. Don't guess.
+
+---
+
+### Step 2: Draft the Value Proposition
+
+Fill in the template:
+
+```markdown
+## Value Proposition
+
+**For** [specific target customer/persona]
+- **that need** [statement of underserved need—focus on pains, gains, JTBD]
+- [product or service name]
+- **is a** [product category]
+- **that** [benefit statement—focus on outcomes, not features]
+```
+
+**Quality checks:**
+- **Target specificity:** Could you describe this person to a recruiter? If not, narrow it.
+- **Need clarity:** Does this need resonate emotionally? Or is it generic ("need efficiency")?
+- **Category fit:** Does this category help or hurt you? (Sometimes creating a new category is strategic, but risky.)
+- **Outcome focus:** Are you saying what the user *gets*, not what the product *has*?
+
+---
+
+### Step 3: Draft the Differentiation Statement
+
+Fill in the template:
+
+```markdown
+## Differentiation Statement
+
+- **Unlike** [primary competitor or competitive alternative]
+- [product or service name]
+- **provides** [unique differentiation—outcomes, not features]
+```
+
+**Quality checks:**
+- **Competitor honesty:** Is this the *real* alternative buyers consider? (Not just who you wish they compared you to.)
+- **Differentiation substance:** Could a competitor copy this in 6 months? If yes, it's not durable differentiation.
+- **Outcome framing:** Are you saying what users *achieve* differently, not just what you *do* differently?
+
+---
+
+### Step 4: Stress-Test the Positioning
+
+Ask these questions:
+1. **Would a customer recognize themselves?** Read the "For [target]" aloud. Does it feel specific or generic?
+2. **Is the need defensible?** Can you point to research, interviews, or data that validates this need?
+3. **Does the category help or hurt?** Does it anchor you against the right competitors? Or does it box you in?
+4. **Is differentiation believable?** Could you prove this claim with a demo, case study, or data?
+5. **Does this guide decisions?** If someone asked "Should we build feature X?" would this positioning help answer it?
+
+If any answer is "no" or "sort of," revise.
+
+---
+
+### Step 5: Socialize and Iterate
+
+- **Share with stakeholders:** Founders, execs, product, marketing, sales
+- **Test with customers:** Read it aloud. Do they nod or look confused?
+- **Refine ruthlessly:** Positioning is never done on the first draft. Cut words, sharpen specificity, test alternatives.
+
+---
+
+## Examples
+
+See `examples/sample.md` for full positioning examples.
+
+Mini example excerpt:
+
+```markdown
+**For** software development teams
+- **that need** to reduce email overload and improve real-time collaboration
+- Slack
+- **is a** team messaging platform
+- **that** centralizes communication and makes conversations searchable
+```
+
+---
+
+## Common Pitfalls
+
+### Pitfall 1: "For Everyone"
+**Symptom:** "For businesses that want to grow" or "For anyone who uses software"
+
+**Consequence:** No one feels like it's *for them*. Positioning becomes invisible.
+
+**Fix:** Pick the *first* customer segment you'll serve. You can expand later, but positioning works when it's narrow.
+
+---
+
+### Pitfall 2: Feature Creep in Benefit Statement
+**Symptom:** "That provides AI, automation, analytics, and integrations"
+
+**Consequence:** Sounds like a feature list, not a benefit. Buyers tune out.
+
+**Fix:** Lead with the outcome: "That reduces churn by 30% through predictive analytics." The features are how, not why.
+
+---
+
+### Pitfall 3: Imaginary Competitor
+**Symptom:** "Unlike outdated legacy systems" or "Unlike traditional approaches"
+
+**Consequence:** You're positioning against a straw man. Real buyers don't recognize this alternative.
+
+**Fix:** Name the *actual* competitor or substitute behavior. If buyers use Excel, say "Unlike Excel." If they use a competitor, name them.
+
+---
+
+### Pitfall 4: Differentiation Without Proof
+**Symptom:** "Provides revolutionary AI" or "Delivers unmatched speed"
+
+**Consequence:** Claims without evidence = marketing fluff. Buyers ignore it.
+
+**Fix:** Make it falsifiable: "Provides 10x faster query performance than Snowflake on datasets under 1TB" (can be tested).
+
+---
+
+### Pitfall 5: Category Confusion
+**Symptom:** "Is a next-generation platform for digital transformation"
+
+**Consequence:** Buyers don't know how to evaluate you. Category = mental shelf. No shelf = no sale.
+
+**Fix:** Pick a category buyers already understand (CRM, analytics, messaging) OR commit to category creation (requires $$$ and time).
+
+---
+
+## Failure Exits & Edge Cases
+
+- **Input too vague to draft** ("positioning for my app"): do not guess a full statement. Ask exactly two questions — *who is the target customer?* and *what do they use today instead?* — then draft with labeled assumptions and mark each assumed slot `[assumed]`.
+- **No known competitor:** if the user cannot name a real alternative or substitute behavior, deliver the Value Proposition only and flag the Differentiation Statement as blocked (cannot be drafted honestly). Exit: "come back with the nearest alternative buyers actually use."
+- **Missing files:** `template.md` or `examples/sample.md` referenced but absent → fall back to the inline templates in Steps 2–3 of this document; do not invent new file paths.
+
+## FAQ
+
+**Is this the same as a tagline or elevator pitch?** No — a tagline compresses; a positioning statement decides. It's an internal alignment tool, not copy.
+
+**Can I position against a category instead of a competitor?** Only if buyers actually file alternatives that way ("Unlike hiring an agency…"). "Unlike traditional approaches" is the imaginary-competitor pitfall.
+
+**What if my differentiation is a feature competitors also have?** Then it's not differentiation — re-run Step 3's "could a competitor copy this in 6 months?" check.
+
+**Do I need customer research first?** The statement synthesizes research; it doesn't replace it. If you have zero user evidence, do discovery first (see When NOT to Use).
+
+## 快速参考（中文速览）
+
+- **框架**：价值主张＝**For**（目标客户）／**that need**（未被满足的需要）／**is a**（品类）／**that**（结果型收益）；差异化陈述＝**Unlike**（真实替代品）／**provides**（可验证的差异）。
+- **最短用法**：一句话说清产品＋目标客户即可开始；信息不全时技能只追问两件事——目标客户是谁、现在用什么替代品。
+- **四大陷阱**：泛化受众 · 功能堆砌 · 虚构竞品 · 无证据的差异声明。
+- **完成标准**：客户能在 "For…" 里认出自己；差异声明能用 demo/数据证实；能回答"该不该做功能 X"。
+
+## References
+
+### Related Skills
+- [`problem-statement`](../problem-statement/SKILL.md) — Defines the problem positioning addresses
+- [`jobs-to-be-done`](../jobs-to-be-done/SKILL.md) — Informs the "that need" statement
+- [`proto-persona`](../proto-persona/SKILL.md) — Defines the "For [target]" segment
+- [`press-release`](../press-release/SKILL.md) — Positioning informs press release messaging
+
+### External Frameworks
+- Geoffrey Moore, *Crossing the Chasm* (1991) — Origin of this framework
+- April Dunford, *Obviously Awesome* (2019) — Modern positioning playbook
+- Al Ries & Jack Trout, *Positioning: The Battle for Your Mind* (1981) — Foundational positioning theory
+
+### Dean's Work
+- [Link to relevant Dean Peters' Substack articles if applicable]
+
+### Provenance
+- Adapted from `prompts/positioning-statement.md` in the `https://github.com/deanpeters/product-manager-prompts` repo.
+
+---
+
+**Skill type:** Component
+**Suggested filename:** `positioning-statement.md`
+**Suggested placement:** `/skills/components/`
+**Dependencies:** References [`problem-statement`](../problem-statement/SKILL.md), [`jobs-to-be-done`](../jobs-to-be-done/SKILL.md), [`proto-persona`](../proto-persona/SKILL.md)

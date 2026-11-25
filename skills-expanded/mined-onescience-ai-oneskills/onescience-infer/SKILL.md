@@ -1,0 +1,229 @@
+---
+name: onescience-infer
+description: OneScience 科学模型推理执行技能。用于用户希望运行或构建 HuggingFace 模型、官方文档模型、本地 checkpoint 或项目原生 runner 的推理工作流时，覆盖气象/地球系统、生信、材料、流体和通用科研模型等领域，包括模型卡与配置发现、输入数据准备、checkpoint 加载、推理入口生成或复用、执行、结果验证、可视化和 baseline 对比。接收格式与 onescience-orchestrator 调用执行技能时的 step_handoff 保持一致，返回 execution_result。需要时协调交接给 onescience-coder、onescience-runtime 以及数据准备类技能。
+type: executor
+capabilities:
+  owns:
+    - 模型卡发现
+    - 配置发现
+    - 输入数据准备
+    - checkpoint加载
+    - 推理入口生成
+    - 推理执行
+    - 结果验证
+    - 可视化
+    - baseline对比
+  not_owns:
+    - 训练
+    - 代码落盘
+    - SLURM提交
+    - 环境安装
+  inputs:
+    - step_handoff
+    - model_source
+    - checkpoint
+    - input_data
+  outputs:
+    - inference_result
+    - validation_result
+    - visualization
+  downstream:
+    - onescience-coder
+    - onescience-runtime
+    - onescience-data-analyzer
+  prereq:
+    - 模型来源已确定
+  intent_aspects:
+    - model_inference
+    - inference_execution
+  operation_types:
+    - run
+    - evaluate
+  artifact_types:
+    - model
+    - report
+    - log
+  domains:
+    - earth
+    - biology
+    - materials
+    - cfd
+    - general
+  trigger_keywords:
+    - 推理
+    - inference
+    - predict
+    - 模型加载
+    - HuggingFace
+    - checkpoint推理
+---
+
+## 输入获取方式
+
+本技能支持两种输入方式：
+
+1. **上下文 handoff**（默认）：从调用方传入的 `step_handoff` 获取任务信息。
+2. **文件 handoff**（autonomous_mode）：从 `.onescience/handoff/step_{step_id}.yaml`
+   读取任务信息。执行后，将结果写入 `.onescience/handoff/step_{step_id}_result.yaml`。
+
+启动时优先检查 `.onescience/handoff/` 目录是否存在对应的交接文件；若存在则使用文件模式，否则使用上下文模式。
+
+文件交接格式参见 `skills/onescience-orchestrator/references/file_handoff_contract.md`。
+
+# OneScience Infer
+
+## 职责
+
+将本技能作为科学模型推理任务的执行工作流。把 orchestrator 交给本技能的当前步骤，例如“为 HuggingFace checkpoint 生成推理入口”“使用本地 checkpoint 跑一次材料性质预测”“准备生信模型输入并执行推理”“验证流体仿真 surrogate 输出”，转化为从模型知识获取到结果验证的可追踪闭环。
+
+本技能只消费当前执行步骤，不重新规划完整用户目标。本技能负责推理工作流契约和阶段顺序；当代码实现、数据构建或运行提交由已有执行技能更适合负责时，应将当前步骤交接给对应技能。依赖包、硬件和运行环境需求不单独成阶段，而是在推理执行阶段交给 `onescience-runtime`。
+
+## 工作流
+
+创建或更新工作目录：
+
+**产物路径规则：**
+
+- `repro_artifact_dir`：所有可复现推理产物的根目录，默认 `<work_dir>/repro_artifacts/<run_id>/`。该目录与源码目录（如 `paper_cases/`）强制隔离，不得将推理脚本、输出结果散落在案例源码目录中。
+  - `repro_artifact_dir/code/`：生成的推理启动器脚本、runner 等代码产物（默认 = `code_save_dir`）
+  - `repro_artifact_dir/outputs/`：推理输出结果（mmCIF、confidence JSON、ranking CSV 等）
+  - `repro_artifact_dir/logs/`：运行日志
+  - `repro_artifact_dir/.infer_work/`：中间知识产物（= `infer_workdir`）
+
+- `code_save_dir` 用于保存最终代码入口和 runner。若上游已显式提供 `step_handoff.inputs.runtime.code_save_dir`，优先使用；若未提供，默认 = `<repro_artifact_dir>/code/`。
+
+- `infer_workdir` 用于保存模型知识、计划、manifest、runtime 请求/结果、验证报告等 infer 中间知识产物，默认 = `<repro_artifact_dir>/.infer_work/`。若上游已显式提供 `step_handoff.inputs.runtime.infer_workdir`，则直接使用该目录。
+
+- 若上游未提供 `code_save_dir`，但 `step_handoff.inputs.runtime.workdir`、`task_context.relevant_artifacts` 或用户明确指定了工作目录，则 `repro_artifact_dir` 首选 `<work_dir>/repro_artifacts/<run_id>/`；否则兼容性回退到 `.onescience/infer/<run_id>/`。
+
+- 进入具体代码生成或执行阶段时，必须从 `infer_workdir` 中已保存的知识文件读取并交接，不依赖未落盘的会话上下文。
+
+**GPU 分配规则：**
+
+- 禁止将论文协议参数（如 seed 数量）硬编码为 GPU 数量。`seed_count`（协议参数）、`gpu_count`（硬件资源）、`worker_count`（并发工作单元）必须分别建模为独立变量。
+- 代码生成和执行阶段必须通过 `nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader` 或 `rocm-smi` 检测实际可用 GPU 列表，不得硬编码 GPU 索引。
+- `worker_count = seed_count × samples_per_seed`（或其他业务粒度），`gpu_count = 实际可用 GPU 数`。调度策略：`worker_count > gpu_count` 时分批轮转执行，`worker_count <= gpu_count` 时一卡一 worker。
+
+本技能不依赖 `scripts/` 目录下的预置脚本；如需生成或修改推理入口，使用项目原生入口或交接给 `onescience-coder` 产出明确文件。
+
+在消费上游交接或生成产物前，先读取 `references/workflow_contract.md`。随后按顺序执行以下阶段，并在进入某个阶段时读取对应阶段文件：
+
+1. 模型知识获取：读取 `references/phase_1_model_knowledge.md`
+2. 数据准备：读取 `references/phase_3_data_preparation.md`
+3. 模型加载：读取 `references/phase_4_model_loading.md`
+4. 推理代码生成：读取 `references/phase_5_codegen.md`
+5. 推理执行：读取 `references/phase_6_execution.md`
+6. 结果验证：读取 `references/phase_7_validation.md`
+
+## 连续执行规则
+
+- `next_recommendation` 只是路由建议，不是当前任务结束信号。
+- 除非遇到用户确认、缺少凭据、缺少模型 / 数据 / 入口、运行时失败或其他真实阻断，否则本技能在当前调用内应从已完成阶段自动进入下一阶段。
+- 当本阶段存在多个待执行输入、多个候选结果或多个待处理目标时，执行阶段应按批或逐个完成全部项，而不是在第一个对象结束后返回“下一步建议”。
+- 只有 `success` 且全部需要的候选、验证和落盘产物都已完成时，才返回最终 `execution_result`；如果还保留未执行候选或未完成的下游步骤，状态应视为 `partial` 或 `blocked`。
+
+## 推理专业契约门禁
+
+对“实现推理脚本 / 适配 checkpoint / 完成推理验证”任务，在代码生成或 coder 交接前，必须把用户要求整理为 `inference_contract`，并写入 `inference_plan.md`。契约至少逐项覆盖：
+
+- 预处理函数、通道顺序、大小写/字符策略、最小长度、batch 与 shape；
+- 模型类、组件类、方法、属性、构造参数名、默认值和模块层次；
+- forward 的参数名、位置/关键字调用、seed/recycle/sample 语义、返回键和 shape；
+- checkpoint 的单文件/目录入口、原始或包装 state dict、`strict=True`、device 映射；
+- CLI 参数名、布尔参数语义、默认值、合法最小调用和明确失败条件；
+- 输出目录、文件名、rank/sample 组织、schema、dtype、有限性和指标公式。
+
+生成代码时不得用“功能近似”的接口替代指定公共 API。模型属性名和模块层次可能被 checkpoint、hook 或结构检查直接依赖；`forward(self, x)` 的参数名也可能被关键字调用。默认构造、至少一个合法自定义构造、位置调用和关键字调用都要验证。
+
+输入校验应先做无损规范化再判非法，避免误拒绝大小写或等价容器；可选配置映射未覆盖的项默认与标准配置合并，除非任务明确要求完整映射。缺少 checkpoint 中非必需的审计元数据时，不得让最小合法推理命令提前退出；只有无法从用户契约、CLI、配置或安全默认值解析的必需推理语义才允许阻断。
+
+若委托 `onescience-coder`，handoff 必须携带完整 `inference_contract`，不能只传计划摘要或模型知识。coder 返回后，infer 必须在允许范围内独立核验：导入与公开签名、默认/自定义构造、预处理边界、checkpoint 变体、真实最小 CLI、全部约定输出文件及 schema。仅 `--help`、单次 forward 或自写 happy-path smoke 通过，不足以将代码生成阶段标为 success。
+
+## 交接边界
+
+### 输入契约
+
+本技能接收的调用信息必须与 `onescience-orchestrator` 调用 executor 的格式一致：
+
+```yaml
+step_handoff:
+  step_id: <步骤ID>
+  execution_skill: onescience-infer
+  step_goal: <本步骤目标>
+  task_context:
+    user_goal: <用户最终目标>
+    constraints: <约束列表>
+    relevant_artifacts: <相关产物>
+  resource_bindings:
+    - path: <资源标识或路径>
+      type: <资源类型>
+      purpose: <用途>
+  inputs: <推理所需输入，例如模型、checkpoint、数据、参数、运行方式>
+  required_outputs: <要求输出>
+  completion_criteria: <完成标准>
+```
+
+如果用户直接调用本技能而没有显式 `step_handoff`，先把用户请求规范化为等价的 `step_handoff`，再进入工作流。
+
+### 输出契约
+
+返回结果必须与上游交接格式一致，使用 `execution_result`：
+
+```yaml
+execution_result:
+  skill: onescience-infer
+  status: <success | partial | failed | blocked>
+  artifacts:
+    <产物清单>
+  observation:
+    summary: <执行摘要>
+    completed: <已完成内容>
+    missing: <缺失项>
+    risks: <风险>
+    next_recommendation: <下一步建议>
+```
+
+### 下游技能
+
+当需要生成或修改模型专用 Python pipeline、runner、adapter、绘图代码和测试时，使用 `onescience-coder`。该委托只覆盖 infer 当前步骤内的代码落盘与实现子动作；若 coder 返回后后续仍属于当前 infer 步骤，则恢复 infer 继续完成该步骤；若下一任务已超出 infer 当前职责，则交回 `onescience-orchestrator`。
+
+当需要安装依赖、修复 CUDA/PyTorch、配置 conda 环境、检查硬件或提交运行时，把 package 和环境需求写入执行阶段的 runtime handoff，由 `onescience-runtime` 在执行过程中统一处理。该委托只覆盖 infer 当前步骤内的运行与环境子动作，不授权 infer 在 runtime 返回后继续选择新的业务 executor。
+
+当需要本地或远程执行、SLURM 提交、SCnet 路由、日志同步、执行诊断或运行前环境处理时，使用 `onescience-runtime`。runtime 完成后若当前任务仍属于 infer 当前步骤，则 infer 恢复并完成结果验证；若后续问题已超出 infer 的推理工作流边界，则返回 `execution_result` 给 `onescience-orchestrator` 决定下一技能。
+
+当推理结果需要领域可视化，尤其是 PDB/mmCIF/CIF 分子结构渲染时，将可视化步骤交接给 `onescience-data-analyzer`；本技能负责提供输出路径、结构元数据、置信度来源和验证标准，不在 infer 内重复维护渲染规范。
+
+当数据接入、格式转换、重网格化或可复用数据集构建成为实质性子任务时，使用 `onescience-dataset-builder` 等数据工作流技能；若该数据子任务已超出 infer 当前步骤的显式委托范围，则返回 orchestrator 决策。
+
+当用户只要求规划或代码生成时，不要静默安装 package、提交远程作业或下载大型数据集。如果用户明确要求运行推理，则在完成必要的预检和授权后继续进入执行阶段。
+
+infer 只拥有当前执行步骤，不拥有全局工作流；除上述显式窄委托外，不自行决定后续交给哪个业务技能执行。
+
+## 证据规则
+
+优先使用一手模型来源：HuggingFace model card、仓库 README、官方推理文档、配置文件、checkpoint 元数据和用户提供的文件。使用在线 model card、文档、package 元数据、公共数据目录或当前 API 时，必须确认最新信息，并在最终报告中引用来源。
+
+不要编造缺失的 shape、变量、归一化常数、坐标系、网格、序列长度、采样率、特征空间、物理单位、forecast horizon、pressure level 或 checkpoint 名称。无法确认的项在 `model_knowledge.md`、`inference_plan.md` 和运行 manifest 中标记为 `MISSING:` 或 `ASSUMPTION:`。
+
+领域特有元数据只在对应任务中作为附加规则处理：
+
+- 气象/地球系统：保留时间、lead time、变量、level、网格、投影、单位和归一化来源。
+- 生信：保留物种/参考版本、序列或特征命名、坐标约定、样本/批次元数据和预处理来源。
+- 材料：保留结构/组成、晶胞、势函数或描述符、单位、边界条件和结构约束。
+- 流体/CFD：保留网格/mesh、边界条件、时间步、物理量单位、无量纲参数和守恒量检查来源。
+- 通用科研模型：保留输入 schema、单位、坐标/索引、预处理和输出解释。
+
+## 必需输出
+
+至少在 `infer_workdir` 中生成或更新以下产物：
+
+- `step_handoff.json`：接收到或规范化后的 orchestrator 执行交接
+- `inference_request.json`：从 `step_handoff` 派生出的推理请求和约束
+- `model_knowledge.md`：有来源的模型事实和缺口
+- `inference_plan.md`：阶段计划、依赖、数据契约、runner 契约和验证标准
+- `inference_run_manifest.json`：覆盖所有阶段的结构化状态
+- 如果需要代码，则给出生成代码、项目原生入口或命令引用，并在 manifest 中标注其位于 `code_save_dir` 或项目原生路径
+- 如果执行过推理，则给出执行日志或 runtime 结果引用
+- `validation_report.md`：输出检查、可视化、baseline 对比和剩余风险
+
+最终回复和结构化返回必须报告状态、`code_save_dir`、`infer_workdir`、关键产物、执行状态、验证状态和未解决阻塞项，并以 `execution_result` 作为返回交接物。

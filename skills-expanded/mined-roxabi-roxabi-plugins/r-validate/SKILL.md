@@ -1,0 +1,156 @@
+---
+name: R-validate
+argument-hint: '[--quick | --full | --affected]'
+description: Run all quality gates (lint, typecheck, test, env, i18n, license; optional falsify on --full) and produce a structured pass/fail report. Triggers: "validate" | "quality check" | "pre-push check" | "are we green".
+version: 0.2.1
+allowed-tools: Bash, Read
+---
+
+# Validate
+
+## Success
+
+I := ∀ χ ∈ scope → σ = pass
+V := Report shows "Result: All checks passed"
+
+Let:
+  χ := quality check (name, command from `{commands.*}`, timeout, result)
+  σ := {✅ pass (exit 0), ❌ FAIL (exit ≠0), ⚠️ warn (exit 0 + warnings), ⏭ skip (¬in scope)}
+
+**Stack:** Read `.dev/stack.yml` first — every `{field}` placeholder below resolves from it. ¬∃ → output: "`.dev/stack.yml` not found — run `/R-env-setup` to generate it." and stop.
+
+Run all χ sequentially → single structured pass/fail report. ¬stop on first failure — run all for complete picture.
+
+## Pipeline
+
+| Step | ID | Required | Verifies via | Notes |
+|------|----|----------|---------------|-------|
+| 1 | scope | ✓ | χ set defined | — |
+| 2 | run-checks | ✓ | exit codes captured | continue-on-failure |
+| 3 | report | ✓ | report printed | — |
+| 4 | failure-details | — | error lines shown | ∃ failures |
+| 5 | verdict | ✓ | pass/fail declared | — |
+
+## Pre-flight
+
+Success: ∀ χ ∈ scope → σ = pass
+Evidence: Report shows "Result: All checks passed"
+Steps: scope → run-checks → report → verdict
+¬clear → STOP + ask: "Quick or full validation?"
+
+## Usage
+
+```
+/R-validate              → Run all checks
+/R-validate --quick      → Lint + typecheck only (fastest)
+/R-validate --full       → All checks including license, coverage, optional falsify
+/R-validate --affected   → Only check files changed vs main
+```
+
+## Instructions
+
+### 1. Scope
+
+| Flag | χ set |
+|------|-------|
+| (none) | lint, typecheck, test, env, i18n |
+| `--quick` | lint, typecheck |
+| `--full` | lint, typecheck, test, test:coverage, env, i18n, license, falsify |
+| `--affected` | lint (affected), typecheck:affected, test:affected |
+
+### 2. Run χ Sequentially
+
+∀ χ ∈ scope: run command, capture stdout+stderr + exit code. Record: name, σ, duration, error summary (first 5 lines if failed).
+
+**¬raw runner** — always use `{commands.*}` from stack.yml. Command ¬defined → σ := ⏭ skip.
+
+**falsify** (optional, `--full` only): prefer `bash ${CLAUDE_PLUGIN_ROOT}/skills/pr/run-falsify.sh --verify artifacts/reviews/{N}-falsify.json` when JSON exists → require `oracle_ok=true`. Else if `{commands.test:falsify}` / `package.json` `test:falsify` **execs the plugin helper** → run it. Else σ := ⏭ skip. ¬fail the suite solely because a consumer repo has no map yet. Stub consumer scripts that do not invoke the helper → ⏭ skip (¬pass).
+
+| χ | Command | Timeout |
+|---|---------|---------|
+| Lint | `{commands.lint}` | 60s |
+| Typecheck | `{commands.typecheck}` | 120s |
+| Typecheck (affected) | `{package_manager} run typecheck:affected` | 120s |
+| Test | `{commands.test}` | 180s |
+| Test (affected) | `{package_manager} run test:affected` | 180s |
+| Test coverage | `{package_manager} run test:coverage` | 300s |
+| Env check | `{package_manager} run env:check` | 10s |
+| i18n | `{package_manager} run i18n:check` | 30s |
+| License | `{package_manager} run license:check` | 30s |
+| Falsify | `{commands.test:falsify}` ∨ `{package_manager} run test:falsify` | 180s |
+
+### 3. Report
+
+```
+Validate Report
+═══════════════
+
+  Check          │ Status │ Duration │ Notes
+  Lint           │ ✅ pass │ 2.1s     │ —
+  Typecheck      │ ✅ pass │ 8.3s     │ —
+  Test           │ ❌ FAIL │ 12.4s    │ 2 failed, 48 passed
+  Env check      │ ✅ pass │ 0.3s     │ —
+  i18n           │ ⚠️ warn │ 1.1s     │ 3 missing keys in fr.json
+  ─────────────────────────────────────────────
+  Result: FAIL (4/5 passed, 1 failed)
+  Total time: 24.2s
+```
+
+### 4. Failure Details
+
+∃ χ ∧ σ = ❌ → append failures. First 10 error lines per failing χ.
+
+```
+Failures
+────────
+Test:
+  FAIL src/auth/login.test.ts > should validate token
+    AssertionError: expected undefined to be defined
+  FAIL src/api/health.test.ts > should return 200
+    Error: ECONNREFUSED
+```
+
+### 5. Verdict
+
+- ∀ χ pass → `All checks passed. Safe to push.`
+- ∃ χ fail → `{N} check(s) failed. Fix before pushing.`
+- `--quick` ∧ ∀ pass → `Quick checks passed. Run /R-validate for full check.`
+
+## Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Command not found | σ := ⚠️ warn, "command not available" |
+| Command times out | σ := ❌ FAIL, "timed out after Xs" |
+| ¬test files found | σ := ⏭ skip |
+| ¬`test:falsify` script ∧ ¬`{commands.test:falsify}` | σ := ⏭ skip (optional χ) |
+| Docker ¬running (env/db) | σ := ⚠️ warn, ¬fail |
+| Running in worktree | No special handling needed |
+
+## Safety Rules
+
+1. **Read-only** — ¬modify files
+2. **¬auto-fix** — report issues, user decides
+3. **Run ALL χ** — ¬short-circuit on first failure
+4. **`{commands.*}`** — always use commands from stack.yml, never raw runner (Bun runner ≠ Vitest)
+
+## Chain Position
+
+- **Phase:** Verify
+- **Predecessor:** `/R-ci-watch`
+- **Successor:** `/R-dev-review`
+- **Class:** adv (continuous flow, no gate)
+
+## Task Integration
+
+- `/R-dev` owns the dev-pipeline task lifecycle externally
+- This skill does NOT update its own dev-pipeline task
+- Sub-tasks created: none
+
+## Exit
+
+- **All pass via `/R-dev`:** return control silently. ¬write summary. ¬ask user. ¬announce `/R-dev-review`. `/R-dev` re-scans and advances.
+- **All pass standalone:** print verdict block + `Next: /R-dev-review`. Stop.
+- **Failure:** return error. `/R-dev` presents Retry | Skip | Abort.
+
+$ARGUMENTS

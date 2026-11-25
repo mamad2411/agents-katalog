@@ -1,0 +1,229 @@
+---
+type: Skill
+name: design-performance-audit
+description: "Analyze GTmetrix (and PageSpeed) reports for WordPress sites and produce a prioritized optimization plan, a WPCode-ready PHP snippet, and a self-contained HTML summary report. Covers PDF extraction with pypdf, live-page cross-referencing, WordPress fix mapping (Elementor, WooCommerce, Breeze, reCAPTCHA, duplicate Google tags, WebP), and staging-test discipline. Use when asked to review GTmetrix reports, optimize page speed or Core Web Vitals, or produce an optimization report for a WordPress site."
+license: Proprietary. See LICENSE.txt
+metadata:
+  type: Skill
+---
+
+# WordPress Performance Audit (GTmetrix)
+
+End-to-end workflow for turning a GTmetrix report (plus a captured copy of the
+live page) into a prioritized fix list, a site-specific WPCode-ready PHP
+optimization snippet, and a shareable HTML report. Works for any WordPress
+site; the fix mapping in `references/common-fixes.md` is the core knowledge
+base.
+
+## When to use
+
+Trigger when the user asks to:
+
+- Review GTmetrix / PageSpeed / Lighthouse reports for a WordPress site
+- Optimize page speed, Core Web Vitals (LCP / CLS / TBT), or page weight
+- Create a custom optimization snippet for a WordPress site
+- Produce an optimization report ("what's done / what's left") from an audit
+
+## Inputs you need
+
+| Input | Where | Notes |
+|---|---|---|
+| GTmetrix PDF(s) | Project folder (e.g. `projects/<site>/`) | Full + summary PDFs of the SAME run share a run ID/timestamp — they are one report, not two. A before/after comparison needs two different runs. |
+| Page HTML capture | `projects/<site>/<page>.html` (view-source) | Grep it to confirm what the report flags (script tags, img attributes, inline styles). If missing, `fetch` the live URL — the HTML won't be identical to the cached run but is usually close enough. |
+| Existing site code | `projects/<site>/functions.php`, snippet files | Shows what's already been optimized; avoids recommending things already done. |
+
+## Step 1 — Extract the report(s)
+
+Use Python + `pypdf` from the site's project folder:
+
+```bash
+python -c "import pypdf" 2>/dev/null || pip install pypdf
+```
+
+```python
+import pypdf
+r = pypdf.PdfReader('GTmetrix-report-<site>-<id>-full.pdf')
+for i, p in enumerate(r.pages):
+    print(f'--- PAGE {i+1} ---')
+    print(p.extract_text())
+```
+
+Extract and note:
+
+1. **Scores & metrics** — Performance/Structure %, LCP, TBT, CLS, TTFB, Fully
+   Loaded, total size, request count.
+2. **Top Issues** — the impact-ranked list on page 1.
+3. **Waterfall / third-party tables** — total bytes per third-party
+   (GTM, Yotpo, gstatic/reCAPTCHA, fonts), plus `(canceled)` entries.
+4. **Every audit table** — payload URLs with transfer sizes, LCP element,
+   CLS shift elements, cache-policy URLs, @import chains, render-blocking
+   list, unused JS/CSS totals, image-size savings.
+
+Key reading: the LCP breakdown (TTFB / Load Delay / Load Time / Render Delay)
+tells you whether lazy-loading, server time, or render work is the LCP cost.
+
+## Step 2 — Cross-reference the live page
+
+Grep the saved HTML capture for the flagged items to locate the SOURCE (this
+is what turns "the report says X" into "fix Y in Z"):
+
+- `recaptcha` → which form/popup, which widget handle enqueues it
+- `gtag|gtm|local_ga` → how many analytics paths are active, who loads what
+- `jquery.com|code.jquery` → hardcoded CDN scripts vs WP core handles
+- `@import|fonts.googleapis` → which plugin stylesheet imports fonts
+- the LCP `<img>` → check `loading="lazy"` and the srcset/sizes
+- `elementor-invisible|_animation` → entrance animations causing CLS
+- `@font-face|font-display` → font loading strategy
+
+## Step 3 — Review existing site code
+
+Read the project's `functions.php` / snippet files to inventory what's already
+deployed (caching, lazy-load, schema, custom handlers). Also look for
+anti-patterns in the deployable source itself, e.g. `rand()`/`time()` cache
+busting (kills browser/CDN caching — fix with `filemtime()`).
+
+## Step 4 — Map audits to fixes
+
+Use `references/common-fixes.md` — it maps each GTmetrix audit to concrete
+WordPress/Elementor/WooCommerce/Breeze fixes with handle names, filter names,
+and risk levels. Only include fixes that match this site's actual findings.
+
+## Step 5 — Produce the prioritized action list
+
+In the final message, present a table ordered by impact:
+
+| Priority | Action | Est. benefit | Where |
+
+- **High** = large bytes off the wire or LCP/CLS blockers (reCAPTCHA,
+  duplicate analytics, PNG→WebP, eager LCP image).
+- **Medium** = duplicate libs, CLS details, plugin CSS off-loading, cache fixes.
+- **Low** = polish (minify, srcset gaps, preconnect, font woff2).
+
+Separate **done/in place** from **still to do**. State estimated savings in KB
+or ms, and always name WHERE the change is made (widget setting, Breeze
+setting, WPCode, child theme file).
+
+## Step 6 — Generate the custom optimization snippet
+
+Create `<site>/performance-optimizations.php` from
+`templates/optimization-snippet.php`:
+
+- **Only include blocks that match the site's findings** — no copy-paste of
+  irrelevant blocks.
+- Safe blocks (preconnect, font-display swap, CLS CSS) stay enabled.
+- Risky blocks (script dequeues, reCAPTCHA lazy-load, conditional asset
+  removal) stay commented with an explicit "test on staging" warning.
+- Keep the repo conventions: `defined( 'ABSPATH' ) || exit;` guard, one file
+  per feature, escaped output, deploy notes (WPCode → Auto Insert → Run
+  Everywhere).
+- If the site's deployable `functions.php` has fixable bugs (e.g. cache
+  busting), fix them there directly.
+
+## Step 7 — Generate the HTML report
+
+Create `<site>/<site>-optimization-report.html` from
+`templates/report.html`. Fill the `{{PLACEHOLDERS}}`, keep it self-contained
+(no external assets, print-friendly), then validate:
+
+```bash
+python -c "
+from html.parser import HTMLParser
+VOID={'meta','link','br','hr','img','input'}
+class P(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.stack=[]; self.errors=[]
+    def handle_starttag(self, tag, attrs):
+        if tag not in VOID: self.stack.append(tag)
+    def handle_startendtag(self, tag, attrs):
+        if tag not in VOID: self.errors.append(f'self-closing non-void <{tag}>')
+    def handle_endtag(self, tag):
+        if not self.stack: self.errors.append(f'unmatched </{tag}>'); return
+        if self.stack[-1]==tag: self.stack.pop()
+        else: self.errors.append(f'mismatch </{self.stack[-1]}> vs </{tag}>')
+p=P(); p.feed(open('<file>.html', encoding='utf-8').read())
+print('errors:', p.errors or 'none'); print('unclosed:', p.stack or 'none')
+"
+```
+
+(Notes for a real report: strip HTML comments before parsing, because a bare
+`<!-- ... -->` is tokenised as a tag named `!--` and poisons the stack, producing
+a cascade of false "unmatched" errors. Strip `<style>` as well. `<p>`, `<li>`,
+`<dt>`/`<dd>`, `<tr>`/`<td>`, `<th>` and `<thead>`/`<tbody>` also legitimately omit
+their end tags, so treat an implicit close of those as clean rather than an error.)
+
+### Authoring mechanics (learned 2026-11-10)
+
+- Do not trust one large write. A 60 KB `write_file` call silently corrupted the
+  HTML by injecting ~360 stray closing tags mid-sentence (`...Lashan Silva</p>
+  (CEO, Enhan...`, `L</p></strong>ashan`). The tag counts still balanced overall,
+  so only a visual read caught it.
+- Write big deliverables in chunks: `cat >> file <<'EOF'` at 6 KB or less per call.
+  A single terminal command is capped near 8 KB and truncates silently (a 60 KB
+  heredoc died at 8,109 bytes with `here-document delimited by end-of-file`).
+- `file://` is blocked in the browser tool, so a local report cannot be rendered
+  for review. Validate statically, then open it yourself.
+- Screen for the injected-tag signature: `grep -oE '[A-Za-z]</[a-z]+>'`. Normal
+  inline adjacency (`2026</strong>`, `badge</span>`) is fine, so eyeball the hits
+  for closing tags appearing mid-prose or inside a word.
+- Verify the TOC/anchors resolve (`href="#x"` must match `id="x"`), that entity
+  escaping was not doubled (`&amp;amp;`), and that no duplicate `id` values exist.
+- If the user reports odd line breaks, RE-VERIFY THE FILE ON DISK BEFORE EDITING.
+  A stale browser tab or editor preview of a superseded version reproduces old
+  breakage and sends you debugging something already fixed.
+
+## Step 8 — Verify after deployment (the "check again" pass)
+
+After the user enables the snippet, re-inspect the LIVE page to confirm the
+changes actually landed and measure the delta. `fetch` is NOT suitable here —
+it returns Markdown and strips the `<link>`/`<img>` attributes you need. Use
+the browser instead:
+
+1. `browser_navigate` to the URL, then `browser_evaluate` to read the DOM:
+   - Confirm preconnect hints: `[...document.querySelectorAll('link[rel=preconnect],link[rel=dns-prefetch]')].map(l => l.href)`
+   - Confirm the LCP hero lost its lazy attribute: find the hero `img` and
+     read `img.getAttribute('loading')` (should be `null`/absent; also check
+     the `class` for a theme lazy-load marker like Flatsome's
+     `lazy-load-active`).
+   - Count `img[data-src]` / `img[loading=lazy]` vs `img[loading=eager]` to
+     see the lazy-load surface.
+2. Read **navigation + resource timings** for a head-to-head against the
+   report: `performance.getEntriesByType('navigation')[0]` (TTFB,
+   domContentLoaded, loadEvent) and `performance.getEntriesByType('resource')`
+   to find the hero's `responseEnd` and `transferSize`.
+3. **Warm-cache caveat (important):** a browser session that already loaded
+   the page will report the hero's `transferSize: 0` (served from cache) and
+   a deceptively low LCP. State this plainly — the structural fix (e.g.
+   `loading` removed) is still verifiable, but for a real number you must
+   re-run GTmetrix cold and archive the new PDF to diff before/after.
+4. Check the console for NEW errors introduced by the snippet (e.g. a
+   dequeue that broke a script): `browser_console_messages` with
+   `level="error"`.
+5. **Unexplained layout shift? Instrument the first frame.** If the CLS
+   element's geometry looks stable in normal warm runs but the report still
+   flags it, the shift happens in the first-frames window (cold CSS).
+   Capture it: `addInitScript` + rAF loop recording
+   `getBoundingClientRect()` of the suspect element + its dropdowns/children
+   from the very first frame, compress the timeline to change points. A
+   huge height drop right after first paint (e.g. 1202px → 170px header)
+   with dropdowns `display:block` at frame 1 = the Elementor nav-menu
+   first-paint flash — see `references/common-fixes.md` → CLS. Validate a
+   CSS fix by rewriting the served HTML with `page.route()` (inject the
+   style into `<head>`) and confirming the first-frame geometry already
+   equals the final geometry.
+
+Also confirm whether the changes are truly live vs. cached (a page-cache/CDN
+may serve a stale copy; hard-reload or purge cache before concluding "not
+working").
+
+## Rules & discipline
+
+- **One report ≠ two reports.** Two PDFs with the same run ID/timestamp are
+  the full + summary of one run. Say so if the user believes there are two.
+- **Never deploy risky changes to production.** Anything that dequeues
+  scripts, lazy-loads reCAPTCHA, or conditionally removes plugin assets must
+  be tested on staging first (forms, popups, menus, icons, submit flows).
+- **Never edit files inside containers** on this stack — edit host paths.
+- **Archive the next GTmetrix PDF** into the project folder after deployment
+  so the next review can diff before/after.
+- **State what you could not verify** (e.g. which plugin enqueues a script
+  without wp-admin access) and give the diagnostic steps instead of guessing.

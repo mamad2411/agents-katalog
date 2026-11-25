@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/painhardcore/pstack (path: skills/architect/SKILL.md, branch: master)
+- mined: 2026-11-23
+- desc: Sketch types, signatures, and module structure before code, then stay in the loop while implementation fills in. Use for /architect, 'architect this', 'design this', or non-trivial work where jumping 

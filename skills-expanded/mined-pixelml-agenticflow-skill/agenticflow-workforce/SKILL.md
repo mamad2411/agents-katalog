@@ -1,0 +1,205 @@
+---
+name: agenticflow-workforce
+description: "Deploy and operate a multi-agent AgenticFlow workforce — a DAG of agents that hand off to each other (trigger → coordinator → worker agents → output). Use when the user asks for a team, pipeline, or multi-agent system: research-then-write, triage-then-specialist, dev shop, marketing agency, sales team, content studio, support center, Amazon seller team. Choose this skill over agenticflow-agent when the ask mentions 'team', 'workforce', 'pipeline', 'multiple agents', 'delegation', 'handoff', or names a built-in blueprint. Provides the `af workforce *` command surface, blueprint decisions, graph wiring, MCP attach recipes, and public URL publishing."
+compatibility: Claude Code, Claude Desktop, Codex, Cursor, Gemini CLI
+metadata:
+  author: PixelML
+  version: "3.2.0"
+  license: MIT
+triggers:
+  - "workforce"
+  - "multi-agent"
+  - "agent team"
+  - "deploy a team"
+  - "agent pipeline"
+  - "research-then-write"
+  - "triage-then-specialist"
+  - "dev shop"
+  - "marketing agency"
+  - "sales team"
+  - "content studio"
+  - "support center"
+  - "amazon seller"
+  - "blueprint"
+---
+
+# AgenticFlow Workforce
+
+A workforce is an AgenticFlow-native **DAG of agents** — typically `trigger → coordinator agent → worker agents → output` — that hand off structured results to each other. Use this when orchestration between roles matters.
+
+## ⚠️ When NOT to use this skill
+
+If the user wants a **single chat endpoint, a customer-facing bot, one assistant, or routing-by-prompt inside one agent**, use `agenticflow-agent` instead. A single-agent solution with rules in the system prompt is simpler, cheaper, and easier to iterate on. Workforces are for genuine multi-role orchestration.
+
+## Orient first
+
+```bash
+af bootstrap --json
+```
+
+Returns `auth`, `agents`, `workforces`, `blueprints`, `commands`, `playbooks`, `whats_new`, `_links`. Extract:
+
+- `auth.project_id` — required for agent creation (the agents inside your workforce)
+- `auth.workspace_id`
+- `_links.workspace` — **surface this URL to the user right away**: *"Your workspace is at `<_links.workspace>` — open it anytime to see the workforce I'm building."* The user needs a human-first anchor before the first mutation
+- `blueprints[]` — the 6 built-in team templates, each with required/optional slot counts
+- `workforces[]` — any existing workforces in the workspace (empty initially is normal; check `data_fresh` if false — that means the backend was unreachable, not the workspace empty)
+
+If `data_fresh: false` in the bootstrap response, the backend is degraded — **do not mutate**. Run `af doctor --json --strict` and fix auth/network before proceeding.
+
+## Built-in blueprints
+
+| Blueprint | Required slots | Optional |
+| --- | --- | --- |
+| `autonomous-desk` ⭐ | planner, researcher, critic, editor | — |
+| `batch-research-desk` | planner, researcher, editor | — |
+| `dev-shop` | ceo, engineer | designer, qa |
+| `marketing-agency` | ceo, cmo, designer | researcher |
+| `sales-team` | ceo, researcher, general | — |
+| `content-studio` | ceo, cmo, engineer | designer |
+| `support-center` | ceo, general | researcher |
+| `amazon-seller` | ceo, cmo, engineer, researcher | general |
+| `tutor` | ceo, cmo, engineer, researcher | general |
+| `freelancer` | ceo, cmo, engineer, researcher | general |
+
+> **Heads-up:** the `tutor` and `freelancer` blueprints replace the legacy `af pack install tutor-pack` / `freelancer-pack` flow as of CLI v1.7.0. `af pack *` still works but is deprecated (sunset 2026-10-14).
+
+## One-command deploy (v1.6+)
+
+Always preview with `--dry-run` first:
+
+```bash
+af workforce init --blueprint <slug> --name "<name>" --dry-run --json
+af workforce init --blueprint <slug> --name "<name>" --json
+```
+
+`init` creates the workforce + one real agent per required slot + the wired graph — in a single atomic call. On failure, every resource is rolled back automatically; inspect `details.rolled_back_agents` and `details.rolled_back_workforce` in the error.
+
+Use `--include-optional-slots` to fill every slot, not just required ones. Use `--model <id>` (e.g. `agenticflow/gemini-2.0-flash`) to override the default model for all auto-created agents. (Slots that a blueprint pins to a specific model — e.g. the desk's JSON routers — keep their pinned model regardless of `--model`.)
+
+## The high-autonomy pattern: `autonomous-desk` ⭐
+
+When the ask is a **mission with built-in quality control** ("research X and make sure it's verified", "self-correcting team", "plan → execute → review"), deploy the desk:
+
+```bash
+af workforce init --blueprint autonomous-desk --name "<name>" --json
+```
+
+Topology: `plan → route → execute → critic QA gate → auto-revision → editor → output`. The planner and critic return structured JSON that drives real condition gates; rejected drafts loop through a revision pass automatically — component failures and thin drafts become revisions, not shipped garbage.
+
+To give the desk a deterministic execution route (a deployed workflow it can send suitable missions through — cheap repeatable baseline, agent judgment spent only on the delta):
+
+```bash
+af workflow update --workflow-id <wf_id> --body '{... "public_runnable": true ...}' --json   # REQUIRED
+af workforce init --blueprint autonomous-desk \
+  --tool-workflow-id <wf_id> \
+  --tool-workflow-purpose "stock watchlist brief for a ticker" \
+  --tool-workflow-input '{"ticker": "{{nodes.agent_planner.output.structured_output.workflow_input_primary}}"}' \
+  --json
+```
+
+The attached workflow **must** be `public_runnable: true` or its invocations fail with "Workflow is not public runnable".
+
+For **multi-target missions** ("brief me on each of these N competitors/tickers/prospects"), use the loop-topology desk instead:
+
+```bash
+af workforce init --blueprint batch-research-desk --json
+```
+
+Planner splits the mission into `targets[]`, a loop node runs the researcher once per target, the editor composes the comparative digest. Loop-node rules (body subgraphs, entry/exit edges, `{{loop_item.*}}` templating, the double-deploy requirement for parented nodes) are in [graph-building.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/workforce/graph-building.md) §8.
+
+## Custom workforce (no blueprint fits)
+
+If the user's ask is a precise custom pipeline that no blueprint matches (e.g. a 2-step researcher → writer flow that doesn't fit the 3–5-agent blueprints), skip blueprints:
+
+1. Inspect the expected graph shape:
+   ```bash
+   af schema workforce --field schema --json
+   ```
+2. Create metadata only:
+   ```bash
+   af workforce create --body '{"name":"Raul Content Pipeline","description":"..."}' --json
+   ```
+3. Create each agent separately via `af agent create` (see `agenticflow-agent` skill).
+4. Build a graph JSON with `trigger → researcher (agent node, agent_id from step 3) → writer (agent node) → output`.
+5. Deploy the graph atomically:
+   ```bash
+   af workforce deploy --workforce-id <id> --body @graph.json --json
+   ```
+6. Validate:
+   ```bash
+   af workforce validate --workforce-id <id> --json
+   ```
+
+Edge `connection_type` is one of `next_step`, `condition`, `ai_condition`. Agent nodes **require** a real `agent_id` in `input`.
+
+**Before hand-authoring ANY graph, read [graph-building.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/workforce/graph-building.md)** (or `af playbook mas-graph-building`). The non-obvious, field-verified rules in one place:
+
+- Node refs need the `.output` hop — `{{nodes.<name>.output.last_message}}`, `{{nodes.<name>.output.structured_output.<field>}}`. **Wrong refs render as empty strings, not errors** — the run "succeeds" with hollow prompts. Smoke-run once and check `node_start.node_input` in the event stream.
+- Cross-branch state: `state_modifier` writes `variables.<x>`, readers use `{{variables.<x>}}`.
+- Condition-node outgoing edges: `connection_type: "condition"` + `{branch_index: N}`; `-1` = default branch (always wire one).
+- Structured-output agents need the `{name, strict, schema}` wrapper AND `"additionalProperties": false` on every object level; pin them to `agenticflow/gpt-4o-mini`-class models.
+- Whole-workflow invocation = `plugin` node wrapping `call_other_workflow` (`workflow_input` is a JSON *string*; target workflow must be `public_runnable`); result at `{{nodes.<n>.output.output.workflow_output.content}}`.
+- `deploy` diffs nodes by name and can't change a node's type in place — rename the node to change type.
+
+## Run + publish
+
+```bash
+af workforce run --workforce-id <id> --trigger-data '{"message":"..."}'
+# Streams SSE events — each line is one JSON event. The CLI auto-wraps your
+# payload in {trigger_data: ...} — don't wrap it yourself.
+
+af workforce publish --workforce-id <id> --json
+# Mints a public_key + public_url — hand this to teammates so they can run the
+# workforce without platform auth.
+
+af workforce versions publish --workforce-id <id> --version-id <v> --json
+# Snapshot + publish a specific version (draft/published/restore workflow).
+```
+
+## Attach MCP tools per agent (not per workforce)
+
+MCP clients attach to individual agents, not to the workforce graph. After `init`, use:
+
+```bash
+af mcp-clients list --name-contains "google sheets" --fields id,name --json
+af mcp-clients inspect --id <mcp_id> --json       # Check pattern before attach
+af agent update --agent-id <agent_id> --patch --body '{"mcp_clients":[{"mcp_client_id":"<id>","run_behavior":"auto_run","tools":{}}]}' --json
+```
+
+See the `agenticflow-mcp` skill for the Pipedream vs Composio write-safety distinction.
+
+## Cleanup
+
+Workforces + agents are billed while they exist. Delete test deploys:
+
+```bash
+af workforce delete --workforce-id <id> --json
+# For each auto-created agent id captured from init:
+af agent delete --agent-id <id> --json
+```
+
+Both return `{"schema":"agenticflow.delete.v1","deleted":true,"id":"...","resource":"..."}` on success.
+
+## On errors
+
+All API errors return `{schema: "agenticflow.error.v1", code, message, hint, details}`. Read `hint` first — it points at the recovery command (e.g. `af <resource> list` on a 404). For 422s, inspect `details.payload.detail` for field-level errors.
+
+`workforce run` occasionally returns a backend `Failed to retrieve user info for user_id: ...` 400 — this is a known server-side issue with API-key auth, not a CLI bug. **Working fallback:** publish the workforce and run through the public endpoint, which doesn't do the user lookup:
+
+```bash
+af workforce publish --workforce-id <id> --json    # → run_url
+curl -X POST "https://api.agenticflow.ai/v1/workforce/public/<public_key>/run" \
+  -H 'Content-Type: application/json' \
+  -d '{"trigger_data":{"message":"..."},"stream":true}'
+```
+
+The web UI (browser session auth) is also unaffected.
+
+## Reference
+
+- [cli-setup.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/cli-setup.md) — install + auth
+- [graph-building.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/workforce/graph-building.md) — field-verified MAS graph rules (templating, gates, state, workflow-in-workforce)
+- [packs.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/packs.md) — blueprint details
+- [troubleshooting.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/troubleshooting.md)
+- [glossary.md](https://github.com/PixelML/agenticflow-skill/blob/main/reference/glossary.md)

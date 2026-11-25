@@ -1,0 +1,401 @@
+---
+name: create-operator
+description: "Distill an Arknights operator into an AI Skill. Generate Knowledge + Persona with 5-layer structure, evolution support. | 将明日方舟角色蒸馏成AI Skill，生成知识库+5层人格，支持持续进化。"
+argument-hint: "[operator-name-or-slug]"
+version: "3.6.0"
+user-invocable: true
+allowed-tools: Read, Write, Edit, Bash
+---
+
+> **Language / 语言**: 本 Skill 支持中英文。根据用户第一条消息的语言，全程使用同一语言回复。
+
+# 明日方舟角色.skill 创建器
+
+## 触发条件
+
+当用户说以下任意内容时启动：
+- `/create-operator`
+- "帮我创建一个明日方舟角色skill"
+- "我想蒸馏一个角色"
+- "新建角色skill"
+- "给我做一个XX的明日方舟角色skill"
+
+当用户对已有角色 Skill 说以下内容时，进入进化模式：
+- "我有新资料" / "追加"
+- "这不对" / "她不会这样" / "她应该是"
+- `/update-operator {slug}`
+
+当用户说 `/list-operators` 时列出所有已生成的角色。
+
+---
+
+## 工具使用规则
+
+| 任务 | 使用工具 |
+|------|---------|
+| 读取游戏文本/剧情文本 | `Read` 工具（原生支持） |
+| 读取图片/立绘 | `Read` 工具（原生支持图片） |
+| 读取 MD/TXT/JSON 文件 | `Read` 工具 |
+| 解析游戏数据 / PRTS Wiki | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/game_data_parser.py --source prts --name {角色名}` 或 `--source local --file {文件路径}` |
+| 提取剧情对话 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/story_extractor.py --chapter {剧情章节名} --character {角色名} --output /tmp/story.json` |
+| 语境标注（构建 context.json） | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/context_annotator.py --operator-json {game_data_parser输出} --story-json {story_extractor输出} --knowledge-md {knowledge路径} --output operators/{slug}/context.json` |
+| 分析角色对话指纹 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/dialogue_fingerprint.py --input {对话文件} --format {plain\|prts-json}` 或 `--context-json operators/{slug}/context.json`（语境化模式） |
+| 构建角色关系图谱 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/relationship_graph.py --input {知识库文件} --format {markdown\|plain}` 或 `--context-json operators/{slug}/context.json`（语境化模式） |
+| 话语行为分析 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/speech_act_analyzer.py --context-json operators/{slug}/context.json [--output-profile profile.json]` |
+| 时序切片分析 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/temporal_slicer.py --context-json operators/{slug}/context.json [--output slices.json]` |
+| 验证 Persona 一致性 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/persona_validator.py --persona {persona路径} --dialogues {对话数据路径} --format {plain\|prts-json\|csv}` |
+| 交叉验证角色设定 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/canon_checker.py --sources {来源1} {来源2} ... [--misconceptions {自定义误解库}]` |
+| 写入/更新 Skill 文件 | `Write` / `Edit` 工具 |
+| 注入量化数据到 Prompt | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/data_injector.py --slug {slug} --base-dir {base} [--section fingerprint\|speech_acts\|relationships\|temporal\|context] [--output injected.md]`（留空则输出到 stdout） |
+| 版本管理 | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/version_manager.py` |
+| 列出已有 Skill | `Bash` → `python3 ${OPERATOR_SKILL_DIR}/tools/skill_writer.py --action list` |
+
+**基础目录**：Skill 文件写入 `<项目根>/operators/{slug}/`（可用 `--base-dir` 覆盖；
+`ARKNIGHTS_OPERATORS_DIR` 环境变量优先，其次项目根 `operators/`，最后回退 `./operators`）。
+
+### 输出目录产物（v3.6.0 起）
+
+`operators/{slug}/` 下的产物文件名由 `tools/artifacts.py` 统一提供（禁止硬编码）：
+
+| 文件 | 生产者 | 说明 |
+|---|---|---|
+| `operator_data.json` | `game_data_parser.py` | 角色原始数据（语音/档案） |
+| `story_data.json` | `story_extractor.py` | 剧情对话（旧名 `story.json` 仍可读，会告警） |
+| `context.json` | `context_annotator.py` | 语境标注（场景/对象/时期） |
+| `fingerprint.json` | `dialogue_fingerprint.py` | 8 维语言指纹 |
+| `speech_act_profile.json` | `speech_act_analyzer.py` | 话语行为画像 |
+| `temporal_slices.json` | `temporal_slicer.py` | 时序切片与演变规则 |
+| `relationship_graph.json` | `relationship_graph.py` | 关系图谱 |
+| `validation.json` | `persona_validator.py` | Persona 一致性报告 |
+| `persona_validation.json` | `canon_checker.py` | 设定交叉验证报告 |
+| `meta.json` / `SKILL.md` | `skill_writer.py` | 元数据（字段级 merge）与入口文件 |
+
+**退出码**：`0` 成功；`1` 运行期失败；`2` 用法/前置错误（含资产自检失败、`confirm_required`）。
+
+### 工具详情
+
+#### dialogue_fingerprint.py — 对话指纹分析器
+从角色语音/对话文本中自动提取 8 个维度的量化语言特征：
+1. **句式长度分布** — 统计分布分析（百分位数 + 变异系数 + 节奏稳定性判断）
+2. **停顿标记** — 省略号、破折号的使用频率与模式
+3. **自称模式** — "我"/"吾"/省略自称的频率
+4. **情感词汇** — 12 类情感（含嘲讽/绝望/好奇/戏谑）的加权词汇密度（权重 0.5-1.5）
+5. **修辞模式** — 反问、排比、明喻、暗喻、设问的使用频率（支持暗喻检测如"你是光"）
+6. **称呼模式** — 对不同人的差异化称呼
+7. **自然意象偏好** — 花朵/星空/大地等意象的出现频率
+8. **口头禅/标志性短语** — n-gram 频率分析，自动发现角色特有的高频短语
+
+支持**语境化模式**（`--context-json`）：按场景/对象/时期分片分析，输出各分片指纹及与全局的差异（shifts），直接写入 Persona Layer 2-4。
+
+#### relationship_graph.py — 关系图谱构建器
+从角色资料/剧情文本中自动提取角色关系网络：
+- 自动识别文本中的角色名（内置明日方舟角色名库，支持 `--operator-db` 加载自定义名库）
+- 检测 12 种关系类型（亲属/战友/对抗/信任/背叛/师徒/情感等）
+- 改进的方向判断（语法模式 + 关键词距离 + 语序综合判断）
+- 计算关系可信度（基于出现频率和多来源交叉）
+- **关系强度量化**（0.0-1.0）：综合共现频率、情感词密度、直接对话次数
+- **关系演变追踪**：检测跨时期关系强度变化（加深/疏远），输出演变轨迹
+- 支持**语境化模式**（`--context-json`）：按时期分片提取关系，计算跨时期关系演变轨迹（trajectories），结果回写 context.json 的 annotated_relations
+
+#### speech_act_analyzer.py — 话语行为分析器
+从角色对话中分类话语行为（邀请/回避/质问/承诺/宽慰/克制/存在确认等）：
+- 基于规则的话语行为分类（7 种核心类型）
+- **上下文感知分类**：考虑前后文调整分类置信度（如质问后的省略号更可能是回避）
+- **行为链检测**：识别角色的典型行为序列（如 question→evade→comfort 接纳仪式）
+- 按场景/对象/时期的行为分布统计
+- 自动检测行为模式并生成可执行规则（如"高回避倾向""选择性邀请""克制型情感表达"）
+- 输出 speech_act_profile.json，回写 context.json 的 speech_acts 字段
+
+#### temporal_slicer.py — 时序切片器
+按 timeline 的 period 切片分析角色语言，检测跨期演变：
+- 按 period 分组计算切片级指标（句式长度/省略号/否定句/话语行为/自称等）
+- **统计显著性检验**：小样本警告（<5 条时标记为不可靠）+ 效应量计算
+- **情感弧线检测**：识别跨时期情感趋势（U型/下降/平稳/波动）
+- 相邻时期比较，检测显著偏移
+- 对象维度：同一时期内对不同人的表达差异
+- 生成可写入 Persona Layer 2/4 的时序演变规则
+
+#### context_annotator.py — 语境标注器
+将所有原始数据统一标注为语境化数据模型：
+- 合并 game_data_parser、story_extractor、语音数据
+- **多信号场景分类**：标题关键词 + 内容情感 + 对话对象 + 时间段综合判断
+- **对话对象内容推断**：从对话内容中识别称呼模式（如"博士，你来了"→对象是博士）
+- 自动推断场景类型、对话对象、时期
+- 输出 context.json（统一数据中间层，下游所有工具的消费源）
+
+#### story_extractor.py — 剧情对话提取器
+从 PRTS Wiki 剧情页面提取角色对话：
+- 自动识别目标角色的台词
+- **说话者名称标准化**：处理括号注释（如"特蕾西娅(幼年)"→"特蕾西娅"）和别名映射
+- **舞台指示情感标注**：从括号内描述提取情感（如"目光柔和"→温柔）
+- 推断场景和时期
+- 提取旁白/舞台指示
+- 输出结构化 JSON
+
+#### persona_validator.py — Persona 一致性验证器
+用角色已知对话验证生成的 Persona 是否准确：
+- **Layer 0 验证**：检测对话是否违反核心性格规则（如"从不用感叹号"→检测感叹号）
+- **Layer 2 验证**：检查口头禅出现频率、高频词是否确实高频、自称模式是否一致
+- **Layer 5 验证**：检测对话是否触碰禁忌
+- **风格一致性验证**：对比 Persona 描述与 fingerprint 量化数据（句式/停顿/情感/修辞）
+- 综合评分 A-D 等级，标注具体违反示例
+
+#### canon_checker.py — 设定交叉验证器
+从多个来源交叉验证角色设定，标注矛盾和可信度：
+- 自动提取设定声明（种族、阵营、身份、MBTI）
+- 多来源一致性比对（一致→confirmed / 不一致→conflicted / 单一来源→unverified）
+- **外置误解库**：从 `tools/_data/misconceptions.json` 加载，支持按角色扩展
+- **通用模式检测**：阵营混淆、关系误判、时间线错乱等通用误解模式
+- **角色一致性检查**：基于 persona.md 的 Layer 0 规则和 Layer 5 禁忌验证文本
+- 支持 `--misconceptions` 加载自定义误解库 JSON
+- 来源可信度评级（官方/Wiki > 社区考据 > 同人）
+
+#### data_injector.py — 数据注入器
+将工具链的量化分析结果注入到 Prompt 模板的占位符中：
+- 格式化对话指纹数据（句式/停顿/情感/修辞/口头禅）
+- 格式化关系图谱数据（关系类型 + 强度 + 演变）
+- 格式化时序切片数据（弧线 + 偏移）
+- 输出注入后的 Prompt 模板，确保 LLM 生成时参考真实数据而非空白模板
+
+---
+
+## 主流程：创建新角色 Skill
+
+### Step 1：基础信息录入（3 个问题）
+
+参考 `${OPERATOR_SKILL_DIR}/tools/_prompts/intake.md` 的问题序列，只问 3 个问题：
+
+1. **角色名称/代号**（必填）
+2. **基本信息**（一句话：阵营、身份、身份特征、关系网络）
+3. **性格画像**（一句话：MBTI/性格类型、核心特质、领导风格、行为标签）
+
+除名称外均可跳过。收集完后汇总确认再进入下一步。
+
+### Step 2：资料导入
+
+询问用户提供资料来源，展示多种方式供选择：
+
+```
+资料怎么提供？
+  [A] 游戏剧情文本
+      导入角色剧情、活动关卡文案、语音档案
+  [B] 角色档案/资料
+      游戏内的角色资料、立绘描述、天赋与技能描述
+  [C] 游戏数据 JSON
+      提供从 PRTS Wiki 或游戏数据中导出的 JSON
+  [D] 同人创作/二创
+      优秀的同人作品（文章、图片说明）
+  [E] 上传其他文件
+      PDF / 图片 / 任意文本
+  [F] 直接粘贴内容
+      把文字复制进来
+可以混用，也可以跳过（仅凭手动信息生成）。
+```
+
+---
+
+#### 方式 C：PRTS Wiki 直接获取 / 游戏数据 JSON
+
+**方式 C-1：从 PRTS Wiki 直接获取并解析（推荐）**
+
+```bash
+python3 ${OPERATOR_SKILL_DIR}/tools/game_data_parser.py \
+  --source prts \
+  --name {角色名} \
+  --output /tmp/operator_data_out.txt
+```
+
+然后 `Read /tmp/operator_data_out.txt`
+
+自动从 PRTS Wiki API 获取角色页面 wikitext，提取基本信息、档案、语音记录等结构化数据。
+支持干员页面和敌人/NPC 页面，自动识别页面类型。
+
+**方式 C-2：解析本地文件**
+
+```bash
+python3 ${OPERATOR_SKILL_DIR}/tools/game_data_parser.py \
+  --source local \
+  --file {文件路径} \
+  --output /tmp/operator_data_out.txt
+```
+
+支持格式：游戏解包数据 JSON、自定义格式的角色资料、已保存的 PRTS 页面 wikitext。
+
+> **提示**：部分角色在 PRTS 上可能使用不同名称（如特蕾西娅的干员版为「魔王」）。若 `--source prts` 提示页面未找到，可尝试使用该角色的其他名称。网络不可用时会自动降级为元数据模式（仅输出 slug + URL）。
+
+---
+
+如果用户说"没有文件"或"跳过"，仅凭 Step 1 的手动信息生成 Skill。
+
+### Step 3：分析资料
+
+将收集到的所有资料和用户填写的基础信息汇总，按以下两条线分析：
+
+**线路 A（Knowledge Skill）**：
+- 参考 `${OPERATOR_SKILL_DIR}/tools/_prompts/knowledge_analyzer.md` 中的提取维度
+- 运行 `relationship_graph.py` 自动提取关系网络（如有剧情文本）
+- 运行 `canon_checker.py` 交叉验证设定一致性（如有多个来源）
+
+**线路 B（Persona）**：
+- 参考 `${OPERATOR_SKILL_DIR}/tools/_prompts/persona_analyzer.md` 中的提取维度
+- 运行 `dialogue_fingerprint.py` 提取语言指纹（如有语音/对话数据）
+- 语言指纹结果直接用于支撑 Layer 2 表达风格的量化描述
+
+**语境化管线（推荐，当有 PRTS 数据时执行）**：
+
+当 game_data_parser 成功获取数据后，自动执行以下管线：
+
+1. **构建 context.json**（数据中间层）：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/context_annotator.py \
+     --operator-json /tmp/operator_data.json \
+     --story-json /tmp/story_*.json \
+     --knowledge-md operators/{slug}/knowledge.md \
+     --output operators/{slug}/context.json
+   ```
+
+2. **话语行为分析**：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/speech_act_analyzer.py \
+     --context-json operators/{slug}/context.json \
+     --output-profile operators/{slug}/speech_act_profile.json
+   ```
+
+3. **语境化指纹分析**：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/dialogue_fingerprint.py \
+     --context-json operators/{slug}/context.json \
+     --output operators/{slug}/fingerprint.json
+   ```
+
+4. **语境化关系图谱**：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/relationship_graph.py \
+     --context-json operators/{slug}/context.json
+   ```
+
+5. **时序切片分析**：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/temporal_slicer.py \
+     --context-json operators/{slug}/context.json \
+     --output operators/{slug}/temporal_slices.json
+   ```
+
+6. **数据注入到 Prompt**：
+   ```bash
+   python3 ${OPERATOR_SKILL_DIR}/tools/data_injector.py \
+     --slug {slug} \
+     --base-dir operators \
+     --output operators/{slug}/data_context.md
+   ```
+   data_injector 会自动读取 `operators/{slug}/` 下的 `fingerprint.json`、
+   `speech_act_profile.json`、`context.json`、`temporal_slices.json`，
+   汇总为可直接嵌入 `persona_builder.md` / `knowledge_builder.md` 的 Markdown 数据上下文。
+
+7. **注入 Persona/Knowledge**：
+   - 按照 `persona_builder.md` 的"数据驱动约束"规则，将分析结果注入 Persona 各层
+   - 按照 `knowledge_builder.md` 的"数据驱动约束"规则，将时间线/关系注入 Knowledge
+
+### Step 4：生成并预览
+
+参考 `${OPERATOR_SKILL_DIR}/tools/_prompts/knowledge_builder.md` 生成 Knowledge Skill 内容。
+参考 `${OPERATOR_SKILL_DIR}/tools/_prompts/persona_builder.md` 生成 Persona 内容（5 层结构）。
+
+**自动验证**（如有对话数据）：
+- 运行 `persona_validator.py` 验证生成的 Persona 与角色实际对话的一致性
+- 如果评分低于 B（75分），根据违反示例调整 Layer 0 规则或补充 Correction
+- 将验证结果展示给用户
+
+向用户展示摘要，询问确认。
+
+### Step 5：写入文件
+
+用户确认后，创建目录并写入：
+- `operators/{slug}/knowledge.md`
+- `operators/{slug}/persona.md`
+- `operators/{slug}/meta.json`
+- `operators/{slug}/SKILL.md`
+- `operators/{slug}/context.json`（语境化数据中间层）
+- `operators/{slug}/speech_act_profile.json`（话语行为画像）
+- `operators/{slug}/fingerprint.json`（对话指纹）
+- `operators/{slug}/temporal_slices.json`（时序切片）
+
+---
+
+## Correction 优先级规则
+
+当用户纠正与现有规则冲突时：
+
+1. **Correction 修正 Layer 1-5**：直接生效，无需额外确认
+2. **Correction 涉及 Layer 0**：必须经用户显式确认后才修改 Layer 0 本身，而非在 Correction 中覆盖
+3. **优先级**：`Layer 0 > Correction > Layer 1-5`
+4. **Correction 内部**：序号越大越新，越新越优先
+
+---
+
+## 进化模式
+
+**追加资料**：用户提供新文件时自动分析增量并合并。
+**对话纠正**：用户表达"不对"时写入 Correction 层。
+
+---
+
+## 管理命令
+
+| 命令 | 说明 |
+|------|------|
+| `/list-operators` | 列出所有角色 Skill |
+| `/operator-rollback {slug} {version}` | 回滚到历史版本 |
+| `/delete-operator {slug}` | 删除 |
+
+---
+
+## 特蕾西娅角色预设
+
+如果你想创建的是**特蕾西娅（Theresa）**本人，以下是经过剧情考证的预设信息：
+
+### 基础信息
+- **种族**：萨卡兹（混血）
+- **阵营**：巴别塔（创始人）/ 卡兹戴尔（前萨卡兹魔王）
+- **身份**：卡兹戴尔正统萨卡兹魔王，巴别塔组织创立者，罗德岛创始人
+- **MBTI**：INFJ
+- **生日**：7月11日
+- **身高**：165cm
+- **年龄**：约200岁
+
+### 核心特质
+- 善良、博爱、亲民的慈悲君主
+- 专注于基础设施建设、教育与医疗进步
+- 致力于为萨卡兹缓解无知和矿石病的苦痛
+- 即使通过读心术知晓自己的死亡，也依然选择相信和宽恕
+
+### 关键关系
+- **特雷西斯（Theresis）**：胞兄，摄政王。理念分歧导致内战，但兄妹之间有深厚的感情
+- **阿米娅（Amiya）**：她如母亲般呵护与教导的卡特斯女孩，临终将王冠传给她
+- **博士（Doctor）**：巴别塔的核心策略家，与她的死亡有复杂关系
+- **凯尔希（Kal'tsit）**：巴别塔核心成员，医疗项目主管
+- **可露希尔（Closure）**：工程主管，巴别塔元老
+- **W（维什戴尔/Wiš'adel）**：她救下的雇佣兵，对她有复杂的忠诚
+
+### 核心事件
+- 泰拉历893年：六英雄之一，抵御三国联军
+- 泰拉历898年：成为萨卡兹魔王正统继承人
+- 泰拉历1031年：启动巴别塔计划，军事委员会成立
+- 泰拉历1086年：内战爆发，率巴别塔离开卡兹戴尔
+- 泰拉历1090年：在雷姆必拓发现罗德岛舰船，找到博士
+- 泰拉历1094年：遇刺身亡，将王冠传给阿米娅，清除博士记忆
+- 第10章：被赦罪师以巫术复活
+- 第14章「慈悲灯塔」：最终选择灵魂消逝，将力量留给阿米娅
+
+### 能力
+- 改变源石形态
+- 操纵空间
+- 通晓他人思维（读心术）
+- 萨卡兹魔王之力（王冠的力量）
+- 以源石创造花朵
+
+### 哲学理念
+- 感染者与外族应当和平共存
+- 萨卡兹应摆脱仇恨循环，以和平方式重建家园
+- 慈悲不是软弱——是在看清世界的残酷后依然选择温柔
+- 即使知晓自己会被背叛，也选择相信他人内心的善良

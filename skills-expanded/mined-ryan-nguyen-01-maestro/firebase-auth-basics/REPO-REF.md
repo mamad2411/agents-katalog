@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ryan-nguyen-01/maestro (path: maestro-brownfield/.claude/skills/firebase-auth-basics/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Guide for setting up and using Firebase Authentication. Use this skill when the user's app requires user sign-in, user management, or secure data access using auth rules.

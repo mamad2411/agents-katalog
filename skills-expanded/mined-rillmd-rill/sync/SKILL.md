@@ -1,0 +1,60 @@
+---
+model: haiku
+effort: low
+name: sync
+description: Run all enabled plugins sequentially to bulk-sync external sources (Google Meet, Twitter, voice memo, web clipper, etc.). Use when the user wants to pull in fresh entries from configured external sources, or when chaining batch ingestion before /distill.
+---
+
+# /sync — Bulk External Source Sync
+
+**Conduct all conversation with the user — and write all generated output — in the language defined by `.claude/rules/personal-language.md`** (or the user's input language if that file is absent). Follow the language rules in full — exceptions and translation quality are defined in the Language Rules of `.claude/rules/rill-core.md` and the vault's `personal-*.md` overrides, never restated per skill. The English instructions below are for skill clarity, not for output style.
+
+> **Tool references in this skill** (`shell`, `Read`) describe **intent**, not Claude-specific tool calls. Each harness should map them to its native equivalent — Claude Code uses its built-in Bash/Read tools as named; Codex CLI uses shell / `apply_patch` etc. as appropriate.
+
+Run all plugins sequentially to bulk-sync external sources.
+
+## Arguments
+
+$ARGUMENTS — plugin name (omit: run all plugins sequentially)
+
+## Procedure
+
+### When no argument is given (run all plugins at once)
+
+1. Read `plugins/.enabled` to get the list of enabled plugins. If the file does not exist or is empty, report "No plugins enabled. Run 'rill plugin install <name>' and 'rill plugin enable <name>' to set up plugins." and exit
+2. For each enabled plugin name, resolve its directory (see "Plugin Directory Resolution" below) and Read `plugin.md` frontmatter
+3. Run all enabled plugins sequentially (no selection prompt):
+   - For each plugin, execute the "Single Plugin Execution" procedure below
+   - Report the result for each plugin briefly
+4. After all plugins complete, display a summary of total ingested files
+5. If new files were ingested, propose chaining to `/distill`:
+   - "A total of N files were ingested. Would you like to organize and distill them with /distill?"
+
+### When a plugin name is specified
+
+Run the "Single Plugin Execution" procedure for the specified plugin only.
+
+### Plugin Directory Resolution
+
+A plugin's directory may live under either of:
+
+- `plugins/local/{name}/` — vault-local plugin (track: local; e.g. UI-only sidebar plugins)
+- `plugins/{name}/` — standard layout (distributed by `rill update`)
+
+Check both in this order — local wins on a name conflict, matching the CLI's `_resolve_plugin_dir` (which warns and picks local when both exist). If neither exists, treat the plugin as missing and report it (do not abort the overall run; continue with the remaining plugins).
+
+### Single Plugin Execution
+
+1. Resolve the plugin directory per "Plugin Directory Resolution". If neither path exists, report "Plugin '{name}' is enabled but not installed" and skip
+2. Check whether `{plugin_dir}/commands/` contains a `sync-{name}.md` skill
+3. **If the skill exists**: Read its procedure and follow its instructions (AI-powered sync)
+4. **If no skill**: Check whether `{plugin_dir}/adapter.sh` exists:
+   - **If adapter.sh exists**: Run `rill sync {name}` in a shell. Report newly ingested files on success, or analyze the error and propose remediation on failure
+   - **If neither sync skill nor adapter.sh exists**: The plugin is not a sync source (e.g. UI-only, capability provider, or passive distill handler). Skip silently and note it in the summary as "no sync source"
+
+## Rules
+
+- Without an argument, run all plugins automatically (do not make the user choose)
+- Delegate mechanical sync execution to `rill sync`
+- Value AI adds: interpreting results, proposing chaining to /distill
+- If a plugin-specific sync skill (e.g. `/sync-google-meet`) exists, prefer it

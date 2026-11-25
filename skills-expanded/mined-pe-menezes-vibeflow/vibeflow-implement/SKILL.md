@@ -1,0 +1,316 @@
+---
+name: vibeflow-implement
+description: "Implements a feature from its spec with guardrails: budget, DoD, anti-scope, and pattern compliance. Runs a 9-phase pipeline, phases 0 to 8 (find spec → extract guardrails → load patterns → plan → implement → test → refine → self-verify DoD → finish). Use after gen-spec when ready to implement."
+---
+
+# Vibeflow: Implement
+
+Reads a spec from `.vibeflow/specs/`, loads applicable patterns and conventions
+from `.vibeflow/`, and implements the feature following all spec guardrails
+(DoD, budget, anti-scope, pattern compliance). Runs tests and self-verifies
+each DoD check before finishing. This puts the agent in **Coding Agent mode**
+— it follows the spec, it does not make architectural decisions.
+
+**Usage:** Provide the spec file path or feature name as input.
+
+---
+
+## Language
+
+Detect the language of the user's input.
+Write ALL output in that same language.
+Technical terms in English are acceptable regardless of the detected language.
+
+---
+
+## Role: Coding Agent
+
+You are a coding agent: the spec decides, you execute. Deliver what the spec
+asks, at the scope it defines. Make routine judgment calls yourself; check in
+only when different readings would lead to materially different work. If the
+spec seems mistaken, say so in a sentence and continue as specified. Finish
+the whole task, and stop short of changes clearly beyond it.
+
+Architectural decisions belong to the architect. When the spec doesn't cover
+a design choice, or is ambiguous on a point that matters, stop and ask
+instead of deciding.
+
+## Knowledge base
+
+The knowledge base is what the analyze workflow writes: `.vibeflow/index.md`,
+`.vibeflow/conventions.md`, `.vibeflow/decisions.md` and `.vibeflow/patterns/`.
+Its signal is `.vibeflow/index.md`, which only analyze writes: a `.vibeflow/`
+folder that holds only `specs/` or `prds/` is not a knowledge base. Check
+`.vibeflow/index.md` by its path, because search tools respect `.gitignore`
+and miss it. Before phase 0, with or without `--loop`, settle which of
+three states holds:
+
+- `present`: `.vibeflow/index.md` exists at the root of this checkout.
+- `missing here`: it does not, this checkout is a linked worktree, and the
+  main checkout has `<main>/.vibeflow/index.md`. `<main>` is the path on the
+  first `worktree <path>` line of `git worktree list --porcelain`; this
+  checkout is a linked worktree when that path differs from
+  `git rev-parse --show-toplevel` run here, both resolved with `realpath`
+  (macOS puts `/private` in front of `/var` and `/tmp`).
+  When that first path is a git folder and not a checkout, as in a worktree of
+  a submodule (`<super>/.git/modules/<x>`), `<main>` is its
+  `core.worktree`, from `git --git-dir=<that path> config core.worktree`,
+  resolved from that path. Where the host gives no shell,
+  read `.git` at the root by its path: a file that says
+  `gitdir: <path>/.git/worktrees/<name>` makes this checkout a linked worktree
+  whose main checkout is `<path>`, resolved from this checkout's root when it
+  is relative. The root is the folder that holds `.git`, found by going up
+  from the current folder.
+  A file that says `gitdir: <super>/.git/modules/<x>/worktrees/<name>` makes
+  this checkout a linked worktree of a submodule, whose main checkout is the
+  `core.worktree` set in `<super>/.git/modules/<x>/config`, resolved from
+  `<super>/.git/modules/<x>`.
+- `none`: neither here nor in the main checkout, including the main checkout
+  itself without `index.md` and a folder outside git.
+
+In the `missing here` state, stop. The reply's first line is
+`Knowledge base missing in this worktree: <main>/.vibeflow/index.md exists in the main checkout.`,
+with nothing before it. That line stays in English in any output language.
+Then comes, in a code block, the command that brings the base into this
+worktree, run from its root. It lists only the items the main checkout
+has, in the order `index.md`, `conventions.md`, `decisions.md`, `patterns`.
+Before writing it, check each of the four by its path in the main checkout
+and leave out only the ones that do not exist. Each path goes in single
+quotes (a single quote inside a path becomes `'\''`), as in:
+
+```
+mkdir -p .vibeflow && cp -RL '<main>/.vibeflow/index.md' '<main>/.vibeflow/conventions.md' '<main>/.vibeflow/decisions.md' '<main>/.vibeflow/patterns' .vibeflow/
+```
+
+The reply ends saying that this command goes on without the base only when
+the person says so in the conversation; with that word, it runs as in the
+`none` state.
+With `--loop`, or with `loop: true` in `.vibeflow/loop/config.md`, that
+word does not open the loop: the preflight's `[stop] knowledge base:` line
+stops it before any dispatch, and `--no-loop` runs the pipeline below
+without the base.
+
+## Loop mode
+
+With `--loop` in the input, or `loop: true` in the front matter of
+`.vibeflow/loop/config.md` (its keys `loop` and `commit-rounds` are false by
+default), this session becomes the orchestrator of the execution loop: phases
+0 to 3 run as written below, and then, instead of phases 4 to 8, read and
+follow `orchestrator.md` in the loop kit at
+`.cursor/skills/vibeflow-implement/loop/`. It names the other kit files
+relative to that folder, and the executor implements in a fresh session.
+`--no-loop` in the input turns the loop off for that run, even when the config
+turns it on.
+
+Before phase 0, check that the kit folder exists and that `node --version`
+shows Node.js 18 or newer, because the kit's scripts need it. When the folder
+is missing, the kit is not installed:
+`npx setup-vibeflow@latest --cursor --force` (setup-vibeflow 0.17.0 or newer)
+installs it. When Node.js is missing or older, install Node.js 18 or newer
+(from nodejs.org or the host's package manager). Either way, stop the loop
+before phase 0, say what to install, and say that `implement` without
+`--loop` still runs the pipeline below, with `--no-loop` when the config
+turns the loop on.
+
+## Phase 0: Find and validate the spec
+
+1. Locate it. A file path (contains `/` or ends in `.md`) is read directly.
+   A feature name is matched in `.vibeflow/specs/` — exact (`<name>.md`),
+   then partial; several matches → list them and ask the user to choose;
+   none → list the available specs and suggest the vibeflow-gen-spec skill.
+2. Validate required sections: Definition of Done (at least 1 check), Scope
+   ("Escopo"), Anti-scope ("Anti-escopo"). If any is missing, stop, list
+   what's absent, and point to the vibeflow-gen-spec skill.
+3. Dependencies: each spec listed under Dependencies needs an audit report
+   in `.vibeflow/audits/` with verdict PASS. If one lacks it, stop and list
+   what must be implemented and audited first, in order. If no audits
+   directory exists at all, warn ("Dependencies listed but no audit reports
+   found — verify they are already implemented") and proceed.
+
+## Phase 1: Extract guardrails
+
+Pull these from the spec into working context:
+
+- The DoD checks, numbered — the finish line; every check must pass.
+- Scope and anti-scope — each anti-scope item is a hard stop.
+- The budget: the spec's Budget field, else the `Suggested budget` line in
+  `.vibeflow/index.md`, else ≤6 files. It caps every file you create or
+  modify; exceeding it means stopping and asking.
+- Technical decisions — constraints to follow, not suggestions to evaluate.
+- Applicable patterns — loaded in the next phase.
+
+## Phase 2: Load context from .vibeflow/
+
+In the `none` state of the knowledge base, warn that implementation proceeds
+without pattern guidance (suggest the vibeflow-analyze skill) and skip to Phase 3.
+Otherwise:
+
+1. Read `.vibeflow/conventions.md` — always.
+2. Read the pattern docs the spec lists under Applicable Patterns. If it
+   lists none, resolve them: read the `## Pattern Registry` block in
+   `index.md` (between `<!-- vibeflow:patterns:start/end -->` markers),
+   cross-reference its tags and modules against the spec's scope and target
+   paths, and load the top 3–5 matches; with no registry, infer from the
+   scope (max 3 docs). Internalize each doc's real examples, rules, and
+   anti-patterns — they define how the code is written.
+3. Read `.vibeflow/index.md` for structure, key files, and stack.
+
+Load only what this spec needs.
+
+The documents of items 1 and 2 are `.vibeflow/conventions.md` and each pattern
+doc the spec lists, counted by its `Documents to read:` line, or, when the
+spec lists none, each doc item 2 resolves. In a spec without that line, the
+list is found as before, and only the list: its documents are read whole all
+the same. Read each of these documents whole, one file per
+read: open it with your file-reading tool, without an offset or a limit, and
+never several files in one shell command. When a read comes back cut (a
+preview, a notice that the output was saved to a file, a line or size limit),
+keep reading from where it stopped to the last line. A list of headings or a
+keyword search is not a read.
+
+The final reply ends with the read receipt, its labels in English in any
+language, after the Phase 8 message (in loop mode, at the end of every reply
+that stops the loop, by the receipt rule of the orchestrator's "Orchestrator
+discipline"):
+
+```
+Read in full: <n> of <m>
+- <path> (<lines> lines)
+Not read whole: none
+```
+
+One `- <path> (<lines> lines)` line per document read whole, its path relative
+to the project root. When a document was not read whole, `Not read whole:`
+stands alone and each such document follows on its own line, `- <path>: <why>`,
+and the reply says so. The receipt is what this session actually read: a
+document not read to its last line goes under `Not read whole`, and a document
+read to its last line over more than one read, each read starting from where the previous read stopped, counts as read whole.
+
+## Phase 3: Plan the implementation
+
+1. Target files: list what you'll create and modify, read the existing ones,
+   and count. Over budget → stop and present the options: reduce scope or
+   adjust the budget with the architect.
+2. Cross-check the file list against the anti-scope; drop anything touching it.
+3. Map each DoD check to the changes that satisfy it; a check with no
+   concrete mapping is flagged "requires manual verification" for Phase 7.
+4. Present the plan:
+
+```
+## Implementation Plan
+
+**Spec:** <spec name>
+**Budget:** ≤ N files (using M)
+**DoD checks:** N
+
+### Files to create
+- path/to/new-file.ext — <purpose>
+
+### Files to modify
+- path/to/existing.ext — <what changes>
+
+### DoD mapping
+1. <DoD check 1> → <which files/changes satisfy it>
+2. <DoD check 2> → <which files/changes satisfy it>
+...
+
+### Anti-scope confirmed
+- <anti-scope item 1> — not touched
+- <anti-scope item 2> — not touched
+```
+
+A straightforward, well-scoped plan executes without waiting for
+confirmation; ambiguity on a point that matters → ask first.
+
+## Phase 4: Implement
+
+Work file by file, dependencies first. While implementing:
+
+- Replicate the loaded patterns and conventions as written — structure,
+  naming, import style, error handling. Don't invent parallel patterns.
+- Minimum change that closes the DoD: no "while I'm here" improvements, no
+  opportunistic refactoring, no features beyond scope.
+- A dependency the spec doesn't authorize → stop and ask, with a 1-line
+  justification.
+- Delegate to parallel agents only for large, genuinely independent tracks
+  of work. Do not delegate what a handful of tool calls finishes, and do not
+  use agents to verify or double-check your own work. If one agent suffices,
+  use one.
+- If the plan needs adjusting mid-way, explain why and adjust — still within
+  budget and anti-scope.
+
+## Phase 5: Run tests
+
+Prefer test commands listed in the spec. Otherwise detect the project's
+runner from the stack (`.vibeflow/index.md`, then the test command that the project's manifest or build file declares or implies, such as package.json, pyproject.toml, Cargo.toml, go.mod, a `.csproj`, `build.gradle` or `Package.swift`, or the equivalent in the project's stack). No
+runner found → warn "No test runner detected. Verify manually that the
+implementation works." and continue to Phase 6.
+
+On failures: fix the ones in code you wrote and re-run — two attempts at
+most, then stop, report the remaining failures, and continue to
+self-verification noting the audit will likely fail. Pre-existing failures
+in code you didn't touch are reported, not fixed.
+
+## Phase 6: Refine (simplify in-scope)
+
+Runs only when Phase 5 passed — never refactor without a green baseline. If
+tests failed, were skipped, or no runner exists, continue to Phase 7.
+
+Review only the files of this implementation's diff: consolidate duplication
+you introduced, clarify names, remove dead code you added, fix obvious
+inefficiencies, align with conventions and patterns. Behavior, public
+contracts, budget, and anti-scope stay untouched; no new features or
+dependencies.
+
+Re-run the tests after refining. A regression → revert the refine changes,
+keep the working implementation, and note "Refine skipped: introduced
+regressions." Nothing worth simplifying → state "No refinement needed" and
+continue.
+
+## Phase 7: Self-verify DoD
+
+Verify each DoD check against concrete evidence in what you wrote, then
+present:
+
+```
+## Self-Verification
+
+### DoD Checklist
+- [x] Check 1 — evidence: <file:line or description>
+- [x] Check 2 — evidence: <file:line or description>
+- [ ] Check 3 — NOT MET: <what's missing>
+
+### Budget
+Files changed: N / ≤ M budget
+
+### Anti-scope
+All anti-scope items respected: YES/NO
+
+### Tests
+Result: PASS / FAIL (N failures)
+
+### Pattern Compliance
+- <pattern name> — followed: <brief evidence>
+
+### Overall: READY FOR AUDIT / HAS GAPS
+```
+
+A check still fixable within budget → fix it and re-verify. One that needs
+architectural decisions or more budget → report the gap and leave it.
+
+## Phase 8: Finish
+
+All DoD checks and tests passing →
+
+"Implementation complete. All N DoD checks verified. Budget: M/N files.
+Tests: PASS. Use the vibeflow-audit skill to get the formal verification."
+
+With gaps →
+
+"Implementation complete with gaps. DoD: N/M checks passing. Tests:
+PASS/FAIL. Gaps: [list]. The audit will likely return PARTIAL or FAIL —
+consider fixing the gaps above, then use the vibeflow-audit skill."
+
+Audit is always the next step.
+
+The read receipt from Phase 2 follows the message and ends the reply.

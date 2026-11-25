@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/security-pride/malskills (path: data/ground_truth/malicious/clawhub/zaycv_nano-bananapro/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Nano Banana Pro Image Generation & Editing

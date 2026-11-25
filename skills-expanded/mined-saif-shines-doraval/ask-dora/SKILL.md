@@ -1,0 +1,69 @@
+---
+name: ask-dora
+description: >-
+  Use when the teammate types /ask-dora, or asks any Dora question, a
+  routine idea, a pocket job, dora harness new, or a connector catalog
+  question.
+---
+
+# ask-dora
+
+Router for an internal teammate. Use a primitive. Do not hold that primitive's craft here.
+
+## Empty
+
+Print this map. Then stop.
+
+```
+Two jobs: assess this project's agent setup and show what to fix; ship and share that work, including a pocket agent.
+Dora jobs: review, fix, unused, scan. Load review-with-dora.
+Sessions: dora session, dora session show <id>, dora session open.
+Wire: dora wire --for claude --run. Codex adds --chatgpt or --api-key. Logs stay in ~/.doraval/wire/. For Cursor, dora wire exits 2. dora session open still reads Cursor logs.
+Routine flow: a routine, a loop, recurring, a routine idea, a pocket job, or harness new.
+  Load grilling-for-routine. Night prompt: writing-for-routine.
+After a routine exists: dora harness apply, show, logs, models, rm, pause, resume, list, open. boot is the apply alias.
+After a skillkit or authstack merge: dora harness apply <slug> --yes. A tick does not refresh.
+If Hermes is missing: print official install steps. Dora does not install Hermes.
+If a Scalekit AgentKit skill is missing: install scalekit-inc/authstack, then reload skills.
+```
+
+## Route
+
+1. Read the ask.
+2. If a routine already exists and the ask is apply, boot, show, logs, models, rm, pause, resume, list, open, or watch: name that `dora harness` verb. Do not load the grill.
+   If the ask is change the model, provider, or reasoning: run `dora harness models`, edit `routine.yml`, then `dora harness apply <slug>`. Do not re-run the grill.
+   If a skillkit or authstack merge just landed, or the ask is refresh pocket skills: name `dora harness apply <slug> --yes`. Do not name `claude plugin marketplace update`.
+3. If it is a routine, a loop, recurring, a routine idea, a pocket job, or `dora harness new`: load `grilling-for-routine`. Done: that skill is loaded.
+4. If it is a Dora job (review, fix, unused, scan): load `review-with-dora`. Done: that skill is loaded.
+5. If the ask is only the public connector catalog (what exists, tool names):
+   If `discover-connectors` is on disk: load it. Done.
+   If missing: print official install. Stop.
+6. If the ask is add or configure a Scalekit dashboard **connection**:
+   If `setup-agentkit` is on disk: load it. Done.
+   If missing: print official install. Stop.
+7. If the ask is a **connected account**, OAuth link, or calling Slack/GitHub as that account:
+   If `integrate-agentkit` is on disk: load it. Done.
+   If missing: print official install. Stop.
+8. If the ask is the request the model received, or `dora wire`: name `dora wire --for claude --run`, or Codex with `--chatgpt` or `--api-key`. Logs stay in `~/.doraval/wire/`. For Cursor, name `dora session open`. Done: the teammate has the command.
+9. Else: name the matching `dora` verb from `dora --help --json`. Done: the teammate has the next command.
+
+Look up facts (skill on disk, Hermes present, AgentKit skills present). Leave slug, connector, and interval to the human.
+If Hermes is missing and the ask needs a run or apply: print official install steps. Do not fake a pass.
+
+`discover-connectors` is the public catalog only. It does not configure the dashboard.
+
+When the needed AgentKit skill is missing:
+
+```
+Install Scalekit authstack. Follow:
+https://docs.scalekit.com/dev-kit/build-with-ai/
+npx skills add scalekit-inc/authstack
+Then reload skills or restart the session and try again.
+```
+
+Dora does not install authstack. Dora does not teach the dashboard.
+
+MUST NOT name `claude plugin marketplace update` for a pocket job.
+MUST NOT load the grill for existing-routine verbs.
+MUST NOT invent a connector catalog or dashboard steps.
+MUST NOT hold the review loop, the grill, the pocket check, or the night-prompt craft.

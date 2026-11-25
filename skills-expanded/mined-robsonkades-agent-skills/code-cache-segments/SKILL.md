@@ -1,0 +1,171 @@
+---
+name: code-cache-segments
+description: >
+  The JDK 17-25 segmented code cache, GC-driven unloading, fragmentation, segment sizing,
+  and jcmd Compiler.codecache/CodeHeap_Analytics. Use when aggregate usage looks healthy but
+  one CodeHeap is exhausted, compilation stops or restarts, GC logs show a CodeCache cause,
+  startup rejects manual heap sizes, an OutOfMemoryError reports "Out of space in CodeCache",
+  or a long-running service degrades while aggregate free space remains. Covers runtime-shape
+  discovery so tools do not assume exactly three heaps on every mode or release. Excludes the
+  introductory exhaustion signature (jit-compilation), container memory budgeting
+  (jvm-memory-regions), and Metaspace internals (metaspace-internals).
+---
+
+# Code Cache Segments
+
+## Purpose
+
+On JDK 17-25, treat the normally segmented code cache as three independent allocators with
+separate ceilings. One `CodeHeap` can sit at 99.8% while the consolidated
+number reads 72%, and every tool that stops at the consolidated line reports a healthy
+system. Allocation fallback already exists in JDK 17: pressure in one heap can send
+tier-3 code into the heap normally used for non-profiled code. Separately, since JDK 20,
+GC-driven unloading has replaced the sweeper, and code-cache GC triggers use aggregate
+pressure rather than detecting an individual full heap. A code-cache-full compiler stop
+occurs when allocation cannot be satisfied after the applicable fallback. Do not
+hard-code a count of three into tooling: unsegmented and interpreter-only modes have fewer
+heaps, and later HotSpot builds can add heap kinds. Discover the runtime shape from
+`Compiler.codecache` and `jdk.CodeCacheConfiguration`.
+
+The second failure this prevents is the reflexive "double `ReservedCodeCacheSize`". With
+default sizing, extra capacity is shared between the nmethod heaps; it does not proportionally
+raise `non-nmethods`. More capacity can also change code-cache GC frequency. Establish which
+mechanism is responsible before choosing a larger total or a different split.
+
+## Workflow
+
+Before collecting evidence, pin vendor/update, architecture, collector, compiler mode and
+effective startup flags from the deployed runtime and its CI/image configuration. The command
+baseline below is HotSpot JDK 25; JDK 17-19 retain the sweeper and need their own lifecycle
+interpretation. Do not upgrade Java or change the collector to match this skill. If attach,
+JFR or source access is unavailable, state the gap and keep the diagnosis conditional.
+
+1. **Read every available heap line** from `jcmd <pid> Compiler.codecache`, never the
+   consolidated `CodeCache:` line alone. Also read the last line: `Compilation: enabled` or
+   `disabled (not enough contiguous free space left)`, with `stopped_count` and
+   `restarted_count`. A `Restarting compiler` log or `jdk.JITRestart` event alone is not
+   proof of recovery; confirm current state and counter changes. Productive recovery needs
+   successful compilation work started after the transition, not just older tasks finishing.
+2. **Confirm the runtime shape.** On JDK 17-25, three named heaps is the normal tiered shape;
+   one unnamed heap means segmentation is off. HotSpot enables it ergonomically only with
+   tiered compilation and `ReservedCodeCacheSize` **≥ 240 MB**, so a smaller explicit value
+   de-segments unless `-XX:+SegmentedCodeCache` is also given. Interpreter-only and
+   non-tiered modes legitimately expose fewer heaps.
+3. **Read the GC log for the code cache's own causes** — `CodeCache GC Threshold` and
+   `CodeCache GC Aggressive`. On JDK 20+ the code cache is a GC trigger, and under Serial or
+   Parallel each trigger is a **Full GC**. See `references/unloading-and-gc.md`.
+4. **Sample across the relevant compilation and unloading window.** Three points 30-60 seconds
+   apart can start a baseline, but can miss faster oscillation or longer warm-up. Correlate
+   counter deltas and event timestamps before diagnosing thrashing. Record `jstat -compiler`
+   — `Compiled`, `Failed`, `Invalid` — as part of the incident baseline.
+5. **Predict the pressured segment from the tier mix** before measuring: tiers 2 and 3 go to
+   `profiled`, tiers 1 and 4 and native wrappers go to `non-profiled`. Cross-reference
+   `PrintCompilation` or `jdk.Compilation`, and cross-reference deoptimisation events when
+   `non-profiled` is under pressure. Check capture coverage first: JFR duration thresholds can
+   exclude most short compilations. Use same-process compiler-counter deltas for total rate;
+   a filtered event count cannot establish the tier mix. See
+   [JFR capture coverage](references/diagnosing-exhaustion.md#jfr-capture-coverage).
+6. **Choose between raising the total and rebalancing** from the measured asymmetry, not from
+   utilization alone. Both segments high can motivate a capacity investigation; one pinned
+   while another climbs can reflect fallback or ordinary tier growth. Establish allocation
+   failures, GC cost, lost compilation progress or inadequate headroom for the measured
+   warm-up/growth envelope before changing sizes. Check for avoidable churn; preserve adequate
+   capacity when those constraints are satisfied. See
+   `references/segments-and-sizing.md`.
+7. **Check the arithmetic before applying manual segment sizes.** On JDK 25, with all segment
+   sizes and `ReservedCodeCacheSize` explicitly set, the enabled heaps must sum to the
+   reserved total after alignment. With only a partial configuration HotSpot computes the
+   unset remainder; without an explicit reserved total it can adjust the total. Recheck this
+   version-sensitive startup logic on the exact runtime.
+8. **Validate under the same load that caused the incident**: adequate headroom for the
+   observed growth and deployment/warm-up envelope, an acceptable rate and cost of
+   code-cache-triggered collections, and `Compilation:` enabled across a sustained window.
+   Derive thresholds from the service SLO and restart horizon; 80% is not a universal limit.
+
+## Rules
+
+- Monitor per `CodeHeap`, not as a sum. Inspect JMX memory-pool names and the exporter's
+  actual labels; Micrometer commonly uses `id` (`CodeHeap 'profiled nmethods'` and the rest).
+  An aggregate dashboard can hide a pressured heap, but neither labels nor a dashboard defect
+  can be assumed from the symptom alone.
+- `profiled nmethods` holds tiers **2 and 3** only. Tier 1 — C1 without profiling — goes to
+  `non-profiled` alongside tier 4 and native wrappers. A trivial method can go straight to
+  `non-profiled` without ever passing through `profiled`.
+- With default segment sizes, the two nmethod heaps divide the remainder approximately
+  **50/50**, with alignment remainder assigned by startup ergonomics. `non-nmethods` is 5 MB plus one
+  compiler buffer per compiler thread, so it shrinks on a small CPU quota.
+- A full heap spills into the next one — `non-nmethods → non-profiled → profiled → non-profiled`
+  (`CodeCache::allocate`, `codeCache.cpp`). `CodeHeap '<name>' is full` and the JFR
+  `jdk.CodeCacheFull` event fire only when the fallback failed too.
+- `NonNMethodCodeHeapSize`, `ProfiledCodeHeapSize` and `NonProfiledCodeHeapSize` are ordinary
+  product flags introduced by JEP 197. Material that wraps them in
+  `-XX:+UnlockDiagnosticVMOptions` is out of date.
+- `-XX:CodeCacheMinimumFreeSpace` does not exist. The real name is
+  `-XX:CodeCacheMinimumUseSpace`, and it is `develop`-only — unavailable in production builds.
+- `jstat -compiler` reports **`Failed`**, fed by `sun.ci.totalBailouts`; inspect the actual
+  failure reason before excluding code-cache pressure. Temporary compiler buffers can consume
+  code-cache space even if no nmethod is installed, and older/lower-tier code may still run.
+  `FailedType` is compilation kind, not tier; `Invalid` is not a runtime deoptimization counter.
+- Declare `-XX:+SegmentedCodeCache` explicitly whenever per-segment visibility matters. Any
+  `ReservedCodeCacheSize` below 240 MB — the common container setting — silently loses it.
+- There is no sweeper thread and no `zombie` state since JDK 20 (JDK-8290025). A
+  `not_entrant` nmethod is unloaded by the **GC** once no frame references it, so reclaiming
+  code cache costs a GC cycle, and code cache pressure schedules one.
+- `-XX:+UseCodeCacheFlushing` (the default) now gates the cold-code heuristic and the
+  compiler _restart_ after a full heap; with it off a full heap disables the compiler until
+  restart. Keep it on in production.
+- JDK 25 CodeHeaps reclaim and coalesce free blocks but do not relocate live nmethods to
+  compact a heap. Relocation would have to preserve active frames, call sites, metadata and
+  runtime references; do not extrapolate this implementation fact into a claim that a future
+  JVM can never compact code.
+- `jcmd Compiler.codecache` reports total `free` per heap, not its distribution.
+  `Compiler.CodeHeap_Analytics` lists reclaimed free blocks — run `aggregate`, then `FreeSpace`.
+  On tested 25.0.3+9, repeat `aggregate` before each `FreeSpace`: printing mutates the saved
+  free-block lengths, so repeated output can overstate contiguous space. See the diagnosis reference.
+  Its largest listed block excludes unused tail space and possible heap expansion; compare
+  those and applicable fallback heaps before attributing an allocation failure to fragmentation.
+- External fragmentation grows with allocate/free/reallocate cycles, not with raw volume. Frequent
+  deoptimisation and ClassLoader churn are the factories; a heap that only ever fills does
+  not develop free-list holes from allocation alone. Internal alignment waste is different.
+- Failed adapter or method-handle-intrinsic allocation can surface as
+  `java.lang.OutOfMemoryError: Out of space in CodeCache for adapters` (or
+  `for method handle intrinsic`) in an application thread, in addition to compiler-stop
+  diagnostics. Inspect the entire fallback path, not only `non-nmethods`.
+- A restart clears fragmentation and discards all accumulated warm-up. It is a legitimate
+  named mitigation for ClassLoader-churn fragmentation, never a reflex for any code cache
+  symptom.
+- On JDK 25, `ReservedCodeCacheSize` reserves virtual address space (hard cap 2048 MB), while
+  pages are committed as heaps expand in `CodeCacheExpansionSize` increments (64 KB on the
+  tested build). Committed can exceed live `used`, and resident memory is a separate OS
+  measure. Compare NMT `Code`, `Compiler.codecache`, and process/container RSS instead of
+  treating reservation, commitment and residency as interchangeable.
+
+Deliver timestamped per-heap observations, compiler state/counter deltas, the proposed cause
+and its confirming/falsifying evidence. State expected effects and a load/GC validation bound
+for any sizing change; neither high utilization nor a restart proves fragmentation. A diagnosis
+or review can conclude with findings and a bounded next capture; applying sizing/restart changes
+depends on the requested scope. Reuse available evidence and ask only for missing facts that
+change that decision. For a broader memory or compilation bottleneck, pass the heap trends,
+compiler state, workload window and unresolved hypothesis to `jvm-memory-regions` or
+`jit-compilation`; if unavailable, report the limit without inventing a cache remedy.
+
+## References
+
+The detailed references use JDK 25 as their executable baseline. Revalidate flags, heap kinds,
+event fields and startup arithmetic on another feature release or JVM implementation.
+
+- [Segments, sizing and rebalancing](references/segments-and-sizing.md) — what each segment
+  holds, the ergonomic defaults and where they come from, the tier-to-CodeHeap mapping, the
+  allocation fallback, the arithmetic a manual configuration must satisfy (and when the JVM
+  fixes it for you), and the decision matrix for raising the total versus changing the split.
+  Read before changing any code cache flag.
+- [Unloading and the GC](references/unloading-and-gc.md) — what JDK-8290025 removed and
+  what replaced it: the two GC triggers, the cold-code heuristic, the per-collector cost of a
+  `CodeCache GC Threshold` pause, the compiler stop/restart path, and what every surviving
+  `Sweep*` flag means now. Read when the GC log names the code cache, or before touching
+  `UseCodeCacheFlushing` or `NmethodSweepActivity`.
+- [Diagnosing per-segment exhaustion](references/diagnosing-exhaustion.md) — the
+  `Compiler.codecache` output read line by line, the symptom-to-cause table,
+  `Compiler.CodeHeap_Analytics`, `jstat -compiler` columns, the logging and JFR events, the
+  per-CodeHeap metric series, the adapter `OutOfMemoryError`, and how internal and external
+  fragmentation differ. Read when triaging a live code cache symptom.

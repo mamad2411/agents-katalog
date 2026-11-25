@@ -1,0 +1,273 @@
+---
+name: vibeflow-gen-spec
+description: "Generates a technical spec with DoD (3-7 binary checks), scope, anti-scope, and applicable patterns. Grounded in .vibeflow/. Auto-splits specs that exceed budget or DoD limits. Use when requirements are clear and you're ready to define the implementation contract."
+---
+
+# Vibeflow: Gen-Spec
+
+Generate a spec for a feature or task. Includes objective, DoD,
+scope, anti-scope, technical decisions, and risks. Grounded in
+the project's real patterns from `.vibeflow/`.
+
+**Usage:** Provide the feature description or path to a PRD file as input.
+
+---
+
+## Language
+
+Detect the language of the user's input.
+Write ALL output in that same language.
+Technical terms in English are acceptable regardless of the detected language.
+A few literals are exempt and stay in English in any output language, because
+other commands match them byte for byte: the `## References` and
+`## Clarifications` headings, the `Scenarios:`, `Risk code:` and
+`Documents to read:` labels, the `[NEEDS CLARIFICATION: …]` marker, and the
+EARS keywords `WHEN` and `THE SYSTEM SHALL`.
+
+## Knowledge base
+
+The knowledge base is what the analyze workflow writes: `.vibeflow/index.md`,
+`.vibeflow/conventions.md`, `.vibeflow/decisions.md` and `.vibeflow/patterns/`.
+Its signal is `.vibeflow/index.md`, which only analyze writes: a `.vibeflow/`
+folder that holds only `specs/` or `prds/` is not a knowledge base. Check
+`.vibeflow/index.md` by its path, because search tools respect `.gitignore`
+and miss it. Before reading the input or writing any file, settle which of
+three states holds:
+
+- `present`: `.vibeflow/index.md` exists at the root of this checkout.
+- `missing here`: it does not, this checkout is a linked worktree, and the
+  main checkout has `<main>/.vibeflow/index.md`. `<main>` is the path on the
+  first `worktree <path>` line of `git worktree list --porcelain`; this
+  checkout is a linked worktree when that path differs from
+  `git rev-parse --show-toplevel` run here, both resolved with `realpath`
+  (macOS puts `/private` in front of `/var` and `/tmp`).
+  When that first path is a git folder and not a checkout, as in a worktree of
+  a submodule (`<super>/.git/modules/<x>`), `<main>` is its
+  `core.worktree`, from `git --git-dir=<that path> config core.worktree`,
+  resolved from that path. Where the host gives no shell,
+  read `.git` at the root by its path: a file that says
+  `gitdir: <path>/.git/worktrees/<name>` makes this checkout a linked worktree
+  whose main checkout is `<path>`, resolved from this checkout's root when it
+  is relative. The root is the folder that holds `.git`, found by going up
+  from the current folder.
+  A file that says `gitdir: <super>/.git/modules/<x>/worktrees/<name>` makes
+  this checkout a linked worktree of a submodule, whose main checkout is the
+  `core.worktree` set in `<super>/.git/modules/<x>/config`, resolved from
+  `<super>/.git/modules/<x>`.
+- `none`: neither here nor in the main checkout, including the main checkout
+  itself without `index.md` and a folder outside git.
+
+In the `missing here` state, stop. The reply's first line is
+`Knowledge base missing in this worktree: <main>/.vibeflow/index.md exists in the main checkout.`,
+with nothing before it. That line stays in English in any output language.
+Then comes, in a code block, the command that brings the base into this
+worktree, run from its root. It lists only the items the main checkout
+has, in the order `index.md`, `conventions.md`, `decisions.md`, `patterns`.
+Before writing it, check each of the four by its path in the main checkout
+and leave out only the ones that do not exist. Each path goes in single
+quotes (a single quote inside a path becomes `'\''`), as in:
+
+```
+mkdir -p .vibeflow && cp -RL '<main>/.vibeflow/index.md' '<main>/.vibeflow/conventions.md' '<main>/.vibeflow/decisions.md' '<main>/.vibeflow/patterns' .vibeflow/
+```
+
+The reply ends saying that this command goes on without the base only when
+the person says so in the conversation; with that word, it runs as in the
+`none` state.
+
+## Before writing the spec
+
+1. Read the input. A path to a `.md` inside `.vibeflow/prds/` is a PRD:
+   problem, audience, solution, scope, and anti-scope are already settled —
+   your job is translating them into technical decisions, binary DoD checks,
+   and applicable patterns. Anything else is a feature description. When the
+   PRD has a `## Clarifications` section, carry its entries into the spec's own
+   `## Clarifications`, so the answers travel with the contract.
+2. Load context from `.vibeflow/` when the knowledge base is `present`:
+   - `index.md` — project context. Its `Suggested budget: ≤ N` line is this
+     spec's budget; without it, ≤6 files.
+   - `conventions.md` — the project's standards.
+   - Patterns: read the `## Pattern Registry` block in `index.md` (between
+     `<!-- vibeflow:patterns:start/end -->` markers), cross-reference its tags
+     and modules against the feature, and load the top 3–5 matches. With no
+     registry, fall back to reading the local pattern docs only, the
+     `patterns/*.md` at the root and the `patterns/satellite-*/*.md`; imported
+     entries come in only through the next item.
+   - Imported sources: read the `## Imported Sources` block in `index.md`
+     (between `<!-- vibeflow:sources:start/end -->` markers) and open each
+     source's `patterns/external-<repo-name>/registry.md`. The choice among
+     its entries waits for step 3. No `## Imported Sources` block → nothing
+     changes: the Pattern Registry alone picks the patterns.
+
+   The documents of this step are `conventions.md` and each pattern doc you
+   load, and each imported entry step 3 marks applicable. Read each of these
+   documents whole, one file per read: open it with your file-reading tool,
+   without an offset or a limit, and never several files in one shell
+   command. When a read comes back cut (a preview, a notice that the output
+   was saved to a file, a line or size limit), keep reading from where it
+   stopped to the last line. A list of headings or a keyword search is not a
+   read.
+
+   In the `none` state, warn that results improve after the vibeflow-analyze
+   skill, then read the relevant code directly.
+3. Identify what exists today for this feature, the files the feature creates
+   or changes, and which patterns apply to it. Then mark as applicable each
+   imported registry entry of `kind` `pattern` or `convention` when (a) a
+   glob in its `paths` matches the path of a planned file, whether that file
+   exists yet or not, or a glob in its `globs` does (a Cursor rule's scope, as
+   it came: a string can hold several globs separated by commas), or (b) the
+   entry has no `paths` and no non-empty `globs`, and its `tags` or
+   `description` match the feature's subject, or (c) the document's
+   `source_file` is under `.claude/rules/` and the entry has no `paths`, or the
+   entry has `alwaysApply: true`. An entry under (c) is always applicable: at
+   its source it loads in every session (its `source_file` is in the
+   document's frontmatter). An entry of `kind` `workflow` is never chosen.
+   Read every applicable entry whole, by the reading rule of step 2; they are
+   listed outside the 3–5 cut.
+4. Collect what the input points at — test files, mockups, code to port, the
+   URL of a reference implementation — and what each one is for. A reference in
+   code pins the target behavior better than a paragraph describing it.
+
+### PRD Validation Gate
+
+Runs only when the input is a PRD — a `.md` path, or text longer than 3 lines.
+A short description skips the gate.
+
+Five checks before generating:
+
+1. **Concrete problem** — a specific, real pain, not "improve the experience".
+2. **Audience defined** — a named user or persona, not "everyone".
+3. **Closable scope** — a v0 you can bound and finish.
+4. **No conflict with `.vibeflow/`** — the proposed solution doesn't contradict
+   the conventions or the loaded patterns, and doesn't duplicate what exists.
+5. **Viable in the current stack** — feasible per `index.md` without a stack change.
+
+All five pass → generate silently, no delay. Any fails → ask up to 2 targeted
+questions about the failures, then generate with the answers. One round only.
+
+## The spec
+
+- **Objective** — 1 sentence. What changes for the user.
+- **Context** — What exists today and why this matters now.
+- **Definition of Done** — 3–7 binary checks (pass/fail, no ambiguity). At
+  least one must be a craftsmanship gate — "no violations of the Don'ts in
+  conventions.md", "no new loose types", such as `any` in TypeScript, or `interface{}` in Go where a concrete type fits. Functional checks alone are not enough.
+  Where the project has a detectable test runner, at least one check names an
+  executable test: one that already exists and has to pass, or one to write,
+  named. With no runner, the checks stay as they are.
+
+  Two optional fields sharpen a functional check. Both are indented under the
+  check they belong to and are never extra checks, so the DoD stays 3–7 checks:
+  - `Scenarios:` — 1 to 3 lines in the EARS form
+    `WHEN <condition> THE SYSTEM SHALL <behavior>`. The implementer turns each
+    line into the red test, so write the behavior a test can observe.
+  - A property — "for any <input space>, <invariant>", naming the oracle that
+    decides it (a reference implementation, an inverse, a sum that must hold).
+    Offer it only when the project has a property-testing library (such as fast-check, Hypothesis, jqwik, FsCheck or proptest, or the equivalent in the project's stack) in its dependencies; one property explores the
+    input space that a handful of examples leaves open. Without the library,
+    write the check as examples.
+
+  ```
+  1. Deleting a task removes it from the store — `test/deleteTask.test.js` passes.
+     Scenarios:
+     WHEN the task exists THE SYSTEM SHALL remove it and return ok
+     WHEN the id is unknown THE SYSTEM SHALL return not-found and change nothing
+  ```
+- **Scope** — What's in.
+- **Anti-scope** — What's explicitly out. Be aggressive.
+- **Technical Decisions** — With trade-offs and justification.
+- **Applicable Patterns** — Which patterns from `.vibeflow/patterns/` the
+  implementation must follow. Note it when the feature introduces a new one.
+  Every applicable imported entry is listed too, outside the 3–5 cut, one line
+  each, after a line that counts them by criterion,
+  `Imported entries that apply: <N> (<g> by glob, <s> by subject, <a> always on)`:
+  `- patterns/external-<repo-name>/<entry-name>.md — imported from <repo-name> (<source_file> @ <sha7>): <why it applies: the glob that matched and the file, the subject, or always on>`
+  When a local pattern covers the same subject, both are listed: the imported
+  rule is the norm, the local pattern the example of how the code does it
+  today, and the divergence between them is written in Technical Decisions,
+  never settled silently. The section ends with one line that counts what the
+  consumers read,
+  `Documents to read: <m> (<lines> lines): .vibeflow/conventions.md and the pattern docs listed above`,
+  where `<lines>` is the sum of the line counts of the documents read, as the
+  file-reading tool reports them. Above 2,500 lines the same line ends with
+  `; over 2,500 lines, consider splitting this spec`, and the reply says so;
+  nothing is cut from the list.
+- **Risks** — Premortem: what can go wrong, and the mitigation. End it with a
+  `Risk code:` list inside `## Risks`: the concrete paths or functions this
+  change touches in four categories — money and totals, credentials and
+  permissions, deleting or overwriting data, date and time boundaries. The
+  audit sabotages only there, so name the function, not the module. When the
+  change touches none, write `Risk code: none`.
+- **Clarifications** (optional) — `## Clarifications`: each question asked in
+  this session and its answer, one pair per item, plus those carried from the
+  PRD. Every question counts — the PRD gate's and the self-check's — at most 5
+  questions per session. Leave the section out when nothing was asked or
+  carried.
+- **References** (optional) — What the input pointed at: a test suite, a
+  mockup, code to port, a reference implementation. One line each — the path or
+  URL, then the role it plays ("the suite that defines the behavior", "the
+  mockup to replicate", "the implementation to port"). Leave the section out
+  when the input carries no references.
+- **Dependencies** (optional) — Specs that must land before this one, as
+  `- .vibeflow/specs/<feature>-part-N.md`. Used in multi-part splits.
+
+Be opinionated. Cut scope aggressively. Challenge vague requirements. Where
+something is unclear and an assumption is safe to state, state it. Where it is
+not, write `[NEEDS CLARIFICATION: <the question>]` at that point. Keep at most
+3 open markers: more than 3 means the spec rests on guesses, so ask before
+saving. Match the spec's length to what the feature needs — the substance,
+without filler sections, redundant summaries, or boilerplate.
+
+## Self-check
+
+Before saving, check the draft against three rules:
+
+1. Every DoD check is binary — a reader can say pass or fail without asking.
+2. Where the project has a detectable test runner, every functional check names
+   its test or carries a `Scenarios:` field.
+3. The open `[NEEDS CLARIFICATION]` markers are counted against the cap above.
+
+All three pass → save, without comment. A failure you can repair from the
+input and `.vibeflow/`, repair. What is left needs the user: ask up to 2
+targeted questions in one round, the PRD Validation Gate's rhythm, record them
+in `## Clarifications`, apply the answers and save. One question can cover more
+than one marker. The self-check never opens a second round: markers still open
+after it stay in the spec and are named in your reply, and with more than 3
+still open the reply also recommends running `discover` before `implement`.
+
+## Spec splitting
+
+After drafting, check the spec against its limits: more than 7 DoD checks, or
+more files than the budget (`.vibeflow/index.md`, else ≤6).
+
+Either one is true → don't save it. Tell the user it exceeds limits (N checks /
+N files) and split it into self-contained parts instead, each with its own
+objective, DoD of 3–7 checks, scope, anti-scope, and a `Dependencies` field
+naming what must come first. Name them `<feature>-part-1.md`,
+`<feature>-part-2.md`, and so on; each part has to be implementable and
+auditable on its own. Save every part and present the execution order.
+
+The split is the architect's call.
+
+Save the spec to `.vibeflow/specs/<feature-slug>.md` (create the directory if
+it doesn't exist).
+
+The reply ends with the read receipt, its labels in English in any language;
+only the next-step suggestion below comes after it:
+
+```
+Read in full: <n> of <m>
+- <path> (<lines> lines)
+Not read whole: none
+```
+
+One `- <path> (<lines> lines)` line per document read whole, its path relative
+to the project root. When a document was not read whole, `Not read whole:`
+stands alone and each such document follows on its own line, `- <path>: <why>`,
+and the reply says so. The receipt is what this session actually read: a
+document not read to its last line goes under `Not read whole`, and a document
+read to its last line over more than one read, each read starting from where the previous read stopped, counts as read whole.
+
+After saving, suggest: "Spec saved to `.vibeflow/specs/<feature-slug>.md`.
+Use the vibeflow-implement skill to implement with guardrails (budget, DoD, patterns).
+Or the vibeflow-prompt-pack skill if you want a self-contained prompt for a separate session/agent."

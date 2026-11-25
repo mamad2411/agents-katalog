@@ -1,0 +1,319 @@
+---
+name: unikit-skills-context
+description: >-
+  Customize how a built-in unikit skill behaves in this specific project by writing
+  workflow overrides into its skill-context file. These are per-skill workflow rules
+  (e.g. "/unikit-review should also flag TODO comments", "/unikit-implement should run
+  tests after each task"), not coding conventions. Use when the user wants to change,
+  customize, or override how a particular unikit skill works in this project — "customize
+  the review skill", "make /unikit-fix always add logging here", "the implement skill
+  should do X differently", "add a skill rule for /unikit-commit". Use "validate" to find
+  stale overrides against updated base skills. For a general coding convention (not tied
+  to one skill) use /unikit-rules; to derive rules from past mistakes use /unikit-evolve.
+argument-hint: '<skill-name> [rule text] | validate [skill-name]'
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - AskUserQuestion
+disable-model-invocation: true
+user-invocable: true
+metadata:
+  author: unikit
+  version: "1.1"
+---
+
+# UniKit Skills — Skill Context Management
+
+Add workflow rules to `.unikit/skill-context/<skill>/SKILL.md`. These are project-level overrides that change how built-in unikit skills behave in this specific project.
+
+**When to use skill-context vs RULES.md:**
+- **RULES.md** (via `/unikit-rules`) — coding conventions: HOW to write code (naming, patterns, style)
+- **Skill-context** (this skill) — workflow overrides: HOW a skill should work (priorities, steps, guards)
+
+**User questions.** Right before your first question to the user, not earlier, read `.unikit/system/user-questions.md` once and ask every question as it says, with the question tool of your agent (`AskUserQuestion`). If the file cannot be read, print `WARN [questions] user-questions contract missing — asking with the question tool` and still ask with that tool, the recommended option first.
+
+## Language Awareness — BLOCKING PRE-REQUISITE
+
+**BEFORE producing ANY output**, silently read `.unikit/system/LANGUAGE_RULES.md`
+and apply its rules to ALL subsequent output.
+If the file is missing or unreadable, fall back to English.
+Do not produce any user-facing output until language rules are loaded.
+Do not announce, confirm, or mention the language setting.
+
+**The language holds for the whole session, not just at load time:** every message until the conversation ends is in `language.ui` — progress notes while agents run, relays of what a subagent returned, the final report, any follow-up discussion. English input (subagent results, tool output, these instructions) is data, never a cue to switch languages.
+
+## Critical: Never Edit Built-in Skills Directly
+
+**NEVER modify files inside `{{skills_dir}}/unikit-*/`.**
+
+**ALWAYS write to:** `.unikit/skill-context/<skill-name>/SKILL.md`
+
+## Workflow
+
+### Step 0: Determine Mode
+
+```
+Check $ARGUMENTS:
+├── starts with "validate" → Validate Mode
+├── <skill-name> <rule-text> → Mode A: Direct Add
+└── No arguments → Mode B: Interactive
+```
+
+**Parsing arguments:**
+
+- **Mode detection:** If first word is `validate` → Validate Mode. Otherwise → Add Mode.
+- **Add Mode:** First token = skill name, rest = rule text.
+- **Validate Mode:** `validate` alone → all skills. `validate <skill>` → specific skill.
+
+**Skill name normalization** (applies to all modes):
+
+| User input | Resolved |
+|------------|----------|
+| `review` | `unikit-review` |
+| `unikit-review` | `unikit-review` |
+| `/unikit-review` | `unikit-review` |
+| `my-custom-skill` | `my-custom-skill` |
+
+Rule: strip leading `/`. If name doesn't start with `unikit-` AND `{{skills_dir}}/unikit-<name>/SKILL.md` exists → use `unikit-<name>`. Otherwise use as-is.
+
+After resolving: verify `{{skills_dir}}/<resolved>/SKILL.md` exists. If not → error:
+"Skill '<resolved>' not found. Available unikit skills: [scan `{{skills_dir}}/unikit-*/SKILL.md` for installed skills]."
+
+---
+
+### Mode A: Direct Add
+
+User provided skill name and rule text:
+```
+/unikit-skills-context review "Always check null-check symmetry first"
+```
+
+Proceed to Step 1 with resolved skill name and rule text.
+
+### Mode B: Interactive
+
+No arguments provided.
+
+Explain first (plain markdown): skill-context rules change HOW a skill works — priorities, steps, guards. For coding conventions (naming, patterns), use /unikit-rules instead.
+
+The question tool of your agent (`AskUserQuestion`): Which skill do you want to customize, and what rule should be added?
+
+Options — the likely answers (the user writes their own skill and rule in the free-text answer):
+- review "Always check null-check symmetry first"
+- fix "When fixing async bugs, check cancellation cleanup"
+- implement "Compile after each file change"
+
+After the user responds, parse skill name and rule text, then proceed to Step 1.
+
+---
+
+### Step 1: Cross-Check Against Base SKILL.md
+
+Read the base skill file: `{{skills_dir}}/<resolved>/SKILL.md`
+
+Check if the base SKILL.md already covers the proposed rule:
+
+| Situation | Action |
+|-----------|--------|
+| Base already contains this exact instruction | Tell user: "Already covered in base skill: {quote}". Skip. |
+| Base has a weaker version of same instruction | Add to skill-context as strengthened override. Note what it strengthens. |
+| Base contradicts the proposed rule | Add to skill-context as explicit override. Warn that skill-context wins over base. |
+| No overlap with base | Add to skill-context as new rule. |
+
+### Step 2: Cross-Check Against Existing Skill-Context
+
+Read `.unikit/skill-context/<skill>/SKILL.md` if it exists.
+
+Check for semantic duplicates — if a rule with the same meaning already exists in skill-context, tell user and skip.
+
+### Step 3: Add Rule to Skill-Context
+
+**If file doesn't exist** — create directory and file:
+
+```bash
+mkdir -p .unikit/skill-context/<skill-name>
+```
+
+```markdown
+# Project Rules for /<skill-name>
+
+> Auto-generated by `/unikit-skills-context`. Do not edit manually.
+> Last updated: YYYY-MM-DD HH:mm
+
+## Rules
+
+### [Rule Name]
+**Rule**: [Specific, actionable instruction in English]
+```
+
+**If file exists** — read it, then:
+- Add new `### [Rule Name]` entry under `## Rules`
+- Update `> Last updated:` line
+
+**Formatting:**
+- Rule name: short, descriptive (2-5 words)
+- Rule text: English, imperative, specific and actionable
+- If user provided rule in non-English language, translate to English before writing
+
+### Step 4: Confirm
+
+```
+✅ Added to .unikit/skill-context/<skill>/SKILL.md:
+
+### [Rule Name]
+**Rule**: [the rule text]
+
+Cross-check: [result — "no overlap with base" / "strengthens base rule on X" / "overrides base behavior Y"]
+```
+
+---
+
+## Validate Mode: Stale Rule Check
+
+Triggered by:
+- `/unikit-skills-context validate` → check ALL skills that have skill-context files
+- `/unikit-skills-context validate <skill>` → check specific skill only
+
+### Step V1: Find Skill-Context Files
+
+```
+Glob: .unikit/skill-context/*/SKILL.md
+```
+
+If checking specific skill → filter to that one.
+
+If no skill-context files found → report "No skill-context files to validate." and stop.
+
+### Step V2: Compare Against Base Skills
+
+For each skill-context file:
+
+1. Read the base `{{skills_dir}}/<skill>/SKILL.md`
+2. For each rule in skill-context, compare against the base:
+
+| Case | Description | Recommendation |
+|------|-------------|----------------|
+| **A: Fully covered** | Base now contains equivalent or superset rule | Remove from skill-context — base handles it |
+| **B: Conflict** | Base directly contradicts skill-context rule | User decision required — skill-context wins if kept |
+| **C: Partial overlap** | Neither fully covers the other | Analyze and present options |
+| **D: No overlap** | Rule is unique to project context | Keep as-is, no action needed |
+
+Collect all Case A/B/C findings. If none found → report "All skill-context rules are current." and stop.
+
+### Step V3: Present Findings
+
+For each stale rule:
+
+**Case A — Fully covered:**
+```
+### ✅ /unikit-<skill> — Fully covered: [Rule Name]
+- **Base SKILL.md says:** [base rule text]
+- **Skill-context says:** [project rule text]
+- **Recommendation:** Remove from skill-context (base covers it)
+```
+
+**Case B — Conflict:**
+```
+### ⚠️ /unikit-<skill> — Conflict: [Rule Name]
+- **Base SKILL.md says:** [base rule text]
+- **Skill-context says:** [project rule text]
+- **Note:** Skill-context has priority — if kept, base version is ignored
+```
+
+**Case C — Partial overlap:**
+```
+### 🔄 /unikit-<skill> — Partial overlap: [Rule Name]
+- **Base SKILL.md says:** [base rule text]
+- **Skill-context says:** [project rule text]
+- **Analysis:** [explain overlap and whether parts are independent]
+- **Warning:** Skill-context has priority — if kept as-is, base's unique parts on this topic will be lost
+```
+
+### Step V4: Collect Decisions
+
+Ask each finding with the question tool of your agent (`AskUserQuestion`):
+
+**Case A:**
+
+Options:
+1. Remove — trust base skill
+2. Keep — ensure priority of skill-context rule
+
+Based on choice:
+- Remove → delete the rule section from skill-context file
+- Keep → no changes needed
+
+**Case B:**
+
+Options:
+1. Keep skill-context — override base
+2. Remove — trust base
+3. Rewrite — merge both formulations
+
+Based on choice:
+- Keep skill-context → no changes needed
+- Remove → delete the rule section from skill-context file
+- Rewrite → replace rule text with merged version
+
+**Case C:**
+
+Options:
+1. Rewrite — include unique parts from both
+2. Keep as-is — base's parts lost
+3. Remove — delete skill-context rule
+
+Based on choice:
+- Rewrite → replace rule text with new version combining both
+- Keep as-is → no changes needed
+- Remove → delete the rule section from skill-context file
+
+### Step V5: Apply Decisions
+
+For each decision:
+- **Remove:** Delete the rule section from skill-context file
+- **Rewrite:** Replace rule text with new version
+- **Keep:** No changes needed
+
+After applying:
+- Update `> Last updated:` line
+- If a skill-context file has no rules left (only header remains) → delete the file and its directory
+
+---
+
+## Rules
+
+1. **Skill-context only** — all rules go to `.unikit/skill-context/`, NEVER to `{{skills_dir}}/unikit-*/`
+2. **English only** — skill-context files are always in English regardless of user's language
+3. **Workflow rules only** — skill-context is for HOW skills work, not coding conventions (use `/unikit-rules` for those)
+4. **No duplicates** — always cross-check against base SKILL.md and existing skill-context
+5. **Reversible** — user approves changes in validate mode before applying
+6. **Ownership boundary** — this command owns `.unikit/skill-context/*`; treats base skills (`{{skills_dir}}/`) and rules (`.unikit/memory/`, `.unikit/RULES.md`, `.unikit/rules/`) as read-only
+
+## Examples
+
+```
+/unikit-skills-context review "Always check null-check symmetry first"
+
+> ✅ Added to .unikit/skill-context/unikit-review/SKILL.md:
+> ### Null-Check Priority
+> **Rule**: Always check null-check symmetry first when reviewing code.
+> Cross-check: no overlap with base
+```
+
+```
+/unikit-skills-context validate
+
+> 🔍 Checking 2 skill-context files...
+>
+> ✅ /unikit-fix — Fully covered: Cancellation Cleanup
+> Base SKILL.md now includes: "check cancellation cleanup in async methods"
+> Recommendation: Remove from skill-context
+>
+> ✅ /unikit-review — No overlap: all 3 rules are project-specific
+>
+> ⚠️ 1 stale rule found.
+> [question] Remove it? — Remove / Keep
+```

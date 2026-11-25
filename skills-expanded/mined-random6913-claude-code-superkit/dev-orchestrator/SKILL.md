@@ -1,0 +1,308 @@
+---
+name: dev-orchestrator
+description: Coordinate development through 16 phases (0-15) across planning, implementation, verification, and review gates when a task needs multiple dependent steps or consequential decisions.
+user-invocable: true
+tokens: 5697
+---
+
+# Development Orchestrator
+
+Run the development cycle for the user's request as 16 numbered phases (0-15). Read each referenced skill and preserve its authority and verdict contract. Use available, authorized delegation with explicit model/effort and scoped clean-context packets following project routing; otherwise execute suitable roles inline and disclose self-review. Do not waive a required independent or Astra acceptance gate when that capability is unavailable.
+
+## Task
+
+Parse the user's request to determine scope and parameters.
+
+## Codex Runtime and Skill Resolution
+
+Read the applicable `AGENTS.md` instructions and discover the current runtime's file, command, planning, and delegation capabilities before using them. Resolve each named role to an existing `SKILL.md` from the session's skill catalog or the project's `.agents/skills/<name>/SKILL.md` / `.codex/skills/<name>/SKILL.md`; these may be aliases of the same installation. Read that role directly and give delegated workers its resolved path, scoped task, authority, and evidence. A role name is not a registered agent type. Do not invoke a global skill loader or recursively restart this orchestrator to reach a role. The standalone install does not require a `.claude` tree, plugins, or documentation templates. Missing required expertise or tools remain explicit blockers; suitable inline passes are self-review, not independent acceptance.
+
+## Hard Rules
+
+1. Execute phases in order 0 -> 15. Skip a phase ONLY when the Skip Matrix says so for the task's declared complexity class.
+2. A phase is complete only when its **Done when** condition holds. If a phase produces errors, fix them before advancing.
+3. Consume gate verdicts exactly as produced: plan-checker -> PASS/REVISE/BLOCK; evaluator -> PROCEED/ITERATE/ESCALATE; goal-verifier -> PASS/NEEDS-ATTENTION/NEEDS-REMEDIATION; critic -> APPROVE/CONCERN/BLOCK.
+4. Gate roles review only. The coordinator assigns separately authorized implementation work for corrections. Reuse evidence bound to unchanged relevant code, inputs, environment, and command/results; rerun for relevant changes or concrete uncertainty. On retry, state what changed; a missing tool or evidence is not an observed defect.
+5. Never claim completion while mandatory criteria fail or remain unverified. Issue an incomplete checkpoint whenever blocked; the completion report requires every non-skipped phase to pass. Retry exhaustion is not acceptance.
+6. If the task is ambiguous, ask the user before Phase 7 (Implement) -- not after.
+7. Always read existing patterns before writing new code -- search first, reuse the closest implementation as reference.
+
+## Phase Overview & Skip Matrix
+
+Complexity (Simple / Standard / Complex) is decided in Phase 1 by risk and dependencies. Reassess it if new evidence changes the scope or risk; do not skip a required gate to preserve the original classification.
+
+| # | Phase | Simple | Standard | Complex | Gate skill |
+|---|-------|:------:|:--------:|:-------:|-----------|
+| 0 | Read Docs | yes | yes | yes | - |
+| 1 | Understand | yes | yes | yes | - |
+| 2 | Architect | - | - | yes | architect |
+| 3 | Pseudocode | - | - | yes | - |
+| 4 | Plan | yes | yes | yes | - |
+| 5 | Contract | - | yes | yes | - |
+| 6 | Validate Plan | - | yes | yes | plan-checker |
+| 7 | Implement | yes | yes | yes | - |
+| 8 | Evaluate | - | yes (max 2 passes) | yes (max 3 passes) | evaluator |
+| 9 | Verify | yes | yes | yes | health-checker |
+| 10 | Test | yes | yes | yes | test-generator |
+| 11 | Verify Goals | - | yes | yes | goal-verifier |
+| 12 | Review | yes | yes | yes | reviewer skills |
+| 13 | Critic | - | - | yes | critic |
+| 14 | Document | yes | yes | yes | docs-reviewer |
+| 15 | Report | yes | yes | yes | - |
+
+Simple skips phases 2, 3, 5, 6, 8, 11, 13. Standard skips 2, 3, 13. Complex runs all 16.
+
+## Phase 0 -- Read Docs
+
+Read `docs/architecture/` files relevant to the task scope:
+- Backend task -> `backend-layers.md`, `api-reference.md`, `database-schema.md`
+- Frontend task -> `frontend-state.md`
+- Auth task -> `auth-and-sessions.md`
+- Full-stack -> relevant cross-component contracts and architecture docs
+
+Missing docs are not an error -- note what was absent and continue.
+**Done when:** relevant existing docs are read (or confirmed absent).
+
+## Phase 1 -- Understand
+
+1. **Detect the stack** by scanning the repository root and subdirectories:
+
+   | Marker file | Stack |
+   |---|---|
+   | `go.mod` | Go backend |
+   | `package.json` + `tsconfig.json` | TypeScript (check for React, Vue, Svelte, etc.) |
+   | `pyproject.toml` / `setup.py` / `requirements.txt` | Python |
+   | `Cargo.toml` | Rust |
+   | `pom.xml` / `build.gradle` | Java/Kotlin |
+   | `docker-compose.yml` | Docker infrastructure |
+   | `migrations/` or `db/migrate/` | Database migrations |
+
+2. **Parse the task**: affected components (backend, frontend, infra, bots, docs); feature / enhancement / bug fix / refactor; inputs and expected outputs.
+
+3. **Assess complexity** by consequences, coupling, and uncertainty. Simple means a narrow low-risk change following a proven pattern. Standard needs coordinated implementation and behavioral acceptance. Complex includes consequential architecture, security/authority, data-loss or irreversible changes, or unresolved design risk. File and line counts may inform effort, but cannot reduce risk or waive a mandatory gate.
+
+4. **Search the codebase** for existing related patterns: grep domain terms, endpoint paths, function names; read files that will be modified; check routing files and API specs (OpenAPI, GraphQL schema).
+
+5. **Identify the closest existing implementation** and read it -- it is the reference pattern for Phase 7.
+
+**Done when:** stack detected, complexity class declared, reference pattern read.
+
+## Phase 2 -- Architect (Complex only)
+
+Perform an architecture design pass following the **architect** skill:
+```
+Design the architecture for this task:
+Task: [description]
+Current architecture: [from Phase 0 docs]
+Affected components: [from Phase 1]
+Compare viable approaches and explain relevant trade-offs; do not invent alternatives.
+```
+Resolve blocking design questions with the owner before Phase 4. Pass the recommendation and decision rationale into the plan.
+**Done when:** one approach chosen, with a stated reason.
+
+## Phase 3 -- Pseudocode (Complex only)
+
+Draft language-agnostic pseudocode for the core logic (algorithm, state machine, data pipeline): input/output contract, main control flow, error paths, data transformations. 30-50 lines maximum -- longer means the task needs decomposition. No file paths, no framework syntax.
+
+Present to the user: "Here's the pseudocode for [core logic]. Does this match your expectations?"
+**Done when:** user approves (or explicitly waives) the pseudocode; it becomes the Phase 4 skeleton.
+
+## Phase 4 -- Plan
+
+Produce a checklist plan organized by component -- include only relevant sections. Use a discovered planning tool when available; otherwise maintain the checklist in the conversation or the project's existing plan file.
+
+```
+## Implementation Plan
+### Database
+- [ ] Migration: NNNN_description
+### Backend
+- [ ] Repository/data layer: path
+- [ ] Service/business logic: path
+- [ ] DTOs/schemas: path
+- [ ] Handler/controller: path
+- [ ] Routes: path
+- [ ] Tests: path
+### Frontend
+- [ ] Types / API client / state / component: paths
+### Infrastructure
+- [ ] Docker/config changes
+### Documentation
+- [ ] API spec, architecture docs, README
+```
+
+**Done when:** every planned item names a concrete file path.
+
+## Phase 5 -- Contract
+
+Write testable acceptance criteria -- Phase 8 evaluates exactly these:
+
+```
+## Sprint Contract
+| # | Criterion | Test Method | Threshold | Priority |
+|---|-----------|-------------|-----------|----------|
+| 1 | [specific, testable outcome] | [grep / curl / test / read] | Score >= 7 | MUST |
+| 2 | ... | ... | ... | MUST/SHOULD |
+```
+
+Threshold uses the evaluator's 0-10 scale -- default 7 unless a criterion warrants stricter. Good criteria are testable, specific ("returns 200 with user.id in JSON", not "endpoint works"), independent, and measurable. Never include subjective items ("code is clean") or unmeasurable ones ("performance is good").
+**Done when:** every criterion has a concrete test method.
+
+## Phase 6 -- Validate Plan
+
+Give **plan-checker** the original task, inline Phase 4 plan, Phase 5 contract and any previous report.
+- **PASS** -> Phase 7.
+- **REVISE** -> fix the identified plan or contract issues. Re-dispatch with the prior report at most twice, then treat an unresolved result as BLOCK.
+- **BLOCK** -> supply a missing plan or goal if already available. Carry retries within the same limit. Otherwise stop and present the missing input or blocking decision.
+**Done when:** verdict is PASS.
+
+## Phase 7 -- Implement
+
+For a refactor with thin coverage, request characterization tests against unchanged inputs and establish the baseline before editing implementation. Execute planned changes in dependency order.
+
+1. **Migration** -- follow the detected tool's actual format and ordering, existing database dialect, and project rollback policy. Use the installed **new-migration** skill for scaffolding when relevant. Creating files does not authorize database execution; use **migrate** only with verified target, action, and authority. Conditional DDL is not a guarantee against data loss, and not every tool supports paired up/down files or a lossless reverse.
+2. **Data layer** -- follow the project's existing data-access patterns (Go: pgx/sqlx/gorm, nil-safe repos, `fmt.Errorf("Context.Method: %w", err)`; Python: SQLAlchemy/Django ORM; TypeScript: Prisma/TypeORM/Drizzle).
+3. **Business logic** -- constructor DI via interfaces; Go: `context.Context` first param, domain errors; Python: type hints, async where applicable; TypeScript: strict types.
+4. **Transport** -- follow existing handler patterns (chi, gin, echo, express, FastAPI, etc.); input validation at the boundary; errors mapped to proper status codes.
+5. **Routes** -- register endpoints, apply auth/middleware.
+6. **Frontend** -- read existing components first (animation library, styling, state); API client and types matching the backend contract.
+
+**Done when:** every Phase 4 checklist item is implemented (no placeholders/TODOs left).
+
+## Phase 8 -- Evaluate
+
+Assess implementation against the Sprint Contract following the **evaluator** skill, passing the changed scope, bound evidence, pass number, and prior report. Preserve UNVERIFIED and N/A criterion results; never turn missing evidence into a zero score or a pass.
+- **PROCEED** -> Phase 9.
+- **ITERATE** -> assign code corrections to the implementer. For an evidence gap supply the requested command, result, environment and time. Keep unavailable evidence UNVERIFIED and return any acceptance decision to its owner. Re-evaluate affected criteria as pass N+1. If the matrix budget is exhausted (Standard 2 / Complex 3), or correction makes no meaningful progress, stop this loop and report the unresolved mandatory criteria and next decision. Do not advance on a warning alone.
+- **ESCALATE** -> route the stated cause: architect/Astra for design or consequential acceptance; contract owner for requirements; appropriate owner for missing authorization, tool, or external evidence. Supply a missing contract directly. For a design review, give the architect the evaluation, plan and contract. Resolve blocking questions, correct affected plan items and revalidate them in Phase 6 before restarting at Phase 7. Allow one architect restart per task. A second design escalation stops for the owner.
+**Done when:** verdict is PROCEED and mandatory evidence is sufficient. Otherwise report incomplete.
+
+## Phase 9 -- Verify
+
+Follow the **health-checker** skill if present with the selected components, relevant compilation/build/static checks, and any other mandatory verification explicitly required by the task/project. Declare that scope; do not automatically run its entire nine-domain dashboard or let optional checks redefine this phase. Otherwise discover the project's actual configured commands and available tools, inspect effects, and run those same selected checks directly. Keep build/compilation separate from static analysis (for example, `go vet` alone is not a build); do not use a launcher that installs missing tools.
+
+Keep this verification pass read-only apart from authorized disposable build/test outputs. Preserve original command exits, failed/timeout/unavailable states, full appropriately redacted evidence, and actual test skips; a shortened log or formatter exit is not the check result. Reuse recorded checks only for unchanged relevant code, inputs, and environment. Corrections belong to the coordinator or authorized implementer, not the health report.
+
+**Done when:** all declared mandatory Phase 9 checks pass with sufficient evidence and no blocking result remains; if using health-checker, Progression must be ALLOWED. Optional warnings/unknowns remain explicit and do not block by themselves. An unavailable, skipped, or unverified mandatory check leaves this phase incomplete; report its dependency instead of endlessly retrying it.
+
+## Phase 10 -- Test
+
+Pass **test-generator** the changed backend paths, original task and Sprint Contract (or the Phase 4 checklist for a task without a contract). Identify the requirement or existing contract that supplies expected values. Select meaningful happy/failure/boundary/state cases from requirements or observed defects; no mandatory case quota or implementation-mirroring assertions. The generator owns scoped test/fixture edits and authorized focused execution; the coordinator owns required suite verification and assigns production fixes only within existing implementation authority. Route a demonstrated code failure to the implementer and an incorrect test to the test author. If Phase 1 identifies a refactor needing characterization, run the baseline step before Phase 7. Use that recorded output in Phase 10.
+
+Read the generator’s second line (`Generated N tests … — Result: PASS | FAIL | NOT RUN`) together with its `Execution:` line, actual exit, scoped counts and open issues. Preserve missing, skipped, uncollected or flaky cases. A valid red regression test may complete a test artifact but does not pass this development gate. Reuse unchanged, properly bound focused or suite evidence instead of repeating it by ritual; run the required project suite for the final relevant state.
+**Done when:** required tests actually ran and passed, required coverage is satisfied, and no mandatory skipped/unverified result remains (include the actual final summary line and command). If a required check or authorized correction is unavailable, report the bounded blocker; do not treat a failed, unrun, or all-skipped suite as green.
+
+## Phase 11 -- Verify Goals
+
+Give **goal-verifier** the requested outcomes, Sprint Contract MUST criteria, changed paths, bound evidence and its prior report on retry. Phase 4 checklist items identify artifacts for tracing. It assesses applicable levels: EXISTS -> SUBSTANTIVE -> WIRED -> DATA-FLOW; preserve justified N/A and unresolved UNVERIFIED results.
+- **PASS** -> Phase 12.
+- **NEEDS-ATTENTION** -> distinguish local fixes from missing evidence. Assign bounded corrections/checks, or report the dependency; never repeatedly retry an unavailable capability.
+- **NEEDS-REMEDIATION** -> substantive goal mismatch or missing capability; return to Phase 7 (or Phase 4 if the plan itself was wrong).
+**Done when:** verdict is PASS.
+
+## Phase 12 -- Review
+
+First, a 30-second inline self-pass on the diff: (a) no placeholders/TODOs/`unimplemented`, (b) types/signatures consistent with callers, (c) every acceptance criterion has a corresponding change. Fix the obvious now.
+
+Then perform matching reviews with available skills and authorized delegation; inline passes are self-review. Use the mapping below to identify relevant expertise, and scope each pass to actual risk and requirements:
+
+| Changed files | Skill |
+|---|---|
+| `*.go` (not migrations, not tests) | **go-reviewer**, **security-scanner** |
+| `*.sql` migrations | **migration-reviewer**, **database-reviewer** |
+| Data-access files, Prisma/Drizzle schemas, ORM models and query SQL (including sqlc) | **database-reviewer** |
+| `*.ts`, `*.tsx` | **ts-reviewer** |
+| `*.py` | **py-reviewer**, **security-scanner** |
+| `*.rs` | **rs-reviewer** |
+| Bot code | **bot-reviewer** |
+| UI components | **design-system-reviewer**, core **ui-reviewer**. For a 2D UI review spanning specialist domains, select the **frontend-ui-reviewer** umbrella. |
+| OpenAPI/Swagger, GraphQL schema or protobuf API contract changed | **api-contract-sync** |
+| Any changed code | **silent-failure-hunter**, **comment-rot-analyzer** |
+
+For each skill, review the selected diff/base and changed-file list against the task description, applying that skill's two-stage discipline (discover, then triage by Severity + Confidence). Keep reviewer passes read-only; assign corrections separately within existing implementation authority. Preserve each report's coverage, evidence, and unresolved prior findings.
+
+Read the umbrella’s `### Specialist routing` table. Dispatch each outstanding `route` row once, within authorized concurrency, with its hand-off, the task and the reviewed revision. Reuse `completed` reports. List `not found locally` rows as uncovered in Phase 15, and stop here if that coverage is mandatory. Consolidate specialist findings with the other reviews.
+
+Collect the specialist handoffs that reviewer reports recommend instead of delegating (for example go-reviewer naming `go-error-reviewer`, `go-concurrency-reviewer`, `go-performance-reviewer`, `go-modernizer`, `go-observability-reviewer`, `database-reviewer` or `security-scanner`). Run each recommended role once, when its skill resolves and it has not already reviewed that scope in this phase, with the same reviewed revision, its changed files, the task and the recommendation reason; consolidate its findings with the rest. Run one follow-up round only. List each recommendation not run — role unavailable or follow-up round already used — with its reason under Phase 15 Open Questions, and stop here if that coverage is mandatory.
+
+Triage findings:
+- CRITICAL or WARNING at HIGH/MEDIUM confidence -> fix before proceeding.
+- LOW confidence / ambiguous -> carry into the **Open Questions** section of the Phase 15 report.
+- A clean review (0 findings) is a valid result -- do not pad it.
+- For silent-failure-hunter and comment-rot-analyzer, incomplete required coverage or a mandatory UNVERIFIED condition blocks progression without becoming a defect. Optional uncertainty may remain explicitly non-blocking; an Open Questions entry does not waive required evidence.
+
+**Done when:** all CRITICAL/WARNING findings fixed or explicitly deferred with reason within the task's acceptance rules, and no mandatory review evidence/coverage remains unresolved. If the required check cannot be completed, report the dependency and stop this phase instead of retrying indefinitely.
+
+## Phase 13 -- Critic (Complex only)
+
+Perform a final quality gate following the **critic** skill over the changed scope, original task, and Phase 12 findings/evidence. Supply each material finding’s reviewer, location, disposition and reason, plus the previous critic report on retry. Use relevant security, maintainer, and operations perspectives without a findings or predictions quota.
+- **APPROVE** -> Phase 14.
+- **CONCERN** -> address or document explicit non-blocking disposition; advance only when Progression is ALLOWED and no mandatory evidence/acceptance is missing.
+- **BLOCK** -> resolve the stated defect, evidence gap, or acceptance dependency. Recheck affected scope with the prior report, at most twice. Stop on exhausted retries or an unresolved decision, permission or capability.
+**Done when:** verdict is APPROVE, or CONCERN with ALLOWED progression and justified non-blocking disposition. Repeated unsuccessful correction requires a bounded escalation, not an endless review loop.
+
+## Phase 14 -- Document
+
+Verify documentation completeness and accuracy for the selected changes following the **docs-reviewer** skill and the project's actual documentation map. The reviewer reports evidence and proposed corrections read-only; the coordinator or assigned implementer performs these updates within already-authorized scope:
+1. **API spec** (OpenAPI/GraphQL) if endpoints changed.
+2. **Architecture docs** if system behavior changed.
+3. **README** if setup, commands, or structure changed.
+**Done when:** applicable mandatory documentation has been reviewed, required updates verified, and no unresolved mandatory MISSING, STALE, BROKEN, DRIFT, or UNVERIFIED items remain. Preserve justified N/A and optional suggestions; a zero missing count accompanied by unconfirmed required documentation keeps this gate open. Recheck affected claims after corrections, retaining prior unresolved items. If a required source/check is unavailable, report incomplete and the next owner/action; do not silently advance or repeat an unavailable check indefinitely.
+
+## Phase 15 -- Report
+
+Emit only after all non-skipped phases completed:
+
+```
+## Development Report
+
+### Task
+[Original task description]
+
+### Phases Executed
+| # | Phase | Status | Notes |
+|---|-------|--------|-------|
+| 0 | Read Docs | done | N docs read |
+| 1 | Understand | done | [components], [complexity] |
+| 2 | Architect | done/skipped | [approach chosen / not Complex] |
+| 3 | Pseudocode | done/skipped | |
+| 4 | Plan | done | N items |
+| 5 | Contract | done/skipped | N criteria |
+| 6 | Validate Plan | done/skipped | PASS after N iterations |
+| 7 | Implement | done | N created, M modified |
+| 8 | Evaluate | done/skipped | PROCEED at pass N |
+| 9 | Verify | done | compilation clean |
+| 10 | Test | done | X tests green |
+| 11 | Verify Goals | done/skipped | PASS (all applicable mandatory levels) |
+| 12 | Review | done | [skills]: N findings fixed |
+| 13 | Critic | done/skipped | APPROVE |
+| 14 | Document | done | [docs updated] |
+| 15 | Report | done | this report |
+
+### Changes Made
+| File | Action | Description |
+|------|--------|-------------|
+
+### Open Questions (LOW-confidence review items -- surfaced, not dropped)
+- file:line -- suspicion + what would confirm it (omit section if none)
+
+### Metrics
+| Metric | Value |
+|--------|-------|
+| Complexity | Simple / Standard / Complex |
+| Skill passes | N (list) |
+| Evaluator passes | N (ITERATE -> ... -> PROCEED) |
+| Sprint contract | X/Y criteria met |
+
+### Suggested Commit Message
+type(scope): description
+```
+
+Co-authorship trailers are optional; do not add one unless the project explicitly requires it.
+
+## Recap -- non-negotiables
+
+- Phases run in order 0 -> 15; the Skip Matrix is the only source of skips.
+- Gate verdicts consumed verbatim (plan-checker PASS/REVISE/BLOCK, evaluator PROCEED/ITERATE/ESCALATE, goal-verifier PASS/NEEDS-ATTENTION/NEEDS-REMEDIATION, critic APPROVE/CONCERN/BLOCK); retry a correctable gate only within its phase budget, carrying the previous report.
+- No completion claims over failed or unverified mandatory criteria; report incomplete at a blocker instead of advancing or hiding it behind exhausted retries.
+- LOW-confidence findings go to Open Questions, never silently dropped.
+- Conventional commits: `feat|fix|docs|refactor|chore|test|perf(scope): description`.

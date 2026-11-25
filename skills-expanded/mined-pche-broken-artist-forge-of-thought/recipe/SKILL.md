@@ -1,0 +1,45 @@
+---
+description: Compose a render recipe by genre — bare = genre roster, with a genre = guided composition
+argument-hint: "[genre-or-recipe] [project-slug]"
+---
+
+Role: dispatcher for composing render recipes. A recipe is composed
+conversationally with the principal; a genre definition carries the
+elicitation checklist and points at the canonical skeleton for one
+kind of render. Definitions live in `.claude/skills/recipe/genres/<genre>.md`
+— one file per genre, its skeleton in `templates/recipe-<genre>.md`.
+Adding a genre means adding those two files; this dispatcher never
+changes.
+
+**Bare `/recipe` — report the roster.**
+1. List `.claude/skills/recipe/genres/` for the available genres, each with
+   its one-line description.
+2. Infer the current project from context ($0 may be a slug; if
+   ambiguous, ask) and list its existing recipes from `recipes/` with
+   versions.
+3. Recommend a fit where the conversation suggests one. A recipe
+   outside any genre stays legitimate: compose it conversationally
+   from `templates/recipe.md`.
+
+**`/recipe <genre>` — compose or iterate through that genre.**
+1. Resolve `.claude/skills/recipe/genres/$0.md`. If it does not exist,
+   check whether `recipes/$0.md` exists in the project — if so,
+   iterate that recipe (through its genre definition when one fits,
+   otherwise conversationally). If neither exists, list the genres
+   that do and stop.
+2. Read the genre file and follow it: it declares the elicitation
+   checklist and the skeleton. A genre file's arguments are those
+   following the genre name. Every genre runs in the same frame: the
+   checklist closes with the **language** question — the render's
+   language, or languages where the genre allows them (`languages:`,
+   `templates/recipe.md`), is what the recipe declares (CLAUDE.md, prime
+   directive 6); propose the project's language from its project file
+   (`project.md`) and ask, never assume — and the recipe is then
+   composed from the genre's skeleton, unused placeholders and the
+   template's comments deleted but the line that names the skeleton
+   (CLAUDE.md, Templates). The recipe is composed with the principal
+   — options and trade-offs offered, decisions his — and written once
+   per round on confirmation, per CLAUDE.md, Versioning & status (a
+   recipe: a version and no status), into `recipes/<recipe>.history.md`
+   — created from `templates/history.md` with the recipe.
+3. After writing, offer `/render <recipe>` as the natural next step.

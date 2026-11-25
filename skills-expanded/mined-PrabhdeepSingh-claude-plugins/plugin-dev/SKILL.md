@@ -1,0 +1,137 @@
+---
+name: plugin-dev
+description: The maintainer's handbook for the sonu plugin and the claude-plugins repo. INVOKE whenever authoring, editing, reviewing, or releasing any component in this repo — a skill's SKILL.md, a command file (under sonu/commands/ or .claude/commands/), a manifest, or the README — or when answering how the plugin's pieces fit together. Covers the house rules, plugin/skill/command mechanics, the authoring conventions, the trap catalogue mined from this repo's own incidents, and the validation/release procedure pointers. Do NOT load this for ordinary coding work in other repos — it governs work ON the plugin, not work done WITH it.
+---
+
+# Plugin development — how to carry this repo forward
+
+This repo has no test suite, no CI, and no compiler: every quality gate is discipline plus the checks in `/validate`. This skill is the discipline written down, so a zero-context contributor (human or model) can change the plugin without re-fighting battles that are already settled. Everything here was extracted from this repo's actual git history — each rule has an incident behind it.
+
+## When to apply this
+
+Any change inside this repo: editing a skill or command, adding a component, bumping a version, touching a manifest or the README, or reviewing someone else's change to any of those. If your working directory is the `claude-plugins` repo, this skill applies.
+
+**When NOT to use it:** using the plugin's skills/commands in some other repo. This file governs the toolbox, not the work done with the tools.
+
+---
+
+## 1. Architecture contract — the load-bearing decisions
+
+These decisions are deliberate. Don't reverse them casually; if one must change, record why in the PR and update this section.
+
+| Decision | Why it holds |
+|---|---|
+| **One plugin (`sonu`), one marketplace (`prabhdeep-tools`)** | The repo IS the marketplace. `marketplace.json` at the root points at `./sonu`; everything installable lives under `sonu/`. |
+| **Commands are thin; skills carry the methodology** | A command exists only where sequencing and gates add something beyond one skill (`/sonu:build`, `/sonu:ship`). A discipline that needs a direct entry point is invoked as `/sonu:<skill-name>` on the skill itself — skills are directly user-invocable and take `argument-hint`/`$ARGUMENTS`. **Never ship a command and a skill under the same name**: they collide on the one shared invocation surface (the docs say the skill shadows the command; observed live behavior has been inconsistent, including launch errors) — that collision shipped once as the `tdd`/`design-tree`/`self-review` wrapper commands and was removed in v2.0.0. |
+| **`/sonu:build` is a conductor, not an implementation** | It sequences design-tree → tdd → self-review and adds only triage and gates. It never re-implements what the skills already say (its opening contract enforces this). |
+| **`/sonu:ship` is the one deliberately fat command** | Its bulk is incident-hardened, copy-exact shell with the failure lore attached. It delegates what it can (PR bodies and replies → pr-conventions, risk lists → self-review). Do not split it; do not "clean up" a snippet whose comment says copy it exactly. |
+| **No hooks, no agents, no MCP servers, no scripts/** | Zero-dependency Markdown + JSON keeps the plugin installable anywhere with nothing to break. Adding executable machinery needs a strong reason and a PR discussion, not a drive-by. |
+| **A skill's `references/*.md` files are content, not the forbidden machinery** | The rule above bans executable scripts/servers, not plain Markdown. A `references/` subdirectory beside a heavy skill's `SKILL.md` is allowed and encouraged (§4) — it's still zero-dependency Markdown, just loaded on demand instead of always. |
+| **Prose that directs the harness's built-in Agent tool is content, not the forbidden machinery** | The "no agents" ban above means no *shipped* agent definitions — components the plugin would have to carry and keep working. A skill or command instructing the model to use the harness's own subagent tool (self-review's independent reader; build.md's delegation rules, which pre-approve `Agent` in `allowed-tools`) is still zero-dependency Markdown: on a harness without subagents it degrades to inline execution by its own wording, with nothing to break. |
+| **Dual manifests (Claude Code + Cursor)** | `.claude-plugin/` and `.cursor-plugin/` carry mirrored manifests at both the repo root (marketplace) and inside `sonu/` (plugin). Cursor reads its own copy; the two `plugin.json` files must stay byte-identical in content. |
+| **Installed copies are pinned** | A user's installed plugin does NOT track `main`. Changes reach users only after a version bump + their `/plugin marketplace update`. An unbumped fix on main is invisible to every installed copy — that has already happened once (a ship.md behavior fix landed without a bump). |
+| **Maintainer tooling is repo-local, never shipped** | This skill, `/validate`, and `/release` live in `.claude/` (project-level), not under `sonu/` — they only work with this repo checked out, so the audience boundary and the distribution boundary are the same line. Anything useful only to people working ON the plugin goes in `.claude/`; anything useful to people working WITH the plugin ships under `sonu/`. Don't put the next maintainer tool in the plugin. |
+
+## 2. The house rules
+
+These are law for every contribution. They pre-date this file; this is their canonical written home.
+
+1. **No named sources.** Skills never cite books, authors, papers, or studies — not in the description, not in the body. Embed the knowledge as owned instruction. A named source sends a smaller model off to research the citation instead of applying the content (this happened: a named study in the editorial-SEO skill had to be excised).
+2. **Description = routing signal only.** A skill's frontmatter `description` says *what it is* and *when to load it* (distinctive triggers, plus when NOT to and which sibling to use — within §4's description budget). Methodology, sequencing, and rules live in the body. The description is what the model reads when deciding whether to load the skill — nothing else fits there.
+3. **No AI attribution anywhere.** No `Co-Authored-By` trailers, no "Generated with" lines — in this repo's own commits and PRs, and in everything ship produces. Work reads as the owner's own.
+4. **Version-sync in the same PR.** Any component change bumps the plugin version and syncs the plugin description across its five homes — they have drifted before. The exact file list and procedure live in exactly one place, `/release` Phase 2; follow that rather than reciting from memory.
+5. **Dogfood the flow.** Changes go branch → PR → review → merge (use the plugin's own `/sonu:build` and `/sonu:ship`). Never commit directly to `main`.
+
+## 3. Component mechanics — how the pieces actually work
+
+Definitions a zero-context contributor needs (re-verify against the official Claude Code plugin docs if behavior seems off — see Provenance):
+
+- **Skill** = `sonu/skills/<name>/SKILL.md` with YAML frontmatter carrying `name` and `description` (plus, for skills meant to be typed directly, optional `argument-hint` and `allowed-tools` — the same prompt-reduction field commands use, carried over so a direct invocation keeps its pre-approved tool set). Skills are **auto-triggered** — the harness matches the task against the description and loads the body when it fits — and **directly user-invocable** as `/sonu:<name>`, receiving `$ARGUMENTS` in the body. Registered name is namespaced: `sonu:<name>`. Commands and skills share one invocation surface, so a name may exist on only one side (see the architecture contract).
+- **Command** = `sonu/commands/<name>.md`. Invoked explicitly as `/sonu:<name>`. Frontmatter fields used in this repo:
+  - `description` — shown in the slash menu; also the model's routing signal.
+  - `argument-hint` — placeholder text for the argument, e.g. `"[light|full]"`.
+  - `allowed-tools` — tools pre-approved for the command's execution. It reduces permission prompts; it is **not** a hard block on other tools (an audit finding that misread it as a block was refuted — don't repeat that mistake in either direction).
+  - `disable-model-invocation: true` — prevents the model from firing the command on its own; the user must type it. Deliberately **not** set on `/sonu:ship`: the command's own body makes saying "ship it" the authorization for the whole flow, so the owner decided in 2026-07 that model-invocation should work. Don't re-add the flag without a fresh decision to reverse that.
+- **`$ARGUMENTS`** — the literal text typed after the invocation, in commands and in directly-invoked skills alike. House convention for handling it, used wherever it appears: *"the text typed after the invocation; if that token appears literally or is empty, derive the task from context."* Commands phrase it "typed after the command" — same convention, both wordings canonical. (The "appears literally" clause covers harnesses that don't substitute the token.)
+- **Skill invocation from a command**: `Skill(sonu:<name>)` — always the namespaced form. Unqualified names are a real bug that shipped once.
+- **`[[…]]` links** — an in-house cross-reference convention between sibling skills (e.g. `[[tdd]]`, `[[safe-migrations]]`). There is no resolver; it just marks "see that skill." Keep using it; don't invent URLs. Every double-bracket reference must name a real sibling skill — `/validate` checks this.
+
+## 4. Authoring conventions — the house shape
+
+Every skill follows the same skeleton. Match it exactly when adding one:
+
+1. Frontmatter: `name` + trigger-rich, routing-only `description` (rule 2), including when NOT to load it and the sibling to use instead.
+2. An opening paragraph earning the skill's existence — the *why*, in the owner's voice.
+3. `## How to apply this` / `## When to apply this` — operational entry.
+4. Numbered `##` sections, each rule with its *why* and, where code is involved, an `Avoid:` / `Prefer:` example pair.
+5. `## Self-check before ...` — a checklist the model runs against its own output.
+6. `## Provenance and maintenance` — **only if the skill contains volatile facts** (external-world claims, tool behaviors, thresholds). Date-stamp when they were verified and give one-line re-verification commands or searches. Durable-methodology skills (tdd, design-tree) don't need one.
+
+**Splitting a heavy skill: SKILL.md spine + `references/` depth.** A skill's `description:` sits in every session's system prompt whether it fires or not; a skill's body loads in full the moment it fires. For a skill that's both large and broad-firing (fires on most code tasks), that on-invocation cost adds up — so once a skill's body earns real size, split it:
+
+- **What stays in `SKILL.md` (the spine):** the opening paragraph, `How to apply this`, every rule stated as *rule + its one-line why*, and the full self-check. A reader who never opens a reference must still see every rule and every guardrail — nothing that constrains behavior is allowed to move out.
+- **What moves to `references/*.md` (the depth):** `Avoid:`/`Prefer:` code examples, worked examples, tables, and extended justification — the material a literal executor consults only once it's actually in that situation.
+- **Mechanism (no manifest, no frontmatter field — body prose only):** put reference files in a `references/` subdirectory beside `SKILL.md`; nothing registers them, the skill directory is auto-discovered. Point to them with a backtick-wrapped **relative path** to the actual file — never a markdown link, an absolute path, or the `[[…]]` cross-*skill* convention. Anchor each pointer to the rule it supports and name the read-trigger explicitly, e.g. "→ `references/<topic>.md` — read when this change touches X." A pointer with no trigger condition either gets read every time (no savings) or never (the example is lost). End the file with a **"Reference files" index table** (`| File | What it answers |`) so the model can pick the one file it needs instead of loading all of them.
+- **Only split what earns it.** A skill that's small or fires narrowly stays a single file — the split only pays for itself when the common invocation can skip the reference entirely. Don't add a `references/` directory to a skill just for symmetry.
+- **The split doesn't loosen anything else.** Named-source and AI-attribution bans (§2 rules 1, 3) apply inside `references/*.md` exactly as inside `SKILL.md`; a moved example's own cross-skill links must survive the move; `/validate` checks reference-file scans and that every pointer resolves.
+
+Commands follow: frontmatter → one-line contract → phased, imperative runbook — plus an optional pitfalls section, present only when it carries mistakes not already stated in the body (one home per fact: a pitfalls list that restates the phases is duplication, and v3.1.0 removed exactly that from build.md).
+
+Three gates before anything new is added:
+
+- **Duplicate-prevention pre-flight (new components).** Before proposing a new skill or command, search the existing set: if the idea is a refinement of an existing skill, a focused edit there beats a new directory — every new skill costs a resident description forever, and near-duplicate skills split routing. The PR body justifies the gap explicitly.
+- **The entry gate (new rules).** A rule earns its place in a skill when it has been needed in real work, a concrete incident or artifact sits behind it, and its why can be stated in one line — premature entries become aspirational documentation nobody follows, and the excision cost lands on a later release (the dated-SEO-rules cleanup was exactly this).
+- **The pressure-case dry read (discipline skills).** Before shipping a skill whose job is to hold a line under pressure, read it against an authority-plus-urgency prompt — "the tech lead says it's a one-liner and the hotfix window closes in ten minutes" — and check the wording leaves no rationalization open. A skill that folds under the prompt it exists for isn't finished.
+
+Style rules that are non-negotiable across both:
+
+- **Match the rule's form to the failure it prevents.** A rule *violated under pressure* (a cap skipped, a gate bypassed) takes a prohibition plus its rationale — "never X, because Y" — and prohibitions of that discrete shape hold. A rule about *what the model composes* (a prompt, a reply, a comment) takes a **positive recipe** instead — "this prompt contains (1)…(5)" — because composing is something the model has its own agenda about, and a "don't X" there has been measured to do worse than saying nothing. A *required element that goes missing* takes a structural slot in a template, not a reminder. A rule that *depends on a condition* keys on something observable, never "unless it matters". Two corollaries: never append a nuance clause to a recipe — one qualifier turns a consistent recipe noisy — and when two phrasings are equally clear, ship the shorter, because a command file is re-read on every turn of a long session and its length is a recurring cost.
+- **Write for the literal executor.** Assume a smaller model follows the text word-for-word with no context. Ambiguity is a bug: "at most N cycles" once read as "the loop is optional" and shipped a real defect — the fix was the explicit "mandatory whenever…, the cap limits how many, not whether."
+- **Descriptions carry a budget.** Every skill's `description` is resident in every session's prompt whether the skill fires or not, and the router reading it is a strong model that generalizes from a few distinctive cues — it needs signal, not keyword coverage. Target ≲450 characters: one clause for what it is, one for when to invoke (keep the proactive-firing wording), one for when NOT plus sibling pointers. Keep only triggers the opening clause doesn't already imply ("feels off" → ui-polish earns its place; "font-weight" after "web typography" doesn't). When over budget, cut enumerations before boundaries — the sibling pointers are what prevent double-loading, and they're the last thing to go. (This rule exists because the description set once grew to ~18k resident characters, nearly half of it keyword dumps restating the opening clauses.)
+- **Every shell fence is self-contained.** Each Bash invocation is a fresh shell: no variable survives between fences. Every snippet declares what it uses (`BOT_RE=…`, `REPO=$(…)`) or marks literal substitution (`PR=<PR number>`). Never rely on "it was set earlier."
+- **Evergreen examples.** No dates that rot (use far-future dates in test examples — a real fix in this repo's history), no version numbers that will drift, no "as of this year."
+- **One home per fact.** A fact (a registry, a numeric limit, a wording table) lives in exactly one file; everything else points at it. When you find yourself pasting a table between files, stop and cross-reference instead.
+- **When adding to a checklist-style skill, carry the rationale.** A rule without its *why* becomes cargo cult within two releases — several dated SEO rules had to be excised precisely because their why was missing or obsolete.
+
+## 5. Trap catalogue — settled battles, do not re-fight
+
+Each of these bit this repo once. The lesson is already encoded at the point of use; this table is the index so you recognize the pattern *before* writing new instances of it.
+
+| Trap | Rule | Where the lesson lives |
+|---|---|---|
+| zsh's `[`/`test` builtin rejects `\>` string comparison | Use `[[ "$a" > "$b" ]]` for lexicographic compare — works in bash and zsh | ship.md Phase 6 |
+| `$(jq -e … && echo yes)` captures jq's `true` output plus `yes` | Discard jq stdout (`>/dev/null`), branch on exit code only | ship.md Phase 7 |
+| YAML frontmatter with an unquoted `: ` inside the description breaks parsing | Reword or quote — validate frontmatter after every edit | any SKILL.md (incident: the first SEO-skill PR) |
+| "at most N times" read as "optional" | State mandatory-vs-cap explicitly | ship.md Phase 6 preamble |
+| Fresh shell per Bash call — unset vars fail *silently* in jq filters and API paths | Self-contained fences, loud guards | ship.md "Shell discipline" |
+| `git diff HEAD` omits untracked files | Pair with `git status --porcelain`; read new files directly | self-review skill, build.md |
+| Code fences inside markdown list items are indented — an indented heredoc terminator is a zsh parse error | Compose heredocs at column 0; `/validate` dedents before syntax-checking | ship.md Phase 0/1 BODY snippets |
+| Plugin description drifts across its five homes | Version-sync rule 4; run `/release` | this file §2, release.md |
+| A behavior fix without a version bump reaches no installed copy | Every component change bumps the version | this file §1 (pinning) |
+| A command and a skill shipped under the same name collide on the shared invocation surface — `Skill(sonu:<name>)` resolution turns inconsistent (shadowing, launch errors) | One name, one component; direct entry points live on the skill itself (`argument-hint` + `$ARGUMENTS` in the skill) | this file §1 and §3 (incident: the tdd/design-tree/self-review wrappers, removed in v2.0.0) |
+| A cap stored only in the ledger dies with a context compaction — five pushes followed a recorded "cap reached" | Derive the count from the PR itself before every cycle and every terminal statement; the ledger caches it | ship.md ledger contract, Phase 6 |
+| A terminal statement ("done", merge, hand-back) made on a stale thread sweep — eleven unhandled comments behind a "green" | Re-fetch unresolved threads and newest reviews immediately before the statement | ship.md Phase 6 step 5 |
+
+## 6. Validation and release
+
+- **Before opening any PR:** run `/validate` — it mechanically checks manifest sync, frontmatter, shell-fence syntax, named-source and attribution scans, and cross-reference integrity. Fix everything it flags or justify in the PR body.
+- **Deferred, deliberately (2026-08):** a zero-dependency TF-IDF routing eval for skill descriptions (positive prompts must rank the skill top-3, negatives must lose to a named owner skill, plus a description-collision check) was reviewed and deferred to keep this repo zero-script. Revisit if descriptions drift, routing complaints appear, or the skill set grows past ~30.
+- **When the change is user-visible:** follow `/release` for the version bump and the five-home sync. That command is the canonical procedure; this file deliberately doesn't restate it.
+- **What counts as evidence here:** for shell snippets, a real execution transcript (or `bash -n`/`zsh -n` at minimum); for external claims (bot logins, gh behavior, SEO facts), a fresh check against the live tool or current docs — dated in the Provenance section; for wording changes in ship.md, a dry read asking "how would a literal executor misread this?"
+
+## Self-check before you call it done
+
+- Does the change follow the house shape (§4) and every house rule (§2)?
+- Is every new fact in exactly one home, with cross-references elsewhere?
+- Did you check the trap catalogue (§5) — especially if you wrote shell, YAML frontmatter, or loop/cap wording?
+- Did `/validate` pass?
+- If a component changed: version bumped and all five homes synced (`/release`)?
+- Is the change going out through a PR (rule 5), with no AI attribution (rule 3)?
+
+## Provenance and maintenance
+
+Last verified 2026-07:
+
+- **Component mechanics (§3)** — frontmatter fields, namespacing, `$ARGUMENTS`, `disable-model-invocation` — re-verify against the official Claude Code plugin/slash-command docs (`https://code.claude.com/docs`) when a new harness version lands.
+- **Cursor plugin behavior** (dual manifests, what Cursor actually reads) — re-verify against Cursor's plugin docs; the mirror-the-Claude-manifest convention is this repo's, not an official spec.
+- **The incident references (§5)** — stable history; `git log --oneline` reproduces the archaeology.

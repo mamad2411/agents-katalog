@@ -1,0 +1,123 @@
+---
+name: formae-project-init
+description: "Use when the user wants to start a brand-new formae project from scratch (no existing IaC codebase) — scaffolds a project with `formae project init`, infers the plugin schema dependencies from the user's intent, and sets up the file structure."
+---
+
+# Initialize a New Formae Project
+
+This is the maintained-codebase opt-in. Invoke it when the user asks to keep IaC locally or create a project. Ordinary hosted authoring uses `prepare_authoring` in a disposable workspace and does not need this step.
+
+Call `get_codebase_context` with the chosen profile and actual harness working directory first. A selected existing project should be adopted explicitly with `register_codebase`, not reinitialized. Otherwise choose the persistent directory from the user's intent and initialize it safely. Keep passing the profile per call; never switch the global active profile.
+
+## Step 1 — Confirm there is no existing formae project
+
+Before doing anything, check whether a formae project already exists in the current working directory or any stated target path:
+
+- Look for a `PklProject` file that declares a `@formae/` dependency.
+- Look for any `.pkl` file that starts with `extends "@formae/forma.pkl"` (or the legacy `amends "@formae/forma.pkl"`).
+
+If either is found, **stop**. Tell the user a formae project already exists here and offer to continue editing it in place (formae-import, formae-patch, or formae-apply skills may apply). Do not proceed with init.
+
+## Step 2 — Infer schema plugin dependencies from intent
+
+**First call `list_agent_plugins` with an explicit `profile`.** On **hosted formae**, take the plugin set from what it reports rather than from intent alone: a dependency on a plugin the installation does not have produces a project that evaluates locally and can never apply. On a self-hosted agent, infer from intent as below; the reported set is useful context, not a limit.
+
+**On hosted formae, dependency discovery stops here**: the set `list_agent_plugins` reported is the catalogue, and the steps below do not apply. Confirm the subset that matches the intent with the user, and if the intent needs something the installation does not report, say it is not reported as installed on this installation and that hosted formae cannot install plugins on demand. Do not run the hub lookup or the trust gate: both would offer plugins that can never be applied there.
+
+**On a self-hosted agent**, use `search_hub_plugins` to identify the schema packages needed. Map the user's intent to plugin names — for example:
+
+- "EKS on AWS" → search for `aws`, `k8s`
+- "Azure storage" → search for `azure`
+- "Tailscale network" → search for `tailscale`
+
+Present the inferred set to the user and ask them to confirm or adjust before proceeding.
+
+Make clear: these are **schema packages only** — they provide PKL types and IDE completion. They do not install resource plugins on the agent, and they do not add a formae root.
+
+**Trust gate (self-hosted only).** For each inferred plugin, check the `originatorVerified` field from `search_hub_plugins`. If any plugin returns `originatorVerified: false`, surface the originator domain explicitly to the user and ask for confirmation before including it as a dependency. Do not silently depend on unverified packages.
+
+## Step 3 — Preflight the target directory (collision safety)
+
+Default to creating a **new named project directory** (e.g., `./<project-name>/`) rather than initializing in the current working directory. This avoids accidental clobbering of existing files.
+
+Before writing anything, check for the paths that `formae project init` and scaffolding would create:
+
+- `PklProject`
+- `main.pkl`
+- `<project-name>.pkl` (the sibling resources file)
+- `vars.pkl`
+- `modules/`
+
+If **any** of these already exist at the target path, **stop and ask**. Never overwrite user files.
+
+Special case: if `PklProject` exists but `main.pkl` does not, a prior init likely ran but was interrupted or incomplete. Reconcile this with the user — ask whether to resume from this state or start fresh elsewhere — rather than blindly re-scaffolding.
+
+## Step 4 — Run `formae project init`
+
+`formae project init` scaffolds the project in a **target directory** — an optional positional path that defaults to the current directory. Plugins are added with **repeated `--include` flags, each taking a plugin SHORT NAME** (`aws`, `k8s`, `vllm`, `grafana`, …). There is **no `@formae/` prefix, no `--deps`, no `--name`, and it is not comma-separated** — one `--include` per plugin:
+
+```
+formae project init <dir> --include k8s --include vllm -y
+```
+
+Flags (from `formae project init --help`): `--include <name>` (repeatable, short plugin name), `--schema pkl` (default), `-y`/`--yes` (skip the no-plugins confirmation), `--plugin-dir <dir>` (scanned for `@local` schemas; default `~/.pel/formae/plugins`), `--config <file>`.
+
+**Important — `--include` resolves the plugin version from the agent.** A non-`@local` include (e.g. `--include k8s`) makes init query the **agent** for that plugin's installed version, so the plugin must already be installed on the agent. If you hit `plugin "<name>" not installed on the agent`, either:
+- have the user install it agent-side first (`formae plugin install <name>` on the agent host — you never install it yourself), or
+- use a local schema instead: `--include <name>@local --plugin-dir <dir>` (resolves from disk, no agent query).
+
+Show the exact command to the user before running it; wait for confirmation, then run it.
+
+**Then check the pins init wrote.** Init resolves each version from the agent and writes it verbatim, so an agent running a prerelease build leaves a dependency URI that does not resolve: a `-dev.N` build publishes its schema over the canonical `X.Y.Z`, so `aws@0.1.17-dev.8` names a package that has never existed. Compare each pin in the new `PklProject` against the schema coordinate `list_agent_plugins` named in Step 2:
+
+- They agree: nothing to do.
+- They differ (init wrote `aws@0.1.17-dev.8` where the tool named `aws@0.1.17`): correct the `PklProject` entry to the tool's coordinate, then re-run `pkl project resolve` so `PklProject.deps.json` matches. That file is what evaluation actually uses, so leaving it stale is the same bug one step further along.
+- The tool named no schema version for that plugin: stop and ask rather than choosing a coordinate yourself.
+
+## Step 5 — Scaffold the project structure
+
+After init completes, lay out the standard structure per `formae://docs/forma-structure`. Read that doc resource before writing files.
+
+Key conventions:
+
+- **`main.pkl`** — the root forma file; amends `@formae/forma.pkl` and contains the `forma {}` block.
+- **Sibling resources file** (e.g., `<project-name>.pkl`) — holds resource declarations; imported and spread into `main.pkl`.
+- **`vars.pkl`** — shared scalars and the `Target` definition. Reference from both `main.pkl` and resource files.
+- **`modules/`** — only create this directory if there are 2 or more consumers of the same abstraction. Do not create it preemptively.
+
+Consult `formae://docs/stack-design` before deciding on stacks. Ask the user how they want resources grouped if it's not obvious from the intent.
+
+## Step 6 — Agent readiness note
+
+Resource plugins must be installed on the **agent machine**, not by the assistant. This is out of scope for this skill.
+
+Inform the user:
+
+- Authoring and `formae eval --output-consumer machine` work without resource plugins installed.
+- Simulate mode (`apply_forma` with `simulate: true`) also works once the agent is running.
+- A real `apply` requires the relevant resource plugin to be present on the agent. See `formae-plugin-new` skill or docs.formae.io for how to install plugins.
+
+Note: the above "no resource plugins needed" statements apply to authoring, eval, and simulate *after* the project exists; `formae project init` with a non-`@local` `--include` is the exception — it queries the agent for the plugin version, so that plugin must already be installed (see Step 4).
+
+## Step 7 — Populate and register the selected project
+
+If this installation already has managed stacks, select which complete stacks this project will maintain. Use `prepare_authoring` in a separate fresh `~/.formae-ai/scratch/<operation-id>/` directory with those `stacks`. Read its complete Pkl and dependency files, then incorporate them into the newly initialized project preserving the selected targets, policies, references and generators. Never bootstrap from actual inventory or a partial command delta. An empty installation needs only project initialization with the selected target and schema dependencies; it does not require an extraction of nonexistent stacks.
+
+Verify the project's complete main forma evaluates and includes exactly the selected scope. After successful initialization/population, call `register_codebase` with the canonical persistent `path`, `profile`, and optional exact `stacks` scope. Carry its returned binding ID as `context: {mode: "codebase", binding_id: ...}` on subsequent apply and policy calls. Registration is local and installation-bound; it stores no tokens and never changes the active profile. Remove the bootstrap disposable directory after its files have been safely incorporated and verified. Never register a disposable authoring directory.
+
+## Step 8 — Hand back
+
+Once the scaffold is in place:
+
+1. Suggest pulling a **version-matched** example for the chosen plugins via `list_plugin_examples`. Read the pinned version for each plugin from the just-created `PklProject` — it is the `@<version>` suffix on the dependency `uri` (e.g., `k8s@0.3.2` → `"0.3.2"`) — and pass it as the `version` argument. Do not omit `version` and let the tool default to `latestStable`, which may differ from the version pinned by `formae project init`.
+2. Offer to design the stack layout with the stack-design skill — how resources are grouped, which stacks map to which targets.
+
+---
+
+## CONSTRAINTS
+
+- **Never install resource plugins.** Plugin installation is an agent-side operation outside this skill's scope.
+- **Never write the flat forma form.** Do not write `stack = ...`, `targets = ...`, `resources = ...` at the top level. Always use the `forma {}` block pattern.
+- **Always use `formae eval --output-consumer machine`.** Never use `pkl eval` — forma files use formae-specific extensions that only the formae CLI can resolve, and `--output-consumer machine` produces parseable output.
+- **Never overwrite existing user files.** Always preflight; always stop and ask if a collision is detected.
+- **Never silently depend on unverified plugins** (self-hosted). Surface `originatorVerified: false` to the user and get explicit confirmation. On hosted formae the question does not arise: the set is first-party and already installed.

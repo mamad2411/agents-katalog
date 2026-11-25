@@ -1,0 +1,318 @@
+---
+name: collab-activity
+description: Publish current work and file ownership, mark idle, and inspect peers’ activity. Use at work handoffs, before overlapping edits, or when the user asks who is working on what.
+---
+
+# Saying what you are doing, and reading what they are
+
+Two agents in a session waste each other's turns on the same two questions —
+*are you working?* and *on what?* — and the answer is already out of date when
+it arrives. You are the only thing that knows what you just started, and you
+know it before anybody thinks to ask.
+
+So publish it. It costs one command and it removes a round trip from every
+decision the other agent makes.
+
+
+## Running collab
+
+Examples here say `collab`. Use whichever of these resolves — check once, at
+the start, and use the same form throughout:
+
+```bash
+command -v collab || ls .venv/bin/collab
+```
+
+Run commands from **inside the repository** you are working in. State is
+isolated by workspace and agent session and stored externally. Commands from
+another agent or workspace resolve separate state; carry `COLLAB_HOME` when
+using an explicitly selected participant directory.
+
+
+## The two commands you owe the others
+
+```bash
+collab working "the token refresh" --files src/api/auth.py tests/test_auth.py
+collab idle
+```
+
+**Say it when it changes, not on a timer.** The moment you pick up a piece of
+work, and the moment you put it down. Both halves matter and the second is the
+one that gets forgotten: an agent that says `working` and never says `idle`
+reads as busy for the rest of the session, and the other agent routes around
+somebody who is in fact free.
+
+| when | say |
+|---|---|
+| you start a piece of work | `collab working "<objective>" --files <the files>` |
+| the objective changes | `collab working "<the new one>"` — the clock keeps running |
+| still on the same thing after a while | `collab working "<the same words>"` — refreshes its age, so it does not show as `last said …` |
+| you finish, or stop | `collab idle` |
+| you are blocked on them | `collab idle "waiting on your review of T_9d63"` |
+
+`--files` is the few files you are about to touch, not an inventory. It is what
+lets the other agent avoid editing the same file at the same moment, which is
+the collision that costs both of you an hour.
+
+The objective is **one line and specific**: `"the token refresh"`, not
+`"working on auth"`. It is read by somebody deciding what to do next.
+
+
+## Reading it, instead of asking
+
+```bash
+collab activity          # who is working, and on what
+collab activity --json   # the same, for a program
+collab who               # the roster, with each agent's current line under it
+```
+
+**Ask the command, not the agent.** A question costs the other agent a turn, and
+its answer is a claim about a moment that has already passed; this is what they
+said themselves, with how long ago.
+
+```
+What everyone is doing
+ * jarvis           working on the token refresh [T_9d63] — src/api/auth.py (12m)
+   friday           idle · waiting on your review (4m)
+   edith            offline · last seen 20m ago
+```
+
+An agent shown as `has not said` is connected but has published nothing. That
+is not the same as idle — it is a gap, and the honest thing is to ask that one.
+
+An agent shown as **`last said working on … (2h ago, not since)`** stopped
+renewing its statement: it was killed, or its listener died, while the words
+stood. Treat it as unknown rather than busy — the work may or may not have been
+finished, and only that agent can say. Your own statement is renewed for you
+while your listener runs, so this is never about you being quiet.
+
+
+## In the watch pane
+
+Each participant carries a dot in their own colour. **Filled `●` means at work,
+hollow `○` means idle or away**, and the line beside it says what they are
+doing and for how long. The colour identifies the person; the shape is the
+state.
+
+
+## The board is the other half of this
+
+`collab working` is the present tense. The **task board** is the record, and
+the two are wired together so you do not have to say the same thing twice:
+
+```bash
+collab task list --open              # what is on the board
+collab task show --id T_9d63         # READ IT BEFORE YOU TAKE IT — its comments and pull requests are here
+collab task claim --id T_9d63 --files src/api/auth.py
+collab task complete --id T_9d63
+collab task fail --id T_9d63         # it went wrong — still outstanding, and you are idle again
+collab task cancel --id T_9d63       # withdrawn — leaves the figure, and you are idle again
+collab task comment --id T_9d63 "<what you decided>"   # keep it with the work, not in the room
+collab task pr --id T_9d63 --url <pull request>        # as many as the work took
+collab project list --owner <you>    # bundles of work somebody is answerable for
+```
+
+- **Claiming a task sets your activity** to working on it, with its id, and
+  tells the room.
+- **Completing, failing or cancelling it sets you idle again** — if that task
+  was what you were on.
+- **The hub does this whoever moves the board**: a hand-off accepted, a claim
+  released, a task completed by someone else. Attaching a PR (`collab task pr`)
+  adds its number to your status.
+- **The roster never shows a status about work that is over or someone
+  else's**: one naming a closed task, or a task now owned by another
+  participant, is dropped. One you have kept talking past for 15 minutes shows
+  as `last said …` with its age.
+- So keeping the board honest and keeping the roster honest are one act.
+
+**Validate a task before you claim it.** `collab task show` is there for this:
+`task list` is one line each and you would be claiming a title.
+
+Check, in this order:
+
+1. **Is it still wanted?** The detail says what the work is. If it does not
+   match what the session has since decided, say so in the room instead of
+   quietly doing the old thing.
+2. **Does somebody already hold it?** An owner means ask them first — collab
+   will refuse the claim, and taking over a piece of work is a conversation,
+   not a command.
+3. **Is it finished?** A completed or cancelled task is not available work.
+   Propose a new task rather than reopening it; collab refuses that too.
+4. **Can you actually do it now?** If not, leave it for whoever can.
+
+Then claim it, and only then start.
+
+**And put your work on the board.** If what you are doing is a piece of work in
+its own right — an hour, a file, something the other agent might otherwise pick
+up — propose it: `collab task propose "<title>" --detail "<what it involves>"`.
+A board that only some of the work reaches is a board nobody trusts, and then
+everybody is back to asking.
+
+
+## How much of it is done
+
+When the session has a **batch** open, the board is also a denominator. The hub
+counts completed tasks over the tasks in the batch, and everyone reads the one
+figure:
+
+```bash
+collab batch status      # ████░░ 58%  7/12, elapsed, ETA, and who holds the outstanding five
+```
+
+Nobody reports a percentage, which is the point: an agent that says 90% and is
+then killed goes on saying 90%, and its collaborator waits for a tenth that
+nobody is doing. `collab working` is what you are doing **now**; the batch is
+how much is left, and only `task complete` moves it — claiming moves nothing.
+
+A task you propose while a batch is open is counted in it. So the rule above
+has a second edge here: work you keep off the board is work the shared figure
+does not know about, and the bar then describes a smaller job than the real one.
+
+**The bar goes backwards when scope grows** — 7/10 becoming 7/12 takes 70% down
+to 58%. That is the number being honest. The counts are shown beside it so the
+drop reads as more work rather than lost work; report it as "scope grew by
+two", never as a slip and never as something to smooth over.
+
+
+## Your status is watched, and it will be corrected
+
+Say `collab idle` when you stop. If you do not, two things happen, and neither
+is a fault — they exist because a status that outlived its work costs a
+colleague an afternoon of not being asked.
+
+- **You will be nudged.** When your `working` is older than
+  `activity_stale_after` minutes (30 by default) and your usage figures HAVE
+  moved since you said it — you are demonstrably busy and the roster says you
+  have been doing one thing since an hour ago — the standing reminder gains one
+  sentence naming what you said and when. Answer it with `collab working` or
+  `collab idle`.
+- **It will be retired.** When the statement is that old and your figures have
+  NOT moved for as long, your daemon publishes `quiet` in its place and the
+  roster reads `quiet · said working on the parser until 14:03`.
+
+`quiet` is not `idle`. Nobody has said you are free; the daemon has said
+nobody knows. Saying anything yourself replaces it immediately.
+
+Your own statement, with its age, is on your status line and on the roster
+pane's foot row — `working: the parser · 47m ago`. When that age surprises you,
+that is the moment to say something.
+
+## When you finish a task, ask what it taught you
+
+A task that took three attempts taught you something the next agent will
+otherwise take three attempts to learn. Before saying `idle`, ask whether the
+thing that cost you the time is a fact about this repository rather than about
+this task:
+
+```bash
+collab learn add "the migration has to run before the seed, or the FK fails" \
+  --tags db
+```
+
+And if a learning you read is what got you through it, say so — that count is
+what puts it in front of the next agent:
+
+```bash
+collab learn used <slug> --note "the FK ordering"
+```
+
+Not everything is worth recording. A fact the code already states will go stale
+while the code will not, and a one-off is not a fact about the repository. The
+**collab-learn** skill has the judgement in full.
+
+## When your own context is filling up
+
+You cannot compact yourself: the command is a slash command at your tool's own
+prompt, and you cannot type at your own prompt from inside a turn. Collab can,
+through the tmux pane your wake is armed on.
+
+**It has to be enabled first, and that is the user's decision, not yours.**
+This is collab pressing keys at their prompt, so it ships off; until they turn
+it on the command refuses in one line and does nothing else.
+
+```bash
+collab config compact on   # THEIRS to run, not yours to assume
+collab compact             # summarise this session, keep working in it
+collab config new on       # a second switch, for a second act
+collab new                 # start again, keeping nothing
+```
+
+If you meet that refusal, say what the setting does and let them decide — do not
+turn it on for them. It is the one setting here that lets this program type into
+the window they are working in.
+
+Reach for `compact` and not `new`. Compacting keeps a summary of what you were
+doing; `collab new` keeps nothing at all, and an agent that starts itself a
+fresh session mid-task comes back not knowing there was a task. If the work
+really is finished and the window is still full, say so and let them decide.
+
+Once it is on: say what you are doing first — `collab working "…"` — and finish
+the piece of work you are on. A compaction lands as a turn, so anything you were
+part-way through is what gets summarised. If it refuses for another reason, read
+the line: it says whether the wake is armed against something with no prompt to
+type at, or whether the pane has changed under it.
+`collab config compact_at <percent>` and `collab config new_at <percent>` make
+the user's own daemon do these without being asked; those are theirs to set
+too.
+
+
+## Closing the session, or leaving it
+
+Your last status outlives you. Whatever you were saying when you stopped is
+what the roster keeps showing, and a `working` left behind is read by the other
+agent as a job in hand for as long as it stands. So leaving has an order to it,
+and the status is the first step rather than an afterthought.
+
+1. **Say you are going, and stop claiming work.**
+
+   ```bash
+   collab send "that's me done — the fix is on the board"
+   collab idle
+   ```
+
+2. **Disarm the wake for this session.** It is a command stored on disk, and
+   the daemon is the only thing that runs it. Left armed, it fires at whoever
+   resumes this session next week.
+
+   ```bash
+   collab wake off
+   ```
+
+3. **Stop the followed stream, and remove the monitor you armed on it.** If you
+   armed `collab listen --follow` in a background shell, a tmux pane or a hook,
+   take that thing down the way you put it up — it is your process, and nothing
+   here can stop it for you.
+
+4. **Then stop the session:** `collab kill`. As a guest that stops your own
+   listener and the session keeps running for the others; as the host it ends
+   the session for everybody. `--disarm` does step 2 as it goes.
+
+5. **Confirm with `collab check`.** Nothing of the session should still be
+   armed, and a `wake` warning there means step 2 did not happen.
+
+## What not to do
+
+- **Do not narrate.** One line per piece of work, not per file you open.
+- **Do not leave `working` behind.** Say `idle` when you stop. If you are about
+  to end a turn with nothing running, you are idle.
+- **Do not use it for messages.** It answers *what are you doing*; anything you
+  want them to read, act on or reply to is `collab send` (queued through your
+  conversation worker while it is enabled, so it stays your one voice).
+- **Do not ask an agent what it is doing** when `collab activity` will say.
+- **Do not state a percentage of your own.** "About 80% there" alongside a
+  batch at 3/12 is two numbers where the session had one, and the other agent
+  plans against whichever it read last. Complete tasks; quote `batch status`.
+
+
+When idle after finishing work, proactively inspect the current batch and claim
+suitable unowned work within the accepted goal. Inspect free-text dependencies
+and ownership before claiming; on a claim conflict, refresh and choose again.
+While working, you may run up to two native teammates by default when
+independent work exists, your host provides them, and neither the user nor
+`delegation_max_children` sets a lower limit. Go beyond two only when the user
+asks and fresh measured capacity permits it. Unknown capacity is not spare
+capacity beyond that default. Default pickup
+notices arrive after five continuous idle minutes through the monitor or wake
+route; `collab config task_pickup_idle_delay 300` changes that delay and
+`collab config task_auto_pickup false` disables automatic notices. Keep activity
+accurate; silence alone does not mean idle.

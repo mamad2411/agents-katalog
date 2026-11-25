@@ -1,0 +1,241 @@
+---
+name: create-context-file
+description: "Creates a structured, date-stamped context file filed by typology (findings, plans, goals, evidence, guides, follow-ups, merge-requests, tickets, decisions, notes, research) with YAML frontmatter. Use when saving a finding, writing a plan, capturing a guide, recording a decision, logging a follow-up, filing a merge-request note, capturing work as progression evidence, plus ticket write-ups."
+license: MIT
+metadata:
+  version: "1.0.0"
+  audience: agents
+  workflow: capture, planning, documentation
+---
+
+# Create Context File
+
+Persist a working artifact into the project's context directory, filed by
+**typology** and named with a date prefix so it sorts chronologically and never
+collides.
+
+## When to Use
+
+- Save an investigation write-up, plan, guide, or decision produced while working.
+- Capture a follow-up, merge-request note, or ticket write-up for later.
+- The user asks to "save this finding", "create a plan", or "write this up".
+
+## When Not to Use
+
+- Do NOT use for technical notes that belong inline in source — write a code comment.
+- Do NOT use for permanent, long-lived docs — use the README or docs site.
+- Do NOT use for issue tracking — use the issue tracker.
+- Do NOT use for content the team consumes externally — use the docs system.
+
+## Principles
+
+1. **Typology is the organizing axis.** ALWAYS choose the folder by *what the
+   artifact is*, not by how long it lives.
+2. **One artifact, one file.** ALWAYS keep a single typology per file; NEVER
+   merge a finding with a plan.
+3. **Deterministic names.** The generator MUST own the filename and frontmatter;
+   never hand-craft them.
+4. **Curated growth.** Extend the typology set deliberately, not per task.
+
+## Workflow
+
+1. Choose the typology from the curated set. — **Stop if:** none fits and the
+   need will not recur; reuse the closest match instead of adding a folder.
+2. Inspect what already exists for that typology to avoid duplicates:
+
+   ```bash
+   ls .context/findings/
+   ```
+
+   Expected result: the existing files, so you can confirm none already covers
+   this artifact.
+3. Run the generator with a specific, task-tied title. — **Verify:** the printed
+   path uses the expected typology plus date.
+4. Fill in the body beneath the generated heading. — **Stop if:** the content
+   spans two typologies; split it into separate files.
+
+## Quick Commands
+
+```bash
+# Create a finding with tags
+./scripts/create-context-file.sh --type findings --title "Auth token analysis" \
+  --tags "auth,oauth"
+```
+
+Expected result: a new dated finding file, printed as the only stdout line.
+
+```bash
+# Link a finding back to the plan it informed
+./scripts/create-context-file.sh --type findings --title "Auth token analysis" \
+  --related "../plans/2026-03-16-auth-rollout.md"
+```
+
+Expected result: a dated finding file whose frontmatter includes a `related:`
+list; when no `--related` is given, the key is omitted entirely rather than
+written as `related: []`.
+
+```bash
+# Follow-up that can't start until a plan lands
+./scripts/create-context-file.sh --type follow-ups --title "Wire up token refresh" \
+  --blocked-by "../plans/2026-03-16-auth-rollout.md"
+```
+
+Expected result: a dated follow-up file whose frontmatter includes a
+`blocked-by:` list, in the same "omitted when empty" style as `related`. The
+`context-index` skill's `scripts/context-ready.sh` reads this field across
+every context file to report which active files have zero open blockers —
+set `--blocks` on the file being depended on, `--blocked-by` on the file
+doing the depending, or both if the relationship is worth recording from
+either side.
+
+```bash
+# Follow-up with confirmed grades (only after the user has confirmed them)
+./scripts/create-context-file.sh --type follow-ups --title "Wire up token refresh" \
+  --severity HIGH --priority P2 --graded 2026-10-07
+```
+
+Expected result: a dated follow-up file whose frontmatter ends with
+`severity:`, `priority:` and `graded:` lines, in that order, just before the
+closing `---`. Pass all three flags together: the generator rejects any one
+alone, and rejects all three on any typology other than `follow-ups`.
+
+```bash
+# Multi-line body via heredoc
+./scripts/create-context-file.sh --type plans --title "Retriever rollout" << 'EOF'
+## Phase 1
+...
+EOF
+```
+
+Expected result: a dated plan file containing the heredoc body.
+
+```bash
+# Preview without writing
+./scripts/create-context-file.sh --type merge-requests --title "PROJ-1234" --dry-run
+```
+
+Expected result: the target path plus full file body printed; nothing written.
+
+```bash
+# A deliberate one-off typology
+./scripts/create-context-file.sh --type experiments --title "spike" --allow-new-type
+```
+
+Expected result: a file under a new typology folder, created knowingly.
+
+Full option list: see the CLI reference below.
+
+## Filing a follow-up
+
+Grade a follow-up with a `severity` and a `priority`, so that whatever lists
+follow-ups can put the most pressing first. Use the
+[grading rubric](references/follow-up-grading.md) to choose them. The user, not
+the agent, must settle each grade, because grades steer what gets done next:
+
+1. Propose a `severity` and a `priority` from the rubric. Give a one-line
+   reason drawn from each decision test.
+2. Wait for the user to confirm or change them, or to leave the follow-up
+   ungraded.
+3. Pass `--severity`, `--priority` and `--graded` (today's date) only after that
+   confirmation. Leave a follow-up without an answer ungraded. Never invent a
+   `--graded` date.
+
+## Anti-Patterns
+
+### NEVER create a file without checking the typology folder first
+
+**WHY:** the same artifact captured twice fragments context and breaks search.
+
+**BAD:** run the generator immediately for a plan that already exists.
+**GOOD:** list the folder, confirm nothing covers it, then create.
+
+**Consequence:** duplicate, drifting files that later readers cannot reconcile —
+a common pitfall once a repository grows.
+
+### NEVER use a generic slug like `notes` or `todo`
+
+**WHY:** vague slugs collide and read as noise when sorted by date.
+
+**BAD:** `--title "notes"` yields a `notes.md` that clashes across tasks.
+**GOOD:** `--title "API refactor findings"` yields a specific, searchable name.
+
+**Consequence:** unsearchable filenames plus silent name clashes in production
+repositories.
+
+### NEVER mix typologies in one file
+
+**WHY:** a finding, a plan, and a follow-up have different lifecycles and readers.
+
+**BAD:** one file holding analysis, a rollout plan, and open questions.
+**GOOD:** three files, one per typology, cross-referenced if needed.
+
+**Consequence:** no file can be retired cleanly; each keeps stale content alive.
+
+### NEVER hand-edit the filename or frontmatter date
+
+**WHY:** the date prefix plus ISO `date` power sorting and downstream tooling.
+
+**BAD:** rename to drop the date, or set `date: Jul 21st`.
+**GOOD:** let the generator produce both; keep the original date on later edits.
+
+**Consequence:** broken chronological ordering plus frontmatter parse failures.
+
+### NEVER emit `related: []`, `blocks: []`, or `blocked-by: []` when there is nothing to list
+
+**WHY:** an empty list is noise; the field should be absent when there is
+nothing to link.
+
+**BAD:** `related: []` (or `blocks: []` / `blocked-by: []`) in the frontmatter.
+**GOOD:** omit the key entirely; pass `--related`/`--blocks`/`--blocked-by`
+only when there is at least one path to list.
+
+**Consequence:** frontmatter clutter that trains readers (and tooling) to
+ignore the field, masking the times it actually carries a link.
+
+### NEVER set `blocked-by` on a file whose blocker is unlikely to ever reach `status: done`
+
+**WHY:** `context-ready.sh` fails closed — an unresolvable blocker path, or
+one that sits at a status other than `done` indefinitely, keeps the
+dependent file reported as blocked forever, with no automatic timeout.
+
+**BAD:** pointing `blocked-by` at a typology whose typical lifecycle is "keep
+indefinitely" or "keep while active" rather than a discrete close (see the
+lifecycle column in [Typologies](references/typologies.md)) — e.g. a
+`guide` or `research` file nobody plans to ever mark `done`.
+**GOOD:** point `blocked-by` at a typology whose lifecycle is a real
+close event (`plan` retiring, `follow-up` closing, `ticket` tracked to
+resolution, `merge-request` retiring after merge) — or record the
+relationship in prose instead if it isn't really "done-or-not-done" shaped.
+
+**Consequence:** a file that can never actually be reported ready, with
+nothing in `context-ready.sh`'s output explaining that the blocker itself is
+the problem rather than the work.
+
+### NEVER write `severity`, `priority` or `graded` the user has not confirmed
+
+**WHY:** a grade steers which follow-up gets picked up next, and nothing in the
+file records who chose it.
+
+**BAD:** passing `--severity HIGH --priority P1 --graded <today>` because the
+rubric seemed to fit.
+**GOOD:** propose the grades with a reason, wait for the user's answer, then
+pass the flags (or file the follow-up ungraded).
+
+**Consequence:** an agent-chosen grade ranks above work a person judged more
+pressing, and reads as a person's decision.
+
+### NEVER invent a new typology for a one-off
+
+**WHY:** ad-hoc folders erode the curated set that makes context navigable.
+
+**BAD:** create a bespoke folder for a single throwaway note.
+**GOOD:** reuse the closest typology, or pass `--allow-new-type` knowingly.
+
+**Consequence:** folder sprawl that defeats predictable retrieval — a slow pitfall.
+
+## References
+
+- [Typologies](references/typologies.md) — the curated catalog, selection rule, and how to extend the set; load when choosing or adding a typology.
+- [CLI reference](references/cli.md) — full generator flags, behavior, and examples; load when you need an option beyond the Quick Commands.
+- [Follow-up grading](references/follow-up-grading.md) — the decision test for each `severity` and `priority` value, who sets a grade, and the sort order; load when filing a follow-up or grading a batch of them.
+- [Frontmatter schema](assets/schemas/context-frontmatter.schema.json) — the JSON Schema for `title`, `type`, `date`, `status`, `tags`, `related`, `blocks`, `blocked-by`, and the follow-up grades `severity`, `priority` and `graded`; load when validating a context file's frontmatter or wiring a lint check. Nothing runs it yet.

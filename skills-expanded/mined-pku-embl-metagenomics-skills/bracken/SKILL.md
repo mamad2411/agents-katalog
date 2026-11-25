@@ -1,0 +1,67 @@
+---
+name: bracken
+description: >
+  Bayesian re-estimation of abundance from Kraken2 reports. Use for installation,
+  parameter choice, execution, output interpretation, or troubleshooting.
+license: MIT
+metadata:
+  metagenomics.category: "analysis-tools"
+  metagenomics.tags: "taxonomy, kraken, abundance"
+  metagenomics.upstream: "https://github.com/jenniferlu717/Bracken"
+  metagenomics.stage: "taxonomy"
+  metagenomics.maturity: "reviewed"
+  metagenomics.last-reviewed: "2026-10-18"
+  metagenomics.command-status: "CLI contract reviewed; not executed here"
+---
+
+# Bracken
+
+Upstream: [Bracken](https://github.com/jenniferlu717/Bracken)
+
+## Citation
+
+Lu, J., Breitwieser, F. P., Thielen, P. & Salzberg, S. L. Bracken: estimating species abundance in metagenomics data. *PeerJ Comput. Sci.* **3**, e104 (2017). https://doi.org/10.7717/peerj-cs.104
+
+See also [docs/references.md](https://github.com/PKU-EMBL/Metagenomics-Skills/blob/main/docs/references.md).
+
+## Analytical thinking
+
+Bracken redistributes Kraken-classified reads to a target taxonomic level using
+a Bayesian model conditioned on genome lengths / k-mer uniqueness in the **same**
+database build. It answers: “given Kraken’s read assignments, what are smoothed
+abundances at rank L?” — not “is species X truly present?”
+
+Caveats:
+
+- Must use a Bracken index built from the **same** Kraken2 DB.
+- `-r` read length should match sequencing.
+- Rare taxa remain false-positive-prone; MetaPhlAn papers have criticized high
+  FP rates for some Bracken setups — report confidence/thresholds carefully.
+- Never paste Bracken and MetaPhlAn columns into one “species abundance” matrix
+  without a method factor.
+
+## How to run
+
+```bash
+bracken -d $KRAKEN2_DB -i temp/kraken/${id}.report \
+  -o temp/kraken/${id}.bracken -r 150 -l S
+```
+
+## Key parameters
+
+| Flag | Notes |
+|------|-------|
+| `-d` | Same DB root as Kraken2 |
+| `-r` | Read length used to build Bracken files |
+| `-l` | Rank (S/G/…) |
+| `-t` | Min reads threshold (if used) — affects rare taxa |
+
+## Validation, recovery, and provenance
+
+Require a non-empty Bracken table at the requested rank and verify its input report came from the identical Kraken2 database build. Confirm the database contains Bracken distribution files for the exact `-r` read length and k-mer settings. Reconcile redistributed reads, inspect zero/no-read samples and controls, and retain both original Kraken and Bracken outputs.
+
+Record Bracken/Kraken versions, rank, threshold, read length, database manifest/checksum, commands, and output schema. Rerun all samples after a database or read-length change rather than combining tables. Bracken estimates conditional rank abundance; it does not add independent evidence for taxon presence.
+
+## Related skills
+
+`kraken2` · `metaphlan` · `metabuli` · `visualization` · `tool-selection`

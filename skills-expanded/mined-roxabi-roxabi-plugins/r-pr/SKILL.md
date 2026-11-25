@@ -1,0 +1,214 @@
+---
+name: R-pr
+argument-hint: '[--draft | --base <branch>]'
+description: Create/update PRs with Conventional Commits title, issue linking & guard rails. Triggers: "create PR" | "open PR" | "submit PR" | "update PR" | "/R-pr --draft" | "open a pull request" | "make a PR" | "open pull request" | "submit a pull request" | "create a draft PR" | "raise a PR".
+version: 0.4.7
+allowed-tools: Bash, Read, Grep, ToolSearch
+---
+
+# Pull Request
+
+## Success
+
+I := PR created ∧ pushed ∧ rebased on base
+V := `gh pr view {N}` ∧ `git log origin/${BASE}..HEAD` non-empty
+
+Let:
+  β := `staging` (∃ origin/staging) ∨ `main`
+  Β := current branch
+  N := issue# (first number after `/` in Β)
+
+**Stack:** Read `.dev/stack.yml` first — every `{field}` placeholder below resolves from it. ¬∃ → output: "`.dev/stack.yml` not found — run `/R-env-setup` to generate it." and stop.
+
+Β → PR: Conventional Commits title, issue linking, guard rails.
+
+**Flow: single continuous pipeline. ¬stop between steps. Stop only on: REFUSE, explicit Cancel, or Step 6 completion.**
+
+## Pipeline
+
+| Step | ID | Required | Verifies via | Notes |
+|------|----|----------|---------------|-------|
+| 1 | gather-state | ✓ | state JSON emitted | — |
+| 2 | guard-rails | ✓ | ¬REFUSE | — |
+| 3 | generate | ✓ | title + body ready | — |
+| 4 | create | ✓ | `gh pr create` success | — |
+| 5 | rebase | ✓ | `git push` success | — |
+| 6 | watch | — | — | inform only |
+
+## Pre-flight
+
+Success: PR created ∧ pushed ∧ rebased on base
+Evidence: `gh pr view {N}` returns valid PR
+Steps: gather-state → guard-rails → generate → create → rebase
+¬clear → STOP + ask: "Which branch are you PR-ing from?"
+
+## Step 1 — Gather State
+
+```bash
+bash ${CLAUDE_SKILL_DIR}/gather-state.sh
+```
+
+Emits: `branch`, `base`, commit log, diff stat, existing PR, issue number, lifecycle artifacts (analysis, spec), test file count, `falsify_required`, `oracle_ok`, `oracle_reason`, `priced_ok`.
+
+`oracle_ok` / `priced_ok` come from `run-falsify.sh --verify` on `artifacts/reviews/{N}-falsify.json` + spec SC priced scan (`parse-falsify.sh` / `pf_emit_gates`) — markdown alone is ¬the oracle (ADR-019). Missing JSON when τ≠S → `oracle_ok=false` (fail-closed).
+
+## Step 2 — Guard Rails
+
+| Check | Condition | Action |
+|-------|-----------|--------|
+| Protected branch | Β ∈ {staging, main, master} | **REFUSE.** Create feature branch first. Stop. |
+| No commits | `git log origin/${β}..HEAD` empty | **REFUSE.** Nothing to PR. Stop. |
+| PR exists | gh pr list → result | → present choice **Update** (`gh pr edit`) \| **Cancel** |
+| Branch not pushed | `git ls-remote --heads origin $BRANCH` empty | `git push -u origin $BRANCH` |
+| Quality gates | `{commands.lint} && {commands.typecheck}` | Warn on failure, ¬block. Note in PR body if proceeding. |
+| Falsify incomplete (τ≠S) | `falsify_required=true` ∧ `oracle_ok=false` | **REFUSE.** Route on `oracle_reason` (the first failing row's reason): `missing-test-command` / `unsupported-test-command` → fix `.dev/stack.yml` `commands.test_file` (else `commands.test`) first — one plain command, no shell syntax, no `VAR=` prefix, and bun >= 1.2.21 on PATH to read it; re-running Step 6b alone refuses again; `restore-failed` → the test also fails with its sources present — if every row does, `commands.test` probably cannot run one named file (turbo root script, `unittest discover`): set `commands.test_file`; anything else → re-run `/R-dev-implement` Step 6b (`run-falsify` → persist `artifacts/reviews/{N}-falsify.json`), whose direct run names the refused rows on stderr. Stop. |
+| Priced quantity missing (τ≠S) | `priced_ok=false` | **REFUSE.** Re-run `/R-spec` to add `priced`/`not`/`oracles` blocks on fail-closed SCs. Stop. |
+
+(Note: "behind base" is no longer a guard rail — Step 5 rebases post-create automatically. τ=S: skip both rails — `falsify_required=false`.)
+
+## Step 3 — Generate Content
+
+**3a. Commits + diff:**
+```bash
+git log origin/${BASE}..HEAD --format="%h %s%n%b"
+git diff origin/${BASE}...HEAD --stat
+```
+
+**3b. Lifecycle artifacts:** already emitted by Step 1 (`issue`, `analysis`, `spec`, `issue_data`, `test_files`, `falsify_*`, `priced_ok`).
+
+N detection: first number after `/` in Β (e.g. `feat/42-slug` → `#42`). ¬found → ask user "Which issue number does this PR close, if any?"
+
+**3c. Title:** `<type>(<scope>): <desc>` (≤70 chars). Type from primary commit purpose. Scope from files: `web | api | ui | config` ∨ omit if cross-cutting.
+
+**3d. Body:** template below.
+
+## Step 4 — Create + Update Issue
+
+Show generated title + body → create immediately (¬ask how). `--draft` → draft.
+Failure ∨ explicit edit request → present choice **Edit title/body** | **Cancel**
+
+```bash
+gh pr create --title "<title>" --body "<body>" --base ${BASE} [--draft]
+# --base <branch> if flag specified (overrides BASE)
+```
+
+Display PR URL.
+
+Updating existing PR → `gh pr edit <number> --title "<title>" --body "<body>"`.
+
+## Step 5 — Rebase on Base (post-create)
+
+After PR creation, rebase Β on latest β → force-push with lease → PR updates with current base.
+
+```bash
+git fetch origin ${BASE}
+BEHIND=$(git rev-list HEAD..origin/${BASE} --count)
+```
+
+`BEHIND == 0` → skip rebase, skip push. Log: "Already up to date with origin/${BASE}."
+
+`BEHIND > 0`:
+```bash
+git rebase origin/${BASE}
+# On conflict: → present choice **Resolve manually then re-run /R-pr** | **Abort rebase** (`git rebase --abort`)
+git push --force-with-lease origin ${BRANCH}
+```
+
+**Safety:** only `--force-with-lease` (not `--force`) — refuses push if remote moved unexpectedly. Only on the feature branch (Β ∉ {staging, main, master} is already enforced in Step 2).
+
+**Why post-create:** ensures the PR reflects the latest base from the moment it lands, so reviewers see a minimal diff and CI runs against current base. Staging can move between branch creation and PR create — this step closes that gap.
+
+## Step 6 — Watch CI
+
+Inform: "CI is running on the PR — use `/R-ci-watch` to monitor it live."
+
+Merge path = gate-driven: `reviewed` label + auto-merge (`gh pr merge --auto --merge`). ¬manual `gh pr merge` while any check is IN_PROGRESS/QUEUED — the gate decides, not the operator.
+
+## PR Body Template
+
+```markdown
+## Summary
+- {what changed and why}
+- {secondary change if applicable}
+
+## Lifecycle
+
+| Phase | Artifact | Status |
+|-------|----------|--------|
+| Intent | #{N}: {title} | {state} |
+| Analysis | [{filename}](artifacts/analyses/{filename}) | Present/Absent |
+| Spec | [{filename}](artifacts/specs/{filename}) | Present/Absent |
+| Implementation | {N} commits on `{branch}` | Complete |
+| Verification | Lint {✅/❌} Typecheck {✅/❌} Tests {✅/❌} ({N} new) | Passed/Failed |
+
+## Test Plan
+- [ ] {how to verify}
+- [ ] {edge case}
+
+## SC → Test Matrix
+
+Insert persisted `artifacts/reviews/{N}-falsify.md` (optional render of JSON) — do not invent rows. (Step 2 already refused unless `oracle_ok=true`.) Tier S: omit this section entirely — see the Lifecycle note below.
+
+## Falsification Evidence
+
+Insert persisted `artifacts/reviews/{N}-falsify.md` (optional JSON render) — do not invent rows.
+
+Fixes #{N}
+
+---
+Generated with [Roxabi dev-core](https://github.com/Roxabi/roxabi-plugins) via `/R-pr`
+```
+
+Lifecycle notes: S-tier → Intent + Implementation + Verification only. ¬issue → omit Lifecycle + Closes. S-tier → also omit SC → Test Matrix and Falsification Evidence sections.
+
+## Options
+
+| Flag | Description |
+|------|-------------|
+| (none) | Target auto-detected base branch |
+| `--draft` | Create as draft |
+| `--base <branch>` | Override base branch |
+
+## Edge Cases
+
+| Scenario | Behavior |
+|----------|----------|
+| Β ∈ {staging, main, master} | REFUSE: "Create a feature branch first" |
+| ¬commits ahead | REFUSE: "Nothing to create a PR for" |
+| PR already exists | Offer `gh pr edit` to update |
+| ¬N in branch | → ask user link issue or skip |
+| Multiple commit types | Use primary type only |
+| Lint/typecheck fail | Warn + present choice: **Proceed anyway** \| **Fix first** |
+| τ≠S ∧ (`oracle_ok=false` ∨ `priced_ok=false`) | REFUSE — route per the Step 2 falsify row: `*-test-command` → `.dev/stack.yml` `commands.test_file` (else `commands.test`); other falsify → `/R-dev-implement` Step 6b (`run-falsify`); priced → `/R-spec` |
+
+## Safety Rules
+
+1. ¬PR from `staging`, `main`, `master`
+2. ¬`git push --force` — only `--force-with-lease`, and only during Step 5 rebase on feature branches
+3. Always show PR content before creation
+4. → present choice for all decisions (proceed despite warnings, edit)
+5. Always display PR URL after creation
+6. Rebase conflicts → abort + defer to user — ¬auto-resolve
+7. ¬manual `gh pr merge` while any check is IN_PROGRESS/QUEUED — manual merge mid-CI cancels in-flight runs (`concurrency.cancel-in-progress`) and skips gates. Nominal path: `reviewed` label → auto-merge (`--merge`) on green.
+8. τ≠S: ¬create PR while `oracle_ok=false` or `priced_ok=false` — markdown / `falsify_ok` is ¬the oracle. Route per the Step 2 falsify row (`*-test-command` → `.dev/stack.yml` `commands.test_file`, else `commands.test`); else re-run `/R-dev-implement` Step 6b (`run-falsify`) or `/R-spec` (priced blocks).
+
+## Chain Position
+
+- **Phase:** Build
+- **Predecessor:** `/R-dev-implement` (worktree with commits) · or `/R-ship` commit step
+- **Successor:** `/R-ci-watch` (via `/R-dev`) · or `/R-dev-review` (via `/R-ship`)
+- **Class:** adv (continuous flow, no gate)
+
+## Task Integration
+
+- `/R-dev` owns the dev-pipeline task lifecycle externally
+- This skill does NOT update its own dev-pipeline task
+- Sub-tasks created: none
+
+## Exit
+
+- **Success via `/R-dev`:** PR created + rebased + pushed → return control silently. ¬write summary. ¬ask user. ¬announce `/R-ci-watch`. `/R-dev` re-scans and advances.
+- **Success standalone:** print PR URL + `Next: /R-ci-watch --pr {PR#}`. Stop.
+- **Failure (REFUSE, rebase conflict, gh error):** return error. `/R-dev` presents Retry | Skip | Abort.
+
+$ARGUMENTS

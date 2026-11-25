@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/rfdiosuao/lom-desktop (path: core/crates/aionui-app/assets/builtin-skills/xiaohongshu-recruiter/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 用于在小红书上发布高质量的 AI 相关岗位招聘帖子。包含自动生成极客风格的招聘封面图和详情图，并提供自动化发布脚本。当用户需要发布招聘信息、寻找 Agent 设计师或其他 AI 领域人才时使用。

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/pyfagorass/bookofspells (path: skills/gworkspace/recipe-create-shared-drive/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Create a Google Shared Drive and add members with appropriate roles."

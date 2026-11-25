@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/pengqianhan/open-paper-skills (path: collected-skills/hugging-face-paper-pages/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Look up and read Hugging Face paper pages in markdown, and use the papers API for structured metadata such as authors, linked models/datasets/spaces, Github repo and project page. Use when the user sh

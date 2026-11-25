@@ -1,0 +1,283 @@
+---
+name: jenkinsfile-validator
+description: Comprehensive toolkit for validating, linting, testing, and automating Jenkinsfile pipelines (both Declarative and Scripted). Use this skill when working with Jenkins pipeline files, validating pipeline syntax, checking best practices, debugging pipeline issues, or working with custom plugins.
+---
+
+# Jenkinsfile Validator Skill
+
+Comprehensive toolkit for validating, linting, and testing Jenkinsfile pipelines (both Declarative and Scripted). This skill applies when working with Jenkins pipeline files, validating pipeline syntax, checking best practices, debugging pipeline issues, or working with custom plugins that require documentation lookup.
+
+## When to Use
+
+Use this skill when you need to:
+
+- Validate a Jenkinsfile (Declarative or Scripted) for syntax and best practices.
+- Run the Declarative Linter against a Declarative pipeline.
+- Check Shared Library calls the pipeline depends on.
+- Detect hardcoded credentials or controller-heavy operations in a pipeline.
+- Review a Jenkinsfile for best-practice scoring before merge.
+
+## When Not to Use
+
+Do not use this skill for:
+
+- Authoring a new Jenkinsfile from scratch: use `jenkinsfile-generator` instead.
+- CI configuration for a non-Jenkins system (GitHub Actions, GitLab CI): use that system's skill.
+- Diagnosing a failed build's application logs rather than the pipeline definition.
+- Validating Jenkins controller configuration outside the Jenkinsfile.
+
+## Mindset
+
+- **Detect the type first.** Declarative and Scripted have different rules; validate against the right one.
+- **Lint even when it looks fine.** Run the Declarative Linter rather than eyeballing syntax.
+- **Follow the calls.** A Jenkinsfile is incomplete without the Shared Library steps it invokes; validate those too.
+- **Look up unfamiliar steps.** Judge a non-core plugin step against its documentation, not an assumption.
+
+## Quick Start
+
+```bash
+# Run from the skill directory
+bash scripts/validate_jenkinsfile.sh assets/examples/bad-declarative-pipeline.Jenkinsfile
+bash scripts/validate_jenkinsfile.sh --strict assets/examples/declarative-docker.Jenkinsfile
+```
+
+```bash
+# Check a shared library step
+bash scripts/validate_shared_library.sh assets/examples/shared-library/vars/buildApp.groovy
+```
+
+```groovy
+// Declarative skeleton the validator expects
+pipeline {
+    agent any
+    stages {
+        stage('Build') { steps { sh 'make' } }
+    }
+}
+```
+
+## Validation Capabilities
+
+**Declarative**: Required sections, directive placement, parallel execution, credential management, combined shell commands.
+**Scripted**: Groovy syntax, node blocks, try-catch-finally, NonCPS annotation usage, variable scoping.
+**Both types**: Hardcoded credential detection, controller-heavy operations (JsonSlurper, HttpRequest), variable declarations, plugin-specific step validation.
+**Shared Library**: `vars/*.groovy`: call() method, NonCPS annotation correctness, CPS compatibility, camelCase naming, documentation comments. `src/**/*.groovy`: package declaration, class-filename match, Serializable implementation, wildcard import warnings, static method CPS compatibility.
+
+See [references/validation_rules.md](references/validation_rules.md) for detailed rules, error reporting format, and examples.
+
+## Pipeline Type Detection
+
+Auto-detected: Declarative (`pipeline {`), Scripted (`node` block or Groovy outside pipeline block). Clarification is requested only if ambiguous.
+
+## Validation Command Reference
+
+### Full Validation (Recommended)
+
+```bash
+# Run complete validation (syntax + security + best practices)
+bash scripts/validate_jenkinsfile.sh Jenkinsfile
+```
+
+Auto-detects pipeline type, validates syntax, scans for hardcoded credentials, checks best practices, and produces a unified summary.
+
+### Command Options
+
+```bash
+# Full validation (default)
+bash scripts/validate_jenkinsfile.sh Jenkinsfile
+
+# Syntax validation only (fastest)
+bash scripts/validate_jenkinsfile.sh --syntax-only Jenkinsfile
+
+# Security audit only
+bash scripts/validate_jenkinsfile.sh --security-only Jenkinsfile
+
+# Best practices check only
+bash scripts/validate_jenkinsfile.sh --best-practices Jenkinsfile
+
+# Skip security checks
+bash scripts/validate_jenkinsfile.sh --no-security Jenkinsfile
+
+# Skip best practices
+bash scripts/validate_jenkinsfile.sh --no-best-practices Jenkinsfile
+
+# Strict mode (fail on warnings)
+bash scripts/validate_jenkinsfile.sh --strict Jenkinsfile
+```
+
+### Script Architecture
+
+The validation system uses a modular script architecture:
+
+```
+scripts/
+├── validate_jenkinsfile.sh      # Main orchestrator (USE THIS)
+│   ├── Auto-detects pipeline type
+│   ├── Runs syntax validation
+│   ├── Runs security scan
+│   ├── Runs best practices check
+│   └── Produces unified summary
+│
+├── validate_declarative.sh      # Declarative syntax validator
+├── validate_scripted.sh         # Scripted syntax validator
+├── common_validation.sh         # Shared functions + security scan
+├── best_practices.sh            # 15-point best practices scorer
+└── validate_shared_library.sh   # Shared library validator
+```
+
+### Shared Library Validation
+
+Validate Jenkins Shared Library files using `validate_shared_library.sh`:
+
+```bash
+# Validate a single vars file
+bash scripts/validate_shared_library.sh vars/myStep.groovy
+
+# Validate entire shared library directory
+bash scripts/validate_shared_library.sh /path/to/shared-library
+```
+
+## Plugin Documentation Lookup
+
+**Important**: Plugin documentation lookup is the assistant's responsibility (not automated in scripts). After running validation, identify unknown plugins and look them up.
+
+### When to Look Up Plugin Documentation
+
+Look up documentation when you encounter:
+- Steps not in `references/common_plugins.md` (e.g., `customDeploy`, `sendToDatadog`, `grafanaNotify`)
+- Plugin-specific configuration (e.g., `nexusArtifactUploader`, `sonarQubeScanner`)
+- User questions about plugin parameters or best practices
+
+### Plugin Lookup Workflow (Assistant Responsibility)
+
+1. **Identify Unknown Plugin Step** - Review Jenkinsfile for unrecognized steps
+2. **Check Local Reference First** - Read: references/common_plugins.md
+3. **Use Context7 MCP** (if not in local reference)
+   - mcp__context7__resolve-library-id with query: "jenkinsci \<plugin-name\>-plugin"
+   - mcp__context7__get-library-docs for usage examples and parameters
+4. **Web Search Fallback** (if Context7 has no results)
+   - WebSearch: "Jenkins \<plugin-name\> plugin documentation"
+   - Official source: <https://plugins.jenkins.io/>
+5. **Provide Usage Guidance**
+   - Required vs optional parameters
+   - Best practices for the plugin
+   - Security considerations
+
+See [references/common_plugins.md](references/common_plugins.md) for documentation on commonly used plugins.
+
+## Assistant Workflow
+
+When a user provides a Jenkinsfile for validation:
+
+1. **Run validation** using the main script:
+   ```bash
+   bash scripts/validate_jenkinsfile.sh <path-to-jenkinsfile>
+   ```
+
+2. **Optionally read the Jenkinsfile** using the Read tool if you need to:
+   - Understand the pipeline structure before validation
+   - Provide context-specific advice
+   - Identify specific plugins being used
+
+3. **Look up unknown plugins** after validation:
+   - Review validation output for unrecognized step names
+   - Check `references/common_plugins.md` first
+   - If not found, use Context7 MCP: `mcp__context7__resolve-library-id` with query "jenkinsci \<plugin-name\>"
+   - If still not found, use WebSearch: "Jenkins \<plugin-name\> plugin documentation"
+   - Provide usage guidance based on documentation
+
+4. **Report results** with line numbers, severity, and actionable suggestions
+
+5. **Provide inline fix suggestions** when errors are found (include corrected code snippets directly in the response)
+
+## Anti-Patterns
+
+### NEVER validate only the Jenkinsfile without checking Shared Library calls
+
+**WHY:** Pipeline files that reference shared library steps pass basic validation but fail at runtime when the library step has changed signature.
+
+**BAD:** Validate `Jenkinsfile` in isolation when it calls `@Library('my-lib') import com.example.Build`.
+
+**GOOD:** Note all `@Library` calls and cross-reference the library version being loaded.
+
+### NEVER skip Declarative Linter validation for Declarative pipelines
+
+**WHY:** The Jenkins Declarative Linter catches structural errors that generic YAML/Groovy checks miss, such as missing `steps` blocks or invalid directive placement.
+
+**BAD:** Rely only on Groovy syntax checking for Declarative pipelines.
+
+**GOOD:** Submit the Jenkinsfile to `http://<jenkins>/pipeline-model-converter/validate` or use the CLI linter.
+
+### NEVER accept a "no errors" result from a linter as a green-light to deploy
+
+**WHY:** Linters cannot execute the pipeline; validate that `sh` steps, credentials references, and environment variables exist in the target Jenkins environment.
+
+**BAD:** Merge pipeline changes based only on linter results.
+
+**GOOD:** Run the pipeline against a staging branch with a dry-run or canary job before merging to main.
+
+### NEVER leave `retry(n)` in production pipelines without understanding why it was added
+
+**WHY:** Retry masks flaky steps and increases build time; investigate the root cause instead.
+
+**BAD:** Add `retry(3)` to a flaky test stage and close the ticket.
+
+**GOOD:** Investigate why the step is flaky, fix the root cause, and remove the retry.
+
+### NEVER validate a Declarative pipeline against Scripted rules, or the reverse
+
+**WHY:** The two syntaxes have different required structure. Validating against the wrong rule set produces false errors and misses real ones.
+
+**BAD:** Treat a `node { ... }` file as missing the `pipeline { }` block and report it as broken.
+
+**GOOD:** Detect the pipeline type first (`pipeline {` is Declarative; a `node` block is Scripted) and apply the matching validator.
+
+### NEVER guess how an unfamiliar plugin step behaves
+
+**WHY:** Steps not covered by `references/common_plugins.md` have plugin-specific parameters. Guessing leads to wrong fix suggestions.
+
+**BAD:** Declare `sonarQubeScanner` or `customDeploy` usage correct or incorrect from memory.
+
+**GOOD:** Check `references/common_plugins.md` first, then consult the plugin documentation at <https://plugins.jenkins.io/> and report required and optional parameters.
+
+### NEVER ignore hardcoded credential findings
+
+**WHY:** The security scan flags credentials embedded in the Jenkinsfile. They end up in source control and build logs.
+
+**BAD:** Treat a hardcoded credential warning as noise and proceed.
+
+**GOOD:** Replace the literal with a Jenkins credential binding such as `withCredentials([...])` and re-run `bash scripts/validate_jenkinsfile.sh Jenkinsfile`.
+
+### NEVER report findings without line numbers and a fix suggestion
+
+**WHY:** The workflow requires results reported with line numbers, severity and actionable suggestions, plus inline corrected snippets for errors.
+
+**BAD:** Reply "the Jenkinsfile has problems with its post section".
+
+**GOOD:** Report the line, the severity, and a corrected code snippet.
+
+### NEVER run controller-heavy operations in pipeline code without flagging them
+
+**WHY:** The validator checks for controller-heavy operations such as `JsonSlurper` and `HttpRequest`, which run on the Jenkins controller and degrade it.
+
+**BAD:** Let `new JsonSlurper().parseText(...)` outside a `@NonCPS` method pass unmentioned.
+
+**GOOD:** Flag it and suggest moving the work to an agent step or a correctly annotated `@NonCPS` method.
+
+## References
+
+**Internal:**
+
+- [Declarative Syntax](references/declarative_syntax.md): Complete Declarative Pipeline syntax reference
+- [Scripted Syntax](references/scripted_syntax.md): Complete Scripted Pipeline syntax reference
+- [Best Practices](references/best_practices.md): Jenkins pipeline best practices and patterns
+- [Common Plugins](references/common_plugins.md): Documentation for frequently used Jenkins plugins
+- [Validation Rules](references/validation_rules.md): Detailed validation rules, error reporting format, and examples
+- [Troubleshooting](references/troubleshooting.md): Common issues, debug mode, and limitations
+
+**External:**
+
+- Official Jenkins Pipeline Syntax: <https://www.jenkins.io/doc/book/pipeline/syntax/>
+- Pipeline Development Tools: <https://www.jenkins.io/doc/book/pipeline/development/>
+- Pipeline Best Practices: <https://www.jenkins.io/doc/book/pipeline/pipeline-best-practices/>
+- Jenkins Plugins: <https://plugins.jenkins.io/>

@@ -1,0 +1,96 @@
+---
+name: charness-delegate-claude
+description: "In a Charness-run session, use to launch, watch, finish and resume a builder, reviewer, investigator or planner as a detached `claude -p` process instead of an in-process sub-agent: the account from claude_profiles, the role's model and effort, a full-privilege worker with deny rules, its event log, the bot watch check, resuming the same session. Load charness-orchestration first."
+---
+
+# Detached Claude Code worker (Charness session)
+
+A worker is `claude -p`: one turn per process, the conversation kept between runs by its session id. Load
+`charness-orchestration` first — it holds the watch check this skill arms (the delivery loop is in the session's
+general manager skill, else in `charness-delivery-loop`). A general delegate skill keeps the role policy (model and
+effort per role); this one wins on the launch, the account, detaching and the watch.
+
+## Account, model, effort
+
+- The account is `charness-orchestration` § Accounts and usage limits: call `claude_profiles` first — never launch or resume a worker
+  without it — and start the worker with `CLAUDE_CONFIG_DIR=<configDir>` of the account it names (nothing when its `configDir` is
+  null); without it the worker drains YOUR account.
+- Confirm the login under that directory: `env -u ANTHROPIC_API_KEY claude auth status --text`.
+- The first `system`/`init` event must name the requested model; on a mismatch stop the worker and tell the user.
+
+### Role defaults — only when no general delegate skill is listed
+
+Unless the user names others:
+
+- builder (code, tests, debugging, live runs): `--model sonnet --effort xhigh`;
+- investigator (a cause still unclear after a builder failed on it twice): `--model opus --effort high`;
+- reviewer: `--model opus --effort high`; a small or mechanical diff (docs, tests only): `--effort medium`;
+- planner and the research feeding a plan: `--model opus --effort high`, `xhigh` for a large feature.
+- Never Sonnet for work on data persistence (storage, DB schema and migrations, sync, merge and conflict
+  resolution, backups — anything that can lose or corrupt user data): every role runs on Opus, a builder at
+  `--model opus --effort xhigh` (`max` for a deep investigation). This beats the role defaults above.
+- Never Fable for a worker: it drains the shared session and weekly limits fastest.
+
+## Launch
+
+0. Call `claude_profiles` first (§ Account, model, effort) — never launch or resume a worker without it.
+1. Make a private run directory (an absolute path: a resume starts from the checkout), generate a UUID for the
+   session, write the brief into `<run-dir>/brief.md`: the task and its context (the worker does not see this
+   conversation), the skills it must load by name, every resource another live process holds, and "report every
+   changed file and how you verified".
+2. Run it in the target checkout:
+
+```bash
+setsid nohup env -u ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR="<configDir>" \
+  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 BASH_MAX_TIMEOUT_MS=7200000 \
+  claude -p --session-id "<uuid>" --model "<model>" --effort "<effort>" \
+  --dangerously-skip-permissions \
+  --disallowedTools Agent "Bash(git push *)" "Bash(git reset --hard *)" "Bash(git clean *)" "Bash(git branch -D *)" \
+  --output-format stream-json --verbose --include-partial-messages \
+  < "<run-dir>/brief.md" > "<run-dir>/events.jsonl" 2> "<run-dir>/stderr.log" &
+echo $! > "<run-dir>/pid"
+printf '%s\n' "<uuid>" > "<run-dir>/session"
+```
+
+- Leave out `CLAUDE_CONFIG_DIR=…` for the default profile.
+- `setsid nohup` detaches the worker from your process, so the bot stopping your idle process never ends it.
+- `--disallowedTools` takes several values, so an option must follow it, never the prompt.
+- `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` stops the worker from backgrounding a run that would die when its turn
+  ends; `BASH_MAX_TIMEOUT_MS` lets one foreground command run up to 2 hours. Longer work → split it.
+- Full privileges with deny rules, never a restricted allowlist: a refused ordinary command ends the worker's
+  turn early.
+- A checkout below the folder that holds `.claude/skills` does not see those skills, nor does a worker started above
+  it (skills in a subfolder of the checkout, e.g. a repository root whose agents work in one of its folders): add
+  `--add-dir "<that folder>"` and check that the `init` event's `skills` lists every skill the brief names.
+3. Check the PID: `ps -o args= -p "$(cat "<run-dir>/pid")"` must show `claude -p … <uuid>`. If it does not (the CLI
+   handed over to a new process), take the newest match, `pgrep -n -f "^claude -p .*<uuid>"`, and write that one PID
+   into the pid file. `$!` is often the wrapper shell that started it, gone a moment later: wait about 2 seconds after
+   the launch, check, and never arm the watch on a PID this check has not confirmed. Neither finds it → the worker
+   died at start: read `stderr.log` and the log, fix the cause and relaunch.
+4. Record the UUID (it is in `<run-dir>/session`), the profile name you launched on, the checkout and the run directory
+   in the plan, then arm the watch check from `charness-orchestration` with this PID and run directory.
+
+## Watch and finish
+
+- Progress: `python3 <this skill's base directory>/summarize-events.py <run-dir>/events.jsonl` — the tools it ran
+  last, its last words, the final result, the account's usage windows.
+- A quiet log alone does not prove a hang: look at the last tool call and API retries before stopping a worker.
+- Done means ALL of: a final event `"type": "result"` with `"is_error": false`, the task's actual output in it,
+  and the process gone. `"subtype": "success"` alone is not enough — it also appeared on an auth failure.
+
+## Resume
+
+- Confirm the old PID is gone, then repeat the launch with `--resume "<uuid>"` instead of `--session-id`, a new
+  brief and new log files (`events-2.jsonl`, …), `touch "<run-dir>/watch-armed"` (the run directory is reused, so the
+  marker of the first run is old) and arm a new check. Never `--continue` or `--fork-session`.
+- Start it in the SAME checkout as the first run, in the same command: `cd "<checkout>" && setsid nohup …`. Your
+  shell's working folder may have been reset since, and elsewhere the CLI may not find the session or loads another
+  folder's rules. `$!` is then the shell running that line at best: the PID check of step 3 applies. Check that the
+  new `init` event's `cwd` is the checkout; another folder → stop the worker and resume it from the checkout.
+- `<uuid>` comes only from `<run-dir>/session` or the `session_id` of the first (`system`/`init`) event of the first
+  run's log — never from memory or a shortened prefix.
+- Keep the model, effort and flags of the first run.
+- The account of a resume — where it runs, a hand-over to a NEW worker, a run stopped by a usage limit — is
+  `charness-orchestration` § Accounts and usage limits. Launch under the `configDir` of `resume.profile` and record that name.
+- To stop a worker: confirm the PID is that worker (`ps -o args= -p <pid>`), `kill -TERM <pid>`, confirm it is
+  gone. Never kill by name, never a process you did not start.

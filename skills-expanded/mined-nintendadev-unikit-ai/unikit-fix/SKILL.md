@@ -1,0 +1,727 @@
+---
+name: unikit-fix
+description: >-
+  Fix a specific bug or problem in a {{engine_name}} project. Supports two modes — immediate fix
+  or plan-first. Without arguments executes existing .unikit/code/FIX_PLAN.md. Checks {{engine_name}}
+  compilation, suggests test coverage, and creates self-improvement patches. Use when user says "fix bug", "debug this", "something is broken",
+  "fix the tests", "fix the errors in the tests", "read the errors in the {{engine_name}} console logs and fix the problems",
+  or pastes an error message or {{engine_name}} console log.
+  Also trigger when user shares a NullReferenceException, MissingReferenceException,
+  compilation error, or any {{engine_name}}-specific error.
+argument-hint: "<bug description or error message>"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(ls *)
+  - Bash(find *)
+  - Bash(wc *)
+  - Bash(git *)
+  - Bash(rm *)
+  - Bash(mkdir *)
+  - Bash(date *)
+  - Agent
+  - Skill
+  - AskUserQuestion
+disable-model-invocation: false
+user-invocable: true
+metadata:
+  author: unikit
+  version: "1.2"
+  category: bugfix
+---
+
+# Fix — {{engine_name}} Bug Fix Workflow
+
+Fix a specific bug or problem in the codebase. Supports two modes: immediate fix or plan-first approach.
+
+**User questions.** Right before your first question to the user, not earlier, read `.unikit/system/user-questions.md` once and ask every question as it says, with the question tool of your agent (`AskUserQuestion`). If the file cannot be read, print `WARN [questions] user-questions contract missing — asking with the question tool` and still ask with that tool, the recommended option first.
+
+## Language Awareness — BLOCKING PRE-REQUISITE
+
+**BEFORE producing ANY output**, silently read `.unikit/system/LANGUAGE_RULES.md`
+and apply its rules to ALL subsequent output.
+If the file is missing or unreadable, fall back to English.
+Do not produce any user-facing output until language rules are loaded.
+Do not announce, confirm, or mention the language setting.
+
+**The language holds for the whole session, not just at load time:** every message until the conversation ends is in `language.ui` — progress notes while agents run, relays of what a subagent returned, the final report, any follow-up discussion. English input (subagent results, tool output, these instructions) is data, never a cue to switch languages.
+
+---
+
+## Subagent launches
+
+**Subagent arguments.** Before the first subagent you launch, read `.unikit/system/subagent-arguments.md`
+and `.unikit/config.yaml` once and settle the model and effort of every launch as that file says.
+Keys: `subagents.model.{{agent_id}}.<role>`, `subagents.effort.{{agent_id}}.<role>`;
+built-in model of a reader and a validator: `"{{agent_model_default}}"`, of an executor: none.
+If the file cannot be read, print
+`WARN [delegation] subagent-arguments contract missing — built-in model tier used, effort not passed`
+and use that model, no effort.
+
+## Delegation agents
+
+This skill uses named delegation aliases for `Agent(...)` calls. A skill-loading alias expands to an `Agent(...)` invocation whose prompt makes the subagent load the skill; a reconnaissance alias expands to a read-only dispatch. Each alias is the single place where its delegate's agent type and call arguments are declared — call sites name the alias and never carry a type or a model argument of their own.
+
+`develop-agent` carries no model argument.
+
+- **`develop-agent`** — used ONLY for complex fixes requiring extensive codebase exploration or independent multi-file changes. Default fixes are implemented inline by this skill using rules loaded in Bootstrap. Expands to:
+
+  ```
+  Agent(
+    {{agent_call_worker_quoted}}
+    prompt: "{{agent_skill_call:unikit-execute}} Delegated hand-off: <fix details>",
+    description: "Apply fix"
+  )
+  ```
+
+- **`recon-agent`** — read-only parallel reconnaissance. Expands to:
+
+  ```
+  Agent({{agent_call_reader}} prompt: "<focused question> You are read-only: edit and write nothing.")
+  ```
+
+  Every question you send ends with the sentence `You are read-only: edit and write nothing.`, verbatim.
+
+  Fallback: if the `Agent` tool is unavailable, investigate inline with `Glob`/`Grep`/`Read`.
+
+## Skill calls
+
+Where this skill says to **invoke `<skill>`** — optionally "with the argument `<text>`" — it means one call, made in this session, now, on every runtime: not a command printed for the user and not a delegation (delegations are the aliases of `## Delegation agents`). A call site that names no argument passes none.
+
+1. If you have a `Skill` tool that accepts arguments, call it with that skill and the arguments of the call site, in full and unchanged, then follow the skill.
+2. Otherwise — no `Skill` tool, or one that takes only a name — Read `{{skills_dir}}/<skill>/SKILL.md` in full, treat it as the instructions of this step and carry them out here, in this session, now, with the arguments of the call site as the skill's arguments.
+3. When the skill has run, go on to the step the call site names. Do not print a command for the user to run and do not stop.
+4. Only if that file cannot be read: print `Run: /unikit-<skill> <arguments>` for the user and stop.
+
+---
+
+## Step 0: Check for Existing Fix Plan
+
+**BEFORE anything else**, check if `.unikit/code/FIX_PLAN.md` exists.
+
+**If the file EXISTS:**
+- Read `.unikit/code/FIX_PLAN.md`
+- Inform the user: "Found a fix plan. Executing the fix according to the plan."
+- **Skip Step 0.1 and Step 1**, but still run **Step 0.2** to load fix context (skill-context and patches)
+- Go to **Step 2: Investigate the Codebase**, using the plan as your guide
+- Follow each step of the plan sequentially
+- Continue through Step 4 (Verify), Step 5 (Test suggestion), Step 6 (Patch), Step 7 (Post-Fix Actions)
+- FIX_PLAN.md is deleted in **Step 7.5** after all verification completes
+
+**If the file DOES NOT exist AND conversation history contains review findings** (e.g., the user ran `/unikit-review` or similar earlier in this session):
+- Extract the list of problems/violations from the conversation history
+- If `$ARGUMENTS` is provided — use it as a **filter or clarification** for the review findings. The user may specify which issues to fix and which to skip (e.g., "fix issues 1, 3, 5", "only fix the naming violations", "skip the formatting issues"). Apply only the selected subset.
+- If `$ARGUMENTS` is empty — treat ALL review findings as the bug description
+- Summarize the extracted problems (after filtering, if applicable) back to the user before continuing
+- Proceed to Step 0.1
+
+**If the file DOES NOT exist AND `$ARGUMENTS` is empty AND no review context in conversation:**
+- Tell the user: "No fix plan found and no bug description provided. Specify a bug description (`/unikit-fix <description>`) or create a plan."
+- **STOP.**
+
+**If the file DOES NOT exist AND `$ARGUMENTS` is provided AND no review context in conversation:**
+- Treat `$ARGUMENTS` as the bug description
+- Continue to Step 0.1 below.
+
+---
+
+## Step 0.1: Pre-flight Checks
+
+### Check for Uncommitted Changes
+
+```bash
+git status
+```
+
+**If uncommitted changes exist:**
+
+```
+⚠️ Uncommitted changes detected.
+
+Options:
+1. Commit now (recommended)
+2. Stash and continue (git stash — not offered while a merge is unfinished)
+3. Continue as is
+```
+
+**While a merge is unfinished** — `git rev-parse -q --verify MERGE_HEAD` succeeds — the question has no "Stash and continue": with conflicts unresolved `git stash` fails, and once they are resolved it drops `MERGE_HEAD` for good, so the merge commit would have one parent.
+
+Based on choice:
+- Commit now → invoke `unikit-commit`, then continue
+- Stash → `git stash push -m "unikit-fix: stash before fix"`, then continue
+- Continue as is → proceed without changes
+
+### Resume / Recovery
+
+If the user is resuming after a break or context was likely lost (e.g. after `/clear`), rebuild context:
+
+```bash
+git status
+git branch --show-current
+git log --oneline --decorate -10
+git diff --stat
+```
+
+---
+
+## Step 0.2: Load Fix Context
+
+Bootstrap loads coding rules and principles ONCE upfront so the fix can be implemented inline without re-loading on each delegation.
+
+**Read in parallel (rules + principles):**
+1. `.unikit/system/dev-principles.md` — **up to its lazy-read boundary**: find the marker line (`Grep -n '^<!-- === LAZY-READ BOUNDARY === -->'`) and `Read` the file with `limit` set to that line number. The part below the marker is read once, on the first step that touches the editor's serialized state — including the editor rungs of the Step 1 diagnosis ladder, which use its **D2**. An agent that cannot read with a limit reads the whole file.
+2. `.unikit/RULES.md` — project overrides (highest priority). **Rule topics:** only the root here; its topic files load with the stack rules below.
+3. `.unikit/memory/code/RULES_INDEX.md` — index of core/stack rules
+4. For EACH row in the Core table where Required By = `all` or contains `unikit-fix` — read that file from `.unikit/memory/code/core/` using the Read tool.
+
+Also read `.unikit/ARCHITECTURE.md` (the root) — Steps 4.4 and 4.5 check the fix against it. **Architecture topics:** the root now; once the error is localized, load the topic files listed under its `## Topics` whose `Load when` matches the files you localized; when unsure, load. A listed file that is missing → `WARN [architecture] topic file missing: .unikit/architecture/<slug>.md`, continue.
+
+Stack rules are loaded on-demand later — when investigation reveals which framework is involved (e.g. R3, Zenject, UniTask). At the same point, load the topic files listed under `## Topics` in `.unikit/RULES.md` and in `.unikit/ARCHITECTURE.md` whose `Load when` matches the area the investigation localized — the files, types or feature the bug lives in; when unsure, load (`RULES_INDEX.md` → Step 1).
+
+**The fix runs against a plan whose manifest has `## Experiment Context`** (the session started from such a plan, or the prompt carries a `Prototype plan:` note) → read `.unikit/system/prototype-profile.md` now, once, and follow its `## Role: quality and the rest` — Steps 5 and 7.3, and the prompt of a delegate, follow it. Missing or unreadable → `WARN [prototype] profile contract missing — fixing as for an ordinary plan; run unikit-ai update`.
+
+**Engine bridges (conditional, engine-neutral) — once per session, zero calls:**
+
+5. `.unikit/system/engine-bridges/BRIDGES.md` — the whole file (one short block per bridge) — and, for **each** bridge whose block names a rules tree, that tree's `.unikit/system/engine-bridges/<bridge>/INDEX.md`, **base section only**: the stamp under the title (the `bridge` row) plus every section **except** the `## Check` table — access, the live failure classes, shape and cost, what is irreversible, the lane, and what to do when the file is silent. Those are the exceptions that hold for every task here. **Do not read the `## Check` table now** — it is grepped per editor task, by area (Step 3). Also read `.unikit/bridges.yaml` (the bridge order) and, when it exists, `.unikit/bridge-routing.md` (the routing rules); a missing order file means the default order `BRIDGES.md` states, a missing routing file means no routing rules.
+6. For each bridge listed in `BRIDGES.md`: `.unikit/bridge-notes/<bridge>.md`, **header only** (`bridge:` / `audited:`) — this project's own accumulated findings, and they apply to that bridge only. Compare the header against the bridge the file is named for. On a mismatch print exactly one line and **apply the entries anyway**:
+
+   ```
+   WARN [bridges] notes header ≠ bridge (<header> ≠ <bridge>)
+   ```
+
+   The entries are *suspect*, not void, and a suspect check still fails safe. Retiring them belongs to `/unikit-bridge-audit`, never to this skill.
+
+**A file absent → skip it, print one line, and continue with every right you had** (no `BRIDGES.md` reads as "no bridge selected"):
+
+```
+Bridge rules: <bridge> has no INDEX.md — no known exceptions for it, rights unchanged
+```
+
+No rules means no known exceptions, never no capabilities. Absence never disables an engine bridge and never turns a target into `⏸️ MANUAL` (`.unikit/system/dev-principles.md` → **A9**).
+
+**Lifted gates come from a verdict, not from a server profile.**
+
+`GATE LIFTED` is a **runtime verdict of `/unikit-verify`** — reached by trying, finding no affordance, and producing the evidence of that absence. This skill has no direct channel to the per-gate calibration and will not grow one: that calibration is verify's, and splitting it across two readers is how two skills come to disagree about what is lifted. Read the **verdict** instead — the last ```unikit-gate-result``` fenced block of the most recent `/unikit-verify` run, per `.unikit/system/gate-result-contract.md`.
+
+- A verdict exists → honour exactly what it lifted, and nothing beyond it.
+- **No verdict** (verify has not run) → **nothing is lifted.** Do not infer a lifted gate from an indirect signal, and do not report success on the strength of one. The obligation stands until a real run lifts it — that is what monotonicity means here.
+
+**Read `.unikit/skill-context/unikit-fix/SKILL.md`** — MANDATORY if the file exists.
+
+This file contains project-specific rules accumulated by `/unikit-evolve` from patches,
+codebase conventions, and tech-stack analysis. These rules are tailored to the current project.
+
+**How to apply skill-context rules:**
+- Treat them as **project-level overrides** for this skill's general instructions
+- When a skill-context rule conflicts with a general rule written in this SKILL.md,
+  **the skill-context rule wins** (more specific context takes priority)
+- When there is no conflict, apply both: general rules from SKILL.md + project rules from skill-context
+- Do NOT ignore skill-context rules even if they seem to contradict this skill's defaults —
+  they exist because the project's experience proved the default insufficient
+
+**Load patches** from `.unikit/code/patches/` if the directory exists:
+
+- **If skill-context exists** → do NOT read all patches (skill-context already contains distilled lessons from `/unikit-evolve`). Optionally: read a targeted subset — patches whose Tags or Files overlap with the current bug (match by keywords from `$ARGUMENTS`)
+- **If skill-context does NOT exist** → read only the last 10 patches (by filename descending, filenames are `YYYY-MM-DD-HH.mm.md`) for baseline context
+- If the current problem resembles a past patch — apply the same approach or avoid the same mistakes
+- This is accumulated experience. Use it.
+
+<!-- unikit:extension-point:bootstrap -->
+
+---
+
+## Step 1: Understand the Problem & Choose Mode
+
+From `$ARGUMENTS`, identify:
+- Error message or unexpected behavior
+- Where it occurs (file, class, method, {{engine_name}} component)
+- Steps to reproduce (if provided)
+- {{engine_name}} console output (errors, warnings, stack traces)
+
+If unclear, ask — each question with its likely answers as the options:
+```
+The question tool of your agent (`AskUserQuestion`):
+1. What is the expected behavior?
+2. What actually happens?
+3. Is there a stack trace or {{engine_name}} Console log?
+4. When did this start happening?
+```
+
+### When the symptom lives in the editor, not in the source
+
+Investigation splits by where the symptom actually lives. The code-research delegates read the
+**source** — their tools are enough there. The editor rungs below are walked by **the skill body
+itself**: every one of them is a call through an engine bridge — the one `.unikit/system/dev-principles.md` → **D3** picks — and the grants for it are held by this skill,
+not by whatever it delegates to. Both modes pass through here, so the ladder is available on the
+planning path and on the immediate-fix path alike.
+
+Take the rungs in order — cheapest deterministic signal first, most expensive probe last — and
+stop at the first one that names a cause. Each rung is a **class of signal**, never a tool; the
+vocabulary is the one `.unikit/system/dev-principles.md` → **D2** uses. D2 answers *is there such
+a signal at all*; this ladder answers *in which order to take them*.
+
+1. **Console delta from a marker** — place the marker, reproduce, read only what appeared after it.
+2. **Compilation diagnostics with coordinates** — a build that does not pass explains most symptoms before any state is worth reading.
+3. **A narrow structural read** — the one object or component the symptom points at, not the tree around it.
+4. **A targeted probe chosen by the symptom** — read the state the symptom claims is wrong, directly.
+5. **A deterministic behaviour run** — a test with a readable result, or a scripted run. A test run here is asked for like the one of Step 4.2, unless the user's words already ask for it.
+6. **A frame** — **only** when the symptom is visual.
+
+Three rules hold across the whole ladder:
+
+- **Reproduce once.** One reproduction, and only where reproducing is safe. A symptom that damages state on the way is described from what you already have, not re-triggered.
+- **No identical call twice without new evidence.** The same call with the same arguments against the same state is not a second observation; it is the first one, paid for twice.
+- **A visual symptom directs the diagnosis, it does not close it.** A frame tells you where to look. The evidence is the state you read afterwards.
+
+**Report every rung you walk.** One line per rung, in the order you took them:
+
+```
+rung <N> — <signal class> via <bridge> → <raw observation>
+```
+
+A rung skipped on purpose is named with its reason (`rung 6 — frame → skipped, the symptom is not
+visual`). Without these lines the ladder is indistinguishable from prose: nobody can check that the
+expensive probe came *after* the cheap one rather than *instead of* it.
+
+---
+
+**After understanding the problem, ask the user to choose a mode:**
+
+```
+How would you like to proceed?
+
+Options:
+1. Fix now — investigate and fix immediately
+2. Plan first — create a fix plan for review, fix later
+```
+
+Based on choice:
+- Fix now → skip Step 1.1, proceed to **Step 2: Investigate**
+- Plan first → proceed to **Step 1.1: Create Fix Plan**
+
+---
+
+## Step 1.1: Create Fix Plan
+
+Investigate the codebase enough to understand the problem and create a plan.
+
+**Use the same parallel exploration approach as Step 2** — launch 2-3 `recon-agent` dispatches to investigate the problem. Design prompts based on the specific bug context.
+
+**Fallback:** If Agent tool is unavailable, investigate directly using Glob/Grep/Read.
+
+For a symptom that lives in the editor rather than in the source, walk the rungs from Step 1 yourself — the delegates cover the source half only.
+
+After tasks return, synthesize findings to:
+1. Identify the root cause (or most likely candidates)
+2. Map affected files and functions
+3. Assess impact scope
+
+The synthesis is written in the **diagnosis contract** below — six fields, `## Analysis` in the plan file.
+`.unikit/system/dev-principles.md` → **A1** covers a different moment: `CLAIM / EVIDENCE / VERDICT` reports
+**finished** work and ends in a binary verdict. A diagnosis is **unfinished** work — it has no verdict to give,
+so it carries a boundary and a named list of what is still a guess instead. The two do not compete and neither
+replaces the other.
+
+Then create `.unikit/code/FIX_PLAN.md`:
+
+```markdown
+# Fix Plan: [Brief title]
+
+**Problem:** [What's broken — from user's description]
+**Created:** YYYY-MM-DD HH:mm
+
+## Analysis
+
+The diagnosis contract — six fields, and every one of them is filled:
+
+- **Symptom:** what is observably wrong, in the terms it actually presents in.
+- **Evidence:** the raw observations the diagnosis rests on — a console line, a diagnostic with coordinates, a value read back. A retelling is not evidence: write down what you saw, not what it meant to you.
+- **Boundary:** how far the investigation actually reached, and therefore what it does not cover.
+- **Probable cause:** the mechanism that explains the symptom, stated as the candidate it still is.
+- **Next action:** the single step the fix starts with.
+- **Unverified:** what remained a hypothesis. **This field is never empty.** When everything was verified it reads `nothing` — a deliberate statement, not an omission. A hypothesis that goes unnamed here is read as established by whoever implements the fix.
+
+## Fix Steps
+
+Step-by-step plan for implementing the fix:
+
+1. [ ] Step one — what to change and why
+2. [ ] Step two — ...
+3. [ ] Step three — ...
+
+## Files to Modify
+
+- `path/to/File.cs` — what changes are needed
+- `path/to/Another.cs` — what changes are needed
+
+## Risks & Considerations
+
+- Potential side effects
+- Things to verify after the fix
+- Edge cases to watch for
+- Engine-specific concerns (companion files, serialization, module boundaries)
+
+## Test Coverage
+
+- Which regression test of the logic to add (input → expected outcome) — none for a defect of authored content or tunable data
+- What edge cases to cover
+```
+
+**After creating the plan, output:**
+
+```
+## ✅ Fix Plan Created
+
+Plan saved to `.unikit/code/FIX_PLAN.md`.
+
+Review the plan, and when ready:
+
+/unikit-fix
+```
+
+**STOP here. Do NOT apply the fix.**
+
+---
+
+## Step 2: Investigate the Codebase
+
+**Use Explore tasks to investigate the problem in parallel.** This keeps the main context clean and allows simultaneous investigation of multiple angles.
+
+Launch 2-3 Explore tasks simultaneously:
+
+```
+Task 1 — Locate the problem area:
+recon-agent(prompt:
+  "Find code related to [error location / affected functionality].
+   Read the relevant classes, trace the data flow.
+   Thoroughness: medium.")
+
+Task 2 — Related code & side effects:
+recon-agent(prompt:
+  "Find all callers/consumers of [affected class/method].
+   Check Zenject bindings and installers that wire this up.
+   Identify what else might break or be affected.
+   Thoroughness: medium.")
+
+Task 3 — Similar past patterns (if patches exist):
+recon-agent(prompt:
+  "Search for similar error patterns or related fixes in the codebase.
+   Check git log for recent changes to [affected files].
+   Thoroughness: quick.")
+```
+
+**After tasks return, synthesize findings to identify:**
+- The root cause (not just symptoms)
+- Related code that might be affected
+- Existing error handling
+- DI bindings that wire the affected components
+- Whether the issue is in a Module or Game script (affects where the fix goes)
+
+**Fallback:** If Agent tool is unavailable, investigate directly using Glob/Grep/Read — find relevant files, read the code around the issue, trace the data flow, check for similar patterns.
+
+For a symptom that lives in the editor rather than in the source, walk the rungs from Step 1 yourself — the delegates cover the source half only.
+
+**Report the synthesis in the diagnosis contract** — the same six fields Step 1.1 writes into `## Analysis`
+(symptom · evidence · boundary · probable cause · next action · unverified). On this path there is no plan file,
+so the contract goes into the session output; **Unverified** is filled here too, and reads `nothing` only when
+nothing was left to guess. Step 3 fixes what this contract established, not what it merely suspected.
+
+---
+
+## Step 3: Implement the Fix
+
+This skill OWNS code-writing for fixes. Implement inline using `Read/Edit/Write/Bash` with the rules already loaded in Step 0.2 Bootstrap. Do NOT invoke `/unikit-execute` via `Skill(...)`.
+
+Choose execution mode:
+- **Default (single-file or tightly-scoped fix)** → inline implementation.
+- **Complex fix from FIX_PLAN.md with extensive codebase exploration or independent multi-file changes** → spawn `develop-agent` to isolate context.
+
+When implementing inline, apply:
+- Root cause analysis from Step 2
+- Specific files and lines to modify
+- Expected behavior after the fix
+- The principles from `dev-principles.md` (no inline comments, update docs, etc.)
+
+**Fallback:** If `Agent` tool is unavailable, do NOT invoke `/unikit-execute` inline. Implement directly with the loaded rules — Bootstrap already covers everything needed.
+
+**When the fix touches the editor's serialized state** — a scene, a prefab, a component, an asset, UI, VFX, animation, project settings — rather than source text, carry it out through the engine bridges by `.unikit/system/dev-principles.md` → **D6** (route by **D3**; its part below the lazy-read boundary is read now if this session has not read it yet). **No rules file, or no check line for this area → nothing changes:** it is never a reason to declare the fix impossible or to mark it `⏸️ MANUAL` (A9).
+
+**A call that misled you is a finding** (**D7**): a candidate line in the fix report and, when this fix runs against a plan, a row in that plan's `## Engine Bridge Findings` table, written on finishing the step that produced it — `observed` is the date you observed it (`Bash(date *)`), `bridge` the id of the bridge the call went through. A table in the 2.x form is converted first (`TASK-FORMAT.md` → `### Engine bridge findings section`). **Never write `.unikit/bridge-notes/<bridge>.md` from here.** D6 step 2 confirms the command you chose against the live schema; the library reference has two triggers (**D8**).
+
+After the fix is implemented, you MUST continue through ALL remaining steps (4 → 5 → 6 → 7).
+
+---
+
+## Step 4: Verify the Fix
+
+### 4.1 {{engine_name}} Compile Check
+
+Check that the project compiles after the fix, through the first available engine bridge that offers diagnostics with coordinates (`.unikit/system/dev-principles.md` → **D3**):
+- Refresh/recompile the project through that bridge
+- Check the {{engine_name}} console for compilation errors
+- If errors found — display them with `file:line` references and fix them
+- If no bridge is listed in `.unikit/system/engine-bridges/BRIDGES.md`, or none is available — skip and note: `Compilation check: no engine bridge available, skipped`
+
+### 4.2 {{engine_name}} Test Run
+
+**Inside a review loop** (`dev-principles.md` item 5a — tests are due, and this fix answers a defect in a result handed over in this session, which the user is reviewing) skip this step: print `INFO [testing] review loop: tests deferred until you accept` — once per loop, not again when an earlier edit of this loop already printed it — and go to Step 4.3. Outside a loop, a test run is the user's choice (`dev-principles.md` item 5): work out the scope as follows, ask, and run only on the answer.
+
+Run the tests through the first available engine bridge that offers a test run with a readable result (**D3**) at the width the shared run settings give — `.unikit/system/test-run-width.md`. Read it once per session, the first time this step runs: it resolves `testing.run.use_affected_modules` and `testing.run.full_run_threshold_percent` from `.unikit/config.yaml`, says how the affected test suites are found, requires one run, and says what counts as green. A fix has no coverage, so its run follows the file's `phase` row; its changed files are `git status --porcelain` plus the files this fix touched.
+- `use_affected_modules: false` (the default) → every test in the project, in one run
+- `true` → the affected test suites in one run — or every test, when that file widens the run
+- The file is missing → run every test in the project in one run, and print `WARN [testing] test-run reference missing — every test is run; run unikit-ai update`
+- If no engine bridge is available — skip and note: `Test run: no engine bridge available, skipped`
+- The fix runs against a plan with `## Experiment Context` (Step 0.2), the `## Settings` of that plan say `Testing: no`, and the task's words do not ask for a run → no question; note `Test run: not part of this plan (Testing: no)` and go to Step 4.3
+- **The question.** Unless the task's words already ask for a run ("and run the tests"), ask once, with the question tool of your agent (`AskUserQuestion`): `Run the tests? Scope: <the whole project | <n> test suites: <names>>`. A narrowed scope: `Run them (recommended)` · `Do not run`. The whole project: `Do not run (recommended)` · `Run them`. `Do not run` → note `Test run: not run — your choice` and go to Step 4.3.
+- **What the answer covers.** This run and one repeat after a red result once its cause is fixed: the repeat recomputes the scope and starts without asking, even if the scope grew. A bridge that splits the scope into parts spends nothing by that. Any further run takes a new answer.
+- Wait for results and display them — highlight any failures. A run that is not green by that file — zero tests, no readable counts — is a failed check, not a pass; the one zero that is not a failure is a run of every test in a project that has no tests yet — note `Test run: no tests in the project` and go on
+- If tests fail because of the fix — investigate and fix the regression. The repeat after the fix is one launch over the scope recomputed once from all the files changed (`.unikit/system/test-run-width.md` → `### One scope, one launch`)
+
+### 4.3 Engine Companion Files
+
+Some engines require companion/metadata files for every asset.
+Read `.unikit/DESCRIPTION.md` to determine if the current engine has such a mechanism. If yes — verify consistency for any created or deleted source files:
+- Every new source file has a paired companion
+- Every deleted source file has its companion also deleted
+- New directories have companion files
+If the engine has no companion file mechanism — skip this check.
+
+### 4.4 Module Boundary Check
+
+Verify the fix doesn't violate module boundaries defined in the `.unikit/ARCHITECTURE.md` root and the loaded topics.
+For each modified source file in a module directory: check that imports don't reference forbidden dependency directions (as specified in the architecture doc).
+
+### 4.5 Naming Convention Check
+
+For any new source files, verify naming/namespace follows the convention table from the `.unikit/ARCHITECTURE.md` root and the loaded topics.
+
+---
+
+## Step 5: Suggest Test Coverage
+
+**Inside a review loop** (Step 4.2) skip this step with the same single line — the regression test is written after acceptance (`dev-principles.md` item 5a) — and go to Step 6.
+
+**Outside a loop, suggest a regression test only for a defect in logic or in a system value** (`dev-principles.md` item 5). A defect of authored content or of tunable data gets no test: its evidence is a frame or a read-back, and a live number is never written into a test. Then go to Step 6.
+
+```
+## Fix Applied
+
+**Problem:** [brief explanation]
+**Root cause:** [root cause]
+**Fix:** [what was changed]
+
+### Recommendation: add a regression test
+
+This bug should be covered with a regression test so that it does not return:
+
+- **Input:** [the problematic input — supplied by the test]
+- **Expected outcome:** [what the logic must now produce]
+
+Create the test?
+1. Yes — create the test
+2. No — skip
+```
+
+Based on choice:
+- Yes → write the test inline using `Read/Edit/Write` with the rules and principles loaded in Step 0.2 Bootstrap. Use `develop-agent` only if the test requires extensive codebase exploration. Do NOT invoke `/unikit-execute` via `Skill(...)` — Bootstrap already covers everything.
+- No → skip, proceed to Step 6 (patch creation)
+
+**The patch in Step 6 is mandatory regardless of the test decision.**
+
+---
+
+## Step 6: Create Self-Improvement Patch
+
+**ALWAYS create a patch after every fix.** This builds a knowledge base for future fixes.
+
+1. Create directory if it doesn't exist:
+   ```bash
+   mkdir -p .unikit/code/patches
+   ```
+
+2. Create a patch file: `YYYY-MM-DD-HH.mm.md` (e.g., `2026-03-09-14.30.md`)
+
+3. Use this template:
+
+```markdown
+# [Brief title describing the fix]
+
+**Date:** YYYY-MM-DD HH:mm
+**Files:** list of modified files
+**Severity:** low | medium | high | critical
+
+## Problem
+
+What was broken. How it manifested (error message, wrong behavior).
+Include the actual error or symptom.
+
+## Root Cause
+
+WHY the problem occurred — not "what was wrong" but "why it was wrong":
+- Logic error? Why was the logic incorrect?
+- Missing null check? Why was it missing?
+- Wrong assumption? What was assumed?
+- Race condition? What sequence caused it?
+- DI misconfiguration? What binding was wrong?
+
+## Solution
+
+How the fix was implemented. Key code changes and reasoning.
+Include the approach, not just "changed line X".
+
+## Prevention
+
+How to prevent this class of problems in the future:
+- What pattern/practice should be followed?
+- What should be checked during code review?
+- What test would catch this?
+
+## Tags
+
+Space-separated tags for categorization, e.g.:
+`#null-check` `#async` `#zenject` `#r3` `#unitask` `#serialization` `#mono-behaviour`
+```
+
+**This is NOT optional.** Every fix generates a patch. The patch is your learning.
+
+---
+
+## Step 7: Post-Fix Actions
+
+### 7.1 Summary
+
+```
+## Fix Applied
+
+**Problem:** [what was broken]
+**Root cause:** [root cause]
+**Fix:** [what was changed]
+
+**Modified files:**
+- path/to/File.cs (line X)
+
+**Compilation:** pass / skipped
+**Tests:** pass / not run — your choice / skipped
+**Test suggested:** Yes
+**Patch created:** .unikit/code/patches/YYYY-MM-DD-HH.mm.md
+```
+
+### 7.2 Evolve Suggestion
+
+Count only **unprocessed** patches — those created after the cursor in `.unikit/evolutions/patch-cursor.json`:
+
+1. Read `.unikit/evolutions/patch-cursor.json` (if exists) → extract `last_processed_patch` filename
+2. Glob all `*.md` in `.unikit/code/patches/`, sort lexicographically
+3. Count only patches with filename **greater than** `last_processed_patch` (or all patches if cursor file doesn't exist)
+4. If **3 or more unprocessed** patches, suggest:
+
+```
+⚠️ You have N unprocessed patches (since last /unikit-evolve). Consider running /unikit-evolve
+to feed lessons learned back into skills and prevent recurring issues.
+```
+
+Do NOT count already-processed patches — they have already been analyzed by `/unikit-evolve`.
+
+### 7.3 Check TODO.md
+
+After the fix, check if any open tasks in the project TODO list were resolved:
+
+1. Check if `.unikit/TODO.md` exists. If not — skip this step.
+2. Read `.unikit/TODO.md` and collect all unchecked tasks (`- [ ]`).
+3. Compare each unchecked task against the fix just applied — match by semantic similarity to the bug description, modified files, classes, or methods.
+4. If matching tasks found — change `- [ ]` to `- [x]` directly in `.unikit/TODO.md` using the Edit tool. No agents or skills needed.
+5. If no matching tasks found — skip silently.
+
+### 7.4 Verify or Commit
+
+```
+✅ Fix applied. What's next?
+
+Options:
+1. 🔍 Verify first — /unikit-verify → /unikit-commit (recommended)
+2. 💾 Skip to commit — /unikit-commit directly
+```
+
+Based on choice:
+- Verify first → invoke `unikit-verify`, and when it returns invoke `unikit-commit`
+- Skip to commit → invoke `unikit-commit` directly
+
+Stage ONLY files modified by the fix.
+
+### 7.5 Clean Up FIX_PLAN.md
+
+If the fix was executed from an existing `.unikit/code/FIX_PLAN.md`:
+
+```bash
+rm .unikit/code/FIX_PLAN.md
+```
+
+This happens only after all verification (Step 4), test suggestion (Step 5), and patch creation (Step 6) are complete.
+
+### 7.6 Context Cleanup
+
+Suggest the user to free up context space if needed: `/clear` (full reset) or `/compact` (compress history).
+
+---
+
+## Examples
+
+### Example 1: NullReferenceException
+
+**User:** `/unikit-fix NullReferenceException in CustomerFactory.Create() when spawning customer`
+
+**Actions:**
+1. Load patches, check skill-context
+2. Search for `CustomerFactory` class
+3. Find where null access occurs in `Create()`
+4. Trace the data flow — check DI bindings, constructor injection
+5. Add null check or fix the missing binding
+6. Verify compilation
+7. Suggest a regression test for the null case
+8. Create patch
+
+### Example 2: MissingReferenceException
+
+**User:** `/unikit-fix MissingReferenceException when customer leaves shop — accessing destroyed GameObject`
+
+**Actions:**
+1. Investigate the problem area (likely R3/async lifecycle issue)
+2. Find where destroyed object is accessed
+3. Check if R3 subscription outlives the GameObject — missing `.AddTo()`
+4. Fix the subscription lifecycle
+5. Verify compilation; tests on the user's answer
+6. Create patch with `#r3` `#lifecycle` tags
+
+### Example 3: Zenject Binding Error
+
+**User:** `/unikit-fix ZenjectException: Unable to resolve ICustomerSystem`
+
+**Actions:**
+1. Investigate the problem area (DI binding issue)
+2. Search for `ICustomerSystem` interface and its implementation
+3. Find the installer that should bind it
+4. Fix the missing or incorrect binding
+5. Verify compilation
+6. Create patch with `#zenject` `#di` tags
+
+---
+
+## Important Rules
+
+1. **Check FIX_PLAN.md first** — always check `.unikit/code/FIX_PLAN.md` before anything else
+2. **Plan mode = plan only** — when user chooses "Plan first", create the plan and STOP. Do NOT apply the fix
+3. **Execute mode = follow the plan** — when FIX_PLAN.md exists, follow it step by step. Deletion happens in Step 7.5
+4. **Load patches and skill-context** — learn from past fixes before investigating
+5. **Code-writing is owned by this skill** — fixes are implemented inline using `Read/Edit/Write/Bash` with the rules loaded in Step 0.2 Bootstrap. Delegate to `develop-agent` ONLY for complex fixes requiring extensive codebase exploration. Never invoke `/unikit-execute` via `Skill(...)` from this workflow.
+6. **Suggest a regression test for logic outside a review loop** — never for authored content or tunable data, and none inside a review loop (Step 5)
+7. **ALWAYS create patch** — every fix generates a `.unikit/code/patches/` entry
+8. **Root cause, not symptoms** — fix the actual problem. Don't refactor unrelated code, don't add features
+9. **Minimal scope** — one fix at a time, no scope creep
+10. **Clean up FIX_PLAN.md** — deleted in Step 7.5 after all verification completes
+11. **Respond in the configured language** — use `language.ui` from `.unikit/config.yaml` (default: English)
+12. **Ownership boundary** — `/unikit-fix` owns `.unikit/code/FIX_PLAN.md` and `.unikit/code/patches/*.md`; all other `.unikit/` artifacts are read-only
+13. **Never modify third-party code** — `Assets/Third-Party Assets/` and `Assets/Plugins/` are off-limits
+14. **A test run is asked for** — outside a review loop no run starts without the task's words or an answer (Step 4.2)

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/pgooone/oh-pgone-claudecode (path: .claude/plugins/cache/chrome-devtools-plugins/chrome-devtools-mcp/0.20.3/skills/troubleshooting/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Uses Chrome DevTools MCP and documentation to troubleshoot connection and target issues. Trigger this skill when list_pages, new_page, or navigate_page fail, or when the server initialization fails.

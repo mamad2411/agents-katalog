@@ -1,0 +1,1529 @@
+---
+name: review-code
+description: Standalone code review for any scope — PR number, branch, file paths, or current changes. Synthesizes intent, runs up to 13 parallel specialized agents (fewer for a Markdown-only diff), plus one that checks rule consistency when instruction files change, one that checks, when the base branch has moved since the fork, whether the PR still relies on what it changed and where the PR's edits land, one that checks whether merging another open PR that shares its files would undo its edits, one that checks that every assertion the change removes from the tests is still made or dropped for a stated reason, one that checks every claim the change's prose makes against the system it describes, one that checks that removed prose took nothing a reader needs, and one that runs a PR's own verification steps and the checks the PR's author would run, base against head, and presents actionable findings with a verdict. A dependency update (Dependabot, Renovate, any lockfile change) gets a check of each release it adopts instead. For PR scope, optionally posts the review to GitHub with inline comments.
+argument-hint: '[pr number, branch name, file paths, or nothing for current branch]'
+allowed-tools: Bash Read Grep Glob Agent Write
+effort: high
+model: opus
+---
+
+## Step 1: Determine scope
+
+Identify what to review and the exact diff command to pass agents.
+
+| Argument                      | File list                                       | Diff command                             |
+| ----------------------------- | ----------------------------------------------- | ---------------------------------------- |
+| PR number or URL              | `gh pr diff <n> -R <owner>/<repo> --name-only` | `gh pr diff <n> -R <owner>/<repo>`       |
+| Branch name                   | `git diff <branch>...HEAD --name-only`          | `git diff <branch>...HEAD`               |
+| Commits (hashes or a range)   | `git diff <oldest>^ <newest> --name-only`       | `git diff <oldest>^ <newest>`, or `git show <hash> <hash> …` when the commits are not consecutive |
+| File path(s)                  | use provided paths                              | `git diff HEAD -- <files>`               |
+| None, on feature branch       | `git diff main...HEAD --name-only`              | `git diff main...HEAD`                   |
+| None, on main, staged         | `git diff --staged --name-only`                 | `git diff --staged`                      |
+| None, on main, nothing staged | —                                               | ask: "What would you like me to review?" |
+
+Everything the argument names is one scope, however many commits, PRs or files it lists. An
+argument such as "these commits, each against its own parent" says what each commit's base is; it
+does not ask for a separate review per commit. Agents name the commit a finding comes from.
+
+**A stack is reviewed as one change.** When the scope's PRs are stacked, each based on the branch
+of the PR below it, the review asks of the whole stack what it asks of one PR. Each finding's
+consequences are judged for every PR in the stack, not only the one whose lines it sits on, and a
+finding that reaches a PR is reported in that PR's review too. Every PR's `base_moved.py` check in
+Step 1 passes `--land-on <branch>`, naming the branch the bottom PR targets, because a PR based on
+another PR's branch otherwise never sees what changed where the stack lands.
+
+**When GitHub refuses a PR's diff, read it from git.** For a PR that changes more than 300 files,
+`gh pr diff` fails with `HTTP 406` and `PullRequest.diff too_large`, even though the browser still
+shows the diff. In a local clone of the repository, or one made in a `mktemp -d` directory, run
+`git fetch origin <headRefOid>` and use `git diff -M --name-status <merge base> <headRefOid>` as
+the file list and `git diff -M <merge base> <headRefOid>` as the diff command, with the merge base
+found below. Both commands read commits by hash, so they never change the clone's branch. `-M`
+shows a moved file as a rename, so a PR that mostly moves files reads as renames, not as whole files
+deleted and added. The same holds for any other PR this skill reads with `gh pr diff`.
+
+Substitute the actual base ref (main, master, trunk) where needed. Detect the current branch with
+`git symbolic-ref --short HEAD`. Every `gh` command in this skill names its repository with `-R` (or
+`--repo`), so it cannot act on a same-numbered PR or issue in whatever repo the shell is in.
+
+**Skip non-reviewable files:**
+
+- package-lock.json, \*.lock, yarn.lock, Gemfile.lock
+- Generated code (`*.generated.*`, `*_pb2.py`, etc.)
+- Test snapshots (`__snapshots__/*`)
+- Vendored dependencies (vendor/, node_modules/ if committed)
+- Binary files
+- Formatting-only changes (whitespace/style only)
+
+**For PR scope — fetch PR context before Step 2:**
+
+```bash
+gh pr view <n> -R <owner>/<repo> --json title,body,number,headRefName,headRefOid,baseRefOid,author,mergeable
+gh repo view <owner>/<repo> --json viewerPermission
+```
+
+Store the title, body and branch name (`headRefName`) for use in Step 2. Store the PR number,
+`headRefOid` (the reviewed head) and `baseRefOid` for Step 5. The review describes the PR at that
+commit, so Step 5 checks that the PR has not moved since, compares the PR's own changes against that
+base if it has, and pins its comments to the saved head. Store `author.is_bot` and
+`viewerPermission` for Step 5 too: together they say whether the findings are the user's to fix.
+Store `mergeable` for the base-moved check below.
+
+**For PR scope, also find the merge base,** the commit the PR's branch forked from:
+
+```bash
+gh api repos/<owner>/<repo>/compare/<baseRefOid>...<headRefOid> -q .merge_base_commit.sha
+```
+
+`baseRefOid` is the base branch's commit as GitHub recorded it at the PR's last update, not the
+branch's current tip, and a line another PR changed after the fork reads one way there and another
+way before this change. The merge base is what the change is measured against, so it is the Base
+ref in Step 2.
+
+**For PR scope, also list the base-branch commits since the merge base:**
+
+```bash
+uv run <skill-base-dir>/scripts/base_moved.py <n> --repo <owner>/<repo> [--land-on <branch>]
+```
+
+A commit that reached the base after the fork is invisible in the PR's diff. It can revert or
+change something the PR relies on without touching any of the PR's files. A conflict can mean the
+content a PR edits moved to another file, and that file then merges cleanly without the edit, so
+the edit is lost with no conflict to show it. The script reads the base branch's tip as it is now
+and prints every commit since the merge base with its author, marked when it is the PR's author.
+It then prints the commits that touch the PR's files, with those files, counting a rename under
+both paths on either side, and `mergeable`. With `--land-on`, for a stacked PR, it prints the same
+for that branch. Exit 0 means no commit and the PR is mergeable, and 1 means at least one commit
+or a CONFLICTING PR. Exit 2 means it could not tell, which is never read as none: the Base moved
+line in Step 2 says "not checked" with the reason from stderr and the stored `mergeable`. Step 3
+says when Agent 15 runs on this output.
+
+**For PR scope, also fetch what earlier reviewers said:**
+
+```bash
+uv run <skill-base-dir>/../review-pr-comments-converge/scripts/fetch_pr_comments.py <n> --repo <owner>/<repo>
+```
+
+It prints every review, every inline thread with its replies, and every PR conversation comment,
+which is where some bots post their reviews. A default `gh pr view` shows none of these. Save the
+output to a file in a new `mktemp -d` directory, with the PR's reviews from
+`gh pr view <n> -R <owner>/<repo> --json reviews` beside it, since the fetch helper leaves out a
+review with no body and no comments, such as a bare approval. With the reviewed head, these are the
+**saved state** that Step 5 compares with the PR before posting.
+Keep the output in this session for Step 4 and out of every agent's prompt and the Step 2 intent
+block: an agent handed an earlier verdict tends to return it confirmed, and the point of this
+review is a read that isn't anchored on anyone else's. The one exception is a dry run that CI
+posted, which Step 2 carries to the agents.
+
+**For PR scope, also list the other open PRs that change the same files:**
+
+```bash
+uv run <skill-base-dir>/scripts/overlapping_prs.py <n> --repo <owner>/<repo>
+```
+
+Another open PR may already fix what this one leaves open, or conflict with it on a shared file,
+and only Agent 16 and Step 4 look at other PRs. The script lists every other open PR, drafts and
+PRs against other bases included, that changes a file this PR changes, counting a rename's old
+path, with the files each one shares. Exit 0 means none, 1 means some, and 2 means it could not
+tell, which is never read as none. Exit 1 also starts Agent 16.
+
+The base ref for every other scope: `git merge-base <branch> HEAD` for a branch or for no
+argument on a feature branch (with the base branch as `<branch>`), `<oldest>^` for consecutive
+commits, each commit's own parent for commits that are not consecutive, and `HEAD` for file paths
+or staged changes.
+
+Output the reviewable file list, diff command and base ref before proceeding. When the skip rules
+leave nothing because every changed file is a lockfile or package manifest, say so and name those
+files as going to Step 1a.
+
+**A dependency update takes Step 1a.** When the changed files include a lockfile or a package
+manifest (`package.json`, `pyproject.toml`, `Cargo.toml` and the like), run Step 1a. If those are
+the only files changed and the PR only changes the versions of dependencies already present, Step
+1a replaces Steps 2 to 3.5 and you continue at Step 4. If the PR adds a direct dependency (a name
+new to a manifest's dependency lists), also run Step 2, because whether a dependency earns its place
+depends on what the change is for. If other files changed too, review those through Steps 2 to 3.5
+as usual. Either way, bring Step 1a's findings into Step 4 alongside anything else found.
+
+## Step 1a: Dependency updates
+
+A lockfile is skipped above because nobody reads one line by line, not because it carries no risk.
+The risk is in the releases the update adopts, and no diff shows them. A release can be malicious
+(a compromised maintainer account, an install script that steals the credentials on a developer
+machine or CI runner), and a matching lockfile hash says nothing about that: it proves only that the
+lockfile agrees with the registry. This applies to dev dependencies as much as to runtime ones,
+because install scripts run wherever the package is installed.
+
+1. **Run the check for npm and uv lockfiles.** Skip this when no `package-lock.json` or `uv.lock`
+   changed; the script would only exit 2 to say there is nothing for it to check. It reads
+   everything through `gh`, the registries, nodejs.org and OSV, and downloads the npm version it
+   checks with through `npm exec`, so it runs from any directory.
+
+   ```bash
+   uv run <skill-base-dir>/scripts/review_dependency_bump.py <pr-number> --repo <owner>/<repo>
+   ```
+
+   It compares each changed lockfile at the merge base and the PR head, and lists every entry
+   that changed. For each bumped npm package it checks the hash against the registry, the resolved
+   host, the publisher, install scripts, new dependencies, `engines`, provenance and publish age;
+   `npm ls` checks every parent's range. `npm ci --dry-run --ignore-scripts` checks that the head's
+   lockfile installs under the npm the repo declares for CI: `packageManager`, or the npm bundled
+   with the Node in `.nvmrc` or `.node-version`. For each bumped PyPI package it checks every
+   locked file's hash, the registry source, the publisher its attestations name, new requirements,
+   `requires_python`, yanked files, whether a wheel is still locked and upload age, and that every
+   package depending on it still allows the new version. A package locked from an index other than
+   PyPI is flagged `unchecked`, because the script never contacts a project's own index. `npm audit`
+   or `uv audit` on both sides lists the advisories fixed, introduced and left in place. Exit 0
+   means nothing is flagged, 1 means something is, and 2 means the check could not run. On 2,
+   stderr says why: fix that, or do the checks by hand. Never read exit 2 as clean.
+
+2. **Check other lockfiles by hand.** When the script runs, it flags each other changed lockfile
+   as `unchecked`. When it does not run, because no npm or uv lockfile changed, every changed
+   lockfile is checked this way. Do
+   the same checks against that ecosystem's registry: each locked hash, the publisher, new
+   dependencies, install-time code, and publish age.
+
+3. **Judge what a lookup cannot:**
+   - **Every flag.** For a flagged release, read what changed in the published package, which is
+     not the same as its repository. For npm, `npm diff --diff=<name>@<old> --diff=<name>@<new>`.
+     For PyPI, download both releases' sdists from the URLs in the lockfile into a `mktemp -d`
+     directory, unpack them, and diff the two trees. Look for code that runs on install or
+     import and reaches the network, the environment, credentials or files outside the package.
+     Facts the script reports without a flag are not findings. Provenance absent on both releases,
+     for one, is common and changes nothing; only a release that drops provenance its predecessor
+     had is flagged. An `install` flag is about the lockfile, not a release. A rejection means
+     CI's `npm ci` will fail, which rules out Approve. A flag saying CI's npm could not be
+     determined, or that the repo uses workspaces, means running `npm ci --dry-run` with CI's npm
+     by hand before an Approve.
+   - **A new direct dependency.** Judge it against the Must in
+     `~/.agents/standards/dependencies.md`: what it covers, whether the standard library or an
+     existing dependency already covers it, and the transitive tree it brings in, which the
+     script's `added-entry` lines list.
+   - **A major bump, or any bump of a runtime dependency.** A runtime dependency is one the
+     running app loads, which the script marks `(runtime)` in its heading. Read the
+     release notes in the PR body first, then the changelog between the two versions, and find
+     where the repo imports the package, to judge whether a breaking change reaches this code. A
+     package the repo never imports reaches it through the packages that depend on it, so look at
+     how they use it.
+   - **CI.** The check neither builds nor tests. Read the PR's check results
+     (`gh pr checks <n> -R <owner>/<repo>`). A failing check rules out Approve. Name a skipped or
+     pending check in the "Looks Good" line, so the reader knows the Approve did not rest on it.
+   - **Tests CI may not have run.** When you cannot tell from the checks whether the tests ran
+     against the new version, run the tests that exercise the bumped package yourself, in a copy
+     of the PR head that touches no checkout:
+
+     ```bash
+     dir="$(mktemp -d)" && gh api repos/<owner>/<repo>/tarball/<head-sha> > "$dir/src.tar.gz" \
+       && mkdir "$dir/src" && tar -xzf "$dir/src.tar.gz" -C "$dir/src" --strip-components=1
+     ```
+
+     Install and test inside `$dir/src` with the project's own commands. Never install or run tests
+     in a checkout of the reviewed repository, because other steps are reading its files.
+
+4. **Report in Step 4's format.** A flag that survives step 3 is a finding. Anchor it on the
+   lockfile line of that entry's `version`, which is in the diff. A clean run is the evidence for
+   an Approve. For this path, "Looks Good" may be a short list rather than one sentence: one item
+   per check that ran, with what it found, so a reader can see what the Approve rests on.
+
+## Step 2: Synthesize intent
+
+Build a context block that every agent receives. Gather from these sources in priority order:
+
+1. **PR title and body** — from Step 1 fetch (if PR scope)
+2. **Linked tickets, body and every comment** — any ticket the PR body, branch name or commit
+   messages reference, on whatever tracker holds it (GitHub, Jira, Linear). Read the body and all
+   of its comments, not the body alone: the approach, the design and any later change are usually
+   recorded in comments, and a default read omits them. GitHub:
+   `gh issue view <n> -R <owner>/<repo> --json title,body,comments`. Jira: invoke `use-jira` and
+   request the `comment` field.
+3. **Decision records the PR, its tickets or the diff cite** — each cited record in full
+   (`DECISIONS.md` entries, ADRs, `docs/decisions/`), read at the PR's head commit, including any
+   record the diff amends. Carry its decision, rejected options and revisit triggers into Recorded
+   decisions.
+4. **Commit messages** — for PR scope, from `gh pr view <n> -R <owner>/<repo> --json commits`
+   (each commit's `messageHeadline` and `messageBody`), since nothing checks out the PR; otherwise
+   `git log <base>...HEAD --format="%s%n%b"`
+5. **The diff itself** — read for intent when other sources are thin
+6. **The change's dry-run output**: when CI posted what the change will do to running systems,
+   such as a Terraform or OpenTofu plan, a Spacelift or Atlantis comment, a migration dry run or a
+   `kubectl diff`, take the newest one from the Step 1 fetch. It reports what the change does, not
+   a reviewer's opinion of it, so it goes to every agent. Note the commit it ran against, and say
+   so when that is older than the PR's head. Save the whole dry run to a file in a new
+   `mktemp -d` directory, because the attribute values it shows answer questions that the action
+   lines alone leave open.
+7. **Open PRs that change the same files**: from Step 1's list. Like the dry run, they report what
+   other changes do, not anyone's opinion of this one, so they go to every agent.
+
+Consider everything in the ticket for inclusion in the block below, and carry what binds the
+review: numbered properties (`P1`, `P2`, …), the options the ticket rejected and why, choices
+recorded as deliberate, and anything deferred to another ticket. A reviewer who has not seen these
+recommends reversing a choice the ticket already argued, or flags a deferral as a gap.
+
+Synthesize into a single crisp block:
+
+```
+Problem: [what's broken, missing, or needed — and why it matters]
+Approach: [how this change addresses it, at a high level]
+Key outcomes: [invariants, constraints, or requirements the implementation must satisfy]
+Recorded decisions: [the ticket's numbered properties, rejected options, deliberate choices and
+  deferrals, each with where it is recorded; "none found in <where you looked>" when empty]
+Dry-run output: [each planned action and the summary line, verbatim, then the path of a file
+  holding the full dry run, attribute lines included, for agents to read; "none posted" when CI
+  posted none]
+Overlapping open PRs: [each PR from Step 1's list with its number, title, base and the files it
+  shares with this one; "none" when the check found none; "not checked" and the reason when it
+  exited 2; "not applicable: not a PR review" outside PR scope. An agent may run `gh pr diff <n> -R <owner>/<repo>` on any PR listed here]
+Base moved: [`base_moved.py`'s output from Step 1, verbatim, on exit 0 or 1; "not checked:
+  <reason from stderr>" and `mergeable` on exit 2; "not applicable: not a PR review" outside PR
+  scope]
+Diff command: [exact command agents should run to read the diff]
+Base ref: [the commit SHA from Step 1 that the change is measured against]
+```
+
+Enhance if needed: if raw sources are vague, read the diff and fill in the gaps. Never leave this
+block generic ("various improvements") or empty.
+
+A finding that would reverse a recorded decision is not dropped. It is reported as a challenge to
+that decision, naming the record, so the reader weighs the new argument against the old one.
+
+When the reader must choose, the recommendation comes from the properties. That the approved design
+or a record chose an option is reported beside the recommendation, never given as its reason.
+
+## Step 3: Launch the agents in parallel
+
+Agents 1 to 13 always run, except that Agents 3, 8, 10 and 11 do not run when every reviewable
+file is Markdown: they judge code structure, tests, language idioms and failure paths, which a
+prose-only diff has none of. Agent 14 runs when the diff touches an agent instruction file, Agent 15
+runs for PR scope when Step 1's `base_moved.py` exits 1, or exits 2 for a PR whose stored
+`mergeable` is `CONFLICTING`,
+Agent 16 runs when Step 1's `overlapping_prs.py` exits 1, Agent 17 runs when the diff removes
+a test or an assertion, Agent 18 runs when the diff adds or changes prose, Agent 19 runs when
+the diff removes prose, and Agent 20 runs for every PR scope that reaches this step.
+Together these are the standing agents. You may add more in the same fan-out when this particular
+change raises a question none of these prompts ask.
+
+The bar is a named question, not a topic. "Add a concurrency agent" is a topic. "Does the new
+retry path double-submit when the first attempt times out after the server committed?" is a
+question, and it earns an agent. If you cannot write the question down, do not add the agent.
+
+Extend rather than add. A concern that a standing agent's question covers goes into that agent's
+prompt, the way Agent 2's slicing check is part of judging the approach. Add an agent only for a
+question no standing agent asks, or when a replay shows the agent whose question covers the concern
+missing it when asked. Every agent rereads the diff and its context, so each one added costs every
+later review.
+
+Give an added agent the same shape as the standing agents: the intent block, the file list, the
+provenance requirement, and one question to answer. Record the question and why the standing
+agents did not cover it — Step 4 reports it.
+
+Each standing agent's heading below names its model and why. These choices are a guess until
+ooloth/dotfiles#256 measures them. Agents 3, 4, 8, 9 and 10 run on Sonnet as a deliberate
+exception to the global rule that a review runs on Opus: their misses are silent too, and #256
+decides whether Sonnet finds as much as Opus there. Run an added agent on Opus when a miss in its
+answer would be silent, such as an answer that nothing outside the diff is affected, or when
+answering takes reasoning. Run it on Sonnet only when it checks the diff against standards files it
+loads and neither Opus test applies. Keep each reason, because Step 4 reports both.
+
+Pass each agent:
+
+- The synthesized intent block from Step 2
+- The list of changed/reviewable files
+- Nothing from the earlier reviews fetched in Step 1, not even that they exist, except the CI dry
+  run the intent block carries
+- Its specific instructions below
+- This line, verbatim: "Read the files yourself. Do not spawn subagents."
+- This line, verbatim, because the other agents are reading the same checkout at the same time:
+  "Never change the checkout under review: no checkout, switch, stash, reset or edit. To run
+  something against another commit, run `mktemp -d`, then `git worktree add --detach <that
+  folder>/wt <commit>` as a separate command, and remove the worktree when done."
+- This line, verbatim, because Homebrew updates itself before any `brew` command by default: "Run
+  every `brew` command with `HOMEBREW_NO_AUTO_UPDATE=1`, so a read never updates Homebrew."
+- This provenance requirement, verbatim:
+
+  > For every finding, state whether the change under review **introduced** it or whether it is
+  > **pre-existing** — already true at the Base ref in Context, before this change. Decide it
+  > mechanically, not by impression: run `git show <Base ref>:<path>` (or
+  > `git log -S '<the exact line>'`) and say which you ran. A line that appears in the diff as
+  > unchanged context is pre-existing even when it sits inside a function the change rewrote.
+  > Label each finding `[introduced]` or `[pre-existing]`. If you cannot determine it, say
+  > `[provenance unknown]` rather than guessing.
+
+Send a single message containing all Agent tool calls simultaneously, with Agent 20's call first
+when it runs: it runs the change, so it takes the longest, and in practice the calls in one message
+start some time apart. Run one fan-out for the whole
+scope. Never split a scope into one review per commit or per file. If calls are refused at the
+harness's limit on concurrent subagents, even with "Do not retry", resend one with the same prompt
+and model each time an agent finishes. An agent that errors counts as finished, and is itself
+resent one time in the same way. Stop resending when a call is refused for another reason or with
+none of your agents running, and treat the calls left as never run. Start Step 3.5 when no agent
+is running or waiting to be resent.
+
+---
+
+### Agent 1: Intent Alignment
+
+**Model:** Opus, because judging whether the code does what the intent says takes reasoning, and a
+gap it misses no later step catches.
+
+```
+Question: Does the implementation actually achieve the stated intent of this change?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/correctness.md`. Use these standards as your evaluation criteria.
+2. Run the diff command from Context to read what changed.
+3. Compare the diff carefully against the Problem, Approach, and Key outcomes in the Context block.
+
+Look for gaps between stated intent and actual implementation:
+- Does the code fully address the stated problem, or only partially?
+- Are there stated outcomes not implemented or only half-implemented?
+- Are there edge cases implied by the problem statement that the implementation ignores?
+- Are there implicit requirements from the problem domain that the implementation misses, even if not explicitly stated?
+
+Also check for drift:
+- Does the code do things unrelated to the stated intent? (scope creep, unrelated refactoring bundled in)
+- Are commit messages consistent with what the diff actually changes?
+
+For each gap: what the stated intent says | what the implementation actually does | what's missing or misaligned
+If implementation matches intent: report "Implementation aligns with stated intent."
+```
+
+---
+
+### Agent 2: Approach
+
+**Model:** Opus, because weighing one approach against others takes reasoning.
+
+```
+Question: Is this the simplest correct solution to the stated problem, is it the best available approach, and would delivering it as several smaller changes have paid for itself?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/code-readability.md` and `~/.agents/standards/code-structure.md`, and from `~/.agents/standards/deployment.md` only the two Shoulds headed "A large change ships as thin vertical slices" and "A change couples independent designs only when separating them would gain nothing". Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed.
+4. Read the unchanged files the diff calls or imports, to see existing patterns and available utilities.
+
+Simplicity check — ask this first:
+What is the minimum code that correctly solves the stated problem? Compare it to what was written. If the answer is substantially less, that gap is the most important finding. Look for:
+- Abstractions for a single call site, or layers that exist for one use case
+- Problems being solved that were never stated — hypothetical future requirements, speculative flexibility
+- Existing utilities, patterns, or libraries in the project or standard library that would make this trivial
+- Complexity whose justification isn't obvious to a competent reader of the problem statement
+
+Ground every observation in the actual code and the problem being solved. Don't flag superficial rewrites.
+
+Slicing check: would delivering this as several smaller changes, each mergeable and verifiable end to end on its own, have paid for itself (the two `deployment.md` Shoulds named in step 1)? If so, name the cut points: which files and modules go in each, in what order, and what running the system would verify each by. Judge size by the designs a reviewer must weigh, not by lines; tests and fixtures count for little.
+
+If a simpler or better approach exists: describe it concretely, explain what makes it better, and note the cost of switching.
+If the approach is well-chosen: report "Approach is well-suited to the problem."
+For slicing: report the cut points, or "Splitting would not have paid for itself" and why in one line.
+```
+
+---
+
+### Agent 3: Structure
+
+**Model:** Sonnet, because it checks the diff against the structure and readability standards it
+loads.
+
+```
+Question: Is the internal organisation of this code sound?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/code-structure.md` and `~/.agents/standards/code-readability.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed.
+4. Read related unchanged files to understand existing structural patterns and conventions.
+
+For each issue: file:line | what's wrong | specific alternative
+If structure is sound, report "Structure and internal organisation look solid."
+```
+
+---
+
+### Agent 4: Public Surface
+
+**Model:** Sonnet, because it checks the diff against the interface and documentation standards it
+loads.
+
+```
+Question: From the caller's perspective, is this code well-designed and discoverable?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/type-design.md`, `~/.agents/standards/api-design.md`, and `~/.agents/standards/documentation.md`. If the project has a CLI binary or command-line interface, also load `~/.agents/standards/cli-design.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed.
+4. Find all documentation that could be affected: .md files, help text, docstrings, CLI --help output, code comments in changed files.
+
+For each issue: file:line | what's wrong | specific fix
+If the public surface is well-designed and documented, report "Public surface is well-designed and documented."
+```
+
+---
+
+### Agent 5: Correctness
+
+**Model:** Opus, because a correctness bug it misses ships silently.
+
+```
+Question: Does this code behave correctly across all inputs, states, and callers?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/correctness.md` and `~/.agents/standards/error-handling.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed. For files under 500 lines, read the full file. For larger files, read each changed section plus ~30 lines of context.
+4. Read 2-3 similar unchanged files to understand existing patterns for error handling and validation.
+
+For each issue: file:line | what's wrong | concrete impact | specific fix
+Skip theoretical what-ifs — report actual problems in the code.
+```
+
+---
+
+### Agent 6: Data Safety
+
+**Model:** Opus, because a security, privacy or data-loss bug it misses ships silently.
+
+```
+Question: Is data protected from external threats, personal data mishandling, and write-time corruption?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/security.md`, `~/.agents/standards/privacy.md`, and `~/.agents/standards/data-integrity.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed, then read surrounding context.
+4. If database models or migrations changed, read them in full.
+
+For each issue: file:line | what's wrong | severity (Critical/High/Medium/Low) | specific fix
+Only report actual violations, not theoretical what-ifs.
+If no concerns found, report "No data safety concerns identified."
+```
+
+---
+
+### Agent 7: Runtime Behaviour
+
+**Model:** Opus, because a failure under load or concurrency that it misses shows up only in
+production.
+
+```
+Question: How does this code behave under real-world conditions — load, failure, and concurrency?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/performance.md`, `~/.agents/standards/async-coordination.md`, `~/.agents/standards/reliability.md`, `~/.agents/standards/observability.md`, and `~/.agents/standards/instrumentation.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed, then read surrounding context.
+4. Check how similar operations are handled in unchanged files.
+
+Observability:
+- If this fails in production, would we know? Is the failure diagnosable from logs alone?
+
+For each issue: file:line | what's wrong | concrete impact | specific fix
+Only report actual problems, not theoretical micro-optimizations.
+If no concerns found, report "No runtime behaviour concerns identified."
+```
+
+---
+
+### Agent 8: Testing
+
+**Model:** Sonnet, because it checks the tests against the testing standard and runs the breaks it
+proposes, so its strongest claims are tested rather than argued.
+
+```
+Question: Is the test suite trustworthy and sufficient to catch regressions in this change?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/testing.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed.
+4. Find and read the corresponding test files (new and existing).
+5. Read 2-3 existing test files to understand the project's test conventions and style.
+
+Coverage:
+- Are critical paths tested? (auth, payments, data integrity, error paths)
+- Specify exact missing cases: not "add tests" but "add tests for: expired token, missing token, wrong signature"
+
+Sensitivity:
+- For each test the change adds or rewrites whose name or docstring says what it guards (a property, a commit, a rollback, an isolation), name the line of code it guards and a one-line break of that line: delete the commit, drop the savepoint, skip the reset, return a constant.
+- Make the cheapest breaks, at most three, and run only the test that should catch each. Never edit the reviewed tree, which other agents are reading. Work in a scratch worktree: run `git stash create` and `mktemp -d` as separate commands, then `git worktree add --detach <folder> <the stash commit, or HEAD when it printed nothing>`, and `git worktree remove --force <folder>` when done.
+- A test that still passes under its break is a finding: name the test, the break, and why its setup cannot produce the failure (a shared session, a fixture that raises before writing, an environment that never holds the guarded value).
+
+For each issue: file:line | what's wrong | specific fix
+If tests are well-designed, report "Test design is solid and coverage is appropriate."
+```
+
+---
+
+### Agent 9: Release Readiness
+
+**Model:** Sonnet, because it checks the diff against the dependency, deployment and config
+standards it loads.
+
+```
+Question: Is this change ready to ship responsibly — dependencies justified, deployment safe, config correct?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/dependencies.md`, `~/.agents/standards/deployment.md`, and `~/.agents/standards/config.md`. Use these standards as your evaluation criteria.
+2. Search for project docs defining standards or preferences (README.md, CONTRIBUTING.md, docs/, style guides) — CLAUDE.md is already loaded. Use them to inform your review.
+3. Run the diff command from Context to read what changed.
+4. If package files changed, read them in full. If config or env handling changed, read those files in full.
+5. Measured changes: when the intent, the PR description or the ticket says the change moves a measurable outcome (faster, lighter, fewer errors, smaller responses), check `deployment.md`'s Should "A change made to move a measurable outcome is judged against an expected range set before it ships" against it. Name the query that would measure the outcome in production, and say whether a signal answering it is already in production before this change, from code on the base branch, rather than added in this diff. A signal this diff adds ships with the change, so nothing can take a before reading: that is a finding, with the recommendation to ship the signal first in its own PR. Also flag a promised outcome with no expected range or baseline recorded in the PR, the ticket or its design comment.
+
+For each issue: file:line | what's wrong | specific recommendation
+If no concerns found, report "No release readiness concerns identified."
+```
+
+---
+
+### Agent 10: Language
+
+**Model:** Sonnet, because it checks the diff against the language standards it loads.
+
+```
+Question: Does this code use the language correctly, following the project's established idioms?
+
+**Report every finding you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If nothing found, say so in one sentence.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`. Its file index names one file per language or file format, and each of those entries says which files it covers, by extension or by kind (stylesheets, bash scripts).
+2. Load each of those language files whose entry covers at least one changed file, and only those. Decide from the index entries, not from a list you already know, because the index is where a new language file is added.
+3. If no language-specific reference files apply to the changed files, report "No language-specific reference files apply to this change." and stop.
+4. Otherwise, run the diff command from Context to read what changed.
+
+Apply the loaded standards to the changed files. Look for violations specific to the language — idioms, error handling patterns, type system conventions, and anti-patterns called out in the standards files.
+
+For each issue: file:line | what's wrong | specific fix
+If no language-specific issues found, report "No language-specific concerns identified."
+```
+
+---
+
+### Agent 11: Failure Paths
+
+**Model:** Opus, because tracing whether a failure path is reachable takes reasoning, and an
+unreachable path it misses still looks correct.
+
+```
+Question: For each failure path this change adds or moves — a throw, a non-zero exit, an error return, a new branch that gives up — is it reachable from the program's real entry point, and when it fires, what does the process observably do?
+
+**Answer the question path by path first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change adds no failure path, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/error-handling.md`, `~/.agents/standards/reliability.md`, `~/.agents/standards/observability.md`, `~/.agents/standards/instrumentation.md`, and `~/.agents/standards/async-coordination.md`. Use these as your evaluation criteria.
+2. Run the diff command from Context. List every failure path the diff adds or relocates. A path that merely changes its message is not one; a path that changes when, whether, or how loudly it fires is.
+3. For each path, find the program's real entry point (the binary, the `main`, the script the scheduler runs, the handler the framework calls) and trace whether anything reachable from it reaches that path. Grep for importers of the module, then importers of those. Say plainly when nothing does: an unreachable failure path protects nothing, however correct it looks.
+4. For each reachable path, read the enclosing function IN FULL plus its callers, and determine what actually happens when it fires. Name the observable outcome: exit code, what appears in logs, and whether remaining work continues, is skipped, or is silently reported as success.
+5. Check specifically for handlers that do not catch what they look like they catch: a synchronous throw evaluated while building an argument, before the promise/future it is passed to exists; a throw in a constructor or at module load; an error raised outside the `try` that visually surrounds it; a rejected promise nothing awaits.
+6. Judge each outcome against the intent block. A change whose stated point is failing earlier or louder has not delivered it if the failure is caught and logged deep in the stack, or if the process still exits 0.
+
+For each issue: file:line | the path | reachable from where, or not at all | what the process actually does | why that is wrong given the intent
+```
+
+---
+
+### Agent 12: Out-of-Diff References
+
+**Model:** Opus, because its answer is often that nothing else references what the change removes, a
+miss nobody checks.
+
+```
+Question: For each thing this change withdraws, restricts or renames — a route, page, command, flag, field, column, config key, file path, URL, message or permission that is removed, gated, renamed or narrowed — which references to it live OUTSIDE the diff, and does each one still work, or is it now broken, dead or misleading?
+
+**Answer thing by thing first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change withdraws, restricts or renames nothing, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/correctness.md` (the Must "Implementation is complete and finished") and `~/.agents/standards/config.md` (the Should on combinations of switches). Use these as your evaluation criteria.
+2. Run the diff command from Context. List every thing the diff withdraws, restricts or renames, and for each, every identifier a reference to it could use: its name, its path or URL, its key, its label, and any helper that builds it.
+3. Search the whole repository for each identifier, excluding the changed files. Search for the identifier itself, not for the rule the change introduces, because a reference that never mentions the rule is the one most likely to be broken. Include code that generates links or messages the system sends (emails, notifications, redirects), documentation, config and deployment files, and tests. If the project's deployment config or consumers live in another repository you can read, search there too; if you cannot, say which repository and what you would have searched for.
+4. For each reference found, decide whether it still works after the change. A reference is broken when it calls, links, navigates or points to something that is now gone, refused or renamed; misleading when it describes the old state as current.
+5. Where the change introduces switches, modes or options that can be combined, list each combination the system accepts (does not refuse at startup). For each accepted combination, check every consumer of those switches, including consumers outside the diff, and report any that misbehaves under it. Treat a comment or doc calling a combination supported as a claim to check.
+6. Pre-existing references the change newly breaks are findings for this change: label them `[pre-existing]` for the line and say the change is what breaks them.
+
+For each issue: file:line | the reference | the thing it points to | why it is broken or misleading after this change | what would fix it, or which ticket should own it
+```
+
+---
+
+### Agent 13: Coupled Changes
+
+**Model:** Opus, because its answer is often that nothing outside the diff has to change, a miss
+nobody checks.
+
+Agent 12 follows what a change takes away. This agent follows what it adds: a new consumer of an
+existing setting makes that setting's validators and other readers answer for the new use, and a
+new side effect on a shared path reaches every caller and every screen in front of that path. The
+code that has to change with it is outside the diff, so no other agent's reading reaches it.
+
+```
+Question: For each thing this change adds or gives a new meaning to — a new consumer of an existing setting, field, function or table; a new side effect on an existing path (a send that now copies someone, a write that now notifies); a new exemption, permission or default; a value an existing consumer will now receive — which code outside the diff must change with it for the system to stay consistent, and did the change make that change?
+
+**Answer thing by thing first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change adds nothing that code outside the diff depends on, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/correctness.md` (the Must "Implementation is complete and finished") and `~/.agents/standards/config.md`. Use these as your evaluation criteria.
+2. Run the diff command from Context. List every thing the diff adds or gives a new meaning to, in the sense of the Question.
+3. For each, find what outside the diff shares it: the other readers of the setting or field, the validators and boot checks that guard it, every caller of the path that gained the side effect, and every screen, endpoint or message in front of those callers. Search for the identifier itself and follow callers up to the entry point. Read each one you find.
+4. For each, decide whether it still holds now that the thing means more than it did. Examples of what fails: a validator that runs only in a mode the new consumer does not need; a second reader that parses the value differently; a stored copy of the value that is never compared with the new one; a screen that triggers the path but does not show the new effect; a pre-existing gap the new behaviour now depends on.
+5. Label each finding `[coupled change missing]` when the change should have made the coupled change itself, or `[pre-existing gap made relevant]` when the gap was already there and this change is what makes it matter. Say whether the PR's author could fix it in this PR, or whether it needs another repository, another team's code, or a decision the author cannot make.
+
+For each issue: file:line (outside the diff) | the thing the change added | what at that location now has to change | what it does instead | label | fixable in this PR or not, and why
+```
+
+---
+
+### Agent 14: Rule Consistency
+
+**Model:** Opus, because its answer is often that no two rules conflict, a miss nobody checks.
+
+Runs only when the diff touches an agent instruction file, which is any file the list under
+"These stop the loop" in the global `CLAUDE.md` names.
+
+```
+Question: Across the agent instruction files this change edits and the ones they refer to, can an agent follow every rule at once, or do two rules conflict, overlap without saying which wins, or leave a situation none of them covers?
+
+**Answer rule by rule first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change edits no agent instruction file (any file the list under "These stop the loop" in the global `CLAUDE.md` names), say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/agent-harness.md` and `~/.agents/standards/documentation.md`. Use these as your evaluation criteria.
+2. Run the diff command from Context. List every rule the diff adds, changes or removes in an agent instruction file: each sentence that tells an agent to do or not do something, to ask, or to stop.
+3. For each rule, find every other rule about the same situation: the same action (commit, push, post, merge, ask, approve, edit instructions), the same kind of branch or repo, or the same skill. Look in the changed files and in the files they name or that name them: the global and project `CLAUDE.md`, each skill a rule mentions, each skill that invokes a changed skill, and the permissions in `settings.json`. Search for the action's words ("commit", "push", "approval", "exception", "only", "never", "without asking"), not for the rule's own wording, because the rule it conflicts with will be worded differently.
+4. For each pair, decide which holds: both can be followed in every case; they conflict, so following one breaks the other, in a situation you name; one overrides the other without saying so; or a situation falls between them, which you name.
+5. Check order. Where a rule says one action happens before or after another ("before anything is pushed", "first", "once", "only after"), find every rule that requires one of those actions earlier or later, such as a record that must be pushed before a comment can link it. Name the sequence an agent would have to follow, and say whether any sequence satisfies every rule.
+6. Check every category a rule applies to, such as "agent instruction files", "a repo that ships through PRs" or "every finding in X". Find each place that lists or defines its members, and say whether the lists agree, and whether a rule that relies on the category can tell which files or cases are in it.
+7. Check every count and cross-reference a changed rule makes or that points at a changed rule, such as "the one exception", "two exceptions", "step 3 below" or "the list under X": does what it points to still say that?
+8. A conflict between a changed rule and one the diff did not touch is a finding for this change when the diff introduced it.
+
+For each issue: file:line | the rule | file:line of the rule it meets | the situation where an agent cannot follow both, or that neither covers | which should win, or what wording would reconcile them
+```
+
+---
+
+### Agent 15: Base Moves
+
+**Model:** Opus, because an edit lost in a clean merge, or a base commit that removed what the PR
+relies on, leaves nothing for anyone to notice.
+
+Runs when Step 3 says. Its effort follows how relevant the base's commits are: it sorts them
+first, and spends one line on each that cannot affect the PR.
+
+```
+Question: For each commit the base gained since the merge base, does this PR's code, description, docs or tests rely on anything it changed or removed? And once the base is merged into this PR, where does each of the PR's edits land, and does any edit disappear, duplicate what the base already did, or point at content the base moved or removed?
+
+**Sort the commits first, then answer commit by commit and edit by edit, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If Context's Base moved line lists no commit and no conflict, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Fetch what the Base moved line names before reading any of it: `git fetch origin <base tip> <PR head>`, plus the `--land-on` branch's tip when the line lists one. When the line says "not checked", run `git log --format='%h %an %s' <merge base>..<base tip>` to list the commits yourself. Then sort every commit, those on a `--land-on` branch included, into two groups, judging from its subject, its author and `git show --stat <commit>`. **Unrelated:** it changes nothing the PR's code, description, docs or tests touch, call or describe. **Relevant:** it shares a file with the PR, or it changes or removes something the PR relies on, such as a revert of an earlier change the PR builds on. A commit by the PR's own author counts like any other: the author knowing about a commit does not mean the PR accounts for it. List each unrelated commit in one line saying why, and spend nothing more on it. When no commit is relevant and nothing conflicts, say so and stop.
+2. For each relevant commit, read it in full with `git show <commit>`. Search the PR's diff, its description and the Context for anything that relies on what the commit changed or removed: a handler, a response, a behaviour, a file path, a claim in a doc. Say whether the PR still holds once it lands on the base tip, and what breaks if it does not.
+3. For the commits that share a file with the PR, run the diff command from Context and list each of the PR's edits, hunk by hunk, in the files the Base moved line names.
+4. Merge each tip into the PR head without touching any checkout: `git merge-tree --write-tree <base tip> <PR head>`, and for a stacked PR `git merge-tree --write-tree <--land-on tip> <PR head>` as well, since that is where the stack lands and GitHub's `mergeable` only answers for the PR's own base. List each file that conflicts and each that merges cleanly, for each tip.
+5. For each base commit that shares a file, read what it did to the shared files with `git show <commit>`. Where it moved content out of a file, find where that content lives at the base tip with `git grep` on distinctive phrases from the PR's edit.
+6. For each PR edit, decide which holds: it merges in place; it conflicts, and taking the base's side drops it; its content moved, so it belongs in a file you name, where the merged tree still holds the old text; the base already made the same change, so it is redundant; or it points at something the base removed.
+7. A clean merge of the destination file is not evidence the edit survived. Read the merged tree's copy of each destination (`git cat-file -p <tree>:<path>`) and check for the edit's text.
+
+For a commit the PR relies on: the base commit and its author | what in the PR relies on it (file:line, or the description's sentence) | what breaks once the PR lands on the base tip | what would reconcile them
+For an edit: PR file:line | the edit | where it lands after the merge (file:line at the base tip) | what is lost or wrong | where to re-apply it
+```
+
+---
+
+### Agent 16: Overlapping PR Merge
+
+**Model:** Opus, because a conflict resolved the natural way can drop this PR's edit and leave
+every test passing.
+
+Runs only for PR scope, when `overlapping_prs.py` in Step 1 exits 1. When the list names more
+than 3 PRs, launch several Agent 16s in the same fan-out, each with its own list of at most 3 of
+those PRs and the line "Your overlapping PRs: #…" naming them, because each PR takes a merge and
+both resolutions of every conflict to check. Shares beyond the harness's limit on concurrent
+subagents wait and are resent as Step 3 describes.
+
+```
+Question: For each open PR in your share (the "Your overlapping PRs" line, or Context's Overlapping open PRs line when there is no share), once it and this PR are merged in either order, does any of this PR's edits disappear, conflict in a way whose likely resolution drops it, or stop working because the other PR changed what it relies on?
+
+**Answer PR by PR first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Run the diff command from Context, and list this PR's edits, hunk by hunk, in the files each overlapping PR shares.
+2. For each overlapping PR, read its diff (`gh pr diff <n> -R <owner>/<repo>`) and fetch its head, taking its SHA from `git ls-remote origin refs/pull/<n>/head` and never from `FETCH_HEAD`, which other agents fetching in the same repository overwrite, then running `git fetch origin refs/pull/<n>/head` so that commit is stored locally. Merge it with this PR's head without touching any checkout: `git merge-tree --write-tree <this head> <other head>`. List each shared file that conflicts and each that merges cleanly.
+3. For each conflict, resolve it each way, taking this PR's side and the other PR's side, in a scratch worktree (run `mktemp -d`, then `git worktree add --detach <that folder>/wt <this head>` as a separate command, then `git merge --no-commit <other head>`), and say which side a resolver would most likely take and why, such as whose comment or wording is newer. For the likely side, read the result and check for each of this PR's edits.
+4. For a clean merge, read the merged tree's copy of each shared file (`git cat-file -p <tree>:<path>`) and check for each edit's text: a clean merge is not evidence the edit survived.
+5. Where a resolution drops an edit, run the tests that cover it in that worktree and say whether they still pass. An edit that disappears with every test green is the most severe finding, and the fix is usually a test in this PR that would fail.
+6. Remove every worktree you added.
+
+For each issue: this PR's file:line | the other PR | the merge or resolution that loses or breaks the edit | whether tests notice | what this PR could add so they would
+```
+
+---
+
+### Agent 17: Dropped Assertions
+
+**Model:** Opus, because its usual answer is that nothing was lost, and a wrong "nothing" leaves a
+check gone with every test still green.
+
+Runs when the diff removes, from a test file, a whole file, a test function or class, a helper
+tests read for their expected values (a hand-kept list, an expected-value function), or a line
+that asserts (`assert`, `expect(`, `assertEqual` and the like, `pytest.raises`, `toThrow`). Agent 8
+judges the tests the change adds or rewrites; this agent judges what it takes away.
+
+```
+Question: For each assertion the change removes from the tests, is the same property still asserted for the same inputs after the change, or does the change say why that property is dropped?
+
+**Answer property by property first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change removes no test, assertion or expected-value helper, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/testing.md`. Use these as your evaluation criteria.
+2. Run the diff command from Context. List every removed test file, test function or class, expected-value helper, and line that asserts. For each, write the property it checked in one sentence: which inputs, which expected outcome.
+3. For each property, look at the head for a test that still checks it: a rewritten version in the diff, a test elsewhere, or a check that runs at boot or import. Read the candidate and confirm it fails when the property breaks, for the same inputs. A narrower check is not the same property: fewer routes or rows, one caller where there were several, a made-up id where the old test used a real row, a field the new check lets default.
+4. Where a candidate's coverage is in doubt and a break is cheap, break the property in a scratch worktree and run only the candidate. Never edit the reviewed tree, which other agents are reading. Work in a scratch worktree: run `git stash create` and `mktemp -d` as separate commands, then `git worktree add --detach <folder> <the stash commit, or HEAD when it printed nothing>`, and `git worktree remove --force <folder>` when done. At most three breaks.
+5. For each property nothing checks any more, look for the change's stated reason in the PR body, the commit messages, and Context's Recorded decisions. A reason counts only when it covers this property; "the new tests replace the old ones" covers none. A property dropped for a reason whose replacement misses a case the reason claims to cover is a challenge to that reason: name the case.
+
+For each issue: removed test or assertion (file:line at the base) | the property it checked | where it is checked now, or "nowhere" | the stated reason, or "none" | an input that now passes unnoticed | the test that would catch it
+```
+
+---
+
+### Agent 18: Doc Claims
+
+**Model:** Opus, because its usual answer is that the prose is true, and a wrong "true" sends a
+reader to run a step that does the wrong thing with nothing to warn them.
+
+Runs when the diff adds or changes prose: Markdown, a code comment or docstring, or a message a user
+or operator reads (an error, a log line, help text). That is most changes, because nearly every
+change writes a comment. A change whose prose is a few comments is a short read of those comments
+against the code beside them. When the diff changes prose in more than 5 files, launch several
+Agent 18s in the same fan-out, each with its own list of at most 5 of those files: on a replay with
+10 runbooks per agent, each run missed false claims the other found. Shares beyond the harness's
+limit on concurrent subagents wait and are resent as Step 3 describes, so a large docs PR takes
+longer rather than checking less. Agent 4 asks whether docs follow the code; this agent asks
+whether what the prose says is true.
+
+```
+Question: Is every factual claim the change's prose makes true at the head, against the code, config, deployment files, other repositories and tools it describes, and does every command, query and step it gives work as written?
+
+**Answer claim by claim first, then report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each. If the change adds or changes no prose that states a fact, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list, or this agent's share of the files whose prose changed]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/documentation.md`: the Musts "Docs reflect current behavior", "A doc or comment holds only what its source of truth cannot say", "Recorded facts name their source" and "Every command or procedure a doc says works has been shown to do what the doc says". Use these as your evaluation criteria. Also read the repository's own `docs/standards/` files, if it has any, for the copied facts it sanctions.
+2. Run the diff command from Context. In your files, list every added or changed sentence that states a fact (what code does, a name, path, route, setting, default, count or limit, which environments differ, what a tool or vendor does, what a command returns) and every command, query and procedure step. Text the change moved counts as written by it. Before checking a claim, ask whether the doc should make it at all: a list of members, a count, a value or an ID range copied from code, configuration or a canonical page, or a description of code elsewhere, goes stale at the next change even when it is true today. Report such a claim as a finding whose fix is to delete it and point at its source (the `file::symbol`, the config file, the page, or the check that enforces it), not to correct it, and report it whether or not it is true now. A value a procedure needs in order to run, such as the log message a reader searches for, a resource name in a command, or a statement to execute, is part of the procedure and not a copied fact, and so is anything the repository's own standards sanction.
+3. For each claim, read the source that decides it: the cited symbol and its callers, the settings class, the model or migration, the deployment files. For a claim about another repository, read it at its default branch if you can (a local clone after `git fetch`, or `gh api`), and if you cannot, say which repository and what you would have read. For a claim about a tool or vendor, read its `--help` or documentation and quote the line. A claim about code is checked against the code, never against another doc.
+4. For each command, check every flag against `--help`. For each SQL statement, check every table, column and predicate against the models, and that a count meant to guard a write uses the same predicate as the write. Where it is cheap and changes nothing, run the command read-only or against a scratch database; never against a deployed environment, and never a write.
+5. For each absolute claim (only, every, never, no, nothing, always, the one), search for the exception: another path, mode, environment or input for which it does not hold. An absolute claim is the kind most often false with nothing to show it.
+6. For each procedure, walk it as its reader would: the state each step assumes, whether a step can act on the wrong row, environment or person, and what the reader is told when a result is not the one expected. Check each step's condition against the rest of the same doc and the docs it links, for a case described there that the condition also matches. A step that asks the reader to change data gives the statement to run.
+7. A claim made false by the change's own code counts here only when the change also wrote the claim; a claim elsewhere that the code change makes false is Agent 12's and 13's question.
+
+For each issue: file:line | the claim as written | the source that decides it (`file::symbol`, command and its output, or quoted documentation) | false, unverified, or copied (true now, but restating its source) and why | the fix. Then the claims found true, one line each with their source, or, when there are more than 20, their count per file.
+```
+
+---
+
+### Agent 19: Removed Knowledge
+
+**Model:** Opus, because its usual answer is that nothing was lost, and what a deletion takes leaves
+no trace at the head for anyone to notice.
+
+Runs when the diff removes prose: Markdown lines, comments or docstrings. Text that reappears at
+the head, moved or reworded, is not removed. Most removed prose should go: history, narration and
+restatements of what the code says are what the documentation standard asks a change to delete. So
+this agent's bar is not whether the removed text was true but whether a reader needs it and can no
+longer find it. Agent 17 asks this of test assertions; this agent asks it of prose. When the diff
+removes more than about 1,500 lines of prose, launch several Agent 19s in the same fan-out, each
+with its own share: a deleted file grouped with the files its content moved to, the removed lines
+of a few edited files, or the removed comments of one code area. Name each share's files and the
+destination files in its prompt. Shares beyond the harness's limit on concurrent subagents wait and
+are resent as Step 3 describes.
+
+```
+Question: For each statement the change removes, is it true at the head, needed by a reader to act correctly, and stated nowhere else at the head, including in the code?
+
+**Answer statement by statement first, then report every issue you would act on, most severe first, one or two lines each. List the removals you judged safe as the instructions say. If the change removes no prose, say so in one sentence and stop.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/standards/README.md`, then `~/.agents/standards/documentation.md`, in particular the Musts "Comments and documents describe the present, never the past", "A rule is stated without the incident that produced it" and "History survives only as a forward-facing instruction". They describe removals that are correct.
+2. Run the diff command from Context with `-M`, so a moved file reads as a rename. List every removed statement: a sentence, list item, table row or comment. Drop each one whose content reappears at the head, found by searching the head for its distinctive terms rather than its exact words. When a file's content moved into another, compare the two row by row and section by section, never file by file: a move that carries most of a file can still drop one row.
+3. Sort each remaining statement into one of two kinds:
+   - **Safe:** history or narration of how the code got here; a restatement of what the code at the head shows through its names, types or tests; a duplicate of text at the head (cite where); a description of a past state; or a claim false at the head (cite the evidence).
+   - **Lost:** true at the head, read in the code; something a reader needs to act correctly, such as a reason, a constraint, a warning, a procedure, a symptom to diagnose by, or a guard someone might otherwise remove; and stated nowhere at the head.
+4. For each lost statement, name where it belongs at the head: a doc, a decision record, a comment beside the code it explains, an invariant, or a ticket when it describes work still to do.
+5. Never report a safe removal as a finding, and never recommend restoring narration or a restatement of the code.
+
+For each issue: removed text (file:line at the base) | why a reader needs it | where it belongs at the head. Then each safe removal in one line with its kind, or, when there are more than 30, a count per kind with three examples each.
+```
+
+---
+
+### Agent 20: Run the Verification
+
+**Model:** Opus, because its usual answer is that the PR does what it says, and a wrong "it does"
+approves a change whose stated proof was never run, or never could be.
+
+Runs for every PR scope that reaches Step 3, whatever the description holds, in any layout, from
+any author's template or none; a PR whose description gives no steps needs it most. Reading the
+code shows what the change should do; only running it shows what it does, and a description's steps
+and pasted output can come from another script, another run or another version of the UI. Agent 1
+asks whether the code matches the stated intent, and Agent 18 checks prose the diff changes. This
+agent runs the PR.
+
+```
+Question: Run the PR's own verification steps as written, then run what `prove-it-works` would if you had written the PR, base against head included. Which steps fail or show something other than the description says, which pasted output could not have come from the steps beside it, which claims does a run contradict or leave unshown, and what behaviour changes that no claim mentions?
+
+**Report every issue you would act on, most severe first, one or two lines each. List anything you considered and rejected in one line each.**
+
+Context:
+[insert synthesized intent block]
+
+Changed files:
+[insert file list]
+
+Instructions:
+1. Read `~/.agents/skills/prove-it-works/SKILL.md` and take its "Who the proof is for" as your stance: you are the reviewer who doubts the change.
+2. Only for a PR whose author belongs to the repository's owner, the user or the user's organization, run anything from it. For any other PR, run nothing, and report which steps you would have run and why you did not.
+3. Check out the PR's head and its base in detached worktrees of your own: run `mktemp -d`, then `git worktree add --detach <that folder>/head <the PR's headRefOid>` and `git worktree add --detach <that folder>/base <Base ref from Context>` as separate commands, and remove both when done. Install what the repo's docs say. Run locally only: never reach a deployed environment, send real email or messages, or write to anything shared.
+4. Run each verification step the description gives, exactly as written and in order, saving each one's output in your folder. Compare each result with what the step expects and with any output pasted under it. Output whose format the step could not print (other labels, other variable names, other addresses) came from somewhere else: report it.
+5. Then do what `prove-it-works` would do if you were the PR's author. Its claims are the rows of the design's Observable behaviour table, from the ticket, where there is one. Without one, list the behaviour the change adds and keeps from the ticket's Ideal state and approach and from the diff. Then run the PR's base and head side by side to find what else changes. Run each row you can as a reviewer could. This finds what the PR's own steps cannot: a behaviour no claim mentions, and a claim with no step. Where a step needs a browser, another machine or a deployed system, say which and what it would show.
+6. A step that fails because its text is wrong is a finding with the corrected step. A claim the run does not bear out is a finding with the output. A behaviour the run shows that no claim and no design row mentions is a finding: a bug to fix, or a design change for the author to record.
+
+For each issue: the step or claim as written | what you ran | what it printed, quoted from your saved output | why it does not hold | the fix. Then the steps that held, one line each with the file holding their output.
+```
+
+---
+
+## Step 3.5: Verify before presenting
+
+Before writing a single line of output, audit the agent findings for claims that assert specific
+library behavior, numerical values, runtime semantics, or API guarantees. These are the highest-risk
+claims — most likely to be subtly wrong — and the ones a reviewer would have to take on faith.
+
+**For each such claim, run a targeted check:**
+
+- Library default values → `python3 -c "import lib; print(lib.DEFAULT_X)"`
+- API signature or accepted kwargs → `python3 -c "import inspect, lib;
+  print(inspect.signature(lib.Cls.method))"`
+- Stdlib availability → `python3 -c "import lib; print(hasattr(lib, 'func'))"`
+- A library's own behavior → read the relevant installed source with `python3 -c "import inspect,
+  lib; print(inspect.getsource(lib.func))"`
+- File/doc claims → read the file
+
+**Base every claim about how the code behaves on a run.** Such a claim is about a value or a path
+at runtime: what a function returns, what a caller receives, whether a value can be missing, which
+branch runs. A claim that code is unused, breaks a standard or reads badly keeps the checks above.
+Run the code path yourself, starting where its inputs are produced rather than from a value you
+assume, and cite the saved output. Run it as Agent 20's instruction 3 does: in detached worktrees
+of the reviewed head (and base), locally only. When the change is uncommitted, the reviewed head is
+the commit `git stash create` prints, as in Agent 17's instruction 4. A type, comment or doc saying
+a value can be missing is itself a claim to check, not evidence.
+
+**When you can't run it, ask instead of asserting.** You can't run it when its inputs come only
+from a deployed or shared system, when the data is out of reach, or when Agent 20's instruction 2
+allows nothing from the PR to be run. Keep the finding, and carry it into Step 4 as a `?` row that
+says what you checked and asks the author how the code behaves there. Outside PR scope the author
+is the user.
+
+**Apply the results:**
+
+- Strike claims that don't survive the check rather than softening them, and list each one under
+  **Dropped** in Step 4.
+- Correct claims that are partially right — state what's actually true.
+- Merge duplicate findings — when multiple agents flag the same issue, keep the most precise version
+  and note the convergence.
+- Drop findings you cannot verify and that are speculative rather than grounded in the diff, and
+  list each one under **Dropped** in Step 4. A claim you could not run is not speculative: it is a
+  `?` row, as the paragraph above says.
+
+Only carry verified findings into Step 4, and the questions for claims you could not run.
+
+## Step 4: Present findings
+
+Produce a prioritized action list — not a categorized findings report. The reader's question is
+"what should I change?" Answer it directly.
+
+**First, reconcile with the earlier reviews fetched in Step 1.** Both paths reach this step, the
+agents' and Step 1a's. Read each earlier finding and open question, and give it one verdict:
+
+- **agreed**: your own evidence supports it. Cite that evidence, not theirs.
+- **disputed**: your evidence contradicts it. Say what you found.
+- **answered**: it was an open question, or a check the reviewer could not run, and your work
+  settles it.
+- **not checked**: nothing you did bears on it. Say so rather than adopting their claim.
+
+When the earlier point is a claim about how the code behaves, agreed, disputed and answered each
+rest on a run, as Step 3.5 describes, on Step 1a's path too. One you can't run is not checked, and
+says what you checked instead.
+
+An earlier finding is a claim to verify, not a finding of yours. One you have not checked does not
+enter Findings, however confident it sounds. Note where a review describes an older commit than the
+one you reviewed, and whether a thread is already resolved. Skip their praise, summaries and
+boilerplate when reconciling.
+
+**Then check each finding against the overlapping open PRs from Step 1.** A finding one of them
+already resolves stays in Findings, with "covered by #N" in its table row and its detail, once you
+have read that PR's diff and confirmed it does resolve it. The author then neither fixes it twice
+nor loses it if that PR stalls. Where this PR and another change a shared file in ways that cannot
+both land as written, that is a finding of its own, naming the other PR. When the check exited 2,
+the sentence under the verdict says overlapping PRs were not checked.
+
+```
+## Code Review
+
+### Verdict: [Approve | Request Changes | Comment]
+[One sentence on what to do next]
+
+### Findings
+
+| # | Severity | Location | Action |
+|---|----------|----------|--------|
+| 1 | must | `file:line` | [imperative: what to do] |
+| 2 | should | `file:line` | [imperative: what to do] |
+| 3 | consider | `file:line` | [imperative: what to do] |
+| 4 | ? | `file:line` | [open design question] |
+| 5 | ? | `file:line` | [question about a claim you could not run] |
+
+---
+
+**1. `file:line` — [imperative: what to do]** *(must)*
+
+[1–3 sentences. Explain why this matters — what breaks, degrades, or becomes harder if left unfixed. Then describe what work you did to verify the claim: which file or function you read, which command you ran, what the output showed. Use hedging language ("no guard visible in the surrounding context", "appears to", "may") if confidence is less than certain, except for a claim about how the code behaves that Step 3.5 checked, which is stated as run or asked as a `?` row.]
+
+**2. `file:line` — [imperative: what to do]**
+
+[Same structure. Cite the specific code or source that grounds the finding. If you ran a command to verify a library behavior or default value, say so and include the result.]
+
+**4. `file:line` — [open design question]**
+
+- (a) [one path and its tradeoff]
+- (b) [another path and its tradeoff]
+
+**5. `file:line` — [question about a claim you could not run]**
+
+[What the finding would mean if true, what you checked, why it could not be run, and the question for the author.]
+
+### Added agents
+[Omit this section entirely if you added none.]
+
+- **[the question you added it to answer]** — Why the standing agents did not cover it: [reason] — What it
+  found: [finding, or "nothing"]
+
+**Generalisable?** [One of: this was specific to this change, nothing to close. | This is a
+category — [what recurs] — close it by [adding a standing agent for X / adding a standard to
+`~/.agents/standards/<file>.md` saying Y / both].]
+
+### Agents
+
+- **[agent name]:** [the model chosen for it], [why that model]. [Only when it did not finish:
+  errored or never ran, and why.] An Agent 14 not launched because the diff touches no agent
+  instruction file is listed as "not applicable", and does not count as never ran. So is an
+  Agent 3, 8, 10 or 11 not launched because every reviewable file is Markdown, an
+  Agent 15 not launched because the Base moved line lists no commit and no conflict, an Agent 16
+  not launched
+  because the Overlapping open PRs line says "none", and an Agent 17 not launched because the diff
+  removes no test or assertion, an Agent 18 not launched because the diff adds or changes no prose,
+  an Agent 19 not launched because it removes none, and an Agent 20 not launched because the scope
+  is not a PR, or because Step 1a replaced Steps 2 to 3.5.
+
+### Prior reviews
+[Omit this section entirely if nobody else has reviewed or commented.]
+
+- **[reviewer] ([date]), [their claim in a few words]:** [agreed | disputed | answered | not
+  checked]. [Your evidence in one sentence.]
+
+### Looks Good
+[One sentence, or on Step 1a's path the short list it describes: the specific choice the author
+made that works best, which the posted body credits, or that nothing specific earns credit, and
+which concern areas came back clean. An area whose agent errored or never ran did not
+come back clean.]
+
+### Dropped
+[Omit this section entirely if nothing was dropped.]
+
+- [the claim, and its agent]: [why it was struck or could not be verified]
+```
+
+**Formatting rules:**
+
+- The table is a scannable index only — one row per finding, action phrased as an imperative.
+- Severity column values: `must`, `should`, `consider`, `?` (open question). Order rows by severity.
+- Each detail section is 1–3 sentences of integrated prose — no labeled sub-fields. It must answer
+  two questions: (1) why does this matter, and (2) what did you actually look at to verify it. These
+  are not optional; a finding with no impact explanation or no verification basis should not be
+  reported.
+- Use hedging language within the prose when confidence is less than certain — don't assert facts
+  you haven't confirmed. A claim about how the code behaves that Step 3.5 checked is stated as
+  run, or asked as a `?` row when it could not be run, never hedged.
+- Open design questions (`?`) get the (a)/(b) tradeoff format instead of prose. A `?` row for a
+  claim Step 3.5 could not run is prose: what you checked and what you are asking.
+- A finding located outside the PR's diff carries `(outside the diff)` after its location in the
+  table and its detail heading, and one label in its detail: **coupled change missing** (the PR
+  should have made it) or **pre-existing gap made relevant** (it was already true; this change is
+  what makes it matter). A pre-existing gap also says whether the author can fix it in this PR. It
+  meets the same severity bar as any other finding: one that would not be reported inside the diff
+  is not reported outside it.
+- Omit "What's Working Well" and "All Clear" sections — consolidate into "Looks Good".
+- If there are no recommended changes, say so in one sentence under the verdict and skip the
+  Findings section.
+- If any agent errored or never ran, the sentence under the verdict names it, so the reader knows
+  the verdict did not rest on it.
+
+**Verdict mapping:**
+
+- **Approve** — no blockers; all remaining items are optional; every agent Step 3 should have
+  launched finished with a report
+  (when one errored or never ran, the verdict is Comment at most)
+- **Request Changes** — one or more `must` items
+- **Comment** — open questions or suggestions worth discussing, nothing blocking
+
+When the user chooses Approve while findings are labelled `must`, the posted review calls
+none of them required. Each one either meets the bar for the consequences callout in Step 5
+or appears as an ordinary finding.
+
+## Step 5: Post review (PR scope only)
+
+After presenting findings, if this is a PR and its author is the account `gh api user -q .login`
+returns, ask the user to indicate which changes to make locally or discuss further first and then
+stop and wait for a reply (skip the rest of this skill's instructions). Fixes the user approves
+are pushed only after the local verification in "Working Through to a Draft PR" in the global
+`CLAUDE.md`, `wrap-up-codebase` included.
+
+Otherwise, if a bot opened the PR (`author.is_bot`, such as Dependabot or Renovate), nobody will
+act on posted findings: a bot cannot read a review or push a fix. A bot's PR never gets Request
+Changes or inline comments, and `post_review.py` refuses both. Its body gives the verdict without
+a credit sentence, carries each finding's evidence itself, and leaves out the consequences
+callout, which addresses an author.
+
+- **When the user can push to the repo** (`viewerPermission` is `ADMIN`, `MAINTAIN` or `WRITE`)
+  and there are findings, ask which to fix on the PR's branch. The answer naming the fixes also
+  approves committing them and pushing them to the PR's branch, merging trunk in first when the
+  branch conflicts, never rebasing. Recheck the fix commits by running Step 1a and the project's
+  checks and tests again at the new head, even when the fixes edit source files, and run
+  `wrap-up-codebase` on the fix commits, applying its fixes and putting its asks to the user,
+  before anything is pushed. Do not rerun the review agents: the commits answer this review's
+  findings, and a change gets one review round. Then ask the posting question below. Its "yes"
+  means Approve, or Comment when the user
+  leaves a `must` unfixed, and that Comment names the `must` in its body.
+- **When the user cannot push,** ask the posting question below. Its "yes" means Comment, with
+  the findings in the body.
+
+When the author is NOT the user, a bot included, ask:
+
+> "Post this as a GitHub review? (yes / approve / request-changes / comment / skip)"
+
+**Authorization gate:** Only proceed if the user explicitly answers this question with yes, approve,
+request-changes, comment, or skip. Do NOT infer authorization from numbered responses to
+individual findings (e.g., "(1) do it" answers finding #1, not this question). Wait for a
+separate, unambiguous reply to the posting question before posting anything to GitHub.
+
+When the user asks to fix the findings instead of posting, make the fixes through the usual commit
+flow, then return here. Recheck the fix commits by running Step 1a, when it applies, and the
+project's checks and tests again at the new head, and run `wrap-up-codebase` on the fix commits,
+applying its fixes and putting its asks to the user, before anything is pushed, not by rerunning
+the review agents. Any other new commit on the head is checked as "Check what changed since the
+saved state" below says. Draft
+the review of the new head before asking the posting question. For a dependency update that is
+usually an Approve whose sentence before its list names each fix commit and what it resolves.
+
+On any answer other than "skip":
+
+- **Check what changed since the saved state.** Read the head and reviews again with
+  `gh pr view <pr-number> -R <owner>/<repo> --json headRefOid,reviews`, and run the fetch helper
+  from Step 1 again. A review can wait hours for its posting answer while the PR moves on. Run
+  `overlapping_prs.py` and `base_moved.py` from Step 1 again too, whatever the head did, passing
+  `--land-on` to `base_moved.py` for a stacked PR as Step 1 does. When `base_moved.py` lists a
+  commit the saved Base moved line did not, or newly reports a conflict, run Agent 15 on the new
+  output
+  and fold its findings in before posting. When `overlapping_prs.py` names a PR the saved
+  Overlapping open PRs line did not, run Agent 16 on that PR and fold its findings in too.
+  Re-check each "covered by #N" finding against its new list, and take "covered by" off any whose
+  PR is no longer open. Check each PR the list newly names as Step 4 does. When it exits 2, the
+  overlaps were not re-checked, and the report to the user says so.
+  - **A read fails:** post nothing, and say which one failed, quoting the error. What changed is
+    unknown, not empty.
+  - **The head moved:** post nothing yet. A review of an older head can be wrong about the code
+    now on the PR, and nothing would show it. Compare the PR's own changes at the two heads, and
+    show the user the output, which names the new commits:
+
+    ```bash
+    uv run <skill-base-dir>/scripts/compare_heads.py <pr-number> --repo <owner>/<repo> --old-base <saved baseRefOid> --old-head <saved headRefOid>
+    ```
+
+    - **Exit 2 (the script could not tell):** discard this review and run it again from Step 1 on
+      the new head, with every standing agent that applies (Agents 3, 8, 10 and 11 apply unless
+      every file in the full PR diff is Markdown, Agent 14 applies when the full PR
+      diff touches an agent instruction file, Agent 15 when Step 3 says it runs, Agent 16
+      when `overlapping_prs.py` exits 1, Agent 17 when the full PR diff removes a test or an
+      assertion, Agent 18 when it adds or changes prose, Agent 19 when it removes prose, Agent 20
+      for every PR) and any
+      added ones over the whole PR diff, as Step 3
+      always does.
+    - **Exit 1 (the PR's own changes differ):** run Steps 2 to 4 again on the new head with every
+      standing agent that applies (Agents 3, 8, 10 and 11 apply unless every file in the full PR
+      diff is Markdown, Agent 14 applies when the full PR diff touches an agent
+      instruction file, Agent 15 when Step 3 says it runs, Agent 16 when
+      `overlapping_prs.py` exits 1, Agent 17 when the full PR diff removes a test or an assertion,
+      Agent 18 when it adds or changes prose, Agent 19 when it removes prose, Agent 20 for every
+      PR)
+      and any added ones. Give them the
+      lines the script printed as
+      the change to review, and the full PR diff for context. As Step 3 says, they get nothing
+      from the drafted findings; in Step 3.5, drop any new finding that repeats a drafted one.
+      Then do everything the next item lists as well.
+    - **Exit 0 (the PR's own changes are identical):** keep the drafted findings, and at the new
+      head:
+      - re-check every finding whose evidence cites a file the script shows as changed, in the
+        PR's diff or outside it. Read each such file at the new head in a scratch worktree
+        (`git fetch origin <new-head>`, then `mktemp -d`, then `git worktree add --detach <that
+        folder>/wt <new-head>` as a separate command, and remove the worktree when done), and run
+        again there each claim about how the code behaves, as Step 3.5 does. Keep, correct or
+        strike each finding, and say which;
+      - unless the script lists no files outside the PR's diff, launch one agent shaped like an
+        added agent in Step 3, with this question: "Do the changes between the two heads, in the
+        files outside the PR's diff that the script lists, break or contradict anything this PR's
+        code relies on?" Its file list is those files and the PR's changed files. Drop any finding
+        it reports that repeats a drafted one;
+      - re-pin every comment to the new head, and check that each line still holds the code its
+        comment is about.
+
+    Either way, tell the user which findings were re-checked against the new head, and the new
+    head and base become the saved state.
+  - **Only new reviews, comments or replies:** the code is unchanged, so the findings stand.
+    Reconcile the new ones as Step 4 does, add them to Prior reviews, rewrite the review body to
+    account for them, and show the user the new draft before posting. This read becomes the saved
+    state.
+  - **Nothing changed:** say so in one line and continue.
+
+  A review handles at most two head moves after its first run, whichever exit each one takes. A
+  restart from Step 1 on exit 2 continues the same count. Fix commits the user asked for are not
+  head moves for this count.
+  When the head moves a third time, post nothing,
+  and tell the user the PR keeps moving, naming the new commits, so they decide when to review it.
+  Run the same check again immediately before posting, since approving the drafts can take
+  another turn.
+- Map to GitHub event: yes → use verdict from Step 4, except on a bot's PR, where it means what
+  the bot paragraph above says; approve → APPROVE; request-changes → REQUEST_CHANGES;
+  comment → COMMENT
+- Write the review body in this shape, each part only when it has something to say (see the
+  audience and tone guidance below):
+  - **Verdict and credit:** the verdict as a teammate would say it out loud, in terms of what the
+    author needs to do next ("Nothing here needs to change", "One thing needs fixing before this
+    merges"), never the review's event name ("approve", "request changes", "comment"), and in the
+    same sentence what you checked. Then one sentence crediting a specific choice the author made,
+    drawn from Looks Good, by its effect on a person (a reader, a user, the next developer) rather
+    than by a quality word such as "honest", "clean" or "solid". Under Request Changes, the
+    verdict asks for the `must` findings directly and says in a clause that the others are
+    optional. Under Approve or Comment with findings, it says the findings are the author's to
+    pick from, the way a person says it out loud: "Up to you which of these you pick up", "Take
+    or leave any of these", "None of these need to hold this up". Use one of these or something
+    as short and plain; never "at your discretion", "non-blocking", "entirely your call" or
+    "optional suggestions". A bot made no
+    choice to credit, so its PR gets the verdict alone.
+  - **What the approval rests on:** when the review approves a dependency update, one bullet per
+    check that ran, with its result at the head the review is pinned to. These are Step 1a's
+    checks, such as the releases adopted, the advisories fixed and introduced, breaking changes
+    that reach this code and CI, plus any other check that ran, such as the project's build and
+    tests, what is compiled and what is only in the lockfile, or a live run, and every check the
+    repo's own instructions require before such an update merges. A check run before a fix commit
+    is run again on the new head first. Before the
+    list, one sentence names each fix commit pushed to the PR and what it resolves. A reader
+    deciding whether to trust the approval needs these, and `post_review.py --dry-run` notes an
+    approval of a dependency update that lists none.
+  - **Consequences to know about, inside an Approve:** an approval leaves every finding to
+    the author, so this part asks for nothing. It points out the findings whose harm would
+    be easy to miss: data that ends up wrong without anyone noticing, a security exposure,
+    a test that fails intermittently, or a failure in production that the change's own
+    description says won't happen, such as errors users or alerts will hit once it merges.
+    A finding's label does not decide it: an open question can be the one with the biggest
+    consequences. Include it whenever at least one finding is like
+    that, even when it is the review's only finding, since an inline comment alone is easy
+    to read as one more nit. A review whose findings are all ordinary has no callout,
+    however many findings it has, and the most severe of them is not promoted into one.
+    Open with "Two have bigger consequences than the others:" (or "One has…", or for a
+    review's only finding "The one finding has bigger consequences than it might look:"),
+    then give each finding as its consequence in plain terms. It carries no
+    preference ("I'd", "strongly consider", "recommend") and no timing ("before you
+    merge"), because either one tells the author what to do when an approval leaves the
+    choice to them.
+  - **Other code affected by these changes:** one bold `**Other code affected by these changes**`
+    line, then one bullet per finding outside the diff: a bold lead naming the problem, then where
+    it is, what to do and where you saw it, in one or two sentences. The bullets carry no labels;
+    whether the gap was already there is not the author's concern. A finding earns a bullet only
+    when it meets the severity bar in Step 4, fits the PR and is worth the author's time.
+  - **Prior reviews:** one full sentence with a subject ("I agree with Rex on…"), never a fragment
+    that starts with a verb ("Agree with…"), naming each earlier reviewer by the `refer_as` value
+    the fetch helper printed for it, saying which of its points you agree with, dispute or
+    answered, each named in a few words. Never restate their points, and leave out the ones you
+    did not check. When a `refer_as` value reads `UNKNOWN`, ask the user what to call that
+    reviewer before drafting.
+
+  Evidence for a finding in the diff goes in its inline comment, not the body, except on a bot's
+  PR. Which findings were re-checked after a head move goes in the report to the user, not the
+  body.
+- Collect every finding whose line is in the PR's diff as an inline comment, except on a bot's PR,
+  where it goes in the body. GitHub accepts inline
+  comments only on lines the diff shows. The reviewer files no ticket for a gap the author can fix.
+- Pin the review to the saved head: the one from Step 1, or the new head once a head move has
+  updated the saved state. The comments then stay on the code you reviewed, and the check above
+  makes sure it is still the PR's head.
+- Write the review to a JSON file in a new `mktemp -d` directory with the **Write tool**. Never
+  build it with a shell heredoc, `echo`, or command-line arguments: the shell rewrites backticks,
+  `$(...)` and quotes, and a mangled review cannot be un-posted. `line` is the line number in the
+  PR's version of the file; `side` is `RIGHT` for those and `LEFT` only for a line the PR deletes.
+
+```json
+{
+  "event": "APPROVE",
+  "body": "<review body>",
+  "commit_id": "<saved head SHA>",
+  "comments": [
+    { "path": "<file>", "line": 42, "side": "RIGHT", "body": "<comment>" }
+  ]
+}
+```
+
+- Dry-run it and read the output. It prints the exact payload that would be sent. Check that every
+  body reads as intended and every `path`/`line` points where you meant; fix the file and dry-run
+  again until it does. The dry run also notes any body that runs several sentences together in
+  one paragraph. Reread those and split off the point, unless the comment genuinely reads better
+  whole:
+
+```bash
+uv run <skill-base-dir>/scripts/post_review.py <pr-number> <review.json> --repo <owner>/<repo> --dry-run
+```
+
+- Only once the dry run is clean, show the user the drafts to approve, taken from its payload:
+  each body exactly as it will be posted, line breaks included (one blockquote per comment works),
+  so approving the words also approves the shape. Their approval is the last change to the
+  wording. A fix after it is a new draft that needs approving again.
+- Post it by running the same command without `--dry-run`. `--repo` is required, so the review
+  cannot land on a same-numbered PR in whatever repo the shell is in.
+- **After posting, offer tickets only for gaps the author cannot fix in this PR:** one that needs
+  another repository, another team's code, or a decision the author cannot make. Left to the
+  author, such a gap has no owner, and the review comment is buried once the PR merges. Name each
+  finding the offer covers, so the user can decline one at a time. Search the tracker first: when
+  an open ticket already owns the area, offer a comment on it instead of a new ticket. Draft with
+  `write-ticket-description`, and post nothing until the user approves the wording.
+
+**Audience:** The review body is read by GitHub users who only know what's in the PR diff —
+they have no context from this review session. Write for that audience.
+
+**Tone for the review body and inline comments:** Write like a teammate who is glad to be working
+on this with the author and wants the PR to land well: patient, curious and specific. You are a
+peer, not a mentor grading their work. Someone reading their first review from the user should come
+away expecting to be worked with. Avoid em dashes; they're one of the more obvious signs a comment
+was generated rather than typed by a person.
+
+**Write like the user talks.** Where the user has given their own wording for part of a review, use
+it as written rather than improvising a variant. Elsewhere, aim for the way they phrase things in
+conversation: plain, direct, and in full sentences. Speak to the author as "you", and leave out
+their name and handle. The body and the comments are obviously replies to the PR's author, so a
+name reads as formal. Use a handle only when a notification or telling people apart is wanted,
+such as for another reviewer.
+
+**Credit what's good.** Naming a choice the author got right is part of the review, not padding: it
+tells them what to keep doing, and it shows the findings come from someone who read the work
+closely. Credit the choice as something they did, addressed to them ("Nice call having both
+transports share one MIME builder. It's why the recipient gate is easy to trust."), rather than
+grading the result ("The shape is right.", "This was the right call."). The example shows the
+register, not an opener to reuse: "Nice call" in every review is as much a tell as "Want to..." in
+every comment. Credit the work, never the person's traits. The default is the one sentence in the
+review body. An inline comment that only credits a line is fine at most once per review, when that
+line is itself the thing worth crediting.
+
+Before posting a batch, also look for the one or two findings where the author got part of it
+right, such as a guard that is the right idea but untested, or a fix aimed at the right place but
+missing a case, and open those with a short clause saying so ("The guard is the right idea; this
+case just passes without it."). The point still comes first in the sentence, and the rest of the
+batch stays as it is. When nothing specific earns credit, leave it out rather than invent it.
+
+**Warm, not familiar.** No stacked exclamation marks, no "I love this", and no emoji; the user adds
+one when an occasion calls for it. Thank the author for effort only when the effort is visibly
+large.
+
+Structure: make the point of the comment stand out. Its first paragraph is the one thing you want
+the author to take away: the question you're asking, or what you found. Then a blank line, then
+the reasoning and evidence. Someone skimming the review should get each comment's point from its
+first line alone. A comment that's a single sentence anyway needs no break. The review body works
+the same way: verdict and overall point first, detail after.
+
+Asking something you already have a strong idea about is fine, as long as the question genuinely
+invites them into the reasoning: their intent, an edge case, a judgment call. What's not fine is
+replaying a fact you've already fully nailed down as if it were still open. If you've proven
+something and there's nothing left to discover, skip the question. Say what you found and ask
+for the fix.
+
+How direct to be depends on what's at stake:
+
+- Going to break something, and you're sure? Ask for the fix directly, then say what you found.
+  "Can you add a check for the empty queue here? / This throws in production when the queue's
+  empty. I traced it to line 40."
+- Have an opinion but nothing's actually wrong? Ask if they want the change, then say why, and
+  make clear it's optional. "Want to pull this into a shared helper? / It's the same fixture as
+  `test_x.py:40`, not a big deal either way."
+- Real choice, no clear right answer? Ask which way they'd rather go, then lay out what's
+  different. "Did you consider clearing the audit stamp on revert instead of keeping it? /
+  Keeping it preserves who reverted; clearing it treats the row as fresh."
+- Don't know why something was done a certain way? Ask if it was on purpose, then say what looked
+  off. "Was skipping the null check here intentional? / The sibling function has one and this
+  doesn't."
+- Small, and you don't feel strongly? Skip the question, just mention what you saw.
+
+**Vary the phrasing across a batch.** The phrasings above ("Can you...", "Want to...", "Did you
+consider...", "Was... intentional?") illustrate the register for each situation, not a set of
+stock openers to cycle through. A real person doesn't open four comments in the same review with
+the same three words; reaching for the same opener each time is one of the more obvious tells that
+a comment was generated rather than typed. Before posting a batch, scan the first few words of
+every comment: if two or more start the same way (especially "Want to..."), rewrite until each one
+reads distinctly. A few alternatives per category, just to show the range:
+
+- Sure it breaks, direct fix: "Can you add...", "Mind adding...", "This needs a...", or skip the
+  question and phrase the fix as a plain instruction ("Add a check for the empty queue here.").
+- Opinion, optional: "Want to...", "Any interest in...", "Worth pulling this into...?", "Thoughts
+  on...?", or lead with the observation and land the question after ("This repeats the fixture
+  from `test_x.py:40`, worth sharing it?").
+- Real design choice: "Did you consider...", "Which way did you lean on...", "Curious why you went
+  with X over Y here", "Is X or Y closer to what you want?"
+- Unclear intent: "Was this intentional?", "Did you mean to...", "Is this deliberate, or...?",
+  "This looked like it might be a slip, was it?"
+
+These are a handful of examples to illustrate the range, not the full menu. Don't ration yourself
+to a small rotating set of phrases either, since that just trades one tell for another (a
+reviewer who always says "Can you", "Want to", "Did you consider", or "Was this intentional" in
+some rotation still reads as generated). Use your own words each time, the way you'd actually say
+it out loud to the person sitting next to you. The goal is a batch that reads like one attentive
+person moved down the file making distinct, differently-voiced observations, not like a template
+applied four times or a fixed phrasebook applied on rotation.
+
+The verdict and credit sentences are worded for this review, so an author on their tenth review
+doesn't read the same sentence ten times. The clause saying the findings are the author's to pick
+from may repeat one of the examples above word for word: plain and repeated reads better than
+varied and stilted.
+
+Use a quick example when it makes the impact click. When
+a code snippet or a suggested fix would make the ask concrete, include it directly in the
+comment: quote the line in question, or show the small change you have in mind, rather than
+describing it in prose alone.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/openanalystinc/vibe-marketer (path: .agents/skills/competitive-intel-analyst/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Competitive Intelligence Analyst — 10X Vibe Marketer

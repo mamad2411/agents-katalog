@@ -1,0 +1,64 @@
+---
+description: Run a challenger persona against the substance of any chain artefact — bare = persona roster
+argument-hint: "[persona] [artefact|path] [project-slug]"
+---
+
+Challenger personas live as `.claude/agents/challenger-<persona>.md` —
+one isolated agent per persona, each defined by the blind spots it
+exists to find, said in its `description`; the roster is the scan of
+those files. Adding a persona means adding an agent file from
+`templates/challenger-definition.md`; this command does not change (who creates
+a persona, and when: CLAUDE.md, Isolated reviewers).
+
+Shared behaviour: the contract skill named in each persona file's
+front-matter (CLAUDE.md, Isolated reviewers). Like `/check`, the
+persona agent writes nothing: it returns its report and this command
+files it. This command chooses the persona, passes the target, files
+the report and presents it.
+
+**Bare `/challenge` — the roster.** List the available personas (scan
+`.claude/agents/challenger-*.md`) and recommend which fits the
+project's subject. A recommendation, never a gate.
+
+**`/challenge <persona> [artefact|path] [slug]` — run it.** The target
+is optional: an artefact named as `/forge` names it, by its state file,
+or any file of the project by its path; without one, the whole chain.
+How it narrows the run is the contract's and the persona file's. Remake the project's ledger
+first, `python scripts/forge-ledger.py <slug>`, so that the agent
+reads a current file (SOL.0680); then invoke the `challenger-<persona>`
+subagent on the project (infer it from context; if ambiguous, ask),
+naming the target artefact. Pass only the project path and the target,
+nothing else (CLAUDE.md, Isolated reviewers).
+
+Best used **before the next layer is first derived from the target** —
+for the intent, before the first layer below it — while an
+accepted challenge is still cheap to absorb, and again after any major
+shift of direction. Running it on a near-final artefact is late but
+not useless.
+
+When it returns:
+1. File the report as `/check` step 1 files one
+   (`.claude/skills/check/SKILL.md`): under
+   `challenges/YYYY-MM-DD-challenge-<persona>.md`, the agent's text with
+   its own front-matter, the next free `CHL.NNNN` at the head of each
+   challenge; how the report becomes rows is `templates/ledger.md`'s
+   (Challenges).
+2. Present it to the principal: the overall
+   read first, then each
+   challenge compressed to two or three sentences. Do not editorialise and
+   do not defend earlier drafting choices — if you disagree with a
+   challenge, say so plainly and separately, marked as your own view.
+3. Answer the challenger's open questions where the answers exist in our
+   conversation but not in the documents, and flag those to the principal:
+   they usually mean something true is missing from the intent.
+4. End by offering a **walkthrough** of the challenges
+   (`.claude/skills/walkthrough/SKILL.md`, the one owner of its
+   shape and of the verdict words). What `accept` writes here: the
+   challenge is mended through `/forge <artefact>` in the artefact
+   it concerns, state `accepted`; an accepted challenge is mended
+   where it needs to be (POS.0440).
+   The other verdicts are the walkthrough's. If he declines the
+   walkthrough, the challenges wait.
+
+A rejected challenge is a normal, healthy outcome. So is a challenge that
+survives three rounds unresolved — park it and move on.

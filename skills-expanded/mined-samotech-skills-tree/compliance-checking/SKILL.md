@@ -1,0 +1,52 @@
+---
+name: compliance-checking
+description: Apply compliance checking in an AI workflow with explicit scope, domain constraints, validation, and documented failure handling.
+metadata:
+  source: skills/16-domain-specific/compliance-checking.md
+  category: 16-domain-specific
+---
+
+![Dependency Status](https://img.shields.io/endpoint?url=https://samotech.github.io/skills-tree/badges/skills-16-domain-specific-compliance-checking.json)
+
+**Category:** Domain-Specific
+**Skill Level:** `advanced`
+**Stability:** stable
+**Added:** 2026-04
+
+### Description
+Verifies that documents, configurations, or processes conform to specified regulatory or policy frameworks such as GDPR, HIPAA, SOC 2, or internal standards. Produces a gap report with severity levels and remediation steps.
+
+### Example
+```python
+GDPR_CONTROLS = [
+    "privacy_policy_published",
+    "data_retention_policy",
+    "consent_mechanism",
+    "breach_notification_procedure",
+    "dpa_agreements",
+]
+
+def gdpr_gap_check(implemented: list[str]) -> dict:
+    missing = [c for c in GDPR_CONTROLS if c not in implemented]
+    score = (len(GDPR_CONTROLS) - len(missing)) / len(GDPR_CONTROLS)
+    return {"compliance_score": round(score, 2), "gaps": missing,
+            "status": "PASS" if not missing else "FAIL"}
+
+print(gdpr_gap_check(["privacy_policy_published", "consent_mechanism"]))
+```
+
+## Failure Modes
+
+- **Framework vagueness:** checking against a paraphrased or outdated regulation instead of specific, dated clause sets; bind every check to named framework versions.
+- **Undocumented-as-compliant:** marking gaps as passing because nothing contradicts them; undocumented controls are unverified, not compliant.
+- **Checklist rigidity:** literal clause matching that misses control intent; a process can satisfy the letter while violating the spirit of a control.
+- **Jurisdiction mismatch:** applying the wrong jurisdiction's requirements or missing extraterritorial scope.
+- **Static verdicts:** once-compliant states drifting after process or system changes; verdicts need re-verification dates and change triggers.
+
+## Evidence
+The canonical skill file is the authoritative repository implementation. Repository schema, validation workflows, and the Agent Skills projection contract define structural conformance. Domain-specific factual claims must remain traceable to supplied or independently verified authoritative sources.
+
+### Related
+- 16-domain-specific
+- input-guardrails
+- output-guardrails

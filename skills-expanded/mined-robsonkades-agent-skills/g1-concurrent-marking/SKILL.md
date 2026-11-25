@@ -1,0 +1,167 @@
+---
+name: g1-concurrent-marking
+description: >
+  G1's concurrent marking cycle: SATB and the pre-write barrier, the cycle phases and the
+  single mark bitmap with TAMS, adaptive IHOP triggering, mark stack overflow and its
+  consequences, humongous allocation and eager reclaim, and mixed-collection candidate
+  selection. Use when the log shows "Concurrent Mark Restart for Mark Stack Overflow", when
+  "Pause Full" follows incomplete marking cycles, when "Concurrent Mark From Roots" grows
+  longer cycle over cycle, when marking starts well away from 45% occupancy, when someone
+  proposes -XX:G1HeapOccupancyPercent or -XX:+G1SummarizeConcMark, or when humongous
+  allocations are frequent. Does not cover regions, remembered sets and the evacuation pause
+  itself (g1-internals), choosing flag values against an SLO (g1-tuning-for-slo), or
+  configuring and parsing the GC log (gc-log-analysis).
+---
+
+# G1 Concurrent Marking
+
+## Purpose
+
+Decide why a G1 marking cycle is failing to do its job — starting too late for the real
+old-generation allocation rate, restarting after object-mark stack overflow,
+or never finishing before the
+old generation fills — and which of those the evidence in the log actually supports. Marking
+provides liveness for mixed-collection candidates. Late or aborted marking can reduce reclamation
+headroom, but does not inevitably cause full GC; inspect the actual allocation/fallback cause.
+
+The failure this prevents is treating the visible last event as the cause. A `Pause Full` at
+the end of a chain needs its recorded cause and preceding capacity evidence. Explicit collection,
+allocation pressure and evacuation failure require different investigations.
+
+## Workflow
+
+The detailed model is HotSpot JDK 25. Reuse the target's vendor/update, effective flags,
+complete logs and accepted outcome budgets; preserve an older project's baseline. These
+are implementation details, not Java language guarantees.
+
+1. **Confirm which phase names you are reading.** G1's cycle includes `Pause Young (Concurrent
+Start)`, `Concurrent Mark From Roots`, `Pause Remark`, `Pause Cleanup` and, on JDK 25,
+   `Concurrent Cleanup for Next Mark`. `Pause Mark Start` / `Pause Mark End` are ZGC's —
+   confirm the collector and hand off rather than applying G1 flags.
+2. **Use a complete cycle for cycle-level conclusions.** A fragment can identify a recorded
+   cause or phase, but not establish the missing chronology. If material evidence is absent,
+   arrange bounded collection through `gc-log-analysis`; `-Xlog:gc*` includes the info-level
+   phases. Read the instrumentation reference for additional overflow or IHOP detail.
+3. **Identify what requested the cycle before interpreting IHOP.** Read the concurrent-start
+   cause and `gc+ergo=debug` initiation decision. For example, `System.gc()` with
+   `ExplicitGCInvokesConcurrent` can request marking below the occupancy threshold; changing
+   IHOP does not remove that request. For occupancy-driven starts, use the target's effective
+   flags and `gc+ihop=debug` predictor state. Compare the initiation check's old/humongous
+   region capacity plus allocation request with its threshold, not total heap-used bytes in
+   the pause summary or predictor row; the cycle reference distinguishes these fields. A fresh
+   `java -XX:+PrintFlagsFinal -version` shows that invocation's configuration, not the
+   running service's overrides or learned state. With `G1UseAdaptiveIHOP=true`,
+   `InitiatingHeapOccupancyPercent` supplies the initial threshold; a start away from 45%
+   alone establishes neither a faulty nor a well-calibrated predictor.
+4. **Track each trigger with its effective threshold, old-allocation rate, marking duration and
+   post-cycle reclaim.** Rising start occupancy alone can reflect a changed old capacity/live set
+   or a healthy adaptive threshold. “Too late” requires insufficient headroom through marking
+   and reclamation, supported by allocation/capacity and fallback chronology. An
+   `Evacuation Failure: Pinned` alone proves neither late marking nor insufficient space.
+5. **Classify the failure mode from the log line, not from the full GC.** Mark stack
+   overflow, evacuation failure and humongous pressure produce different upstream evidence.
+   Use the table in `references/marking-pathologies.md`.
+   A completed mark need not produce mixed collections: check candidate availability and
+   policy before calling it a failed cycle. A normal `Concurrent Undo Cycle` also differs
+   from an aborted full marking attempt. The cycle reference explains both paths.
+6. **Separate humongous allocated from humongous reclaimed** before calling it pressure —
+   eager reclaim returning regions every young GC is healthy behaviour, not a leak.
+7. **Re-measure any region-size or IHOP change under the same allocation and promotion
+   rate** as the original measurement, and check the effect on mixed collections: region size
+   changes the Garbage-First granularity, not just the humongous threshold.
+
+Finish with the supported phase/cause, remaining material uncertainty and the next discriminating
+check or justified no-change decision. Healthy reclaim and sufficient headroom within accepted
+application budgets do not require tuning.
+
+## Rules
+
+- `-XX:G1HeapOccupancyPercent` does not exist. The flag is
+  `-XX:InitiatingHeapOccupancyPercent`, deprecated from JDK 27 and aliased to `-XX:G1IHOP`.
+  Confirm every externally sourced flag with `-XX:+PrintFlagsFinal` before it reaches a
+  production script.
+- `-XX:+G1SummarizeConcMark` was removed by the unified logging work (JEP 158, JDK 9). Use
+  `-Xlog:gc+marking=debug`. `-XX:+G1SummarizeRSetStats` went the same way and is already
+  `Unrecognized VM option` on JDK 11 — the JVM refuses to start and suggests the flag that did
+  survive. For remembered-set cost use `-XX:G1SummarizeRSetStatsPeriod=<n>` with
+  `-Xlog:gc+remset=trace`.
+- With `G1UseAdaptiveIHOP=true` (default), `InitiatingHeapOccupancyPercent` supplies the initial
+  threshold until enough observations exist; the adaptive controller then derives the effective
+  threshold. To impose a fixed value, disable adaptive IHOP explicitly. That can make a persistently
+  regime-switching workload more predictable, but forfeits adaptation to live-set, allocation-rate
+  and cycle-time changes; validate full cycles and headroom before/after.
+- `Pause Cleanup` (STW) and `Concurrent Cleanup` (concurrent) are two distinct phases sharing
+  a word. Reporting `Concurrent Cleanup` as a short STW pause is self-contradictory.
+- The SATB barrier enqueues the **old** value of the field, never the new one. It guarantees
+  snapshot reachability together with root processing, tracing and allocation liveness; the time
+  a reference was assigned does not determine when its referent was allocated.
+- SATB can conservatively over-retain, but must not under-retain. Floating garbage may survive
+  until a later reclamation opportunity; a
+  lost live object would be heap corruption. Never "optimise" the barrier away from that
+  asymmetry.
+- The humongous threshold is **strict**: `size > G1HeapRegionSize / 2`. An object of exactly
+  half the region size is not humongous. Size payloads with clear margin below the threshold,
+  never at it — a worst case that just grazes it makes part of the traffic humongous and part
+  of it not, under the same nominal load.
+- Since JDK 20 (JDK-8210708) there is a **single** `G1CMBitMap`, not a prev/next pair; TAMS
+  distinguishes pre-snapshot from post-snapshot allocation, per region. Native bitmap
+  overhead dropped from roughly 3% to 1.5% of the heap, and a concurrent
+  "Rebuild Remembered Sets and Scrub Regions" phase appeared between `Pause Remark` and
+  `Pause Cleanup`.
+- Objects at or above a region's TAMS are implicitly live for normal concurrent-mark liveness;
+  the normal bitmap-marking path skips them. This does not exclude root-region scanning above
+  TAMS or special bitmap use during evacuation-failure recovery. Keep those paths distinct.
+- Eager reclaim frees eligible humongous regions inside an ordinary STW pause. Eligibility is
+  release-specific and considers marking/allocation timing, object kind/pointers, remembered-set
+  evidence and pinning; it is not equivalent to “RSet size is zero”. Read `reclaim candidate` and
+  `remset/marked/pinned` fields on the target build. An ineligible object may become eligible in a
+  later pause or require a complete liveness cycle. **There is no boolean to turn this off from JDK 20.**
+  `-XX:+G1EagerReclaimHumongousObjects` — experimental, default `true` — was accepted on 11
+  through 19 and is `Unrecognized VM option` from 20 onward, so the JVM refuses to start on it
+  (executed on Temurin 11, 17, 18, 19, 20, 21, 24 and 25). What remains is
+  `-XX:G1EagerReclaimRemSetThreshold`, the eligibility cut-off itself: experimental and
+  **ergonomic**, measured at 16 on JDK 17–24 and 32 on 25, so read it off the runtime rather
+  than quoting a value.
+- Full GC in G1 has been parallel since JDK 10 (JEP 307). It is still the most expensive
+  operation the collector performs — because it processes the whole heap rather than a
+  selected subset of regions, not because it is serial. Repeating "serial and therefore slow"
+  leads people to read "no longer serial" as "no longer expensive".
+- Separate object-graph marking, remembered-set rebuilding and evacuation heap-root scanning.
+  A large RSet alone does not show that `Concurrent Mark From Roots` scans that RSet.
+- Marking identifies liveness; it does not make live objects reclaimable. When cycles finish
+  but reclaim little, distinguish dense/live old regions, candidate policy and old allocation
+  during reclamation from late initiation. Lower IHOP is not a remedy for every high live set.
+- Validate barrier/RSet overhead with phase-aligned CPU evidence and controlled workload trials.
+  JMH `-prof gc` reports allocation/GC metrics; it does not isolate barrier instruction cost.
+
+## Mark-stack overflow versus SATB pressure
+
+The mark stack holds objects discovered but not yet scanned while tracing the graph. SATB buffers
+hold old references from mutator stores and become additional marking roots. Heavy mutation can
+increase marking work, but `Concurrent Mark Restart for Mark Stack Overflow` identifies an
+object-mark stack overflow, not an SATB queue overflow or proof that `MarkStackSizeMax` was
+reached. JDK 25 can restart before expanding the current capacity; allocation failure and the
+maximum also limit growth. Correlate graph breadth/live-set shape, mark-stack expansion, concurrent CPU starvation,
+SATB processing and cycle duration. Changing `G1SATBBufferSize` without evidence targets a
+different structure; increasing `MarkStackSizeMax` trades native memory for headroom and may only
+mask a workload/capacity problem.
+
+## Production handling
+
+Treat flag defaults and log strings as `(vendor, JDK feature, update, build)` facts. Capture the
+effective command line and `-Xlog:gc+init`; canary any collector/region/IHOP change under the same
+load, and validate tail latency, application throughput/CPU, allocation/promotion, marking CPU,
+fallbacks and post-GC live occupancy. GC logs can expose class-loader and path metadata; restrict
+and expire them like other production telemetry.
+
+## References
+
+- [The cycle, its log and its flags](references/marking-cycle-log-and-flags.md) — the phase
+  sequence with correct names, an annotated log of a complete cycle, the logging and
+  diagnostic flags with their defaults, JFR events, and the HotSpot source paths. Read when
+  configuring marking instrumentation, explaining unexpected start occupancy, interpreting
+  missing mixed collections or reading a marking log for the first time.
+- [Marking pathologies](references/marking-pathologies.md) — symptom-to-hypothesis-to-
+  instrument table, the SATB buffer and overflow mechanism, evacuation-failure reconciliation,
+  and the humongous threshold and eager-reclaim decision. Read when a cycle
+  restarts, does not finish, or is followed by a full GC.

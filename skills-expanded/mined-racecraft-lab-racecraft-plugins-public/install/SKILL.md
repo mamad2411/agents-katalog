@@ -1,0 +1,253 @@
+---
+name: install
+description: >
+  Install or refresh the bundled SpecKit Pro Codex custom subagents.
+  Copies the plugin's TOML agent templates into $CODEX_HOME/agents/
+  (default ~/.codex/agents/), verifies the installed files, and tells
+  the user to restart Codex so the new subagents load.
+---
+
+# SpecKit Install
+
+## Installed Runtime Contract
+
+Before any runner helper call, follow
+[Installed runner transport](../speckit-autopilot/references/installed-runtime.md).
+Invoke `[resolved_python, "<plugin-root>/scripts/run-speckit-pro.py"]` from
+the current project using the root of this loaded plugin.
+
+## Scope
+
+Use this skill when the user wants to install, refresh, repair, or
+verify the **Codex custom subagents** that ship with this plugin.
+This skill exists only for the Codex runtime. It does **not** manage
+Claude Code agents, Claude marketplace metadata, or Claude commands.
+
+The bundled source of truth lives in the plugin at:
+
+- `codex-agents/*.toml`
+
+The default user-scope Codex destination is the agents directory of the
+Codex home that Codex itself reads:
+
+- `$CODEX_HOME/agents/` when `CODEX_HOME` is set, else `~/.codex/agents/`
+
+If the user explicitly asks for project scope, use `.codex/agents/` in the
+current project. Arbitrary destinations are rejected. Otherwise install to the
+default user-scope path above.
+
+## What This Skill Installs
+
+The runner-owned catalog determines which bundled agents are required or
+optional. The response field `data.agent_files` supplies the concrete
+filenames for the invocation. The installer fails before planning when required
+source templates are missing, and route-aware mode may omit the optional helper
+only when no-helper continuation validates.
+
+These files follow the official Codex subagent format: one standalone
+TOML file per custom agent, with required `name`, `description`, and
+`developer_instructions` fields plus Codex config such as `sandbox_mode`.
+
+Operator note: an agent file's `sandbox_mode` is advisory; a spawned agent
+keeps the parent's sandbox. Once you trust the plugin's hooks, its
+`PreToolUse` agent-policy hook denies a read-only agent's `apply_patch` edits
+and a broker-only agent's calls to MCP tools outside its allowlist. A hook
+cannot tell a shell write from a shell read, so a read-only agent's shell
+writes stay a rule of its instructions, and a read-only agent without a
+broker allowlist can still reach any MCP server you enable. To keep such an
+agent provably unable to write through MCP, curate write-capable MCP servers
+OUT at the profile/config level (`enabled = false`, or
+`enabled_tools`/`disabled_tools`).
+
+The runner-owned policy defines each bundled agent's model and reasoning effort.
+An explicit route manifest materializes its selected model-and-effort tuple.
+Bundled agents default to `gpt-6-sol` unless named here. The three consensus
+analysts (`codebase-analyst`, `spec-context-analyst`, `domain-researcher`) run on
+`gpt-6-luna` at high effort. The optional `autopilot-fast-helper` runs on
+`gpt-6-luna` at low effort for tiny advisory text-only prep, never for SDD
+reasoning.
+
+The installer's `model` input (or `SPECKIT_CODEX_MODEL`) sets the model for
+the `gpt-6-sol` agents: `gpt-6-sol` (default), `gpt-6-luna`, or the opt-in
+`gpt-6-astra`. GPT-5 models are not accepted. In Enterprise and Edu
+workspaces, an administrator must enable GPT-6 Sol and GPT-6 Luna before
+members can use them. When `gpt-6-luna` is not available, set
+`luna_fallback: true` (or `SPECKIT_CODEX_LUNA_FALLBACK=true`): the Luna
+agents (the analysts and the fast helper) then install on `gpt-6-sol` and keep their reasoning effort. Prefer the
+environment variables for a lasting choice, so the autopilot and scaffold
+pre-flight checks render the same files. The installer rewrites only
+destination copies.
+
+## Plugin Refresh and Route-aware Modes
+
+After the plugin is upgraded through its maintained plugin path, run `$speckit-pro:install`.
+Follow the helper's `restart_required` result, including after failed or
+uncertain recovery. The helper resolves the installed plugin's `codex-agents/`
+source and does not mutate plugin caches.
+
+Static mode omits `route_policy_manifest` and uses the helper's normal
+copy/verify result. Route-aware mode activates only for an explicit trusted
+repository-local `route_policy_manifest`; inline policy, inferred defaults, or
+a vague routing request do not activate it. A strict override does not fall
+through after a required route misses. Helper omission is allowed only when the
+helper returns its validated no-helper result. Any unresolved required route or
+uncertain rollback stops and reports the helper response, including mutation,
+verification, recovery, `writes_state`, and `restart_required`.
+
+## Hard Constraints
+
+- Never touch `.claude/agents/`, `.claude-plugin/`, `commands/`, or any
+  Claude marketplace file.
+- Never move or rename the bundled files in `codex-agents/`. They are the
+  plugin's packaged templates and must stay on Codex-only paths.
+- Copy only `*.toml` files from `codex-agents/`.
+- Do not delete unrelated user subagents already present in the target
+  directory.
+- Overwrite only same-named SpecKit Pro agent files in the target directory.
+- If the source bundle is missing or incomplete, STOP and report the exact
+  missing files.
+- Route-aware fixture evidence is not live UAT. Use a fake `CODEX_HOME` (or a fake
+  HOME/USERPROFILE with `CODEX_HOME` unset) or a temporary project
+  `.codex/agents/` destination, never the operator's real Codex home.
+- Follow the helper's `restart_required` result. When it is true, including
+  after failed or uncertain recovery, tell the user to restart Codex; when it
+  is false, do not require a restart.
+
+## Procedure
+
+### 1. Resolve explicit Codex-only paths
+
+Resolve all paths before mutating anything:
+
+1. Determine the plugin root from the current skill location.
+2. Resolve the source directory at `../../codex-agents/` relative to this
+   skill.
+3. Resolve the destination directory:
+   - default: the user-scope destination from Scope
+   - explicit project scope: `.codex/agents/` in the current project
+4. Resolve the request-level model for the `gpt-6-sol` agents:
+   - default: `gpt-6-sol`
+   - opt-in: `gpt-6-astra` or `gpt-6-luna` via the installer `model` input
+     or `SPECKIT_CODEX_MODEL`
+   - Luna fallback: `luna_fallback: true` or `SPECKIT_CODEX_LUNA_FALLBACK=true`
+     only when the user reports that `gpt-6-luna` is unavailable
+
+Do not infer a Claude path from a vague request. If the user says only
+"install the agents", use the user-scope destination.
+
+### 2. Validate the bundled source set
+
+Before copying:
+
+1. Verify the source directory exists.
+2. Verify all expected `*.toml` files are present.
+3. Verify there are no legacy `.md` Codex agent files in the source bundle.
+
+If any required file is missing, stop immediately. Do not partially install.
+
+### 3. Run the bundled installer helper
+
+Use the deterministic installed-runtime helper for `install-codex-agents`
+with the selected destination. Run it first in `dry_run` mode, then in
+`apply` mode after the plan matches the requested destination and model
+override. Use a non-default model or the Luna fallback only when requested.
+
+For static compatibility mode, omit `route_policy_manifest`. The structured
+request inputs are:
+
+- `destination`: omit for the user-scope destination, or set to `.codex/agents/` for
+  current-project scope
+- `model`: `gpt-6-sol` (default), `gpt-6-luna`, or `gpt-6-astra`
+- `luna_fallback`: optional boolean; `true` installs the Luna agents on
+  `gpt-6-sol`. It cannot be combined with `model: gpt-6-luna`.
+
+For route-aware mode, use only an explicit trusted manifest path:
+
+- `destination`: omit for the user-scope destination, or set to `.codex/agents/` for
+  current-project scope
+- `route_policy_manifest`: repository-local manifest path
+- `strict_model_override`: optional model string for strict route validation
+
+Do not mix static `model` fallback semantics with route-aware manifest
+activation. Route-aware destination bytes come from the selected manifest
+routes and materialization proof.
+
+The helper must be the only mechanism used for copying files. Do not
+re-implement the copy loop inline unless the helper itself is broken and
+you have already reported that failure.
+
+When a non-default model is requested, verify every destination copy whose
+bundled source model is `gpt-6-sol` uses the requested model. With the Luna
+fallback, verify every destination copy whose bundled source model is
+`gpt-6-luna` uses `gpt-6-sol` with its reasoning effort unchanged. All
+bundled source templates remain byte-identical.
+
+### 4. Verify the installed destination
+
+After the helper completes:
+
+1. Verify the destination directory exists.
+2. Verify every expected TOML file now exists in the destination.
+3. Verify the copied files are the same filenames as the bundled source set.
+4. For the default `gpt-6-sol` without the Luna fallback, verify every
+   destination file is byte-identical to its bundled source. Otherwise,
+   verify only the bundled `model` assignments described above were
+   rewritten.
+5. Preserve any unrelated user files in the destination.
+6. Require the helper's verification status to be `verified` before reporting
+   success.
+
+If verification fails, report the mismatch clearly and stop.
+
+### 5. Report restart requirement
+
+When the helper reports `restart_required=true`, your closing output must
+explicitly tell the user:
+
+- where the files were installed
+- which files were copied or refreshed
+- the request-level fallback model
+- that they must restart Codex now
+
+When the helper reports `restart_required=false`, report that no additional
+restart is required. Do not claim verification succeeded after a failed or
+uncertain recovery.
+
+Do not continue into autopilot setup or workflow execution in the same skill.
+Installation ends once the files are copied, verified, and the user has been
+told to restart Codex.
+
+## Output
+
+Return a concise installation report like:
+
+```text
+## SpecKit Codex Subagents Installed
+
+**Source:** /absolute/path/to/plugin/codex-agents
+**Destination:** <data.destination>
+
+**Installed files:** <render `data.agent_files`>
+
+**Next step:** Restart Codex now so the custom subagents are loaded.
+```
+
+## Failure Handling
+
+Stop instead of improvising when:
+
+- the bundled `codex-agents/` directory is missing
+- any required TOML file is missing
+- the installer helper fails or rolls back
+- the destination cannot be created
+- post-copy verification does not match the bundled source set
+
+Feedback-sweep classifier and analyst prompts are trusted launcher resources,
+not installable Codex agents. Never recreate them under `.codex/agents/`; the
+autopilot runs them only through the isolated `codex exec` launcher.
+
+If the install partially succeeded or rollback is uncertain, report the
+structured recovery evidence: staged actions, applied actions, rolled-back
+actions, cleanup actions/errors, failed actions, unrestored actions, restart
+requirement, and bounded manual-remediation guidance. Do not silently continue
+or claim verification success.

@@ -1,0 +1,1065 @@
+---
+name: temporal-reasoning
+description: Use when persisting decisions, preferences, or architectural facts across coding sessions, or querying what was previously decided, built, or constrained in this project.
+---
+
+# Temporal Reasoning
+
+Perfect memory. Exact reasoning. Complete history.
+
+Temporal Reasoning gives AI coding agents bi-temporal graph memory: query any past state, traverse live dependency graphs, and correlate architectural decisions with structural change — all with deterministic Datalog, no fuzzy retrieval.
+
+## The Core Idea
+
+Every session starts from zero — you ask questions already answered, write code that contradicts decisions already made, and miss constraints established weeks ago. Temporal Reasoning fixes this: a persistent bi-temporal graph store you write to and query at any time, so context survives across sessions.
+
+**The two habits this skill builds:**
+- **Write immediately** when the user establishes something worth keeping (decision, preference, constraint)
+- **Read before acting** when the user asks about the past, or when you're about to modify something where past decisions might apply
+
+**How you call these.** Every example below is an MCP tool call — `minigraf_query`,
+`minigraf_transact`, `minigraf_retract`, `minigraf_rule`, `minigraf_ingest_git`,
+`minigraf_ingest_status`, `minigraf_audit`, `minigraf_report_issue`,
+`memory_prepare_turn`, `memory_finalize_turn` — made through your harness's MCP
+client with **named arguments** (in Claude Code they appear as
+`mcp__temporal-reasoning__minigraf_query` and so on). There is no importable Python
+API and no CLI: the installed `minigraf` package exports `MiniGrafDb`,
+`MiniGrafError` and `minigraf_ffi`, so `from minigraf import query, transact` has
+never worked, and there is no `minigraf.py` in this project. To read a graph outside
+the server, open a `MiniGrafDb` directly.
+
+## When to Write (minigraf_transact)
+
+Write to memory when the user's words signal a durable fact:
+
+| Signal | Examples | What to store |
+|--------|----------|--------------|
+| Decision language | "we'll use X", "going with Y", "we decided Z" | The decision + what was rejected |
+| Preference | "I prefer", "I don't like", "always/never use" | The preference + why (if given) |
+| Constraint | "must be", "can't use", "prioritize X over Y" | The constraint + the tradeoff |
+| Dependency | "depends on", "requires", "calls into" | The relationship |
+| Architecture | system structure, component roles, data flows | The structure + rationale |
+
+Store the *why* when you have it — a reason like "chosen for async support" is far more useful than the bare fact "using FastAPI".
+
+After every write, say: "I've stored that in memory." and summarize what was stored.
+
+## When to Read (minigraf_query)
+
+Query memory before you answer or act, when:
+- The user asks about past decisions, architecture, preferences, or constraints
+- The user says "what did we...", "how did we...", "why did we...", "what was our..."
+- The user references something from "earlier", "before", "last time"
+- You're about to write code that touches existing architecture
+- There's any ambiguity about what was established before
+
+Say "Let me check memory..." before querying. Then:
+- If memory has relevant facts → cite them specifically and ground your answer in them
+- If memory is empty or returns nothing relevant → say "Memory doesn't have anything recorded about this" and ask if they'd like to share context you can store
+
+**Query first, answer second.** The reason: a confident answer that contradicts a stored decision is far more damaging than taking a moment to check.
+
+**Two things to know before writing your first query:**
+
+1. **Filter predicates require square brackets.** `(contains? ?v "text")` silently returns nothing. Always write `[(contains? ?v "text")]`.
+
+2. **To discover what attribute names exist on an entity**, query it directly — you don't need to know them in advance:
+   ```python
+   minigraf_query(datalog="[:find ?a ?v :where [:decision/postgres ?a ?v]]")
+   # Returns all attribute/value pairs for that entity
+   ```
+   To scan all stored attributes across the graph: `[:find ?e ?a :where [?e ?a ?v]]`
+
+## When to Retract (minigraf_retract)
+
+`minigraf_retract` has two modes, and picking the right one matters:
+
+- **Default (`mode` omitted, i.e. `"close"`) — the fact stopped being true.** The user says "that's no longer true", "we dropped X", or a newer decision supersedes it. The fact leaves the current view, but `:valid-at` queries for the time it applied still return it. Pass `valid_at` if it stopped on a known earlier date.
+- **`mode="correct"` — the fact was never true.** It was stored by mistake (wrong value, wrong entity, a misunderstanding). This erases it from valid-time history; only `:as-of` still shows that it was once written. Use it when the user says "that was wrong", "I never said that", or asks you to "forget"/"delete" something rather than to record a change.
+
+After a default retract, say: "I've recorded that this no longer applies (its history is kept)." After `mode="correct"`, say: "I've removed that from memory as recorded in error."
+
+## What NOT to Store
+
+Skip transient observations, intermediate reasoning, raw code snippets, and restatements of what the user just said. Store durable, cross-session facts only: decisions, preferences, constraints, dependencies, architecture.
+
+## Entity Idents and Attribute Names
+
+Facts are stored as triples: `[entity attribute value]`. The entity ident is the organizing key — it carries all the identity and namespacing you need. Use flat, descriptive attribute names.
+
+**Entity idents** should be meaningful and namespaced: `:decision/postgres`, `:preference/no-db-mocks`, `:constraint/python-version`
+
+**Attribute names** should be flat and self-explanatory: `:description`, `:rationale`, `:date`, `:alias`, `:entity-type`, `:calls`, `:depends-on`, `:motivated-by`, `:governs`
+
+```
+[:decision/postgres :description "PostgreSQL 15 — primary database"]
+[:decision/postgres :rationale "ACID compliance + JSON support; tradeoff: lower write throughput"]
+[:preference/no-db-mocks :description "always use real DB connections in tests"]
+[:preference/no-db-mocks :rationale "mock/prod divergence caused silent migration failure"]
+```
+
+To retrieve all facts for an entity, query by ident directly — no need to know attribute names in advance:
+```python
+minigraf_query(datalog="[:find ?a ?v :where [:decision/postgres ?a ?v]]")
+```
+
+Before adding new facts about an entity, query it first to find existing attributes and avoid duplication.
+
+## Entity Resolution
+
+Before storing a new entity, always check for existing canonical idents and aliases:
+
+```datalog
+[:find ?e ?desc :where [?e :description ?desc]]
+[:find ?e ?a :where [?e :alias ?a]]
+```
+
+If a reference matches an existing ident or alias, reuse that exact ident.
+Only mint a new ident if the entity is genuinely new.
+
+Canonical ident form: lowercase; `_` and `-` are both preserved, every other character becomes `-`; leading/trailing hyphens are stripped (underscores are not). So `Redis_cache` → `:decision/redis_cache`, and `pydantic.v2` → `:dependency/pydantic-v2`.
+
+Underscores are preserved deliberately (#263): folding `_` into `-` made `foo` and `_foo` the same entity. For the same reason hyphen runs are **not** collapsed, so `a  b` → `a--b`, not `a-b`.
+
+Allowed entity types: `:decision/`, `:preference/`, `:constraint/`, `:dependency/`, `:module/`, `:function/`, `:class/`, `:variable/`, `:field/` (code structure — auto-ingested); `:commit/`, `:tag/`, `:ingestion/` are system-only (written by `minigraf_ingest_git`), do not write to them directly
+Required attribute on all types: `:description`
+Optional attributes: `:rationale`, `:date`, `:alias`
+String-valued attributes are capped at 4096 characters (override via `MINIGRAF_MAX_FACT_VALUE_LENGTH`); a longer value is a schema violation and the whole `minigraf_transact` call is rejected — summarize before storing, don't paste large blocks of raw text.
+
+Run `minigraf_audit` periodically or after a session with heavy writes to detect and retract any schema violations.
+
+## Entity Types and Graph Relationships
+
+### Typing entities with `:entity-type`
+
+Assign a type to every entity so you can query across categories without knowing individual entity names:
+
+```python
+minigraf_transact(
+    facts="""[[:dependency/auth-service :description "AuthService"]
+              [:dependency/auth-service :entity-type :type/dependency]
+              [:constraint/python-version :description "must support Python 3.8 minimum"]
+              [:constraint/python-version :entity-type :type/constraint]]""",
+    reason="Dependency and constraint with types")
+```
+
+Use these canonical type keywords:
+- `:type/dependency` — service, module, library, or system component
+- `:type/decision` — architecture or design decision
+- `:type/constraint` — rule, requirement, or invariant
+- `:type/preference` — user preference or style choice
+
+Query all constraints: `[:find ?e ?desc :where [?e :entity-type :type/constraint] [?e :description ?desc]]`
+
+**Do not create root entities for namespaces** (no `:project`, `:preference`, `:rules` entities). The namespace in the entity ident already encodes category implicitly. `:entity-type` covers the cases where you need typed cross-category queries.
+
+### Entity references (not strings) for relationships
+
+When a value refers to another entity in memory, store it as an entity keyword — **never as a string**. This is what makes the graph traversable.
+
+```datalog
+; WRONG — string dead-end, cannot traverse
+[:dependency/auth-service :calls "jwt-module"]
+
+; CORRECT — entity reference, edge is traversable
+[:dependency/auth-service :calls :dependency/jwt-module]
+```
+
+Rule of thumb: if the value names something that IS or WILL BE an entity in memory, use its entity ident keyword.
+
+### Relationship vocabulary
+
+Use these standard attributes for edges between entities:
+
+| Attribute | Meaning | Value type |
+|---|---|---|
+| `:calls` | component invokes another component | entity ref |
+| `:depends-on` | component requires another to function | entity ref |
+| `:motivated-by` | decision was driven by a constraint | entity ref |
+| `:supersedes` | this decision replaces an older one | entity ref |
+| `:governs` | constraint applies to a component | entity ref |
+
+For traversal, use recursive rules (see Quick Reference).
+
+## Auto-Memory (MCP Server)
+
+When the MCP server is configured and hooks are enabled, memory is managed automatically without explicit tool calls:
+
+- **Before each turn** — `memory_prepare_turn` is called with the user's message and the result is injected as `hookSpecificOutput.additionalContext` (a top-level `additionalContext` is silently ignored by Claude Code).
+- **After each turn** — `memory_finalize_turn` is called with the user+agent exchange; facts are extracted and stored.
+  While git ingestion is running, the hook cannot take the graph, so it **spools** the facts
+  (`<graph>.spool/`) and ingestion stores them within a couple of seconds, at the valid time they
+  were extracted. Until then a just-stated fact may not be returned by `minigraf_query` or the
+  next turn's retrieval. `minigraf_ingest_status` reports `hook_spool` (records drained this run)
+  and `handle_drops` (graph handle drops this run, each a full checkpoint).
+
+Extraction strategy is controlled by `MINIGRAF_EXTRACTION_STRATEGY` (env var):
+- `heuristic` (default) — regex signal detection, zero API calls
+- `llm` — Claude Haiku extracts facts; falls back to heuristic on API failure. Runs on a worker
+  thread so a slow/hung provider doesn't stall other concurrent tool calls; the underlying
+  client's request timeout defaults to 30s, override via `MINIGRAF_LLM_TIMEOUT_SECONDS`.
+- `agent` — MCP sampling asks the connected agent to identify facts
+
+**Codex:** `install.py --harness codex` registers the MCP server and memory hooks in project `.codex/config.toml`. Restart in the trusted project, then review and trust the exact definitions through `/hooks`. Until trusted, hooks are skipped. The Stop adapter supports Codex `event_msg` and `response_item` transcript records; if no readable transcript is available, it leaves memory unchanged.
+
+**Without hooks** (OpenCode, OpenClaw, or unconfigured): call the tools explicitly at the start and end of each turn.
+
+### memory_prepare_turn
+
+Call at the **start** of each turn. Returns a context block string with facts relevant to the user's message.
+
+```
+memory_prepare_turn(user_message="what database did we decide on?")
+# → "Relevant memory context:\n  :name | PostgreSQL 15\n  :role | primary database"
+```
+
+On build/fix/navigate-shaped messages (verbs like add/implement/build/fix/debug/refactor,
+or phrasings like "where is"/"how does", combined with a code-ish noun), and only once the
+repo has an ingested code graph, the block also gets a one-line nudge toward
+`minigraf_query`-based navigation — see "[Using ingested code structure to scope a
+change](#using-ingested-code-structure-to-scope-a-change)" below.
+
+### memory_finalize_turn
+
+Call at the **end** of each turn. Extracts durable facts from the completed exchange and stores them.
+
+```
+memory_finalize_turn(conversation_delta="User: We'll use Redis for caching.\nAgent: Stored.")
+# → {"ok": true, "stored_count": 1, "strategy": "heuristic"}
+```
+
+## Tools
+
+### minigraf_transact
+```python
+minigraf_transact(
+    facts="""[[:decision/postgres :description "PostgreSQL 15 — primary database"]
+              [:decision/postgres :entity-type :type/decision]
+              [:decision/postgres :rationale "ACID compliance + JSON support; tradeoff: lower write throughput"]]""",
+    reason="Database choice finalized — JSON support required for analytics queries")
+```
+
+Both arguments are required; a write with an empty `reason` is rejected.
+
+**Recording something that became true earlier.** By default a fact is valid
+from the moment it is written. When you record a decision, constraint or
+preference that was made on an earlier date — importing history, or writing
+up a decision days after it was taken — pass `valid_at` so `:valid-at`
+queries find it on the day it actually applied:
+
+```python
+minigraf_transact(
+    facts='[[:decision/cache :description "use Redis for session caching"]]',
+    reason="Decision taken in the 2026-08-18 design review",
+    valid_at="2026-08-18")
+```
+
+`valid_at` takes `YYYY-MM-DD` or an ISO 8601 datetime (UTC, or with an offset,
+which is converted). A `; valid-at: 2026-08-18` line at the top of `facts` is
+read the same way. Past or present only. An unparseable date, a future date,
+or two different dates (argument and hint line) are refused with `ok: false`
+— nothing is written, and the write is never silently stamped with "now"
+instead. A successful backdated write echoes the stored `valid_from`.
+
+### minigraf_query
+```python
+# All facts for a known entity
+minigraf_query(datalog="[:find ?a ?v :where [:decision/postgres ?a ?v]]")
+
+# Broad scan of everything in memory
+minigraf_query(datalog="[:find ?e ?a ?v :where [?e ?a ?v]]")
+
+# Search stored values by content (useful when entity ident is unknown)
+minigraf_query(datalog='[:find ?e ?a ?v :where [?e ?a ?v] (contains? ?v "Redis")]')
+minigraf_query(datalog='[:find ?e ?v :where [?e :rationale ?v] (starts-with? ?v "chosen")]')
+
+# Temporal — state at transaction N
+minigraf_query(datalog="[:find ?a ?v :as-of 5 :where [:decision/postgres ?a ?v]]")
+```
+
+### minigraf_retract
+```python
+minigraf_retract(facts='[[:dependency/old-service :description "obsolete"]]',
+                 reason="Service decommissioned")
+```
+
+**Recording when something stopped being true.** A plain retract closes the
+fact's validity window at now: it leaves the current view, and `:valid-at`
+queries for any time it applied still see it. Pass `valid_at` to close the
+window at the date it really stopped applying instead:
+
+```python
+minigraf_retract(facts='[[:decision/cache :description "use Redis for session caching"]]',
+                 reason="Superseded by the 2026-09-01 move to Memcached",
+                 valid_at="2026-09-01")
+```
+
+Same date rules as `minigraf_transact`, plus: every fact must be a literal
+`[entity attribute value]` triple that is currently live, and `valid_at` must
+fall after the fact's own valid-from. If any fact in the block fails a check,
+the whole block is refused and nothing changes. The response lists each
+closed window under `closed`.
+
+**Withdrawing a fact recorded in error.** `mode="correct"` withdraws the fact
+outright, across all valid time — use it only when the fact was never true.
+It takes no `valid_at`, and does not require the fact to be live:
+
+```python
+minigraf_retract(facts='[[:decision/cache :description "use Redsi"]]',
+                 reason="Typo in the stored value",
+                 mode="correct")
+```
+
+### minigraf_rule
+
+Register a Datalog rule for the current server session. Rules enable recursive graph traversal and edge-type aliasing. Re-register after server restart (or add to `SESSION_RULES` in `mcp_server.py` for permanence).
+
+```python
+# Base case (register first)
+minigraf_rule(rule="[(ancestor ?a ?d) [?a :parent ?d]]")
+# Recursive case
+minigraf_rule(rule="[(ancestor ?a ?d) [?a :parent ?m] (ancestor ?m ?d)]")
+
+# Now query using the rule
+minigraf_query(datalog="[:find ?anc :where (ancestor :commit/abc123def456 ?anc) [?anc :subject ?s]]")
+```
+
+Returns `{"ok": true, "rule": "..."}` on success, or `{"ok": false, "error": "..."}` if the rule has a syntax error or creates a negative cycle.
+
+### minigraf_ingest_git
+
+Start background ingestion of code structure from git history into the bi-temporal graph. Returns immediately — ingestion runs as an asyncio background task.
+
+**Always call `minigraf_ingest_status` first.** Only call `minigraf_ingest_git` if status shows `idle`. If status is `starting`, `running`, or `complete`, do not start a new ingestion — report the current status to the user instead.
+
+```python
+# Step 1: check status
+minigraf_ingest_status()
+# → {"ok": true, "status": "idle", ...}
+
+# Step 2: start only if idle
+minigraf_ingest_git(repo_path="/path/to/repo")
+# → {"ok": true, "job_id": "git-ingest", "message": "Ingestion started for /path/to/repo"}
+
+# If already running:
+# → {"ok": false, "error": "ingestion already in progress"}
+
+# If another live process already owns the graph:
+# → {"ok": false, "error": "ingestion already owned by live process (pid 12345)", "owner_pid": 12345}
+```
+
+Once started, inform the user that ingestion is running in the background and move on — do not poll or wait for completion.
+
+Auto-started at MCP server startup — the server creates a background asyncio task that ingests the resolved default branch immediately. Set `MINIGRAF_NO_AUTO_INGEST=1` to suppress this (useful in eval sandboxes). Incremental, and resumed from two places, not one: `:ingestion/watermark` says where the authoritative walk resumes, and `:ingestion/correction-sweep-through` says how far lineage has been confirmed. The two differ because a commit becomes *queryable* before its lineage is *final* — history above the watermark is ingested with provisional `:introduced-by` guesses that a later confirmation pass upgrades, so an interrupted run can leave the graph fully queryable with its lineage still being settled.
+
+History is walked by two interleaved streams: one forward from the watermark (authoritative), one backward from HEAD (provisional, so recent history becomes queryable first). `MINIGRAF_INGEST_STREAM_RATIO` sets how many commits each takes per round as `"forward:reverse"` (default `1:1`); `MINIGRAF_INGEST_STREAM_RATIO=1000000:1` is effectively a plain oldest-first walk. A malformed value is ignored with a warning and falls back to the default.
+
+By default, `minigraf_ingest_git` (and the auto-start above) resolve which branch to walk instead of blindly following whatever ref is checked out: `MINIGRAF_GIT_BRANCH` wins if set, otherwise the repo's `main` or `master` branch is auto-detected, falling back to `HEAD` only if neither exists. Pass an explicit `branch` argument to override both — useful for on-demand ingestion of a feature branch without disturbing the pinned default.
+
+Vendored/third-party/generated paths are skipped for AST extraction by default (`3rdParty/`, `third_party/`, `vendor/`, `node_modules/`, `dist/`, `build/`, `*.min.js`, `*.map`) — no per-file entities are created for them, and any in-repo import resolving into an ignored path is tagged `:type/external-dependency` instead of an internal module dependency. The same ignore list applies to git submodules (gitlinks): a submodule whose path matches an ignore pattern is never turned into a `:type/external-dependency` entity, and its add/bump/remove commits produce no facts for it. Extend the ignore list with `MINIGRAF_INGEST_IGNORE` (comma-separated globs/prefixes, e.g. `MINIGRAF_INGEST_IGNORE=generated/,*.pb.go`) and/or a repo-local `.temporalignore` file (one pattern per line, `#` comments allowed) — both add to the defaults, they don't replace them. Ignore config is resolved once when ingestion starts and applies uniformly across all historical commits; it does not retroactively remove entities from a graph that was already ingested before the ignore list was added.
+
+Do not write to `:ingestion/watermark` or any `:ingestion/` entity directly.
+
+**Graph format version.** Ingestion stamps `:ingestion/format-version` on a new graph and refuses to run against a graph stamped at a different version — including a graph with no stamp at all, which means it predates the stamp. The check runs before any write, so a refused run leaves the graph untouched.
+
+The current version is **2** (first-parent timeline, #384): a version-1 graph was built by walking every branch interleaved, so its validity windows mean something different, and it is refused the same way.
+
+There is **no migration**. Entity idents are recomputed from `(entity type, file path, name)` on every run rather than read back, so ingesting an old-rule graph with new-rule code would create a second, forked entity for everything already stored, silently and with no error. The supported recovery is to re-ingest into a **fresh graph path**: point `MINIGRAF_GRAPH_PATH` at a new file, or delete the existing graph along with its `.fts.sqlite3` index. Re-running ingestion over the existing file does not repair it.
+
+**Index damage.** Before any other read, ingestion checks that the graph's two indexes agree: it lists entities through the attribute index and re-reads the ingestion-state entities plus a random sample of the rest by entity. If one index has lost an entity the other still lists, the run fails with `status: error` and a message naming project-minigraf/minigraf#370. That is what a process killed mid-save can leave behind: the graph opens cleanly, every count and scan looks healthy, and lookups by ident silently return nothing — so without the check a run would read its own watermark as missing and re-walk, or adopt a mature graph as new. Nothing repairs it in place; re-running ingestion does not. The only recovery is re-ingesting into a **fresh graph path**, as above. `minigraf_ingest_status` reports what the check covered as `index_cross_check` (`population`, `probed`, `control_probed`); `population: 0` means the graph had nothing to check, not that it was verified.
+
+### minigraf_ingest_status
+
+Poll the current git ingestion progress.
+
+```python
+minigraf_ingest_status()
+# → {"ok": true, "status": "running", "phase": "converging", "total": 20,
+#    "prior_ingested": 19, "current_commit": "a3f2bc...", "error": null,
+#    "this_run": {"to_retire": 9, "retired": 4, "written": 4, "skipped": 0,
+#                 "failed": 0, "seconds_since_progress": 3.1, ...},
+#    "streams": {"forward": {"state": "running", "retired": 2, "rate_per_min": 12.0, ...},
+#                "reverse": {"state": "running", "retired": 2, "rate_per_min": 11.8, ...},
+#                "sweep": {"state": "waiting", "swept": 0, "to_sweep": null,
+#                          "blocked_reason": null, ...}},
+#    "visibility": {"verified": 15, "total": 20, "complete": false},
+#    "lineage": {"confirmed": 11, "total": 20, "complete": false,
+#                "confirmed_through": "e1d4..."}}
+```
+
+`status` is one of: `idle`, `starting`, `running`, `complete`, `error`, `stopped`, `skipped`.
+`starting` means a background ingestion task has been created (auto-started at
+server boot, or via `minigraf_ingest_git`) but hasn't finished its preload phase
+(re-scanning already-known entities/dependencies) yet, so `total` isn't
+populated — a subsequent `minigraf_ingest_git` call will still be rejected
+with "already in progress" during this window, same as `running`. `this_run`
+appears once the run's frontier is loaded, which can lag `status: running`:
+`total` is set as soon as the walk starts, so a `status: running,
+phase: converging` window with `total` set but no `this_run` yet (the rest of
+preload) is normal, not a bug.
+`stopped` means a graceful shutdown (session end) paused ingestion between commits —
+not a failure; the next `minigraf_ingest_git` call (or server auto-start)
+resumes from the watermark — and from `:ingestion/correction-sweep-through` for
+the confirmation pass — automatically. `skipped` means another live process
+already owns the graph (its PID is in `owner_pid`) — this server will not
+attempt ingestion on its own; call `minigraf_ingest_git` again later to retry.
+For `skipped`, a `stale` field may be present: `stale: true` means the owning
+process has stopped refreshing its ownership hint, so a `minigraf_ingest_git`
+retry is likely to succeed now — check it before assuming a cached state is
+still accurate. `error` no longer carries `stale`: it was derived by scraping a
+holder PID out of minigraf's lock-contention message, and minigraf 2.0.0
+removed that PID from the text.
+- `error` also includes `error_at`.
+- **`this_run`** is this run's own work: `to_retire` positions were in the gap
+  when it loaded, and `retired` counts those it has finished (`written`,
+  `skipped` because an earlier run already wrote them completely, or
+  `failed`). It never exceeds `to_retire`. A climbing `skipped` with a flat
+  commit count means the run is replaying an already-ingested region.
+  `seconds_since_progress` growing while nothing retires is a stall.
+- **`streams`**: a table of states for `forward`/`reverse` (`not-started`,
+  `running`, `done`, `not-needed`, `stopped`, `error`) and `sweep` (`waiting`,
+  `running`, `done`, `not-needed`, `blocked` with `blocked_reason` ∈
+  `gap-open`/`fragmented`/`stale-bound`/`metadata-mismatch`, `not-run`,
+  `stopped`, `aborted`, `error`).
+- **`visibility.verified`** is what the frontier can prove complete. It can be
+  LOWER at the start of a run than the graph's commit count, when earlier
+  positions must be re-walked.
+- **`lineage.confirmed`** is how much history has final `:introduced-by`, and
+  `null` when a watermark no longer resolves (e.g. after a rewritten history).
+- **Done means `visibility.complete and lineage.complete`.** `status:
+  complete` alone only says the run finished. A run that lost a commit or
+  could not confirm lineage finishes with `status: complete` and one flag
+  false.
+- When idle, `total_ingested` is the true persisted commit count,
+  `last_commit` is the branch tip the last completed run covered, and
+  `lineage_confirmed_through` is read from the graph.
+
+### Git-Ingested Data Schema
+
+**Timeline: the branch's first-parent history.** Valid time follows the branch tip's own tree — "live at t" means "present on the branch at t". A feature branch's code enters at the merge that brings it in: its entities' `:valid-from`, `:introduced-by` and `:modified-in` are the **merge commit**, not the side commit that authored them. Side commits are still recorded as `:type/commit` entities (metadata and `:parent` only, plus `:merged-in`), so `ancestor` traverses the whole DAG and "which merge brought commit X in" is one hop. To find who authored a merged change, follow the merge's second `:parent`, or the side commits whose `:merged-in` is that merge.
+
+`minigraf_ingest_git` writes the following entity types. All relationship attributes (`:parent`, `:merged-in`, `:introduced-by`, `:modified-in`, `:contains`, `:depends-on`, `:tagged-commit`, `:resolves-to`) are stored as keyword entity references — they bypass string-value schema validation by design and are directly traversable in queries.
+
+**Ident slugging:** characters outside `[a-z0-9_-]` in paths and names are replaced with hyphens; underscores are kept and hyphen runs are **not** collapsed. Examples: `src/auth.py` → `:module/src-auth-py`; function `login` in `src/auth.py` → `:function/src-auth-py--login` (the `::` join survives as `--`); `mcp_server.py` → `:module/mcp_server-py`.
+
+Both rules exist to keep distinct entities apart (#263): folding `_` into `-` made `foo` and `_foo` one entity, and collapsing hyphen runs let a path character stand in for the `::` join. Note this means idents minted before this change do not match idents minted after it — see `:ingestion/format-version` below.
+
+#### `:type/commit` — one per git commit
+Ident: `:commit/<first-12-chars-of-hash>`
+
+Every commit of the branch gets one. Commits on the first-parent chain carry the code edits; side commits (reached only through a merge's second parent) are metadata-only and carry `:merged-in`. No code entity cites a side commit.
+
+| Attribute | Notes |
+|---|---|
+| `:description` | commit subject (truncated to 120 chars) |
+| `:hash` | full 40-char hash |
+| `:author` | author email |
+| `:subject` | commit subject (truncated to 200 chars) |
+| `:date` | ISO 8601 UTC timestamp, e.g. `"2026-05-26T14:32:00Z"` |
+| `:parent` (keyword ref) | parent commit(s); merge commits have two |
+| `:merged-in` (keyword ref) | side commits only: the first-parent merge that brought this commit onto the branch. Absent on first-parent commits |
+
+#### `:type/module` — one per source file, written on the commit that introduces it
+Ident: `:module/<slugified-file-path>`
+
+| Attribute | Notes |
+|---|---|
+| `:description` | file path, e.g. `"src/auth.py"` |
+| `:path` | file path |
+| `:introduced-by` (keyword ref) | commit that first added this file |
+| `:modified-in` (keyword ref) | one edge per subsequent modifying commit |
+| `:contains` (keyword ref) | functions, classes, variables, and fields defined in this file |
+| `:depends-on` (keyword ref) | modules this file imports — tracked per-commit with full valid-time bounds: `:valid-from` = commit that introduced the import, `:valid-to` = commit that removed it (open-ended if still present) |
+| `:renamed-from` / `:renamed-to` (keyword ref) | rename/move continuity — see below |
+
+#### `:type/function` — one per top-level function or method
+Ident: `:function/<slugified-path-name>` (file path + `::` + function name, slugified together)
+
+| Attribute | Notes |
+|---|---|
+| `:description` | function name |
+| `:file` | source file path |
+| `:introduced-by` (keyword ref) | commit that first defined this function |
+| `:modified-in` (keyword ref) | one edge per subsequent modifying commit |
+| `:renamed-from` / `:renamed-to` (keyword ref) | rename/move continuity — see below |
+
+#### `:type/class` — one per class, struct, or type definition (same ident convention as function)
+
+| Attribute | Notes |
+|---|---|
+| `:description` | class or struct name |
+| `:file` | source file path |
+| `:introduced-by` (keyword ref) | commit that first defined this class |
+| `:modified-in` (keyword ref) | one edge per subsequent modifying commit |
+| `:renamed-from` / `:renamed-to` (keyword ref) | rename/move continuity — see below |
+
+#### `:type/variable` — one per module-level global (same ident convention as function)
+
+| Attribute | Notes |
+|---|---|
+| `:description` | variable name |
+| `:file` | source file path |
+| `:introduced-by` (keyword ref) | commit that first defined this global |
+| `:modified-in` (keyword ref) | one edge per subsequent modifying commit |
+| `:renamed-from` / `:renamed-to` (keyword ref) | rename/move continuity — see below |
+
+#### `:type/field` — one per class/struct member, instance or static (ident convention: file path + `::` + `<ClassName>.<fieldName>`, slugified together)
+
+| Attribute | Notes |
+|---|---|
+| `:description` | `"<ClassName>.<fieldName>"` |
+| `:file` | source file path |
+| `:class` (keyword ref) | the owning class/struct entity |
+| `:static` | `true`/`false` — whether this is a static (class-level) field vs. an instance field |
+| `:introduced-by` (keyword ref) | commit that first defined this field |
+| `:modified-in` (keyword ref) | one edge per subsequent modifying commit |
+| `:renamed-from` / `:renamed-to` (keyword ref) | rename/move continuity — see below |
+
+**Rename/move continuity (`:renamed-from` / `:renamed-to`):** all five code entity types (module, function, class, variable, field) can carry these. When ingestion detects a rename — a file rename/move (via git's own `-M` similarity detection) or a function/class/global/field rename (via a custom AST-based matcher tolerant of local-variable renames) — the old entity is closed as usual but also gets `:renamed-to` pointing at the new entity's ident, and the new entity gets `:renamed-from` pointing back at the old one. This lets a query traverse continuous history across a rename that would otherwise look like an unrelated deletion followed by an unrelated creation.
+
+**Supported languages for `:type/variable`/`:type/field` extraction:** the same full language list as function/class extraction — see "Supported languages for AST extraction" below.
+
+#### `:type/tag` — one per git tag (system-only, not audited)
+Ident: `:tag/<slugified-tag-name>`
+
+| Attribute | Notes |
+|---|---|
+| `:description` | `"git tag <name>"` |
+| `:name` | original tag name |
+| `:date` | tag creation date (if available) |
+| `:tagged-commit` (keyword ref) | the commit this tag points to |
+
+#### `:type/external-dependency` — real git submodules and genuinely-unresolved imports
+Ident: `:module/<slugified-path-or-import-name>` (shares the module ident namespace — only `:entity-type` distinguishes internal from external)
+
+| Attribute | Notes |
+|---|---|
+| `:description` | submodule's declared name from `.gitmodules` if resolvable, else raw path (submodules); raw import specifier (unresolved imports) |
+| `:path` | submodule's repo path (submodules only; absent for unresolved-import placeholders — they have no path) |
+| `:pinned-commit` | pinned commit SHA the submodule currently points to (submodules only); bi-temporally closed and reopened on every bump — point-in-time queries see the SHA pinned at that time |
+| `:submodule-name` / `:submodule-url` | from `.gitmodules`, when parseable (submodules only) |
+| `:introduced-by` (keyword ref) | commit that first introduced this dependency (**submodules only** — unresolved-import placeholders are opened with `:entity-type`/`:ident`/`:description` and never acquire one, so they are live entities with no lineage by design; the #316 orphan audit excludes this whole entity type for that reason) |
+| `:modified-in` (keyword ref) | one edge per commit that bumped a submodule's pinned commit |
+| `:resolves-to` (keyword ref, unresolved-import placeholders only) | points to the real submodule entity when this placeholder's import path falls under a known `.gitmodules`/gitlink path — bridges the two ident schemes (`_canonical_ident` from the raw import specifier vs. `_code_ident` from the submodule's declared path), which otherwise never produce the same ident string even once both entities exist. Set regardless of which one was ingested first. |
+
+Vendored-in-tree code checked in as regular files (not a git submodule) is parsed as ordinary `:type/module`/`:function`/`:class` entities like any first-party code — only real gitlinks (mode `160000`) and genuinely-unresolved imports get the external marker.
+
+**Supported languages for AST extraction:** Python, JavaScript, TypeScript (+ TSX/JSX), Rust, Go, Java, C, C++, C#, Ruby, PHP, Kotlin, Swift, Scala, Haskell, Lua, Elixir. Files in other languages are tracked as modules (with `:introduced-by`/`:modified-in`) but yield no function, class, variable, or field entities.
+
+**Pre-registered SESSION_RULES** — these are always available; no `minigraf_rule` call needed:
+
+| Rule | Traverses | Use for |
+|---|---|---|
+| `(ancestor ?child ?anc)` | `:parent` (**recursive**) | commit graph ancestry, at any depth |
+| `(reachable ?a ?b)` | `:depends-on`, `:calls`, `:contains` (single hop) | one hop across mixed edge types |
+| `(linked ?a ?b)` | `:depends-on`, `:calls`, `:contains` (single hop) | one hop across mixed edge types |
+
+**`reachable` is not transitive, despite the name.** `ancestor` is the only
+pre-registered rule with a recursive clause. `reachable` and `linked` are
+identical: three single-hop clauses each, unifying `:depends-on`, `:calls` and
+`:contains` under one name so a query can cross edge types without knowing
+which kind it is. On `a → b → c`, `(reachable :dependency/a ?b)` returns `b`
+alone — `c` is silently absent, which is the failure mode to watch for when
+using it for blast-radius analysis.
+
+For genuine transitive traversal, register the recursive clause yourself. It
+accumulates onto the pre-registered ones, so the name keeps working for
+everything it already matched:
+
+```python
+minigraf_rule(rule="[(reachable ?a ?b) [?a :depends-on ?mid] (reachable ?mid ?b)]")
+# (reachable :dependency/a ?b) now returns both b and c
+```
+
+Rules registered this way persist for the server session and are re-applied on
+every DB reopen — see `minigraf_rule`.
+
+### Code Structure Query Examples
+
+Once ingestion is complete, query code structure with `:valid-at` for point-in-time views:
+
+```datalog
+; All functions in auth.py as of today
+[:find ?fn :valid-at "2026-05-26"
+ :where [:module/src-auth-py :contains ?e] [?e :description ?fn]]
+
+; All modules that depend on auth.py
+[:find ?caller :valid-at "2026-05-26"
+ :where [?e :depends-on :module/src-auth-py] [?e :description ?caller]]
+
+; One hop out from src/auth.py across :contains, :depends-on and :calls
+; (single hop -- see the note under SESSION_RULES; register the recursive
+;  clause first if you need this to be transitive)
+[:find ?dep :valid-at "2026-05-26"
+ :where (reachable :module/src-auth-py ?d) [?d :description ?dep]]
+```
+
+### Using ingested code structure to scope a change
+
+For the highest-frequency developer task — "which parts of the codebase should I read or
+modify to build feature X or fix bug Y" — treat the ingested graph as a navigation tool,
+not just a history log.
+
+**Blast radius / impact.** Run `reachable` against `:depends-on` in reverse to find the
+entities affected by a change — read and test all of them before you're done. Register
+the recursive clause first: the pre-registered `reachable` is single hop, so without it
+this returns only the direct dependents and silently omits everything behind them.
+```python
+minigraf_rule(rule="[(reachable ?a ?b) [?a :depends-on ?mid] (reachable ?mid ?b)]")
+```
+```datalog
+[:find ?desc :where (reachable ?dependent :module/src-auth-py) [?dependent :description ?desc]]
+```
+
+**Co-change precedent.** Entities sharing the `:introduced-by` or `:modified-in` commit of
+a past similar feature form a template constellation of files worth touching for an
+analogous change today:
+```datalog
+[:find ?desc :where [?e :modified-in :commit/abc123def456] [?e :description ?desc]]
+```
+If a prior feature touched five files in one commit, a similar feature today likely needs
+the same five — or their current equivalents, following `:renamed-to` for anything that
+moved since.
+
+**Centrality.** File-level churn — the count of `:modified-in` edges on a `:type/module` —
+surfaces the load-bearing files near a concept area:
+```datalog
+[:find ?desc (count ?c) :where [?m :entity-type :type/module] [?m :modified-in ?c] [?m :description ?desc]]
+```
+
+**Honest limits — this complements grep/Read, it doesn't replace them:**
+- **Lagging snapshot.** The graph reflects the last ingested commit, not the live tree or
+  uncommitted work. Check `minigraf_ingest_status` before trusting it for something just written.
+- **No code text stored.** Names, structure, and history only — still `Read` the actual
+  file to understand what a function does, not just that it exists or changed.
+- **Function-level `:modified-in` is body-diff gated; module-level is not.** For
+  `:type/function`/`:type/class`/`:type/variable`/`:type/field`, a `:modified-in` edge means
+  the entity's own body provably changed (whitespace-only reformatting does not create one).
+  For `:type/module`, `:modified-in` fires on every commit that touches the file at all — so
+  the centrality query above is a genuine per-commit file-churn signal, while function-level
+  churn is an independently trustworthy signal in its own right, not a re-derivation of file churn.
+- **Rename/lifecycle is per-entity and reliable.** `:renamed-from`/`:renamed-to` track true
+  introduce/rename/close history for every code entity type — follow it to keep a chain of
+  identity across a rename that would otherwise look like an unrelated delete+create.
+
+Cross-layer queries joining code structure with agent decisions — a genuine single-query
+join, not two queries diffed externally. Every fact carries its own bi-temporal validity
+window, bindable via `:db/valid-from ?vf` / `:db/valid-to ?vt` pseudo-attributes (see
+"Querying a fact's own valid-time window" below). This lets you compare *when* a decision
+became valid against *when* a structural fact was introduced, in one query:
+
+```datalog
+; How many functions in fact_index.py were introduced after the
+; :decision/persisted-fact-index decision took effect?
+[:find (count-distinct ?fn) :any-valid-time
+ :where [:decision/persisted-fact-index :db/valid-from ?dvf]
+        [?fn :entity-type :type/function]
+        [?fn :file "fact_index.py"]
+        [?fn :db/valid-from ?fvf]
+        [(> ?fvf ?dvf)]]
+```
+
+For cases with no shared comparison variable (e.g. "list everything that changed" rather
+than "count facts relative to a specific fact's valid-from"), running two `:valid-at`-bounded
+queries and diffing the rows client-side is still the simplest approach:
+```datalog
+; What dependency changes happened after a specific date?
+; Q1 (before): [:find ?m ?d :valid-at "2024-12-01" :where [?e :depends-on ?f] [?e :description ?m] [?f :description ?d]]
+; Q2 (after):  [:find ?m ?d :valid-at "2026-05-26" :where [?e :depends-on ?f] [?e :description ?m] [?f :description ?d]]
+; Rows in Q2 absent from Q1 = new dependencies since the date
+```
+
+### Querying a fact's own valid-time window
+
+Any fact can project its own bi-temporal validity window into a query as bindable output
+variables, via the `:db/valid-from` / `:db/valid-to` pseudo-attributes — usable anywhere a
+normal query variable is (including in comparison predicates, joins, and `:find`).
+
+```datalog
+; Named-clause form — most common
+[:find ?vf ?vt :any-valid-time
+ :where [:decision/use-redis :db/valid-from ?vf] [:decision/use-redis :db/valid-to ?vt]]
+
+; Free-clause form — binds every fact's window, not just one attribute's
+[:find ?e ?a ?v ?vf ?vt :any-valid-time
+ :where [?e ?a ?v] [?e :db/valid-from ?vf] [?e :db/valid-to ?vt]]
+```
+
+- `:any-valid-time` is required on the query — a plain or `:valid-at`-bounded query hard-errors
+  on `:db/valid-from`/`:db/valid-to`.
+- `?vf`/`?vt` bind as integers (ms since epoch), not ISO strings.
+- `?vt` equal to the "still open" sentinel `9223372036854775807` (`(1 << 63) - 1`, i64::MAX)
+  means the fact is current/never closed; any other value is a historical close time. Add
+  `[(= ?vt 9223372036854775807)]` to restrict results to open facts only — `:any-valid-time`
+  alone also returns already-closed historical facts.
+- **Clause order matters.** A pseudo-attribute clause binds to whichever EAV clause on the
+  *same entity variable* most recently precedes it — not necessarily the clause you intend.
+  Put the attribute clause you want the window for immediately before the two pseudo-attribute
+  clauses:
+  ```datalog
+  ; Binds ?vf to the :depends-on fact's own valid-from (correct — :depends-on is
+  ; the immediately preceding clause on ?src):
+  [?src :ident ?srci] [?src :depends-on ?dep] [?src :db/valid-from ?vf] [?src :db/valid-to ?vt]
+
+  ; Binds ?vf to the :ident fact's valid-from instead — wrong, if what you wanted
+  ; was :depends-on's window:
+  [?src :depends-on ?dep] [?src :ident ?srci] [?src :db/valid-from ?vf] [?src :db/valid-to ?vt]
+  ```
+
+This is what makes a genuine single-query cross-layer join possible — see the example in
+"Code Structure Query Examples" above.
+
+## Quick Reference
+
+### Aggregations
+- `(count ?e)` / `(count-distinct ?e)` / `(sum ?n)` / `(min ?x)` / `(max ?x)`
+- Group by: `[:find ?role (count ?e) :where [?e :role ?role]]`
+- **`count` counts matching ROWS, `count-distinct` counts distinct values.**
+  They differ whenever one entity has more than one live fact matching the
+  clause — including the same `(entity, attribute, value)` asserted twice
+  under different valid-froms, which is a live row each time. To count
+  ENTITIES, use `count-distinct`.
+
+### Bi-temporal
+- `:as-of N` — state at transaction N
+- `:valid-at "2024-01-01"` — facts valid at date
+- `:any-valid-time` — ignore valid-time filter
+- `:db/valid-from ?vf` / `:db/valid-to ?vt` — bind a fact's own validity window as query variables (requires `:any-valid-time`); see "Querying a fact's own valid-time window"
+
+### Filter predicates (on values)
+- `(starts-with? ?v "text")` — value begins with text
+- `(ends-with? ?v ".rs")` — value ends with text
+- `(contains? ?v "keyword")` — value contains keyword
+- `(matches? ?v "^regex$")` — value matches regex
+
+### Negation
+- `(not [?e :attr val])` — exclude matches
+- `(not-join [?e] [?e :attr ?x])` — existential negation
+
+### Rules and recursive traversal
+Register rules with `minigraf_rule` before querying. Rules support full recursion via semi-naive fixed-point evaluation — cycles are handled safely.
+
+```datalog
+; Base case — register first
+(rule [(ancestor ?a ?d) [?a :parent ?d]])
+; Recursive case — register second
+(rule [(ancestor ?a ?d) [?a :parent ?m] (ancestor ?m ?d)])
+
+; Now use in a query
+[:find ?anc :where (ancestor :commit/abc123 ?anc)]
+```
+
+Unify multiple edge types under one name:
+```datalog
+(rule [(linked ?a ?b) [?a :depends-on ?b]])
+(rule [(linked ?a ?b) [?a :calls ?b]])
+[:find ?desc :where (linked :dependency/api-gateway ?svc) [?svc :description ?desc]]
+```
+
+Rules registered via `minigraf_rule` persist for the server session. After a server restart, re-register them or add them to `SESSION_RULES` in `mcp_server.py` to make them permanent.
+
+**Bounding a recursive rule: `:max-derived-facts` and `:max-results`.** A recursive
+rule over a large ingested graph can derive far more facts than you want to wait for.
+Both bounds default to 1,000,000 and can be set per query:
+
+```datalog
+; Cap the facts one rule iteration may derive
+[:find ?anc :where (ancestor :commit/abc123 ?anc) :max-derived-facts 50000]
+
+; Cap the total result set
+[:find ?desc :where (reachable ?e :module/src-auth-py) [?e :description ?desc] :max-results 500]
+```
+
+**Exceeding either is an error, not a truncation.** The query returns
+`{"ok": false, "error": "[INT-020] evaluator: iteration or result limit
+exceeded: ..."}` and no rows at all — so these are guard rails against a runaway
+rule, never a way to page through results. Use `:max-results` when you would
+rather be told the answer is too big than receive an arbitrary prefix of it.
+
+### Multi-hop joins (fixed-depth, no rule needed)
+When you know the exact depth, explicit joins are simpler than registering a rule:
+```datalog
+; 2-hop: api-gateway → auth-service → jwt-validator
+[:find ?desc
+ :where [:dependency/api-gateway :calls ?mid]
+        [?mid :depends-on ?leaf]
+        [?leaf :description ?desc]]
+```
+
+### String and numeric comparisons
+`>`, `<`, `>=`, `<=`, `=`, `!=` work for both numbers and ISO-8601 date strings (which sort lexicographically). Always wrap in `[...]`:
+```datalog
+[(> ?date "2026-04-01T00:00:00Z")]   ; date after threshold
+[(< ?count 10)]                       ; numeric less-than
+[(= ?status "active")]               ; equality
+```
+
+**Common mistake**: `(contains? ?v "text")` returns empty — the predicate must be inside square brackets: `[(contains? ?v "text")]`.
+
+Full Datalog grammar: https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference
+
+## Graph Storage
+
+Default: `memory.graph` in the current working directory. Run all commands from the same project root to ensure consistent graph access. Override with `MINIGRAF_GRAPH_PATH=/custom/path`.
+
+Memory retrieval uses a persisted SQLite FTS5 fact index alongside the graph, at `<graph_path>.fts.sqlite3` by default. Override with `MINIGRAF_INDEX_PATH=/custom/path`.
+
+`memory_prepare_turn` returns **memory facts only** — `:decision/`, `:preference/`,
+`:constraint/` and `:dependency/` entities, one line per entity. Ingested code structure
+is never injected there (#354); query it with `minigraf_query`. Stop words and
+single-character tokens are ignored, so a prompt made only of them returns nothing.
+
+Memory context returned by `memory_prepare_turn` can include historical facts (things
+that were true in the past but have since changed or been removed) alongside current
+ones — historical entries are labeled with their validity window, e.g. `[was valid
+2024-06-01 → 2025-01-15]`. Follow up with a precise `:as-of`/`:valid-at` query against
+the graph directly for the full picture at that point in time.
+
+Boolean-valued facts such as `:static` are indexed in their EDN spelling, lowercase
+`true`/`false` — the datalog text they were transacted from, not Python's `True`. Search
+for `static` or `false`, never `False` (#303).
+
+`nil` is not a storable value. `minigraf_transact` refuses any triple whose value is a
+bare `nil` and writes nothing — the whole block, not just that triple — because a
+nil-valued fact reaches the graph but can never reach the fact index (#306). Use an
+explicit value, or omit the attribute entirely: an absent fact is how this graph spells
+"no value". `:nil` (with the colon) is an ordinary keyword and is unaffected, and so is
+the text `nil` inside a quoted string value.
+
+Retrieval is purely lexical (exact word/token match, not semantic similarity) — write
+fact descriptions and `:alias` values that name both the concept and the specific
+technology/term someone might search for later (e.g. a decision described only as "use
+Redis" won't be found by a query for "caching layer" unless an alias bridges them).
+
+Tuning env vars: `MINIGRAF_PREPARE_SCAN_LIMIT` (default 50, max index rows scanned),
+`MINIGRAF_PREPARE_MAX_ENTITIES` (default 8, max entities injected, one line each),
+`MINIGRAF_MEMORY_BOOST` (default 2.0, ranking boost for decision/preference/constraint/
+dependency facts over git-ingested code structure; moot for `memory_prepare_turn`, which
+returns memory facts only), `MINIGRAF_HISTORICAL_DISCOUNT`
+(default 0.5, ranking discount for historical facts relative to current ones — values
+below 1.0 demote history, 1.0 is neutral).
+
+## Dependencies
+
+- **minigraf >= 2.0.2, < 3.0.0** — run `python install.py`, which pip-installs this spec into the project venv. The upper bound is deliberate: with no cap, CI silently resolved 2.0.0 the day it shipped and ran red for days before anyone connected the two (#286). A major bump must be a decision, not a resolver outcome. `pyproject.toml` is canonical; `install.py` (`_MINIGRAF_SPEC`) mirrors it, and the two have drifted before.
+- **Python 3** — for the wrapper
+
+## Examples
+
+### Storing a tech stack decision
+User: "We're using FastAPI over Flask — async support is critical for our Redis calls."
+```python
+minigraf_transact(
+    facts="""[[:decision/api-layer :description "use FastAPI over Flask"]
+              [:decision/api-layer :entity-type :type/decision]
+              [:decision/api-layer :rationale "async support required for Redis calls; rejected Flask"]]""",
+    reason="API framework finalized")
+```
+
+### Storing a component relationship (entity reference, not string)
+User: "The auth service calls the JWT module for token validation."
+```python
+minigraf_transact(
+    facts="""[[:dependency/auth-service :description "AuthService"]
+              [:dependency/auth-service :entity-type :type/dependency]
+              [:dependency/auth-service :calls :dependency/jwt-module]
+              [:dependency/jwt-module :description "JWTModule"]
+              [:dependency/jwt-module :entity-type :type/dependency]]""",
+    reason="Component dependency for impact analysis")
+```
+`:calls` holds the entity ident `:dependency/jwt-module` — not the string `"jwt-module"`. This makes the edge traversable.
+
+### Decision motivated by a constraint
+User: "We chose asyncio over threading because of the GIL."
+```python
+minigraf_transact(
+    facts="""[[:constraint/gil :description "Python GIL limits true thread parallelism"]
+              [:constraint/gil :entity-type :type/constraint]
+              [:decision/asyncio :description "use asyncio over threading"]
+              [:decision/asyncio :entity-type :type/decision]
+              [:decision/asyncio :motivated-by :constraint/gil]]""",
+    reason="Decision traceability — why asyncio was chosen")
+```
+Query: "Why asyncio?" traverses the edge:
+```python
+minigraf_query(datalog="""[:find ?reason
+                          :where [?d :description "use asyncio over threading"]
+                                 [?d :motivated-by ?c]
+                                 [?c :description ?reason]]""")
+```
+
+### Impact analysis via multi-hop join
+User: "What breaks if I change the key-store service?"
+
+For fixed-depth traversal, use explicit joins:
+```python
+# Direct dependents (1 hop)
+minigraf_query(datalog="[:find ?desc :where [?svc :depends-on :dependency/key-store] [?svc :description ?desc]]")
+
+# 2-hop: also find services that depend on those services
+minigraf_query(datalog="""[:find ?desc
+                          :where [?mid :depends-on :dependency/key-store]
+                                 [?svc :depends-on ?mid]
+                                 [?svc :description ?desc]]""")
+```
+
+For unbounded transitive traversal, register the recursive clause first. The base clause
+`[(reachable ?a ?b) [?a :depends-on ?b]]` is already in `SESSION_RULES`, so only the
+recursive one is missing — clauses accumulate under the name rather than replacing it:
+```python
+# Register once per server session
+minigraf_rule(rule="[(reachable ?a ?b) [?a :depends-on ?m] (reachable ?m ?b)]")
+
+# Then query — finds all transitive dependents at any depth
+minigraf_query(datalog="[:find ?desc :where (reachable ?svc :dependency/key-store) [?svc :description ?desc]]")
+```
+
+`linked` already unifies `:depends-on`, `:calls` and `:contains` for a single hop, so
+scanning across mixed relationships needs no registration at all:
+```python
+minigraf_query(datalog="""[:find ?desc
+                          :where (linked :dependency/auth-service ?svc)
+                                 [?svc :description ?desc]]""")
+```
+
+### Find all entities of a given type
+```python
+# All dependencies/components
+minigraf_query(datalog="[:find ?desc :where [?e :entity-type :type/dependency] [?e :description ?desc]]")
+
+# All constraints that govern the auth service
+minigraf_query(datalog="""[:find ?desc
+                          :where [?c :governs :dependency/auth-service]
+                                 [?c :description ?desc]]""")
+```
+
+### Retrieving facts for a known entity
+```python
+minigraf_query(datalog="[:find ?a ?v :where [:decision/api-layer ?a ?v]]")
+# Returns: :description "use FastAPI over Flask", :rationale "async support..."
+```
+
+### Searching memory by content (entity ident unknown)
+User: "What did we decide about Redis?"
+```python
+minigraf_query(datalog='[:find ?e ?a ?v :where [?e ?a ?v] (contains? ?v "Redis")]')
+# Finds any stored fact whose value mentions Redis
+```
+
+### Querying before modifying code
+User: "Add connection pooling to the DB layer."
+```python
+result = minigraf_query(datalog="[:find ?e ?a ?v :where [?e ?a ?v]]")
+# Scan results for any DB-related decisions before touching anything
+```
+
+### Handling empty memory
+User: "What database did we decide on?"
+```python
+result = minigraf_query(datalog="[:find ?a ?v :where [:decision/postgres ?a ?v]]")
+# result["results"] == []
+```
+Response: "Let me check memory... Memory doesn't have anything recorded about a database choice. If you share the decision, I'll store it for future sessions."
+
+### Surfacing a constraint conflict
+User: "Help me set up a MySQL connection."
+```python
+result = minigraf_query(datalog="[:find ?e ?a ?v :where [?e ?a ?v]]")
+# Finds [:decision/postgres :description "PostgreSQL 15 — primary database"]
+```
+Response: "Before we proceed — memory shows we're using PostgreSQL 15 as the primary database. Is this a new secondary database, or has the decision changed? If it's changed, I'll update memory to reflect that."
+
+### Storing a preference with context
+User: "I hate mocks in DB tests — we got burned when mocked tests passed but the migration failed."
+```python
+minigraf_transact(
+    facts="""[[:preference/no-db-mocks :description "always use real database connections in tests"]
+              [:preference/no-db-mocks :rationale "mock/prod divergence caused silent migration failure"]]""",
+    reason="Strong team preference — backed by production incident")
+```
+
+### Changing a decision — retraction with preserved history
+User: "We're dropping PostgreSQL, switching to CockroachDB for geo-distribution."
+
+```python
+# 1. Check what's currently stored
+result = minigraf_query(datalog="[:find ?a ?v :where [:decision/db ?a ?v]]")
+# → :description "PostgreSQL 15 — primary database", :rationale "ACID + JSON support"
+
+# 2. Close the old facts (the default mode) — they leave the current view, but
+#    :valid-at queries for while they applied still return them
+minigraf_retract(
+    facts="""[[:decision/db :description "PostgreSQL 15 — primary database"]
+              [:decision/db :rationale "ACID + JSON support"]]""",
+    reason="Switching to CockroachDB for geo-distribution")
+
+# 3. Store the new decision
+minigraf_transact(
+    facts="""[[:decision/db :description "CockroachDB — primary database"]
+              [:decision/db :rationale "geo-distribution requirement"]]""",
+    reason="Switching to CockroachDB for geo-distribution")
+
+# 4. Old decision is still in history — what was the database last month?
+minigraf_query(datalog='[:find ?desc :valid-at "2026-08-01" :where [:decision/db :description ?desc]]')
+# → "PostgreSQL 15 — primary database"
+# ...and what had we written down as of transaction 3?
+minigraf_query(datalog="[:find ?desc :as-of 3 :where [:decision/db :description ?desc]]")
+# → "PostgreSQL 15 — primary database"
+```
+
+If the switch happened on a known earlier date, pass the same `valid_at` to
+step 2's `minigraf_retract` and step 3's `minigraf_transact`: the old decision's
+window then ends, and the new one's begins, on that date — so
+`[:find ?desc :valid-at "<date>" ...]` answers "which database had we chosen
+on that day?" correctly, not just "what had we written down by then?".
+
+This is the key difference from a simple key-value store: changing your mind doesn't erase the record. The agent can always reconstruct what was decided and when.
+
+## Error Responses
+
+All tools return `{"ok": bool, ...}`. Common errors:
+- `minigraf not found` — run `python install.py --harness claude-code`
+- `No graph file at <path>` — call `minigraf_transact` first
+- `as_of requires :as-of clause` — include `:as-of N` in query
+- `reason is required for all writes` — provide non-empty reason
+- `no live fact matches [...]` (retract) — the default mode closes only facts that are currently live; check the exact value with `minigraf_query`, or use `mode="correct"` for a fact that is not live
+
+`minigraf_transact`/`minigraf_retract` may return `{"ok": true, ..., "warning": "..."}` if the write itself succeeded but a subsequent internal checkpoint failed (e.g. a disk/permissions error). The fact is durably written — do not retry, since a retry uses a fresh timestamp and creates a duplicate.
+
+If an error persists after checking syntax and installation, use `minigraf_report_issue` to file a structured bug report with the failing query and error message:
+
+```python
+minigraf_report_issue(issue_type="parse_error",
+                      description="query returns unexpected output",
+                      datalog="[:find ?x :where [?e :a ?x]]",
+                      error="<error text from result['error']>")
+```
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `mcp_server.py` | Persistent MCP server — the primary and only runtime interface to the graph |
+| `fact_index.py` | SQLite FTS5 fact index — powers `memory_prepare_turn` retrieval, and is the graph's only independent witness |
+| `frontier_registry.py` | Per-position claim registry for the two ingestion streams |
+| `report_issue.py` | GitHub issue reporter for errors |
+| `install.py` | Setup script (`--harness claude-code`, `opencode`, or `codex`) |
+| `uninstall.py` | Removes what `install.py` wrote |
+| `hooks/claude-code.json` | Claude Code settings fragment (MCP server + auto-memory hooks) |
+| `hooks/prepare_hook.py` | UserPromptSubmit hook script for Claude Code |
+| `hooks/finalize_hook.py` | Stop hook script for Claude Code |
+| `hooks/codex_hook.py` | Codex prepare/finalize adapter; shares MCP settings and reads Codex transcripts |
+| `hooks/opencode.json` | OpenCode MCP config (degraded mode — no hook support yet) |
+| `hooks/openclaw.json` | OpenClaw MCP config (degraded mode — issue #28596) |
+| `hooks/codex.toml` | Codex MCP + UserPromptSubmit/Stop hook configuration template |
+| `hooks/hermes.yaml` | Hermes MCP config with commented hook stubs |
+| `skill.json` | Portable skill manifest — mirrors `plugin.json` and `pyproject.toml` |
+| `tools/*.json` | Portable copies of the ten tool schemas, generated from `mcp_server._TOOLS` |
+| `ROADMAP.md` | Project roadmap |
+
+There is no `minigraf.py` and no `from minigraf import query, transact` — that
+import never worked, and the examples above are MCP tool calls, as described under
+["How you call these"](#the-core-idea). The installed `minigraf` package exports
+`MiniGrafDb`, `MiniGrafError` and `minigraf_ffi`, and nothing else; to read a graph
+outside the server, open a `MiniGrafDb` directly, subject to the single-handle
+invariant (at most one live handle per process).

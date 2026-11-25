@@ -1,0 +1,134 @@
+---
+name: social-media-post
+description: Create, schedule, and manage social media posts using PostFast. Use when the user wants to publish, schedule, or manage posts on Facebook, Instagram, X (Twitter), TikTok, LinkedIn, YouTube, BlueSky, Threads, Pinterest, Telegram, or Google Business Profile.
+---
+
+# Social Media Post via PostFast
+
+You have access to PostFast MCP tools for social media scheduling and management.
+
+## Setup Check
+
+If any PostFast tool call fails with an authentication/401 error, tell the user:
+1. Go to https://app.postfa.st/dashboard, click **API** in the sidebar, and generate a key
+2. Set the `POSTFAST_API_KEY` environment variable with the key
+
+## Posting Workflow
+
+1. **List accounts** — Call `list_accounts` to see connected social media accounts. Each account has an `id`, `platform`, `platformUsername`, `displayName`, and a `connectionStatus` (`CONNECTED` or `DISABLED`) with an optional `disabledReason`. If `connectionStatus` is `DISABLED`, the account won't publish until the user reconnects it — warn the user and don't schedule to it.
+
+2. **Prepare media** (if needed) — If the user has images or videos to attach:
+   - Use `upload_media` with the local file path — it handles getting a signed URL, uploading, and returning a `key` and `type` (IMAGE or VIDEO)
+   - Supported formats: JPEG, PNG, GIF, WebP (images), MP4, WebM, MOV (video)
+   - Size limits: 10MB images, 250MB video, 60MB documents (PDF/DOC/DOCX/PPT/PPTX)
+   - YouTube captions: upload the `.srt` or `.vtt` file the same way. It comes back with type `CAPTION`; its key goes in `controls.youtubeCaptionKey` (see YouTube below), never in `mediaItems`
+   - LinkedIn documents: upload the `.pdf`, `.doc`, `.docx`, `.ppt` or `.pptx` file the same way. It comes back with type `DOCUMENT`; its key goes in `controls.linkedinAttachmentKey` (see LinkedIn below), never in `mediaItems`
+
+3. **Create posts** — Call `create_posts` with:
+   - `socialMediaId`: account ID from step 1
+   - `content`: the post text/caption
+   - `scheduledAt`: ISO 8601 datetime (required unless status is DRAFT)
+   - `mediaItems`: array of `{key, type, sortOrder}` from uploaded media
+   - `status`: SCHEDULED (default) or DRAFT
+   - `firstComment`: optional first comment text, posted automatically after publishing (supported on X, Instagram, Facebook, YouTube, Threads, and TikTok — TikTok: max 1,200 chars)
+   - `controls`: platform-specific settings (see below)
+   - You can batch up to 15 posts in a single call — great for content calendars
+   - Don't schedule to a `DISABLED` account — the API rejects it with HTTP 400 `socialMediaDisconnected`. Saving as DRAFT is still allowed. Check `connectionStatus` from step 1 first.
+
+4. **Confirm** — Show the user a summary: which accounts, what content, when scheduled.
+
+## Platform-Specific Controls
+
+### X (Twitter)
+- `xRetweetUrl`: URL of tweet to retweet (ignores content/media)
+
+### Instagram
+- `instagramPublishType`: TIMELINE (default), STORY, or REEL
+- `instagramTrialReelStrategy`: MANUAL or SS_PERFORMANCE — publishes a trial reel, shown only to non-followers until it graduates. MANUAL = the user graduates it in the Instagram app; SS_PERFORMANCE = Instagram graduates it automatically if it performs well. Requires `instagramPublishType: REEL` and can't be combined with `instagramCollaborators` (both rejected with HTTP 400 at create time). Omit for a normal reel
+- `instagramPostToGrid`: boolean, default true (for Reels)
+- `instagramCollaborators`: array of usernames to invite as collaborators
+- `instagramIsAiGenerated`: boolean, default false — adds Instagram's "AI info" label. Covers images, reels, stories and carousels (on a carousel it labels the whole post, not individual slides). Set at creation only; the label can't be added or removed after publishing
+
+### Facebook
+- `facebookContentType`: POST (default), REEL, or STORY
+  - POST: up to 10 photos OR 1 video
+  - REEL: 1 video only
+  - STORY: 1 image OR 1 video
+- `facebookReelsCollaborators`: array of usernames (for Reels)
+
+### TikTok
+- `tiktokPrivacy`: **deprecated** — don't rely on it to choose who sees a post; to post privately, send a draft (`tiktokIsDraft: true`), whose audience is picked when it is finished in the TikTok app
+- `tiktokIsDraft`: boolean, default false — sends the post to the account's TikTok inbox as a draft, to finish and post in the TikTok app. TikTok drops the caption, hashtags and post settings of a video draft (they are added when finishing it); a photo draft keeps its title and caption
+- `tiktokAllowComments`: boolean, default true
+- `tiktokAllowDuet`: boolean, default true
+- `tiktokAllowStitch`: boolean, default true
+- `tiktokBrandOrganic`: boolean, default false
+- `tiktokBrandContent`: boolean, default false
+- `tiktokAutoAddMusic`: boolean, default false (let TikTok add a recommended sound — photo/carousel posts only, ignored on videos; mutually exclusive with `tiktokMusicSoundId`)
+- `tiktokIsAigc`: boolean, default false (declare the post as AI-generated content — videos and photo posts)
+- `tiktokTitle`: title for photo posts (max 90 chars; photo posts only) — when set, the full content becomes the description; without it, content auto-splits on the first newline into title + description
+- `tiktokMusicSoundId` + `tiktokMusicSoundName`: attach a pre-cleared Commercial Music Library sound to a photo, carousel or video post — find sounds with `list_tiktok_sounds` (the list rotates daily). On video the sound plays at 50% volume over the video's original audio at 50%, like the TikTok app; there are no volume or trim controls. Mutually exclusive with `tiktokAutoAddMusic`; not applied when `tiktokIsDraft` is true. Always set the name alongside the id
+
+### YouTube
+- `youtubeTitle`: defaults to first 100 chars of content
+- `youtubePrivacy`: PUBLIC (default), PRIVATE, or UNLISTED
+- `youtubeTags`: array of tag strings
+- `youtubeCategoryId`: YouTube category ID
+- `youtubeIsShort`: boolean, default true
+- `youtubeMadeForKids`: boolean, default false (COPPA compliance)
+- `youtubeContainsSyntheticMedia`: boolean, default false — discloses that the video contains realistic altered or synthetic (AI) content. Sent to YouTube only when true; set at creation only
+- `youtubePlaylistId`: playlist ID (use `list_youtube_playlists` to find it)
+- `youtubeThumbnailKey`: S3 media key for custom video thumbnail (upload via `upload_media` or `get_upload_urls`; JPEG or PNG, up to 10 MB, at least 640 px wide, 16:9 at 1280x720 or larger; requires phone-verified YouTube channel)
+- `youtubeLanguage`: the video's language as a BCP-47 code (`en`, `en-GB`, `es`, `es-419`, `fr-CA`, `pt-BR`, `zh-Hans`, …). Sets both the video language (what is spoken) and the title and description language on YouTube, and is the language of the captions. An unknown code is rejected
+- `youtubeCaptionKey`: the key of an uploaded `.srt` or `.vtt` caption file (upload it with `upload_media` before creating the post), added as the video's caption track in `youtubeLanguage`, which it requires. One caption track per post. The file must be a timed SRT or WebVTT file in plain UTF-8, max 10MB; a transcript without timings doesn't work. YouTube's automatic captions stay listed separately as "(auto-generated)". If adding the captions fails, the video still publishes without them
+- Controls apply to every post in a `create_posts` call, so videos in different languages, each with its own caption file, need one call per video
+
+### Pinterest
+- `pinterestBoardId`: **required** — use `list_pinterest_boards` to get the `boardId`
+- `pinterestLink`: destination URL when pin is clicked
+- Content is parsed as: first line = pin title (max 100 chars), remaining lines = description (max 800 chars)
+- Carousel: 2-5 static images (no videos)
+
+### Google Business Profile
+- `gbpLocationId`: **required** — use `list_gbp_locations` to get the `locationId`
+- `gbpTopicType`: STANDARD (default), EVENT, or OFFER
+- `gbpCallToActionType`: BOOK, ORDER, LEARN_MORE, SIGN_UP, CALL, or SHOP
+- `gbpCallToActionUrl`: URL for the CTA button (not needed for CALL, ignored for OFFER)
+- `gbpEventTitle`: title for EVENT/OFFER posts (max 58 chars)
+- `gbpEventStartDate`: start date (ISO 8601, required for EVENT/OFFER)
+- `gbpEventEndDate`: end date (ISO 8601, required for EVENT/OFFER)
+- `gbpOfferCouponCode`: coupon code (OFFER only)
+- `gbpOfferRedeemUrl`: redemption URL (OFFER only)
+- `gbpOfferTerms`: terms and conditions (OFFER only)
+- Content max: 1,500 chars. Media: optional, at most 1 image, no video. Standard posts expire after 6 months; EVENT/OFFER posts expire at end date.
+
+### LinkedIn
+- `linkedinAttachmentKey`: the key of an uploaded PDF, Word or PowerPoint file (upload it with `upload_media` before creating the post; type `DOCUMENT`), shown in the post as pages readers swipe through
+- `linkedinAttachmentTitle`: the document's title (default "Document"); set it whenever you attach a document
+- Cannot mix documents with regular image/video media
+- Supported document formats: PDF, DOC, DOCX, PPT, PPTX (max 60MB)
+
+### Threads
+- `threadsTopicTag`: the post's Threads topic — one topic, not a list; 1-50 characters, no `.` or `&`. Takes precedence over a #hashtag in the content, which then stays plain text. Ignored on other platforms. Like every control it applies to every post in the call, so use separate `create_posts` calls for Threads posts with different topics
+
+## Other Actions
+
+- **View posts**: `list_posts` — filter by `platforms` (comma-separated), accounts (`socialMediaIds`, the `id`s from `list_accounts`, max 100), `statuses` (DRAFT, SCHEDULED, PUBLISHED, FAILED), `from`/`to` dates, with pagination (`page`, `limit` up to 50). Failed or missed posts include a `lastError` with a `code` — e.g. `MISSED_DISCONNECTED` (the account was disconnected when the post was due) or `MISSED_NOT_PUBLISHED` (missed its slot by more than the 2h grace window). Each post also carries `controls` — `threadsTopicTag`, `instagramPublishType`, `facebookContentType`, `tiktokIsDraft`, `youtubePrivacy`, each null when unset. Read only the field for the post's own platform (its account's platform in `list_accounts`): posts created through the API store every platform's defaults, so the others can be non-null
+- **Post analytics**: `get_post_analytics` — fetch published posts with performance metrics. Requires `startDate` and `endDate` (ISO 8601). Optional filters: `platforms`, `socialMediaIds`. Returns impressions, reach, likes, comments, shares, totalInteractions, plus an `extras` object with platform-specific metrics. Supported: Instagram, Facebook, TikTok, Threads, YouTube, LinkedIn (company pages), Pinterest (Business accounts). Pinterest `extras` include `pin_clicks`, `outbound_clicks`, `saves_90d`, `save_rate_90d`; video pins also surface `mrc_views`, `views_10s`, `avg_watch_time`, `v50_watch_time`, `video_starts`, `quartile_95_views`. Video posts also include normalized watch-time on `latestMetric`: `avgWatchTimeSeconds`, `totalWatchTimeSeconds`, `videoViews` (Facebook, Instagram Reels, YouTube, Pinterest, LinkedIn company pages, TikTok); Instagram posts also include `saveRate` on `latestMetric` (saves / reach as a percentage, rounded to 2 decimals; feed posts, reels, and carousels), and Instagram Reels additionally include `reelsSkipRate` (percentage of viewers who skipped the reel in the first 3 seconds, rounded to 2 decimals; may be absent on low-view reels or until metrics refresh); TikTok also exposes `total_time_watched`, `average_time_watched`, and `full_video_watched_rate` in `metric.extras`. Note: LinkedIn personal accounts are excluded; Pinterest saves are reported as a rolling 90-day window because Pinterest's API does not expose lifetime save totals (all other Pinterest metrics are lifetime); `latestMetric` is null if metrics haven't been fetched yet; metric values are strings (bigint). Keep date ranges reasonable as there's no pagination.
+- **Follower history**: `get_follower_history` — daily follower-count snapshots for one account (`socialMediaId`), plus `currentFollowerCount` and a signed `delta` over the range. Optional `from`/`to` (ISO 8601); defaults to the last 90 days, capped at 365. Tracking is forward-only — `trackingStartedAt` marks when recording began, with no data before it; counts are strings (bigint). Coverage: Facebook Pages, Instagram, YouTube, Pinterest, Threads, Bluesky, Telegram, LinkedIn company pages, and TikTok (not X or personal Facebook)
+- **Delete posts**: `delete_post` with the post ID, or `delete_posts` with up to 100 post IDs in one call (it returns `deletedIds` and `notFoundIds`). Both remove posts from PostFast only: an already-published post stays live on the platform
+- **Connect new accounts**: `generate_connect_link` — creates a secure URL to share with clients/collaborators to connect their accounts. Set `expiryDays` (1-30) and optionally `sendEmail` with an `email` address. For a link your own product opens, `skipConnectPage` with exactly one entry in `platforms` sends the user straight to the platform's login and back to `redirectUrl`, without the PostFast connect page (not with `sendEmail`)
+- **Pinterest boards**: `list_pinterest_boards` — get board IDs before creating Pinterest posts
+- **YouTube playlists**: `list_youtube_playlists` — get playlist IDs for adding videos to playlists
+- **GBP locations**: `list_gbp_locations` — get location IDs before creating Google Business Profile posts
+
+## Tips
+
+- Always confirm schedule time and target accounts with the user before creating posts.
+- If `list_accounts` shows an account as `DISABLED`, tell the user to reconnect it before scheduling — scheduled posts to disconnected accounts are rejected, and posts already due get marked missed.
+- For content calendars, batch multiple posts in one `create_posts` call (up to 15).
+- When posting to Pinterest, always fetch boards first — `pinterestBoardId` is required.
+- When posting to Google Business Profile, always fetch locations first — `gbpLocationId` is required.
+- Use DRAFT status if the user wants to review posts in the PostFast dashboard before they go live.
+- The `firstComment` feature is useful for adding hashtags on Instagram without cluttering the caption.
+- For AI-generated media, set the disclosure control for that platform: `instagramIsAiGenerated`, `youtubeContainsSyntheticMedia`, or `tiktokIsAigc`. All three are set at creation time only — there's no way to add or remove the label after publishing, so ask before scheduling. The other platforms expose no AI flag.

@@ -1,0 +1,355 @@
+---
+name: paid-media-ops
+description: "Full-funnel paid advertising operations for B2B SaaS. Use for PPC, Google Ads, AI Max for Search, LinkedIn Ads, Reddit Ads, programmatic, creative strategy, attribution, budget allocation and pacing, what to cut when budgets freeze, audience overlap, sponsorships and content syndication, paid review-site listings, ads in AI Overviews and ChatGPT Ads, offline conversion import from the CRM, conversion tracking, connected TV, and Thought Leader Ads. Also triggers on: ROAS, CPA, ad spend, why did our Google Ads CPA go up, Meta placement controls, can't exclude Audience Network, should we turn on AI Max, our ads are landing on the careers page, conversions stopped, our paid leads are junk, Google Ads is optimizing for the wrong leads, enhanced conversions for leads, LinkedIn Conversions API, value-based bidding, should we run CTV, boost an employee's post, newsletter sponsorship, G2 paid listing, are our campaigns competing with each other, should we advertise on ChatGPT."
+---
+
+# Paid Media Operations Skill
+
+## Step 0 (always first): Load brand context
+
+**Before producing any deliverable, look for a `brand-context.md` file** in the user's project root (also check `./.claude/brand-context.md` and `./docs/brand-context.md`). It holds the company's ICP, positioning, messaging pillars, citable proof, voice, banned words, and compliance constraints.
+
+- **If it exists:** read it in full and treat it as binding for this run. Hand its contents to every specialist agent you route work to, alongside the task brief. Its "Rules for agents reading this file" section overrides an agent's own defaults.
+- **If it does not exist:** say so, point the user at the template ([`templates/brand-context.md`](../../templates/brand-context.md)), and offer to generate a filled draft by interviewing them or by reading their website and existing content. Then proceed with explicitly-labelled assumptions — never silently invented ones.
+
+**Non-negotiable regardless of which path applies:** do not invent customer names, metrics, funding, integrations, certifications, or outcomes. Only proof recorded in `brand-context.md` (or supplied directly in the request) may be used as fact. Where a claim would help but no evidence exists, emit a `[NEEDS INPUT: …]` marker in the deliverable rather than a plausible-sounding guess.
+
+---
+
+## What This Is
+
+The Paid Media Operations skill brings together 8 specialized agents to manage end-to-end paid advertising for B2B SaaS companies. From strategic budget allocation and campaign setup to daily optimization, creative strategy, and attribution analysis, this team handles Google Ads, LinkedIn Ads, social advertising, programmatic buying, the conversion signal the bidding algorithms learn from, and the media bought directly from publishers — newsletter, podcast and community sponsorships, paid review-site listings, and pay-per-lead content syndication. This skill enables you to achieve predictable cost-per-acquisition, maximize return on ad spend (ROAS), and scale acquisition channels with confidence.
+
+## The Team: 8 Specialist Agents
+
+| # | Agent | File | What They Do |
+|---|-------|------|-------------|
+| 1 | PPC Strategist | `agents/paid-media-ppc-strategist.md` | Designs Google Ads account structure, campaign strategy, keyword lists, bidding strategies, and ad copy. Manages account setup, optimization, and ongoing QA. Handles search and Shopping campaigns. Decides AI Max for Search one feature at a time, with a URL exclusion list before final URL expansion. Reconciles every budget-limited Target CPA and Target ROAS campaign after Google's August 2026 bidding change. Owns the AI answer surface: the AI Overviews and AI Mode placements the account already serves into unreportably, and ChatGPT Ads and Copilot as separate opt-in platforms. |
+| 2 | Budget Optimizer | `agents/paid-media-budget-optimizer.md` | Analyzes spend patterns, identifies underperforming campaigns, reallocates budget to high-ROAS channels, models growth scenarios, and forecasts revenue impact of budget changes. Reconciles planned against delivered spend before fitting any curve, and maps audience collision across the portfolio — which of your own campaigns are taking each other's audience, the assignment order and exclusions that resolve it, the suppression register, and cross-channel frequency on one buying committee. When the budget is cut, builds the Budget Cut Plan: capture vs. creation lag profiles measured on your own cohorts, cuts along the marginal-return curve after a closed-won and assisted-influence check, a floor sized to the restart cost, a cover plan that prints its shortfall, and a reversal trigger |
+| 3 | Creative Strategist | `agents/paid-media-creative-strategist.md` | Develops ad creative strategy across visual, copy, and messaging. Creates landing page concepts, A/B test plans, and creative hypotheses. Keeps a concept library and gap map so Meta Advantage+ gets distinct concepts (buyer, situation, promise, proof) rather than near-duplicate variants, and briefs creator-made ad creative. Directs copywriter and designer resources. |
+| 4 | Social Ads Specialist | `agents/paid-media-social-ads-specialist.md` | Manages Facebook, Instagram, LinkedIn, Twitter and Reddit advertising. On Reddit it gates spend on listening evidence, keeps community and keyword ad groups apart, sets automated targeting deliberately and staffs the comment thread. Develops audience targeting strategies, lookalike and custom audiences, and social-specific creative optimization. Runs Thought Leader Ads and Meta partnership ads on a paid-usage term and an end-date register. Audits Meta placements now that Sales and Leads campaigns lost ad-set placement controls: account controls, value rules and the soft opt-out, each set from CRM opportunity rate by placement. |
+| 5 | Programmatic Buyer | `agents/paid-media-programmatic-buyer.md` | Manages programmatic display, audio, and video campaigns across exchanges and DMPs. Handles audience segmentation, bid strategies, and brand safety controls. Gates connected TV (CTV) buys: the account-claim mechanism, SSAI fraud questions, Programmatic Guaranteed deals and a holdout before spend. |
+| 6 | Attribution Analyst | `agents/paid-media-attribution-analyst.md` | Models multi-touch attribution, analyzes conversion paths, tracks CPA by channel and campaign, and reports true ROAS. Identifies attribution data gaps and improves measurement. |
+| 7 | Sponsorship & Syndication Buyer | `agents/paid-media-sponsorship-syndication-buyer.md` | Buys the media no auction sells: newsletter, podcast and community sponsorships, industry-publication placements, paid review-site listings (G2, Capterra, TrustRadius, Software Advice), LinkedIn BrandLink pre-roll and show sponsorships, and pay-per-lead content syndication. Qualifies the outlet before the price, writes the insertion order that names delivery, reporting and remedy, and reconciles what ran against what was sold. |
+| 8 | Conversion Signal Engineer | `agents/paid-media-conversion-signal-engineer.md` | Owns what the bidders learn from. Designs the signal ladder (lead → SQL → opportunity → closed-won), picks the primary bidding event each platform's upload clock can still receive, captures and carries click IDs (gclid, msclkid, li_fat_id, Meta lead_id) onto CRM records, and runs offline conversion import, enhanced conversions for leads and the LinkedIn Conversions API with stage values, dedupe, consent signals and retractions — proved by a signal health report. |
+
+## How to Use
+
+### Routing User Requests
+
+**Google Ads & Search Campaigns**
+- "Set up a Google Ads account from scratch" → PPC Strategist
+- "Build keyword lists and campaign structure for [product/market]" → PPC Strategist
+- "Our Google Ads CPA is too high—how do we optimize?" → Budget Optimizer + PPC Strategist + Creative Strategist
+- "Which keywords are wasting budget?" → PPC Strategist + Attribution Analyst
+- "Scale our search budget while maintaining ROAS" → Budget Optimizer + PPC Strategist
+- "Our Google Ads CPA went up since August / our capped campaign stopped beating its target" → PPC Strategist (Target Reconciliation: since 17 August 2026 budget-limited Target CPA and Target ROAS campaigns deliver toward the stated target, so check that gap before blaming creative or competition) + Budget Optimizer (any budget move)
+- "Should we turn on AI Max? / Our Google ads are landing on the careers page" → PPC Strategist (three features, three verdicts: write URL exclusions before final URL expansion, keep it off where pinned assets carry a required claim, and judge the experiment on CRM-qualified leads)
+- "Are our ads showing in AI Overviews, and how are they performing?" → PPC Strategist (you already serve into them; there is no opt-out, no placement targeting and no segmented reporting, so the honest answer is a refused claim plus the aggregate drift to watch)
+- "Should we advertise on ChatGPT?" → PPC Strategist (reachability gate first: ads serve to Free and Go plans only, never Business or Enterprise seats, so the answer usually turns on whether your ICP is on a company-provisioned account)
+- "Can we pay to be recommended inside the AI answer?" → PPC Strategist (no — advertisers cannot shape the response; that is organic answer-engine work, routed to the SEO & Growth skill's AI Search Optimizer)
+- "Our ChatGPT ad will not serve / the landing page failed review" → PPC Strategist + SEO & Growth (Technical SEO Auditor) — the ads crawler must reach the exact landing-page path through robots.txt, WAF and bot mitigation
+- "Upload our target-account list to ChatGPT Ads" → PPC Strategist (inclusion audiences need at least 25,000 matched users, which a B2B account list will not clear; exclusions work at small sizes, so suppress customers and open opportunities instead)
+
+**Conversion Signal (what the bidders learn from)**
+- "Our paid leads are junk / Google Ads finds people who never become pipeline" → Conversion Signal Engineer + PPC Strategist
+- "Send our CRM stages back to Google Ads / LinkedIn / Meta" → Conversion Signal Engineer
+- "Google Ads shows spend but zero conversions / conversions stopped / we're double counting" → Conversion Signal Engineer (*The Bottom Rung*: success hook, test conversion, symptom triage)
+- "Our LinkedIn CAPI match rate is low" → Conversion Signal Engineer (check click-ID capture before anything else)
+- "Should we switch bidding from form fills to SQLs?" → Conversion Signal Engineer (signal ladder and clock fit) + PPC Strategist (bid strategy, Tier 3 approval)
+
+**Social & LinkedIn Advertising**
+- "Set up LinkedIn Ads to reach [target persona]" → Social Ads Specialist
+- "Develop a LinkedIn thought leadership campaign" → Creative Strategist + Social Ads Specialist
+- "Can we boost our CEO's (or a creator's) LinkedIn post as an ad?" → Social Ads Specialist (Thought Leader Ads, end-date register) + B2B Influencer & Creator Partnerships Manager (paid-usage clause)
+- "Should we run Reddit Ads for our developer audience?" → Social Ads Specialist (Reddit go/no-go, automated targeting, comment owner) + Reddit Community Specialist (which subreddits buyers actually use)
+- "Our Facebook ads CPA increased—diagnose and fix" → Social Ads Specialist + Creative Strategist
+- "We can't exclude Audience Network on our Meta lead campaign anymore" → Social Ads Specialist (account controls, placement value rules, soft opt-out, placement breakdown read against CRM opportunity rate)
+- "Build audience targeting strategy for [product tier]" → Social Ads Specialist
+- "Create lookalike audiences from our best customers" → Social Ads Specialist + Attribution Analyst
+
+**Programmatic & Display Advertising**
+- "Launch a programmatic display campaign" → Programmatic Buyer
+- "Target industry professionals with audio/display ads" → Programmatic Buyer
+- "Set up brand safety controls for programmatic" → Programmatic Buyer
+- "Run retargeting campaigns across display network" → Programmatic Buyer
+
+**Sponsorships, Syndication & Review Listings**
+- "Should we sponsor [newsletter/podcast/community]—and what is it actually worth?" → Sponsorship & Syndication Buyer
+- "They sent a media kit and a rate card—review it before we sign" → Sponsorship & Syndication Buyer
+- "Set up a content syndication program / our syndicated leads are junk" → Sponsorship & Syndication Buyer + Attribution Analyst
+- "Should we buy a paid G2 or Capterra category placement?" → Sponsorship & Syndication Buyer
+- "LinkedIn offered us BrandLink pre-roll or a show sponsorship—is it worth it?" → Sponsorship & Syndication Buyer + Social Ads Specialist
+- "Our newsletter sponsorship didn't work—did we even measure it?" → Sponsorship & Syndication Buyer + Attribution Analyst
+
+**Creative Strategy & Testing**
+- "Develop creative strategy for [campaign/product]" → Creative Strategist
+- "Design an A/B test plan for ad variations" → Creative Strategist
+- "Our ads aren't converting—what should we test?" → Creative Strategist + Social Ads Specialist
+- "Create messaging angles for different buyer personas" → Creative Strategist
+
+**Budget & Reporting**
+- "How should we allocate our $50K monthly ad budget?" → Budget Optimizer + Attribution Analyst
+- "Which channels are most profitable?" → Attribution Analyst
+- "Build a dashboard to track ROAS by campaign/channel" → Attribution Analyst
+- "Forecast revenue if we increase ad spend by [amount]" → Budget Optimizer + Attribution Analyst
+- "What's our true customer acquisition cost?" → Attribution Analyst
+
+**Full Funnel Coordination**
+- "Build a complete paid advertising strategy" → PPC Strategist (search) + Social Ads Specialist (mid-funnel) + Creative Strategist (messaging) + Budget Optimizer (allocation) + Attribution Analyst (measurement)
+- "Rebalance budget across all channels" → Budget Optimizer + Attribution Analyst + all channel specialists
+- "Are our campaigns competing with each other / bidding against ourselves?" → Budget Optimizer + Social Ads Specialist (in-platform audiences) + PPC Strategist (keywords)
+- "We underspent the budget — is the audience exhausted or are we colliding with ourselves?" → Budget Optimizer
+- "Build the suppression list — customers, open opps, competitors" → Budget Optimizer + Attribution Analyst
+- "How often is one buying committee seeing us across all channels?" → Budget Optimizer + Programmatic Media Buyer
+- "Our marketing budget is being cut 30% — what do we cut and what does it cost us?" → Budget Optimizer + Attribution Analyst (assisted influence) + Brand & Demand Strategist (capture/creation split)
+- "Launch integrated campaign across Google + LinkedIn + Facebook" → All agents coordinate
+
+### Execution Model
+
+**Phase 1: Strategy & Planning**
+1. **Define Advertising Goals**
+   - Target CPA or ROAS goal
+   - Expected monthly budget and runway
+   - Funnel stage focus (awareness, consideration, decision, retention)
+   - Revenue impact (bookings, ARR, customer count)
+
+2. **Audience & Market Analysis**
+   - Define target personas (title, company size, industry, pain point)
+   - Identify addressable market (TAM and current penetration)
+   - Competitive landscape (who else is advertising, messaging, bids)
+   - Seasonality and demand patterns
+
+3. **Channel Selection & Allocation**
+   - Budget Optimizer: Recommends channel mix (search vs. social vs. display)
+   - Attribution Analyst: Models expected ROAS by channel
+   - Preliminary budget allocation by channel and quarter
+   - Key performance targets (CPA, CAC, LTV ratio)
+
+4. **Creative & Messaging Strategy**
+   - Creative Strategist: Develops 3-5 core messaging angles
+   - Identify landing page concepts and conversion optimization
+   - Competitor creative benchmarking
+   - A/B test plan for creative variations
+
+**Phase 2: Campaign Setup & Launch**
+1. **Search (Google Ads)**
+   - PPC Strategist: Account structure (campaigns, ad groups, keywords)
+   - Keyword list development (brand, category, competitor, long-tail)
+   - Ad copy writing (headlines, descriptions, extensions)
+   - Landing page alignment and UTM tracking
+   - Bid strategy selection (Target CPA, Target ROAS, Manual CPC)
+
+2. **Social (LinkedIn, Facebook, Instagram, Twitter)**
+   - Social Ads Specialist: Account and campaign setup
+   - Audience segmentation (job titles, company size, interests, lookalikes)
+   - Ad copy and creative specifications
+   - Landing pages or lead form configuration
+   - Pixel/conversion tracking implementation
+
+3. **Programmatic (Display, Audio, Video)**
+   - Programmatic Buyer: Exchange/platform selection (Google DV360, Adobe, others)
+   - Audience list building and DMP integration
+   - Creative asset specifications and upload
+   - Brand safety settings and placement exclusions
+   - Bid strategy and pacing configuration
+
+4. **Attribution & Measurement**
+   - Attribution Analyst: Configure tracking (UTM parameters, pixel setup, CRM integration)
+   - Define conversion events (form submit, demo request, trial signup, closed won)
+   - Attribution model selection (first-touch, last-touch, data-driven)
+   - Dashboard setup for real-time monitoring
+
+**Phase 3: Optimization & Scaling**
+1. **Daily/Weekly Optimization**
+   - PPC Strategist: Pause underperforming keywords, adjust bids on high-performers
+   - Social Ads Specialist: Monitor frequency, adjust audience targeting, read the placement breakdown (on Meta Sales and Leads, placements are excluded at the account or suppressed with value rules, not switched off per ad set)
+   - Programmatic Buyer: Adjust bids, update audience exclusions, pause underperforming placements
+   - Attribution Analyst: Daily CPA/ROAS tracking, flag performance drops
+
+2. **Creative Iteration**
+   - Creative Strategist: Launch A/B tests based on learnings
+   - Test single variables: headline, image, CTA, landing page
+   - Rotate fresh creative every 2-4 weeks (combat ad fatigue)
+   - Social Ads Specialist: Monitor engagement metrics (CTR, conversion rate by creative)
+
+3. **Budget Reallocation**
+   - Attribution Analyst: Identifies highest-ROAS channels weekly
+   - Budget Optimizer: Reallocates budget from low-ROAS to high-ROAS channels
+   - Scale winning channels incrementally (avoid budget shock)
+   - Reduce underperforming channels or pause entirely
+
+4. **Performance Troubleshooting**
+   - CPA increasing? Check: landing page conversion rate drop, audience fatigue (too much frequency), bid inflation (competition)
+   - ROAS declining? Check: keyword/audience quality shift, creative fatigue, product/offer issue
+   - Low volume? Check: budget constraints, bid strategy too conservative, targeting too narrow
+
+**Phase 4: Reporting & Review**
+- Weekly: CPA/ROAS by channel, spend pacing vs. budget, top-performing keywords/audiences
+- Monthly: Attribution modeling, customer LTV by channel, payback period, contribution to pipeline
+- Quarterly: Strategic review, budget reallocation recommendations, creative performance trends, channel mix optimization
+- Annual: Full-year ROI analysis, growth projections, strategic priorities for next year
+
+### Advanced Scenarios
+
+**Scaling a Winning Channel**
+1. Budget Optimizer: Increase budget by 20-30% incrementally
+2. PPC Strategist / Social Ads Specialist: Expand keyword/audience targeting
+3. Creative Strategist: Increase creative production to avoid ad fatigue
+4. Attribution Analyst: Monitor CPA closely for any deterioration
+5. Pace increases over 4-6 weeks, not overnight
+
+**New Product Launch**
+1. Creative Strategist: Develop messaging and positioning for new product
+2. PPC Strategist: Build search campaign with product-specific keywords
+3. Social Ads Specialist: Build LinkedIn + Facebook campaigns targeting decision-makers
+4. Programmatic Buyer: Retarget site visitors with product education content
+5. Budget Optimizer: Allocate 30-50% of budget to new product initially
+6. Attribution Analyst: Track CAC for new product separately
+
+**Account Consolidation & Rebalancing**
+1. Attribution Analyst: Audit all existing campaigns, calculate true ROAS by channel
+2. Budget Optimizer: Model new budget allocation based on ROAS data
+3. All specialists: Pause underperforming campaigns, consolidate overlapping efforts
+4. Redirect consolidated budget to highest-ROAS initiatives
+5. Clean up tracking and reporting structure
+
+**Seasonal Demand Spikes**
+1. Budget Optimizer: Forecast demand increase and budget needs
+2. PPC Strategist: Increase bid amounts and budget allocation to search
+3. Social Ads Specialist: Increase frequency and budget for social campaigns
+4. Creative Strategist: Launch seasonal creative angles
+5. Programmatic Buyer: Increase display/video impression buying
+6. Timeline: Ramp budget 2-3 weeks before peak demand
+
+## Output Standards
+
+### Quality Requirements
+
+**Search Campaign Strategy**
+- Keyword lists: Minimum 500 keywords for competitive markets, segmented by intent
+- Ad copy: Multiple variations per ad group (A/B tested), natural language with keyword inclusion
+- Account structure: Clear campaign/ad group/keyword hierarchy avoiding cannibalization
+- Bid strategy: Justified selection (Target CPA vs. Manual CPC vs. Target ROAS)
+- Landing page alignment: Each keyword/ad maps to relevant landing page content
+
+**Social & LinkedIn Campaigns**
+- Audience definition: Specific persona with 1-5 targeting dimensions (title, industry, company size, interests)
+- Ad copy: Conversational tone aligned to social platform norms
+- Lookalike audiences: Built from high-value customer segments (LTV > threshold)
+- Creative specifications: Correct dimensions, file sizes, and compliance with platform guidelines
+- Tracking: Pixel installed, events firing, UTM parameters tracking correctly
+
+**Programmatic Campaigns**
+- Audience segmentation: Clear definition, size estimate, addressable universe
+- Bid strategy: Context-appropriate (CPM, vCPM, CPA, CPC)
+- Brand safety: Exclusion lists, contextual targeting, whitelisted/blacklisted placements
+- Creative: HTML5, video, or image files meeting platform specs
+- Tracking: Conversion pixels, viewability measurement, brand safety reporting
+
+**Creative Strategy**
+- Messaging angles: 3-5 distinct value propositions tested
+- A/B test plan: Single-variable tests with sample size calculations
+- Competitive creative audit: 5-10 competitors analyzed for positioning gaps
+- Creative refresh schedule: Monthly rotation to avoid ad fatigue
+- Performance benchmarks: CTR, conversion rate, CPA by creative variant
+
+**Attribution & Reporting**
+- Multi-touch attribution: First-touch, last-touch, and data-driven models compared
+- Conversion path analysis: Understanding how customers interact with multiple touchpoints
+- CPA by channel: Calculated including indirect conversions
+- ROAS calculation: Revenue credited to ads divided by total ad spend
+- Dashboard: Real-time tracking of CPA, ROAS, spend pacing, volume by channel
+- Monthly reporting: Year-to-date performance vs. targets, variance analysis
+
+**Budget Optimization**
+- Historical performance: At least 2 months of data analyzed to establish baselines
+- ROAS by channel: Clear ranking of profitability and scaling potential
+- Growth modeling: Scenarios for various budget increases (10%, 25%, 50%)
+- Reallocation recommendations: Quantified impact of proposed changes
+- Confidence level: High confidence recommendations have 2+ months of consistent data
+
+### Key Metrics & Targets
+
+**Acquisition Metrics**
+- Cost Per Acquisition (CPA): Campaign-specific target, benchmarked against industry
+- Return on Ad Spend (ROAS): Minimum 2:1 to 3:1 for acquisition campaigns
+- Customer Acquisition Cost (CAC): Total ad spend divided by new customers, annual basis
+- Click-Through Rate (CTR): 1-3% typical for search, 0.3-1.5% for display
+- Conversion Rate: 2-5% typical for B2B SaaS, varies by audience temperature
+
+**Efficiency Metrics**
+- Cost Per Click (CPC): By keyword/audience, tracks bid inflation
+- Cost Per Lead: Form submissions, trial signups, demo requests
+- Payback Period: Months to recover customer acquisition cost from LTV
+- LTV:CAC Ratio: Target 3:1 or higher for sustainable growth
+
+**Engagement Metrics**
+- Video completion rate: 25-50% for ads, varies by length
+- Landing page bounce rate: <40% for high-quality traffic
+- Form abandonment rate: Track at each form field level
+- Email open/click rates: For nurture sequences following ad click
+
+### Performance Baselines
+
+**Realistic ROAS by Channel (B2B SaaS)**
+- Search (Google Ads): 2-4:1 for new keywords, 4-6:1+ for optimized campaigns
+- LinkedIn Ads: 1.5-3:1 (higher intent but higher CPC)
+- Facebook/Instagram: 1-2:1 (lower intent, lower CPC, retargeting higher)
+- Programmatic Display: 0.5-1.5:1 (brand awareness focus, not direct response)
+- Video (YouTube): 1-2:1 (awareness, longer sales cycle)
+
+**Time to Profitability**
+- Week 1-2: Campaigns live, expect high CPAs while learning
+- Week 3-4: Data emerging, initial optimizations, CPA should start declining
+- Month 2: Clear trends visible, significant optimizations, approaching target CPA
+- Month 3: Campaigns mature, consistent ROAS, ready to scale
+
+### Handoff & Deliverables
+
+**Campaign Setup Checklist**
+- Account structure diagram with campaigns, ad groups, keywords
+- 20-50 variations of ad copy per campaign (for A/B testing)
+- Landing page recommendations and wireframes
+- Tracking setup guide: UTM parameters, pixel installation, CRM integration
+- Daily/weekly optimization playbook
+
+**Budget Allocation Plan**
+- Channel mix recommendation with percentages
+- Monthly budget distribution across campaigns
+- Seasonal adjustment calendar (if applicable)
+- Growth scenarios: 20%, 50%, 100% budget increase projections
+- Payback period and revenue impact analysis
+
+**Reporting Dashboard**
+- Real-time CPA, ROAS, spend, volume by channel
+- Trend charts: Weekly CPA/ROAS movement
+- Top performers: Keywords, audiences, creatives ranked by efficiency
+- Alerts: Campaigns exceeding CPA target, underutilized budgets
+- Monthly variance report: Actual vs. target, action items
+
+**Creative Brief**
+- 3-5 messaging angles with hypotheses
+- Competitor creative analysis and positioning gaps
+- A/B test roadmap: Variables to test, sample size requirements
+- Creative asset specifications (dimensions, file sizes, formats)
+- Expected results and success criteria
+
+**Attribution Model**
+- Conversion path samples showing multi-touch journeys
+- First-touch vs. last-touch vs. data-driven model comparison
+- Channel contribution analysis
+- CPA by stage (lead, qualified opportunity, customer)
+- Dashboard setup for ongoing tracking
+
+---
+
+**Paid media requires continuous optimization.** Establish weekly check-ins, react quickly to performance shifts, and iterate on creative and targeting. Budget discipline and attribution clarity drive sustainable growth.
+
+---
+
+## More phrases that route here
+
+The `description` above stays under the 1,024-character limit in the Agent Skills spec, because Claude Code's skill listing cuts text off at 1,536 characters and other hosts may reject longer ones. This is the full list of what this skill handles and how people ask for it.
+
+Full-funnel paid advertising operations for B2B SaaS. Use this skill for PPC strategy, Google Ads optimization, AI Max for Search (whether to turn it on, and search term matching, text customization and final URL expansion judged one at a time, with URL exclusions so careers, docs and blog pages never take paid clicks), why Google Ads CPA went up after August 2026 on a budget-limited campaign (Target CPA and Target ROAS now deliver toward the target instead of beating it, and which targets to reset), LinkedIn Ads, Reddit Ads (subreddit and keyword targeting, automated targeting, should we advertise on Reddit), social media advertising, programmatic buying, creative strategy, creative concept diversity for Meta Advantage+ (why six variants of one ad are not a diverse library, and what to brief instead), creator-made ad creative on a spend-share deal, attribution modeling, budget allocation, budget pacing and planned-vs-delivered reconciliation, what to cut when the marketing budget is cut or frozen (the delayed pipeline cost of cutting demand creation, a cover plan with an honest shortfall, and a reversal trigger), audience overlap and campaign self-competition audits, suppression lists, ROAS improvement, media spend optimization, and the media no auction sells — newsletter and podcast sponsorships, community and industry-publication placements, paid review-site listings on G2 and Capterra, LinkedIn BrandLink (pre-roll before creator and publisher video, and sponsoring Shows by LinkedIn), and pay-per-lead content syndication. It also covers buying on the AI answer surface — ads inside Google AI Overviews and AI Mode that existing Search, Shopping and Performance Max campaigns already serve into with no opt-out, no placement targeting and no segmented reporting, and ChatGPT Ads and Microsoft Copilot as separate opt-in platforms with their own plan-tier reach limits, no negative keywords, and a landing-page crawler gate. It also owns the conversion signal the bidding algorithms learn from — CRM pipeline stages (SQL, opportunity, closed-won) sent back to Google Ads, LinkedIn, Meta and Microsoft Ads through offline conversion import, enhanced conversions for leads, the Google Data Manager API and the LinkedIn Conversions API, with click-ID capture, stage values, dedupe, EEA consent signals and retractions — starting with whether the form fill or booked meeting fires on a confirmed success at all (inline AJAX forms, iframe embeds, Calendly event_scheduled vs a picked slot), proved by a test conversion that arrives. Also triggers on: conversions stopped, zero conversions, spend but no conversions, too many conversions, double counting, conversion tracking not working. It also gates connected TV (CTV) and streaming video for B2B — whether a reach medium belongs in the plan, how a vendor ties a TV household to a target account (member data, IP-to-account graph or contextual), the server-side ad insertion (SSAI) fraud questions, Programmatic Guaranteed deals, and a holdout lift test because CTV has no click. It also runs person-led paid social — LinkedIn Thought Leader Ads and Meta partnership ads that put spend behind an employee's or creator's post — on a paid-usage term, an in-post disclosure check and an end-date register, because the platform approval carries no term; Meta placement controls after ad-set placement selection was removed from Sales and Leads campaigns (account controls, placement value rules, the 5% soft opt-out, 'we can't exclude Audience Network anymore'). Also triggers on: AI Max, should we turn on AI Max, final URL expansion, URL exclusions, our ads are landing on the careers page, keywordless matching, Google AI assets, text customization. Also triggers on: CTV, connected TV, OTT, streaming TV ads, should we run CTV, LinkedIn CTV, B2B CTV, account-based CTV, SSAI fraud, thought leader ads, boost an employee's post, sponsor a creator's post, partnership ads, whitelisting, creator usage rights, PPC, Google Ads, LinkedIn Ads, social ads, programmatic, ad creative, attribution, media budget, paid campaigns, ROAS, CPA, ad spend, newsletter sponsorship, podcast sponsorship, community sponsorship, sponsor a newsletter, content syndication, pay-per-lead, cost per lead vendor, media kit, rate card, insertion order, direct buy, publisher partnership, make-good, G2 paid listing, Capterra ads, review site advertising, sponsorship ROI, budget pacing, we underspent our budget, are our campaigns competing with each other, audience overlap, self-competition, campaign cannibalization, suppression list, exclusion list, ad frequency across channels, how many ad accounts do we have, ads in AI Overviews, AI Mode ads, ChatGPT Ads, OpenAI Ads Manager, Copilot ads, conversational ads, should we advertise on ChatGPT, can we buy our way into the AI answer, our ads are showing in AI Overviews and we cannot report on it, context hints, OAI-AdsBot, our ad landing page fails review, robots.txt is blocking our ads, our paid leads are junk, Google Ads is optimizing for the wrong leads, offline conversion import, OCI, enhanced conversions for leads, send CRM stages back to Google Ads, upload SQLs to LinkedIn, LinkedIn Conversions API, LinkedIn CAPI, Meta conversion leads, CRM to ad platform, gclid, li_fat_id, msclkid, value-based bidding, optimize for pipeline not form fills, low match rate, conversion lag.

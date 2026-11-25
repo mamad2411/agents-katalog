@@ -1,0 +1,240 @@
+---
+name: gh-issue-planner
+description: "Fetch a GitHub Issue by ID using the gh CLI, investigate related code, propose a structured response plan (policy, impact scope, implementation steps), and post the agreed plan as a comment on the issue. Implementation/PR creation is out of scope — use gh-issue-resolver for that. Use when the user provides a GitHub Issue ID or asks to investigate/analyze/plan a GitHub Issue. Triggers include issue IDs like #42 or 'issue 42', requests such as Issueを調査して / Issueの対応方針を立てて, analyze issue #N, plan issue #N, investigate issue, look at issue. Accepts several Issues at once (e.g. '1,2,3' or 'Issue 1と2を計画して'): it investigates once and posts one agreed-plan comment per Issue."
+---
+
+# GitHub Issue Planner
+
+## Overview
+
+Fetch a GitHub Issue, analyze its content, investigate related code in the repository, and present a structured response plan to the user. After the user confirms, post the agreed plan as a comment on the issue. Implementation and PR creation are out of scope — use `gh-issue-resolver` for those steps (or `gh-batch-runner` when several Issues ship together).
+
+Several Issues may be planned in one pass. The agreed-plan granularity never changes: **one comment per Issue**, so every downstream skill keeps reading exactly one plan per Issue. See *Step 7*.
+
+## Workflow
+
+### Step 1: Fetch the Issue
+
+Run the following command (replace `<id>` with the issue number):
+
+```bash
+gh issue view <id> --json number,title,body,labels,assignees,state,url,comments
+```
+
+When several Issue numbers were given, run this once per Issue and keep the results
+side by side — the investigation in Step 3 is shared, the plans in Step 4 are not.
+
+If no repository context is clear, also run:
+
+```bash
+gh repo view --json nameWithOwner
+```
+
+Extract from the response:
+- **Title** and **body**: the core problem statement
+- **Labels**: bug / feature / enhancement / etc. — determines response approach
+- **Comments**: additional context, workarounds, or constraints from stakeholders
+
+**Pre-scoped Issues:** if the body contains `<!-- gh-issue-drafter:scoped-issue -->`,
+the Issue was drafted via `gh-issue-drafter` and its scope is author-approved. Treat its
+sections as binding input to the plan. The Issue is written in the user's language, so
+find each section by meaning (e.g. Done / Out of scope / Design constraints), not by the
+Japanese heading — those are only the template's names:
+- **完了条件 (Done)** — the contract the plan must satisfy; every condition must be
+  covered by an implementation step or a test in the plan
+- **触らない範囲 (Out of scope)** — hard boundaries; reject any plan direction that
+  crosses them
+- **設計方針 (Design constraints)** — constraints on how, not just what
+
+Do not re-ask the user about scope that these sections already answer — raise open
+questions only for genuinely new information discovered during investigation.
+
+**Epics are not planned.** If the body contains `<!-- gh-issue-drafter:epic -->`, its Done
+conditions live in the children. Do not
+produce a plan for it — list its sub-issues (Step 1.5) and offer to plan those instead.
+
+### Step 1.5: Read the dependencies
+
+Dependencies and parent/child links live on the Issue, not in the plan. Read the current
+state — they may have been recorded after the Issue was filed:
+
+```bash
+gh api repos/{owner}/{repo}/issues/<id>/dependencies/blocked_by --jq '.[].number'
+gh api repos/{owner}/{repo}/issues/<id>/sub_issues --jq '.[].number'
+```
+
+If the investigation uncovers a dependency that is not recorded yet, record it before
+planning around it. Reading takes the Issue **number**; writing takes the REST **integer
+id**, which is not the same thing as the `I_kwDO…` node id that `gh issue view` reports
+under `id` — the endpoint rejects that with HTTP 422. Use `-F` rather than `-f` so the
+value stays an integer instead of becoming a string:
+
+```bash
+blocker_id=$(gh api repos/{owner}/{repo}/issues/<blocker-number> --jq .id)
+gh api -X POST repos/{owner}/{repo}/issues/<id>/dependencies/blocked_by -F issue_id="$blocker_id"
+```
+
+A plan that silently assumes an unrecorded dependency is a plan the batch and stacked
+flows cannot reproduce.
+
+### Step 2: Classify the Issue
+
+Determine issue type to guide the investigation strategy:
+
+| Label / Signal | Type | Investigation Focus |
+|---|---|---|
+| bug, error, crash | Bug fix | Error paths, edge cases, affected callers |
+| feature, enhancement | New feature | Insertion points, interface contracts, related modules |
+| refactor, tech-debt | Refactoring | Current usage sites, test coverage |
+| docs, documentation | Docs update | Existing docs, code references |
+
+### Step 3: Investigate Related Code
+
+Extract keywords from the title and body, then search the codebase:
+
+1. Use `code_search` with natural-language queries derived from the issue
+2. Use `grep_search` for specific function/class/variable names mentioned
+3. Use `read_file` to deeply understand the most relevant files
+4. Trace call chains and dependencies to establish impact scope
+
+Focus on:
+- Files and functions directly mentioned or implied in the issue
+- Callers / consumers of affected code
+- Tests covering the affected area
+
+### Step 3.5: Size check — a safety net
+
+The drafter checks size before filing, but only from the intent; the investigation is
+where size actually shows. If the impact scope turns out too large for one Issue — the
+Done conditions would be covered by unrelated changes, or the parts could ship apart —
+**stop before writing a plan** and offer the same three choices as `gh-issue-drafter`
+Step 2.5, recommended one first:
+
+- **a. Keep one Issue** — continue to Step 4
+- **b. Split into independent Issues** — the parts may ship separately
+- **c. Epic + sub-issues** — the parts should ship together (`gh-batch-runner`)
+
+For b or c, hand the filing back to `gh-issue-drafter`, passing what the investigation
+found as the rough intent. **The planner never creates Issues itself** — drafting and
+filing are the drafter's job. Plan the new Issues once they exist.
+
+### Step 4: Present the Response Plan
+
+Before writing the plan, run the **check before building** (作る前の確認) in order and
+stop at the first item that is enough. Where you stopped goes into the plan's どこまで作るか section:
+
+1. Is it needed at all? (If not, propose closing the Issue instead of planning it)
+2. Does this codebase already have it?
+3. Is the standard library enough?
+4. Is a plain platform feature enough?
+5. Is a dependency that is already installed enough?
+6. Is one line enough?
+7. Otherwise, the smallest thing that works
+
+However little the plan builds, never cut security boundaries, data-loss protection,
+authorization, input validation, error handling, or accessibility — list what the plan
+keeps under 削らないもの. The strength is `full` by default; a project that wants a
+different one says so in its CLAUDE.md.
+
+Present the following structured plan to the user in their preferred language:
+
+```
+## Issue #<id>: <title>
+
+### 対応方針 (Approach)
+<What will be done and why — 2-4 sentences>
+
+### どこまで作るか (How far to build)
+- 結論: <what will be built>（作る前の確認の<1–7>番目: <why this is enough>）
+- 作らないもの: <higher-cost options considered and dropped>
+- 削らないもの: <safety properties kept however little is built>
+
+### 影響範囲 (Impact Scope)
+- **変更対象ファイル**: list of files to modify
+- **影響を受けるモジュール**: related modules that may be affected
+- **テスト**: existing tests to update + new tests to add
+
+### 実装方法 (Implementation Steps)
+1. <Concrete step>
+2. <Concrete step>
+3. ...
+
+### 懸念事項・確認事項 (Open Questions)
+- <Any ambiguity or assumption that needs user confirmation>
+```
+
+### Step 5: Confirm and Iterate
+
+- If there are open questions, **ask the user before proceeding**
+- Decide how far to build only after reading the related code (Step 3). **If you cannot fill in
+  どこまで作るか, do not post** — ask the user instead
+- Adjust the plan based on feedback
+- Once the user explicitly confirms, proceed to Step 6
+
+### Step 6: Post the Agreed Plan to the Issue
+
+After the user confirms the plan, post it as a comment on the GitHub Issue:
+
+```bash
+gh issue comment <id> --body "$(cat <<'EOF'
+## 対応方針
+
+<agreed approach>
+
+## どこまで作るか
+
+- 結論: <what will be built>（作る前の確認の<1–7>番目: <why this is enough>）
+- 作らないもの: <options dropped>
+- 削らないもの: <safety properties kept>
+
+## 影響範囲
+
+- **変更対象ファイル**: <files>
+- **影響を受けるモジュール**: <modules>
+- **テスト**: <tests>
+
+## 実装方法
+
+1. <step>
+2. <step>
+
+---
+<!-- gh-issue-planner:agreed-plan -->
+*Generated by `gh-issue-planner` — this comment represents the agreed implementation plan. Use `gh-issue-resolver` to implement it.*
+EOF
+)"
+```
+
+### Step 7: Several Issues at once
+
+When more than one Issue was given, investigate once (Step 3) and then produce **one
+agreed-plan comment per Issue** — never a single combined plan. Each comment keeps the
+`<!-- gh-issue-planner:agreed-plan -->` marker, so `gh-issue-resolver` and
+`gh-batch-runner` read plans exactly as they do for a single Issue.
+
+1. Present all plans together in one message so the user confirms once.
+2. Make sure each plan's 影響範囲 states what it shares with its siblings — overlapping
+   files are what turns an individual flow into a batch.
+3. Ask **"do these ship together?"** — the answer picks the flow, not the dependency
+   graph. Skip the question when the repository default in CLAUDE.md already answers it:
+
+   | Answer | Flow | Hand off to |
+   |---|---|---|
+   | Yes, one release | **batch** | `gh-batch-runner` |
+   | No, and they are independent | **individual** | `gh-issue-resolver` per Issue |
+   | No, but one depends on another | **stack** | `gh-issue-resolver` with the dependency's branch as base |
+
+4. Record any dependency found while planning (Step 1.5) before handing off.
+5. Post each comment only after the user confirms (Step 6, once per Issue).
+
+This completes the planner workflow. If implementation is required, hand off to the `gh-issue-resolver` skill, which uses the posted comment as its agreed plan — or to `gh-batch-runner` when the Issues ship together.
+
+## Key Principles
+
+- **Never post the comment without user confirmation** when open questions exist
+- **One agreed-plan comment per Issue**, even when several Issues are planned together
+- **Every plan states どこまで作るか** — stopping at the first item of the check before building that is enough
+- Record dependencies on the Issue (`blocked_by` / sub-issues), never only in prose
+- Keep the plan concise — avoid over-engineering
+- If the issue is vague, ask one focused clarifying question rather than multiple at once
+- Prefer minimal, upstream fixes over downstream workarounds

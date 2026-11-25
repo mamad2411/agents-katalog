@@ -1,0 +1,193 @@
+---
+name: paired-session
+argument-hint: "<work item> [--plan-only | --review-only [--base REF] | --review-pr [INPUT] [ASPECTS] | --code-quality-loop [OPTIONS]]"
+description: >
+  Drive an implementation through the paired-session coordinator: independent
+  PLAN review, EXEC implementation/review, adversarial gate, then finish,
+  quality polish, docs and security with lifecycle on, up to operator acceptance.
+  Trigger in exactly five cases: (1) the user explicitly asks for paired-session
+  or names this explicit coordinator entry; (2) the review-loop entry hands off
+  because .review-loop/config.md sets `entry: paired-session`; (3) the review-loop
+  entry hands off because that key is absent or invalid (the default entry); (4)
+  /review-loop:review-pr hands off on its paired route (`--review-pr`); (5)
+  /review-loop:code-quality-loop hands off on its paired route (`--code-quality-loop`). Do not trigger on
+  a bare review-loop request yourself (the review-loop entry routes it).
+---
+
+# Paired-session workflow (Claude Code)
+
+## Loading the shared entry contract
+
+First, before any stage A check or question, read `${CLAUDE_PLUGIN_ROOT}/docs/protocol/loading.md`
+and load the shared entry contract (`docs/protocol/paired-session-entry.md`) as
+its own Bash command, cwd in the user's workspace. The bundle must stay out of
+the product worktree (FIELD-18): first print a fresh bundle directory with its
+own Bash call,
+`python3 -c 'import os, tempfile, uuid; print(os.path.join(os.path.realpath(tempfile.gettempdir()), f"review-loop-protocol-{os.getuid()}", uuid.uuid4().hex[:12]))'`,
+then write that printed directory out literally as `<bundle-dir>`:
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/scripts/read_protocol.py --runtime claude --stage entry-paired-session --output <bundle-dir>/protocol-claude-entry-paired-session.md
+```
+
+On native Windows (the Bash tool runs Git Bash there) Python is `python` (or `py -3`) and `os.getuid` does not exist:
+print the bundle directory with
+`python -X utf8 -c "import getpass, os, re, tempfile, uuid; print(os.path.join(os.path.realpath(tempfile.gettempdir()), 'review-loop-protocol-' + (re.sub(r'[^A-Za-z0-9._-]', '_', os.environ.get('USERNAME') or getpass.getuser()) or 'user'), uuid.uuid4().hex[:12]).replace(os.sep, '/'))"`
+(the loader names the directory after the Windows user name), then run, with both paths quoted:
+
+```bash
+python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/read_protocol.py" --runtime claude --stage entry-paired-session --output '<bundle-dir>/protocol-claude-entry-paired-session.md'
+```
+
+On a route handoff, load that route's stage instead (it includes the common contract), in the same form with
+the stage name in both places: `--review-only`, a direct request to review an existing change, or the review-loop handoff of code already
+implemented ->
+`entry-paired-session-review-only`; `--code-quality-loop` -> `entry-paired-session-code-quality-loop`;
+`--review-pr` -> `entry-paired-session-review-pr`. A route that becomes known only after loading loads its stage then, with the
+`paired-session-entry@<sha256>` fingerprint from the first bundle's first line passed as `--loaded`.
+
+After exit 0, read the complete output file in bounded chunks and follow it; a
+missing, unreadable or incompletely read file is a failed stage A check,
+reported as `stage A failure: cannot load the shared entry contract (<reason>)`.
+After compaction, reload the same stage (the route stage on a route) the same way when no coordinator
+command is running; while one is running, read
+`${CLAUDE_PLUGIN_ROOT}/docs/protocol/paired-session-entry.md` directly (the
+file holds every stage), which writes nothing to the workspace. This file
+adds only the Claude Code host rules:
+
+- Legacy pointer: none (the legacy workflow was removed in v2.13.0). Long-command execution failure:
+  unavailable background execution: HOLD with the reason, on every entry (nothing falls back).
+
+## Long commands and headless sessions (critical)
+
+- Long-command form: run every command that can dispatch model turns
+  (`run`, `resume`, `reject --expect`) as its own Bash call
+  with `run_in_background: true`; wait for the background task completion
+  notification and inspect its final result. Use a shell-output polling tool
+  only if the host exposes one; do not assume a tool named `BashOutput` exists.
+  Never run such a command in a foreground Bash call or extend the foreground
+  timeout; long model turns exceed tool limits and can orphan a child CLI. The
+  backstop stops the background command.
+- Headless sessions: a `claude -p` session exits when its turn ends and kills
+  its background tasks, so ending the turn to wait for the notification kills
+  the coordinator mid-turn. Use an interactive session. When you know you run
+  headless (the user or the prompt says so), prefer `--detach` on `run`,
+  `resume` and `reject --expect`: the command returns at
+  once (`DETACHED: pid …; log …`) and survives the session's exit; read
+  `RUN_DIR/state.json` or `status --brief` for its progress. Wait until the
+  printed pid has exited (the printed record path then reads "exited" with
+  the exit code), then read the last line of its log and `status --brief`.
+  A report run ends in REPORTED. End the detached command
+  only with `stop` (`paired_session/docs/detach.md`). Without `--detach`, do not
+  end the turn while a coordinator command runs: poll in bounded foreground calls, reading only
+  `status` and `active.phase` from `RUN_DIR/state.json` (or `status --brief`),
+  until the background command itself has exited (the host's task-output tool
+  if it has one; otherwise `pgrep -f -- "--run-di[r] <RUN_DIR>"` prints nothing; the
+  bracket keeps pgrep from matching its own shell),
+  then inspect its final result as above. Recover a run cut off this way by the
+  shared contract's uncertain-turn rule: check the turn's pid and phase, and
+  ask the user before any `--retry-uncertain`.
+
+## Run directory
+
+- Run directory: default to `<repo>/.review-loop/runs/<UUID>/`. Resolve `<repo>`
+  from the project's main checkout using `git rev-parse --path-format=absolute --git-common-dir`
+  and take its parent when it ends in `/.git`; a lane worktree therefore stores runs in the main checkout.
+  Resolve the root once with its own Bash call (set `WORKSPACE` in that same Bash call):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_paths.py" "$WORKSPACE"`.
+  This creates `.review-loop/.gitignore` (`*`, `!config.md`) only when missing.
+  If not a Git repo, a bare repo or a submodule/separate-git-dir checkout, it reports fallback to
+  `${XDG_STATE_HOME:-$HOME/.local/state}/review-loop` (relative XDG values use `$HOME/.local/state`).
+  An explicit operator-chosen `RUN_DIR` wins; resume existing runs at their original `--run-dir`, without migration.
+  Create a UUID and the run directory (`mkdir -p`), then write `WORKITEM.md` there.
+  If creation or writing fails, stop with `stage A failure: <reason>`; never try another location.
+  Resolve `WORKSPACE`, `WORKITEM` and `RUN_DIR` to absolute paths. Claude Code substitutes
+  `${CLAUDE_PLUGIN_ROOT}` in skill content. Define path variables anew in each Bash tool call;
+  shell variables do not persist across calls. Pass arguments as an array.
+  Write launcher logs under the run root's `logs/` (`.../.review-loop/logs/`), never under `runs/`.
+  Persistent output is gitignored; scratch stays outside the repo. Do not run `git clean -x`
+  on the workspace while a run is active: it would delete the run.
+
+## Native Windows
+
+- Native Windows (Git Bash): the coordinator refuses `--detach`,
+  so a headless session is not supported there (use an interactive session). Git Bash has no `pgrep`: wait for the
+  background task notification. Resolve the run root below; set `WORKSPACE` in the same Bash call that runs `project_paths.py`:
+  `cygpath -m "$(python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/project_paths.py" "$WORKSPACE")"` (it prints a `C:/Users/...` path the Write tool and
+  the coordinator both take; Git Bash's own `/c/...` form is not a Windows path) and use that form for `WORKSPACE`,
+  `WORKITEM` and `RUN_DIR` too. Keep the run root and the workspace out of OneDrive-synced folders. Run the
+  coordinator through Python (no shebang execution on Windows): in the `run` block below, replace
+  `"${CLAUDE_PLUGIN_ROOT}/bin/paired-session" run` with `python -X utf8 "${CLAUDE_PLUGIN_ROOT}/bin/paired-session" run`, and
+  run every other coordinator command and script the same way.
+
+## Run block
+
+One Bash call with the `run` block below. There is no probe step: `permission-probe` and strict mode were
+removed in v3.7.0 (`--strict` only prints a NOTE).
+
+`run` (`run_in_background: true`):
+
+```sh
+WORKSPACE='/absolute/path/to/worktree'
+WORKITEM='/absolute/run/root/runs/<UUID>/WORKITEM.md'
+RUN_DIR='/absolute/run/root/runs/<UUID>'
+TEST_COMMAND='the verified project command'
+"${CLAUDE_PLUGIN_ROOT}/bin/paired-session" run \
+  --workspace "$WORKSPACE" --workitem "$WORKITEM" --run-dir "$RUN_DIR" \
+  --test-command "$TEST_COMMAND" --lifecycle-mode on
+```
+
+## Per-route extra arguments
+
+A review-only request (`--review-only`, or the review-loop handoff of code already implemented)
+follows the shared contract's review-only entry: add `--review-only` (and `--base "$BASE"`
+only when the user named a base) to the block.
+The workspace is the worktree that holds the change (normally the current checkout). Do not
+create or switch to a dedicated worktree, and skip the Stage A dedicated-worktree question.
+Add `--auto-commit false` too when the review-loop entry handed it over.
+
+A review-pr handoff (`--review-pr [INPUT] [ASPECTS]` from `/review-loop:review-pr`) follows the
+shared contract's Review-PR entry. Host rules: `<support-root>` in the shared contract is
+`${CLAUDE_PLUGIN_ROOT}` (for example `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/materialize_pr.py"`; Windows: `python -X utf8`); the run
+root above (resolved from the operator project before switching `WORKSPACE` to the clone) is the materializer's `--root`; the materializer runs as its own foreground Bash call with
+`timeout: 600000` (a clone and fetch can outlast the default), before the block. In the block set
+`WORKSPACE` to the clone it printed (no input: the current worktree), replace
+`--test-command "$TEST_COMMAND"` with `--no-test-command` unless the user confirmed a test command, and
+add `--review-only --review-report --auto-commit false`, `--base "$BASE"` (the printed `merge_base`;
+no input: only a base the user named), `--review-pr-pins "$RUN_DIR/pr-pins.json"` for a materialized
+input (write the printed JSON there with the work item) and `--aspects "$ASPECTS"` when aspects were
+given. `simplify` pointer: `run /review-loop:code-quality-loop on the change (its POLISH-Q simplifier)`.
+
+A code-quality-loop handoff (`--code-quality-loop [OPTIONS]` from `/review-loop:code-quality-loop`) follows
+the shared contract's Code-quality-loop entry. In the block add `--review-only` and the options it names
+(`--max-exec-rounds N` as handed over, which wins over `soft_limit_exec`; `--auto-commit false` as handed over;
+`--max-invocations 45` unless the profile sets `max_invocations`) and the explicit `--test-command`;
+also add `--advisory-fix-round true` (one fix round for the non-blocking findings);
+`WORKSPACE` is the current worktree. Its two
+notice lines belong to the code-quality-loop skill; only if they are not already in this conversation's visible
+output, print them verbatim (the shared contract's Code-quality-loop entry quotes them) as the first output after
+loading that contract, before any stage A check. The work item's
+first line is `# code-quality-loop: <one-line summary of the uncommitted change>`.
+
+## When this skill is the entry
+
+This skill is the explicit paired-session entry and the review-loop handoff target only when the config
+key `entry` is `paired-session` or absent and the work is fresh, an existing plan (as the work item) or a review-only
+code target (an invalid value counts as absent, with a warning); `entry: legacy` is refused by the entry, since the
+legacy workflow was removed in v2.13.0.
+
+## Operator commands
+
+Operator commands (`accept`, `reject`, `withdraw-findings`) follow the shared
+entry contract. Run `withdraw-findings` only on the user's explicit decision
+naming the findings and a nonempty reason, never on the host's own judgment or
+in handsfree mode. Issue `--intent-only --finding ID --reason TEXT` first
+(repeat `--finding` for each named id), show the digest, then submit the same
+command with `--expect <digest>` instead of `--intent-only`. Relay the ruling,
+evidence, next-step hint and status; withdrawal dispatches no model turn.
+
+## Lifecycle mode
+
+`--lifecycle-mode off` is the supported stop-after-gate route: PLAN -> EXEC -> GATE -> DONE (acceptance pending). The operator then handles FINISH, POLISH-Q, docs, security review and merging. Accept never commits on this route: it hands back the uncommitted tree. New runs default to `on` (the full lifecycle); CLI, operator/workspace profiles and Python entry points may select `off`, and saved off runs resume, accept, reject, note and abort normally.
+
+For review-pr report mode, always pass `--lifecycle-mode on` to `run`. This overrides a profile's off value. For other entries, pass `--lifecycle-mode on` only when no operator/workspace profile sets `lifecycle_mode`. When a profile sets it, omit the flag (or pass the profile's value). The CLI value overrides the profile. When the user chooses off for those entries, pass `--lifecycle-mode off`. Compare the saved lifecycle mode with that selected mode for the backstop; saved off runs continue with off.

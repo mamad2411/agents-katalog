@@ -1,0 +1,232 @@
+---
+name: docguard-review
+description: Cross-document consistency analysis and quality assessment. Performs read-only
+  analysis across all canonical docs, identifies drift, coverage gaps, and quality issues.
+  Produces a structured report with severity-ranked findings. Modeled after speckit-analyze.
+compatibility: Requires DocGuard CLI installed (npm i -g docguard-cli, or npx --yes docguard-cli@0.50.0)
+metadata:
+  author: docguard
+  version: 0.50.0
+  source: extensions/spec-kit-docguard/skills/docguard-review
+---
+<!-- docguard:version: 0.50.0 -->
+
+# DocGuard Review Skill
+
+## Running DocGuard
+
+Run `docguard` from PATH when it is installed. Otherwise run
+`npx --yes docguard-cli@0.50.0`, the release these instructions ship with, in its
+place. Every `docguard …` command below means one of the two.
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+You **MUST** consider the user input before proceeding (if not empty).
+
+## Goal
+
+Perform a comprehensive, **read-only** analysis of the project's documentation health. Unlike the `docguard-guard` skill (which runs CLI validators), this skill performs **semantic analysis** — checking whether documentation actually matches the codebase, whether cross-references are consistent, and whether the documentation tells a coherent story.
+
+## Operating Constraints
+
+**STRICTLY READ-ONLY**: Do **not** modify any files. Output a structured analysis report only. Offer remediation suggestions that the user must explicitly approve before any changes are made.
+
+## Execution Flow
+
+### Step 1: Gather Documentation Inventory
+
+1. **List all canonical docs**: Read every file in `docs-canonical/`
+2. **List support files**: Check for `CHANGELOG.md`, `DRIFT-LOG.md`, `AGENTS.md`, `README.md`, `ROADMAP.md`
+3. **Check for spec-kit artifacts**: If `.specify/` exists, include `specs/*/spec.md`, `specs/*/plan.md`, `specs/*/tasks.md`
+4. **Build a document map**:
+
+| Document | Exists | Last Modified | Size | Metadata Version |
+|----------|--------|---------------|------|-----------------|
+| ARCHITECTURE.md | ✅ | 2026-03-14 | 5.2KB | 0.5.0 |
+| SECURITY.md | ✅ | 2026-03-14 | 3.1KB | 0.5.0 |
+| ... | ... | ... | ... | ... |
+
+### Step 2: Run Quantitative Analysis
+
+Execute DocGuard's diagnostic and scoring tools:
+
+```bash
+docguard diagnose 2>&1
+docguard score 2>&1
+docguard guard --format json
+docguard verify --evidence --format json
+docguard verify --semantic --format json
+```
+
+Record:
+- Guard pass/fail counts per validator
+- CDD maturity score (0-100)
+- ALCOA+ compliance attributes
+- Category breakdown
+- Exact declared evidence states and the remaining heuristic claim tasks
+
+#### Read the channels before you rank anything
+
+Every finding in `guard --format json` answers four independent questions. This
+skill produces a severity-ranked report, so conflating them puts a signal DocGuard
+never adjudicated at the top of a CRITICAL list.
+
+| Field | Question | Values |
+|-------|----------|--------|
+| `severity` / `effectiveSeverity` | Does CI block? | `error`, `warn`, `info` |
+| `disposition` | Who decides — the tool or a human? | `act`, `escalate` |
+| `confidence` | How sure is the detector of its **observation**? | `high`, `low` |
+| `evidence.status` | Has the reviewed corpus ever measured this code? | `measured`, `not-measured` |
+| `parserTier` | Which analyzer produced it? | `js-ast`, `py-ast`, `regex-fallback`, `fallback-language`, `mixed`, `not-applicable` |
+
+- **`act`** — DocGuard asserts a defect and names the correction. A recommendation may say "change this".
+- **`escalate`** — DocGuard observed a signal; the judgement is the reader's. A recommendation must say "decide this, from this source" — never "change this". FRS002 is the canonical case: the commit count is exact (`confidence: high`) and it establishes only that a review is DUE, never that the document is stale.
+- `not-measured` means the reviewed corpus has never scored this code, so its confidence label is a maintainer's prior. Most codes are unmeasured. Say it once in the report; it is a fact about DocGuard's benchmark coverage, not about these findings being wrong.
+- `regex-fallback` / `fallback-language` means no syntax tree was available for that file. **Absence** of a finding there is weak evidence — never write "no gaps found" over a degraded tier. `diagnose --format json` repeats the same channels per issue, plus a `dispositionCounts` summary.
+
+### Step 3: Semantic Cross-Document Analysis
+
+This is the **unique value** of the review skill — analysis that CLI validators cannot do.
+
+#### A. Terminology Consistency
+- Extract key technical terms from each document
+- Flag terms used differently across documents (e.g., "validator" vs "checker" vs "rule")
+- Flag abbreviations used without definition
+- Build a de facto glossary
+
+#### B. Architecture ↔ Code Alignment
+- Read ARCHITECTURE.md component list
+- Verify each listed component actually exists as a directory/module
+- Flag components that exist in code but are missing from ARCHITECTURE.md
+- Flag components listed in ARCHITECTURE.md that don't exist in code
+
+#### C. Data Model ↔ Code Alignment
+- Read DATA-MODEL.md schemas/structures
+- Search codebase for actual data structures
+- Flag schemas documented but not implemented
+- Flag schemas implemented but not documented
+
+#### D. Test Coverage ↔ Test-Spec Alignment
+- Read TEST-SPEC.md critical flows
+- Check actual test files exist for each critical flow
+- Flag test scenarios documented but not implemented
+- Flag test files with no corresponding TEST-SPEC.md entry
+
+#### E. Security Claims ↔ Implementation
+- Read SECURITY.md auth/secrets claims
+- Verify auth implementation exists in code
+- Check that listed secrets are actually used
+- Flag security-relevant code not mentioned in SECURITY.md
+
+#### F. Cross-Reference Integrity
+- Find all internal doc links (`[text](file)` and `See ARCHITECTURE.md`)
+- Verify every referenced file/section actually exists
+- Flag broken cross-references
+- Flag orphaned sections not referenced anywhere
+
+### Step 4: Quality Assessment
+
+For each document, evaluate:
+
+| Criterion | Weight | Score | Notes |
+|-----------|--------|-------|-------|
+| Completeness | 30% | 0-10 | Are all mandatory sections present? |
+| Accuracy | 30% | 0-10 | Does content match actual codebase? |
+| Clarity | 20% | 0-10 | Readability, specificity, no jargon |
+| Currency | 10% | 0-10 | Is content up-to-date with latest code? |
+| Cross-refs | 10% | 0-10 | Are references valid and bidirectional? |
+
+### Step 5: Severity Classification
+
+Classify every finding using this matrix:
+
+- **CRITICAL**: Security claim doesn't match implementation, missing mandatory doc, broken architecture reference
+- **HIGH**: Undocumented component, stale content (>5 commits behind), terminology conflict
+- **MEDIUM**: Missing cross-reference, minor coverage gap, readability issue
+- **LOW**: Formatting inconsistency, optional section missing, minor terminology drift
+
+Severity is orthogonal to disposition. A CRITICAL finding can still be an
+`escalate` — rank it by impact as usual, then write its recommendation as a
+decision rather than an edit. Carry the disposition into the findings table so a
+reader never has to infer it from the severity column.
+
+### Step 6: Produce Analysis Report
+
+Output a structured markdown report (do NOT write to disk):
+
+```markdown
+## DocGuard Documentation Review
+
+### Executive Summary
+- **Overall Health**: [A+/A/B/C/D/F] ([score]/100)
+- **Documents Analyzed**: [N]
+- **Findings**: [CRITICAL: N, HIGH: N, MEDIUM: N, LOW: N]
+- **Top Risk**: [Most impactful finding]
+
+### Findings Table
+
+| ID | Category | Severity | Disposition | Location | Summary | Recommendation |
+|----|----------|----------|-------------|----------|---------|----------------|
+| R01 | Terminology | HIGH | act | ARCH:L15, SEC:L22 | "validator" vs "checker" | Standardize on "validator" |
+| R02 | Coverage | MEDIUM | act | DATA-MODEL.md | Schema X undocumented | Add Schema X to Data Model |
+| R03 | Currency | HIGH | escalate | ARCHITECTURE.md | 13 commits since last review | **Decide**: read `src/` since that date; say whether the component map is now wrong |
+
+### Per-Document Health
+
+| Document | Completeness | Accuracy | Clarity | Currency | Cross-refs | Overall |
+|----------|:----------:|:-------:|:------:|:-------:|:----------:|:-------:|
+| ARCHITECTURE.md | 9/10 | 8/10 | 9/10 | 7/10 | 10/10 | 8.8/10 |
+| SECURITY.md | 8/10 | 9/10 | 8/10 | 9/10 | 7/10 | 8.4/10 |
+
+### Semantic Consistency
+- **Terminology conflicts**: [N found]
+- **Architecture gaps**: [N components undocumented]
+- **Broken cross-refs**: [N found]
+- **Test coverage gaps**: [N critical flows untested]
+
+### Recommendations (Priority Order)
+1. [Most impactful fix] — estimated effort: [LOW/MEDIUM/HIGH]
+2. [Second most impactful] — estimated effort: [LOW/MEDIUM/HIGH]
+3. ...
+```
+
+### Step 7: Offer Next Actions
+
+Based on findings:
+- **If CRITICAL issues**: "Run the `docguard-fix` skill with `--doc [name]` to resolve blocking issues"
+- **If spec-related gaps**: "Run `/speckit.specify` to update specifications" or "/speckit.clarify to resolve ambiguities"
+- **If architecture drift**: "Run `/speckit.plan` to realign implementation plan with codebase"
+- **If only LOW/MEDIUM**: "Documentation is healthy. Consider the `docguard-fix` skill for polish"
+- **If constitution missing**: "Run `/speckit.constitution` to establish project principles"
+- **If all clean**: "Documentation is excellent. No action needed."
+
+Ask: "Would you like me to fix the top N issues? (I'll show you what I plan to change before applying)"
+
+## Behavior Rules
+
+- **NEVER modify files** — this is strictly read-only analysis
+- **ALWAYS run real CLI commands** — don't simulate or guess results
+- **Be specific** — cite exact file paths, line numbers, and content
+- **Compare actual code vs docs** — don't just validate formatting
+- **Limit findings to 50** — aggregate overflow in a summary count
+- **Prioritize high-signal findings** — one CRITICAL finding is worth ten LOW findings
+- **Respect disposition** — never write an `escalate` finding up as something to change. Severity says whether CI blocks; disposition says who owns the decision. Recommending an edit for a signal DocGuard did not adjudicate destroys the signal and fixes nothing
+- **Never read absence as proof** — a `partial` validator could not check everything it was asked to, and a `regex-fallback` tier could not see the whole syntax. Report the gap instead of summarizing it as clean
+- **Preserve evidence scope** — a verified declaration covers one selected statement, while undeclared prose and whole-document accuracy remain review work
+- **Preserve approved intent** — a contradiction can mean implementation regressed; determine which side owns truth before recommending an edit
+
+## When DocGuard says it is old
+
+If DocGuard's output says its version was released more than 14 days ago, tell
+the user and offer to run `docguard upgrade`, which checks npm for a newer
+version only when it runs. Never upgrade DocGuard without the user's agreement,
+and never treat the note as a failure: it says a newer version may exist, not
+that one does.
+
+## Context
+
+$ARGUMENTS

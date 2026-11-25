@@ -1,0 +1,180 @@
+---
+name: zendesk-mcp-connector
+description: "MCP connector for Zendesk – enables AI-powered ticket management, customer support automation, and help desk operations through Claude"
+license: Proprietary/API
+tags: ["business","support","mcp","zendesk","helpdesk"]
+difficulty: intermediate
+time_to_master: "4-8 weeks"
+version: "1.0.0"
+---
+
+# Zendesk MCP Connector
+
+## Overview
+
+This skill enables Claude to interact with **Zendesk** through the Model Context Protocol (MCP). It provides a bridge between Claude's AI capabilities and Zendesk's REST API, allowing natural language control of Zendesk operations, intelligent automation, and AI-powered assistance for Zendesk workflows.
+
+## When to Use This Skill
+
+- Ticket triage and priority assignment via AI
+- Macro and automation creation
+- Knowledge base article generation
+- Customer satisfaction analysis
+- SLA monitoring and reporting
+
+## Architecture
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│   Claude     │────▶│   MCP Server    │────▶│   Zendesk          │
+│   (Client)   │◀────│   (TypeScript)  │◀────│   (REST API      )│
+└─────────────┘     └─────────────────┘     └──────────────────┘
+```
+
+## Core Concepts
+
+### MCP Server Setup
+
+The connector implements an MCP server that exposes Zendesk operations as tools Claude can invoke. The server translates natural language intentions into REST API calls.
+
+### Key Endpoints/Interfaces
+
+`/api/v2/tickets`, `/api/v2/users`, `/api/v2/organizations`, `/api/v2/macros`, `/api/v2/automations`
+
+### Implementation
+
+```typescript
+// Zendesk MCP Server Implementation
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+const server = new McpServer({
+  name: "zendesk-mcp-connector",
+  version: "1.0.0",
+});
+
+// Tool: List/Query Resources
+server.tool(
+  "list_resources",
+  "List and query Zendesk resources with optional filters",
+  {
+    query: z.string().optional().describe("Search query or filter"),
+    limit: z.number().optional().describe("Max results to return"),
+  },
+  async ({ query, limit }) => {
+    // Call Zendesk REST API
+    const response = await fetch(`${BASE_URL}/api/v2/tickets`, {
+      headers: { "Authorization": `Bearer ${API_KEY}` },
+    });
+    const data = await response.json();
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+    };
+  }
+);
+
+// Tool: Create Resource
+server.tool(
+  "create_resource",
+  "Create a new resource in Zendesk",
+  {
+    name: z.string().describe("Resource name"),
+    config: z.object({}).passthrough().optional().describe("Resource configuration"),
+  },
+  async ({ name, config }) => {
+    const response = await fetch(`${BASE_URL}/api/v2/tickets`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, ...config }),
+    });
+    const data = await response.json();
+    return {
+      content: [{ type: "text", text: `Created: ${JSON.stringify(data)}` }],
+    };
+  }
+);
+
+// Tool: Analyze/Report
+server.tool(
+  "analyze",
+  "AI-powered analysis of Zendesk data",
+  {
+    type: z.string().describe("Analysis type"),
+    timeframe: z.string().optional().describe("Time range for analysis"),
+  },
+  async ({ type, timeframe }) => {
+    // Fetch data and provide AI analysis
+    const response = await fetch(`${BASE_URL}/api/v2/tickets`, {
+      headers: { "Authorization": `Bearer ${API_KEY}` },
+    });
+    const data = await response.json();
+    return {
+      content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
+    };
+  }
+);
+
+// Start server
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+### Claude Desktop Configuration
+
+```json
+{
+  "mcpServers": {
+    "zendesk-mcp-connector": {
+      "command": "node",
+      "args": ["path/to/zendesk-mcp-connector/index.js"],
+      "env": {
+        "ZENDESK_API_KEY": "your-api-key",
+        "ZENDESK_BASE_URL": "https://your-instance-url"
+      }
+    }
+  }
+}
+```
+
+## Best Practices
+
+1. **Authentication**: Store API keys securely using environment variables; never hardcode credentials
+2. **Rate Limiting**: Implement request throttling to respect Zendesk API rate limits
+3. **Error Handling**: Provide clear, actionable error messages for common failure scenarios
+4. **Pagination**: Handle paginated responses for large datasets efficiently
+5. **Caching**: Cache frequently accessed read-only data to reduce API calls
+6. **Security**: Validate all inputs before passing to the Zendesk API; sanitize outputs
+7. **Logging**: Log all API interactions for debugging and audit purposes
+
+## Example Prompts
+
+> "Triage all open tickets, assign priorities based on content, and draft responses for common issues"
+
+## Security Considerations
+
+- All API credentials must be stored as environment variables
+- Implement input validation and sanitization for all tool parameters
+- Use HTTPS for all API communications
+- Follow the principle of least privilege for API token permissions
+- Audit log all write operations for compliance tracking
+
+## Resources
+
+- Zendesk Official Documentation
+- MCP SDK Documentation: https://modelcontextprotocol.io
+- MCP Server Examples: https://github.com/modelcontextprotocol/servers
+- SkillGalaxy Repository: https://github.com/Sandeeprdy1729/skill_galaxy
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2026-04-01 | Initial MCP connector skill |
+
+---
+
+*Part of SkillGalaxy - 10,000+ comprehensive skills for AI-assisted development.*

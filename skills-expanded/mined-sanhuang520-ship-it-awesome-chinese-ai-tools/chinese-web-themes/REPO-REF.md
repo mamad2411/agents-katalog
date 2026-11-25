@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/sanhuang520-ship-it/awesome-chinese-ai-tools (path: skills/chinese-web-themes/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 中式网页主题库。当用户要"中国风网页""国风网站样式""古风博客主题""中式配色 CSS""水墨风页面""新中式网页""给网站换个中国风皮肤"时使用。提供 8 套可直接引入的 CSS 主题，内置中文排版规范。

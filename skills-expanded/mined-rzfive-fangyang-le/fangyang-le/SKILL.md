@@ -1,0 +1,721 @@
+---
+name: fangyang-le
+description: 放羊了 —— 用 herdr 并行放养多个 coding agent（Codex / Claude Code / OpenCode / Gemini / Cursor / Copilot / Qwen / Kimi / Droid 等）。当用户要求“多开 agent / 并发做 / 分工 / 放羊 / 快速并行推进”，或任务可以按文件或模块拆成多个独立 workstream 时使用；超大任务（10+ 工作单元）用“界王拳模式”（主路径为主控手工三层编排）——主控 → 全部 Manager 并列一个指挥部 tab → 每个 Manager 再用 fanout 开独立 Worker 圈 tab（各 2–6 个，最多 36 个并行）。主控负责拆任务、开 pane、派发、处理权限、收割结果、统一验证和 checkpoint；agent 不提交代码。
+---
+
+# 放羊了
+
+一个 herdr 多 agent 并行工作流。核心不是“多开几个窗口”，而是：
+
+> 主控拆任务 → 每只羊一个任务文件 → 并行执行 → 主控统一验证 → 只提交干净结果。
+
+本 skill 不绑定任何固定目录。下文用 `SKILL_DIR` 表示本文件所在目录；安装后通常在：
+
+```bash
+export SKILL_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}/fangyang-le"
+```
+
+如果还没安装，可以直接用克隆/下载目录里的 `install.sh`。也可以让 agent 从 GitHub 自动安装：
+
+```bash
+git clone --depth 1 https://github.com/RZfive/fangyang-le.git /tmp/fangyang-le
+/tmp/fangyang-le/install.sh
+rm -rf /tmp/fangyang-le
+```
+
+`install.sh` 会复制到稳定目录后再建链接，临时目录可以删除。
+
+## 什么时候用
+
+适合：
+
+- 多个独立模块、语言、测试、文档、UI、基准可以并行
+- 每个任务有明确文件边界
+- 需要 2–6 个 agent 同时推进
+- 需要主控保持集成和提交权
+
+不适合：
+
+- 所有 agent 必须改同一个热文件
+- 任务高度串行、强依赖上一步结果
+- 还没定义验收标准
+- 用户明确要求单 agent 顺序执行
+
+## 铁律
+
+1. **主控不跟 agent 抢同一文件。**
+2. **每只羊一个任务文件**：写清 write scope、read first、要求、验收命令、禁止 commit。
+3. **热文件单 owner**：`agent.rs`、`lib.rs`、`types.rs`、`ChatPanelContainer.vue`、`package.json` 等同一时间只给一个 agent。
+4. **默认 2–4 只羊，确认独立后再加到 6。**
+5. **agent 不 commit、不 push、不擅自扩大 scope。**
+6. **主控统一跑全量验证后再提交。**
+7. **只有用户明确说“提交”时才 commit。**
+8. 任务文件放**仓库内** `$PWD/.fangyang/<name>-task.md`（`fanout.sh` 自动建目录并加入 `.gitignore`），不要放 `/tmp`——cwd 外读取会触发每个 agent 的授权弹窗；也不要把任务说明塞进 prompt 正文。
+9. **不跨 workspace 放羊。** 羊圈 tab/pane 一律建在主控自己的 `$HERDR_WORKSPACE_ID` 里；绝不用“当前 focus 所在”的 workspace（focus 可能停在别的控制方的羊圈上）。`fanout.sh` 默认锁定主控 workspace；只有用户明确要求跨界时才显式 `--workspace`。
+10. **子 agent 与主控同类。** Claude Code 起的羊就是 claude，OpenCode 起的羊就是 opencode：`--kind` 默认 `auto`，自动取主控自己的 kind。只有同类额度耗尽或用户点名要别的模型时，才显式换 kind，并在汇报时说明。
+11. **收割后保留羊圈。** 任务结束先不关 pane/tab，让用户随时点开羊圈查看每只羊的现场和产出；主控完成审查、统一验证、汇报之后，**提示用户羊圈还开着**，等用户确认审查完毕才关闭羊圈。绝不收割完就悄悄拆圈。
+12. **同 workspace 多主控隔离，互不相窜。** 羊名一律自动带主控前缀 `<owner slug>-<任务名>`（如 `night-owl-lsp`；herdr 只接受 ASCII 小写 agent 名，中文主控名映射为固定英文 slug，自定义 `--owner` 剥离非 ASCII、为空时兜底 `herd`），不同主控的羊永不重名；撞名（同主控二圈同名任务、或显式 `--owner` 撞车）自动加 `-2/-3` 后缀；manifest 同名不覆盖（自动加 tab id 后缀）。prompt/wait/read/收割全部走 manifest 里记录的带前缀羊名，不会读到别的圈的羊。tab 标签仍显示中文主控名（`夜枭的羊圈 · …`）。
+
+## 快速口令
+
+用户说“放羊”或“并发做”时，按这个顺序执行：
+
+1. 先调查代码，列 2–6 个独立 workstream。
+2. 给每个 workstream 写 `$PWD/.fangyang/<name>-task.md`（仓库内，羊读它不需要授权）。
+3. 在**主控自己的 workspace**（`$HERDR_WORKSPACE_ID`）里新建 herdr tab + 网格 pane。
+4. 每个 pane `agent start`，kind 默认 `auto`（与主控同类：claude 起 claude、opencode 起 opencode）；仅当同类额度满或用户点名时才显式换 kind。
+5. 每个 agent `prompt` 指向自己的任务文件。
+6. 派发后等待；任务文件在仓库内时通常全程无授权弹窗。
+7. 从**同一个 workspace** 收割结果（**不带 `--close`，羊圈保留**），主控跑门禁。
+8. 汇报（含各羊完成情况），并提示用户：羊圈还开着，可自行查看。
+9. 用户确认审查完毕后，再关闭羊圈；用户明确要求时才 commit。
+
+## 界王拳模式（三层编排，七龙珠命名）
+
+单层放羊适合 2–6 个独立任务；当一个任务需要 **10 个以上工作单元**、且能干净地分成几个互不重叠的大模块时，用三层编排：
+
+```text
+🥇 一线主角（孙悟空/贝吉塔…）主控
+  ├─ 🥈 指挥部 tab：全部 Manager（克林/天津饭/乌龙…）×2–6 并列网格
+  │      └─ 每个 Manager 一个 🥉 Worker 圈 tab（龟仙人弟子/红丝带兵…）×2–6 排网格
+```
+
+一句话：**主控 → 一次 fanout 把 Manager 们并列进指挥部 tab → 每个 Manager 再用自己的 fanout 开独立 Worker 圈 tab**，领导和 worker 在 workspace 里一眼可分，最多 1 + 6 + 36 个 agent 同时跑。
+
+### 什么时候值得开
+
+| 场景 | 加速 | 建议 |
+|---|---|---|
+| 全栈项目（前后端/数据库/文档互不重叠） | 3–5× | ✅ 开 |
+| 长篇报告（章节独立） | 2–3× | ✅ 开 |
+| 有依赖（前端等后端 API） | 1.5–2× | ⚠️ 谨慎，需先定接口契约 |
+| 高度耦合（共享 `types.ts`/`package.json`） | 可能更慢 | ❌ 不开 |
+| 小任务（< 30 分钟） | 0.3–0.5× | ❌ 不开 |
+
+协调成本约 15–30 分钟（分解 + 派发 + 收割 + 返工），所以**任务总时长低于 1 小时不要上三层**。
+
+### 怎么开
+
+**第一步：先和用户聊透，把结论写成 SPEC**（不要跳过）。主 Agent 用 `SPEC_QUESTIONS.md` 里的问题清单逐条问清楚：最终交付物、现状与起点、可改/禁改边界、验收命令、约束与优先级。聊完把答案写成一份 markdown（比如 `SPEC.md`），用 `--spec` 传进去——脚本会把它复制成任务目录里的 `SPEC.md`，作为**唯一事实来源**下发给每个 Manager。
+
+**第二步（主路径）：主 Agent 手工编排**。`kaio-ken-orchestrate.sh` 的自动分解器是**通用章节模板**（`lib/decompose.sh` 按任务类型套模板），对具体领域/代码库的分解经常不贴合——实际跑界王拳的**主路径是主控按本 skill 纪律手工执行同等步骤**，每步落盘留痕：
+
+1. 建专属 workspace（不碰主控原有工作区）：
+   `herdr workspace create --label "<主控角色名>的界王拳 · <工作名>" --cwd "$PWD" --no-focus`
+   并把自己的 workspace 改名配对（`<主角> · <工作名>`，与子 workspace「<主角>的界王拳 · <工作名>」成对——谁是本尊、哪圈是兵一眼可分；记下原标签，收尾后改回）：
+   `herdr workspace rename "$HERDR_WORKSPACE_ID" "<主控角色名> · <工作名>"`
+2. 建任务目录 `.fangyang/kaio-ken-<ts>/`，把 SPEC 固化成 `SPEC.md`，决策写入 `.decisions.log`
+3. 领角色：`dbz-roster.sh --count N --tier manager|worker --used-from "$TASK_DIR"`
+4. **一次 fanout 把全部 Manager 并列进「指挥部」tab**（网格布局）：
+   ```bash
+   bash "$SKILL_DIR/scripts/fanout.sh" --count 3 --kind auto \
+     --label "<主控角色名>的界王拳指挥部 · <工作名>" \
+     --dbz-tier manager --dbz-owner <主控slug> --dbz-parent <主控slug> \
+     --dbz-root <主控slug> --tasks <manager1,manager2,manager3> \
+     --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" \
+     --tasks-dir "$TASK_DIR" --no-controller-rename
+   ```
+5. 照 `templates/manager-task.md` 给每个 Manager 写任务书（Worker fanout 命令已内嵌：独立 Worker 圈 tab，`--label` 固定标「<Manager> · <模块>」+ 绝对 cwd），`herdr agent prompt` 逐个派发
+6. 监控（`herdr agent wait <名> --until idle --until done --until blocked --timeout 1800000`，任一命中即醒；**不要只等 `done`**——claude 干完活停在 `idle`，单条件会白等满超时）→ 收割 → 质量门（报告覆盖率 + `--verify`）→ 不达标按 Goal 纪律写缺口任务书返工，决策全留 `.decisions.log`
+
+**第二步（备选）：脚本一键无人值守**。需求天然能按通用模板分解（如标准全栈「前端/后端/DB/文档」四模块）、且想无人值守跑时用 orchestrator：
+
+```bash
+"$SKILL_DIR/scripts/kaio-ken-orchestrate.sh" \
+  --request "开发全栈 AI 聊天应用（React + FastAPI + DB + 部署文档）" \
+  --spec "$PWD/SPEC.md" \
+  --verify "pnpm typecheck && pnpm test && pnpm build" \
+  --max-managers 4 \
+  --max-workers-per-manager 3 \
+  --max-goal-rounds 2 \
+  --cwd "$PWD"
+```
+
+脚本会：先把主控自己的 workspace 改名成「<主角> · <工作名>」（原标签落盘 `.origin-workspace`，退出时自动恢复）→ 建**专属 workspace**（`界王拳 · <任务名>`，不碰主控原有工作区）→ 固化 SPEC → 按通用模板分解 Manager 任务（任务书里 Worker 圈固定 `--label "<Manager> · <模块>"`）→ 一次 fanout 把全部 Manager 并列进指挥部 tab → 派发任务 → Loop 监控 → 收割 + 跑 `--verify` → 质量门不通过则自动返工。分解贴合度存疑时优先手工编排。
+
+常用参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--spec PATH` | 聊透后的需求规格；不传则按 request 推断草稿，并在报告里标出「未确认维度」 |
+| `--verify CMD` | 最终验收命令，在 `--cwd` 下执行，exit 0 才算通过；不传则质量门只靠报告覆盖率，报告会标注「未运行」 |
+| `--max-goal-rounds N` | 质量门不通过时最多自动返工几轮（0–10，默认 2） |
+| `--max-managers` / `--max-workers-per-manager` | 2–6，控制两层宽度 |
+| `--quality FLOAT` | 报告覆盖率阈值 0.7–1.0（默认 0.85） |
+| `--auto-mode 0` | 关键决策点先问用户；无 tty 时降级为自动继续并写入 `.decisions.log` |
+
+### Goal 模式：不合格就自己返工
+
+首轮收割后主 Agent 会算一道质量门：**报告覆盖率 ≥ `--quality` 且 `--verify` 通过** 才算过。
+
+```mermaid
+flowchart TD
+  A[首轮 Loop + 收割] --> B{FINAL_REPORT-round-0.md<br/>质量门通过?}
+  B -- 是 --> Z[交付]
+  B -- 否 --> C{轮次 < max-goal-rounds?}
+  C -- 否 --> E[升级给主 Agent<br/>.decisions.log 留痕]
+  C -- 是 --> D[写 GOAL-ROUND-N-GAPS.md<br/>只列缺口，不重发原需求]
+  D --> F[返工派发给各 Manager]
+  F --> G[Loop 监控 + 收割 + 重跑 verify]
+  G --> H[快照 FINAL_REPORT-round-N.md]
+  H --> B
+```
+
+要点：
+
+- 返工任务书叫 `GOAL-ROUND-N-GAPS.md`，只写「谁没交报告」「verify 的失败尾部」，Manager 照着补，不会推倒重做。
+- 每轮都留快照 `FINAL_REPORT-round-N.md`，可以对比轮次差异。
+- 轮数用尽仍不通过 → 写 `.decisions.log` 并 exit 1，明确「需主 Agent 接管」，不会假装成功。
+- 质量门结论、返工原因、`--spec` 来源全部落在 `.decisions.log`，事后可追溯为什么这么判。
+
+### 产物在哪
+
+任务目录 `.fangyang/kaio-ken-<ts>/` 下：
+
+| 文件 | 内容 |
+|---|---|
+| `SPEC.md` | 本次唯一事实来源（`--spec` 复制而来，或推断草稿） |
+| `SPEC_QUESTIONS.md` | 需求提问清单；没聊透时它就是「还差一次对话」的凭据 |
+| `.decisions.log` | 自动/人工决策留痕（启动模式、分解确认、Goal 轮次、升级） |
+| `.manager-map` | 模块 → Manager slug 映射（DBZ 撞名加后缀时靠它对账） |
+| `manager-<slug>-task.md` | 每个 Manager 的任务书 |
+| `FINAL_REPORT.md` / `FINAL_REPORT-round-N.md` | 聚合报告与每轮快照 |
+| `GOAL-ROUND-N-GAPS.md` | 返工任务书 |
+| `herdr-<...>-agents.tsv` | fanout 记录的 agent ↔ pane manifest |
+
+工作名（workspace / tab 标签、manifest 文件名）按**字符**截断而不是字节，中文需求在 `LC_CTYPE=C` 下也不会切出非法 UTF-8。
+
+### 三层下的铁律补充
+
+- **指挥部 + Worker 圈分 tab**：全部 Manager 并列在同一个「指挥部」tab 网格里；每个 Manager 的 Worker 圈是自己的独立 tab——领导和 worker 一眼可分，指挥部 tab 永远只有 Manager。
+- **workspace 隔离**：界王拳的所有 tab 都在它自己的 workspace 里，主控不跟 Manager 抢 pane。
+- **Manager 必须用 fanout.sh 起 Worker**，不要用 spawn_subagents 之类的裸调用——否则 Worker 没有 pane、用户看不见、也没法用 `agent read` 收割。
+- **Manager 内的分片同样遵守文件不重叠**：热文件只在主控或单个 Manager 手里；跨 Manager 的接口契约先写进任务文件再开工。
+- **Manager 收割 Worker 时不关 pane**（不带 `--close`），保留现场待审；整圈关闭由主控在用户确认后统一做。
+
+### 角色命名
+
+主控/Manager/Worker 的名字分别从一线/二线/三线角色池分配，见 `lib/dbz-characters.sh`。命名只是趣味层，职责边界仍是「主控 - Manager - Worker」；撞名自动加 `-2/-3` 后缀。完整说明见 `KAIO_KEN_DBZ_THEME.md`。
+
+**展示名用七龙珠中文，herdr 运行时名用固定英文 slug**（`krillin` / `chichi` / `android17`），任务文件、agent 名、报告、监控四者保持一致，不拼西部牛仔前缀：
+
+```bash
+# 领 N 个不重复角色（输出 slug；--exclude/--used-from 自动避开已用角色）
+bash scripts/dbz-roster.sh --count 3 --tier manager --used-from "$TASKS_DIR"
+bash scripts/dbz-roster.sh --count 3 --tier worker  --used-from "$TASKS_DIR" --explain
+```
+
+fanout 只有带 `--dbz-tier manager|worker --dbz-owner <主 Agent 名>` 时才走这套命名；不带参数时仍用普通放羊的 `owner-task` 命名。
+
+## Herdr 常用命令速查
+
+> 不确定当前版本语法时，先运行 `herdr --skill`，它会输出给 AI 使用的 herdr 控制说明。
+
+### 环境与查看
+
+```bash
+herdr status
+herdr workspace list
+herdr tab list --workspace "$HERDR_WORKSPACE_ID"
+herdr pane list --workspace "$HERDR_WORKSPACE_ID"
+herdr pane layout
+herdr pane current
+
+# 当前 agent 自己的身份
+echo "$HERDR_WORKSPACE_ID"
+echo "$HERDR_TAB_ID"
+echo "$HERDR_PANE_ID"
+```
+
+结构化查看：
+
+```bash
+herdr agent list | jq -r '.result.agents[] | [.name // "(unnamed)", .pane_id, .tab_id, .agent_status] | @tsv'
+herdr tab list --workspace "$HERDR_WORKSPACE_ID" | jq -r '.result.tabs[] | [.tab_id, .label, .pane_count, .focused] | @tsv'
+```
+
+### Tab
+
+```bash
+# 新建羊圈 tab
+herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label "主控的羊圈 · 任务名" --no-focus
+
+# 改名
+herdr tab rename <tab-id> "主控的羊圈 · 新任务名"
+
+# 关闭
+herdr tab close <tab-id>
+```
+
+### Pane
+
+```bash
+# 从当前 pane 向右/向下切
+herdr pane split "$HERDR_PANE_ID" --direction right --cwd "$PWD" --no-focus
+herdr pane split <pane-id> --direction down --cwd "$PWD" --no-focus
+
+# 查看/聚焦/关闭
+herdr pane list --workspace "$HERDR_WORKSPACE_ID"
+herdr pane layout
+herdr pane focus --pane <pane-id>
+herdr pane close <pane-id>
+```
+
+### Agent
+
+```bash
+# 在已有 shell pane 启动 agent
+herdr agent start <name> --kind <codex|claude|opencode|gemini|...> --pane <pane-id> --timeout 120000
+
+# 派发任务（任务文件在仓库 .fangyang/ 内，读取无需授权）
+herdr agent prompt <name> "Read .fangyang/task.md and execute it exactly. Stay in scope. Do not commit."
+
+# 等待完成
+herdr agent wait <name> --until idle --until done --until blocked --timeout 1800000
+
+# 读取输出
+herdr agent read <name> --lines 160
+herdr agent read <name> --source visible   # working/blocked 时看当前屏幕
+
+# 权限兜底：仅当仍触发授权弹窗时（Always allow）
+herdr agent send-keys <name> right enter
+herdr agent send-keys <name> enter
+
+# 改名/聚焦/状态
+herdr agent rename <name> <new-name>
+herdr agent focus <name>
+herdr agent get <name>
+herdr agent explain <name>
+```
+
+## 1. 调查与拆分
+
+先确认：
+
+```bash
+git status --short
+git log --oneline -5
+herdr status
+herdr workspace list
+herdr tab list --workspace <workspace>
+```
+
+拆分原则：
+
+- 一个 agent 一个可独立验收的交付
+- 文件 scope 尽量不重叠
+- 新文件优先，热文件后置或单 owner
+- 每个任务必须有验收命令
+- 需要集成的部分留给主控
+
+常见拆分：
+
+- Rust crate / 语言支持 / 解析器 / 验证器
+- Electron UI / 事件链路 / 设置页
+- 测试与基准 / 文档 / CI
+- 依赖修复 / LSP / 命令执行
+- 独立语言：Python / Go / Rust / Java
+
+## 2. 写任务文件
+
+复制模板（落到仓库内 `.fangyang/` 目录，子 agent 读取时**不会触发授权弹窗**）：
+
+```bash
+mkdir -p "$PWD/.fangyang"
+cp "$SKILL_DIR/templates/task.md" "$PWD/.fangyang/<name>-task.md"
+```
+
+fanout.sh 也会自动创建 `.fangyang/` 并把 manifest 写在里面，同时在 `.gitignore` 里幂等追加 `.fangyang/`（不会误提交任务文件）。
+
+必须包含：
+
+```markdown
+# Worker: <任务名>
+
+Repository: /path/to/repo
+Base commit: <sha>. Do not commit.
+
+## Write scope (ONLY these files)
+- ...
+
+Do NOT edit: ...
+
+## Read first
+- ...
+
+## Goal
+...
+
+## Requirements
+...
+
+## Acceptance
+```bash
+...
+```
+
+Do not commit. Report changed files, tests, and gaps.
+```
+
+写 scope 时宁窄勿宽。需要共享文件时，让主控做，不要让两只羊同时改。
+
+## 3. 开 tab 和 pane
+
+推荐布局：主控在左，右侧 2×N 网格。
+
+用脚本快速开（`--kind` 省略时默认 `auto`，与主控同类）：
+
+```bash
+"$SKILL_DIR/scripts/fanout.sh" \
+  --count 6 \
+  --work "P2 补齐" \
+  --tasks lsp,ui,bench,docs,rust,python \
+  --cwd "$PWD"
+```
+
+脚本会创建 tab、网格 pane、启动 agent，并打印每个 agent 的名字和 pane id。羊圈建在主控自己的 `$HERDR_WORKSPACE_ID` 里，不跨 workspace；在 herdr pane 外执行时进入外部放羊模式：自动安装/启动 herdr 并新建专属牧场 workspace（见下文"外部放羊"）。
+
+主控留在原 tab；新 tab 的标签默认是：
+
+```text
+<owner>的羊圈 · <work>
+```
+
+例如：`夜枭的羊圈 · P2 补齐`。`--owner` 缺省时从内置西部牛仔名池随机分配（孤星客、响尾蛇、夜枭、快枪手、荒野狼、金马刺……），自动避开本 workspace 已被其他 tab 占用的名字；主控 tab 上已有的西部名会沿用（同一主控再开一圈同名）。传 `--owner 主控` 可用回旧命名。人可以直接在 herdr 的 tab 列表里看到“谁在带哪群羊、干什么活”。
+
+同时 `fanout.sh` 会把**主控自己的 tab** 同步改名为 `<owner> · <work>`（如 `夜枭 · P2 补齐`），原名写入 manifest 元数据；`harvest.sh --close-tab` 关圈时自动恢复。多个主控并行时，谁的 tab 对应哪个羊圈一眼可辨。改名失败或不在 herdr pane 里时只降级提示，不影响放羊（外部放羊模式没有主控 tab，直接跳过改名）。
+
+**外部放羊（在 herdr pane 外跑 `fanout.sh`）：** 没检测到 `HERDR_WORKSPACE_ID` 时不再直接报错，而是自动 bootstrap——先跑 `scripts/ensure-herdr.sh` 确保 herdr CLI 和 headless `herdr server` 可用（已有则复用、缺失则安装/拉起并等待就绪），再新建 `<owner>的牧场 · <work>` 专属 workspace 当羊圈。差异：
+
+- `--owner` 缺省仍从西部名池随机分配；显式 `--owner` 照常生效
+- 没有 herdr pane 可探测 kind，`--kind` 缺省按环境嗅探兜底（`CLAUDECODE`/`CLAUDE_CODE_ENTRYPOINT`→claude、`CODEX_HOME`/`CODEX_SANDBOX`→codex、`OPENCODE_BIN`/`OPENCODE_CONFIG_DIR`→opencode，最后兜底 claude）；建议显式传 `--kind`
+- 主控 tab 改名/恢复被跳过（外部没有主控 tab）
+- manifest 照常生成并记录牧场 workspace id；`harvest.sh` 在任何 shell 都能收割
+- `--no-bootstrap` 关闭自动 bootstrap、恢复直接报错；`FANGYANG_HERDR_BIN` / `FANGYANG_HERDR_INSTALL` / `FANGYANG_HERDR_SERVER_LOG` / `FANGYANG_SERVER_START_WAIT` 分别覆盖二进制路径、安装命令、server 日志与启动等待秒数
+
+查看 tab：
+
+```bash
+herdr tab list --workspace "$HERDR_WORKSPACE_ID"
+```
+
+需要改名字时：
+
+```bash
+herdr tab rename <tab-id> "主控的羊圈 · 新任务名"
+```
+
+手工方式：
+
+```bash
+herdr tab create --workspace <ws> --cwd "$PWD" --label coding-6 --no-focus
+herdr pane split <root-pane> --direction right --cwd "$PWD" --no-focus
+herdr pane split <right-pane> --direction down --cwd "$PWD" --no-focus
+herdr agent start worker-a --kind codex --pane <pane-id>
+herdr agent start worker-b --kind opencode --pane <pane-id>
+```
+
+`agent start` 要求 pane 停在交互式 shell prompt。
+
+支持的 kind 以当前 herdr 为准：
+
+```bash
+herdr agent start --help
+```
+
+常见：`codex`、`claude`、`opencode`、`gemini`、`cursor`、`copilot`、`qwen`、`kimi`、`droid`、`cline`、`amp`、`grok`。
+
+选择顺序：
+
+1. 默认 `--kind auto`：与主控同类。claude 起 claude，opencode 起 opencode，codex 起 codex——同种 agent 的行为、权限、配置最一致
+2. 同类额度耗尽 → 按用户偏好降级到 `claude` / `opencode`，并在汇报时说明用了什么 kind
+3. 需要不同模型能力时混用，但同一文件仍只能一个 owner
+
+Workspace 纪律：
+
+1. 羊圈 tab、所有 pane、所有 agent 都建在主控自己的 `$HERDR_WORKSPACE_ID`
+2. `fanout.sh` 不带 `--workspace` 时自动锁定主控 workspace；在 herdr pane 外（环境变量缺失）自动 bootstrap：装好并启动 herdr 后新建**专属牧场 workspace**（`<owner>的牧场 · <work>`，绝不复用 focused/shared workspace）；传 `--no-bootstrap` 关闭并恢复直接报错
+3. 显式 `--workspace` 与主控 workspace 不同时会打 WARNING——仅限用户明确要求跨界时使用
+4. `harvest.sh` 发现 manifest 记录的 workspace 与当前 shell 不一致时会警告跨 workspace 收割，应回到起羊的 workspace 重新收割
+
+### 网格怎么摆
+
+默认让主控占一列，agent 在右侧排成 2 行网格：
+
+| agent 数 | 布局 |
+|---|---|
+| 2 | 1 行 × 2 列 |
+| 3 | 2 行 × 2 列（右下空一格） |
+| 4 | 2 × 2 |
+| 5 | 2 行 × 3 列（右下空一格） |
+| 6 | 2 行 × 3 列 |
+
+手工给 4 只羊开网格：
+
+```bash
+# 主控 pane 在左；先向右分出 agent 区
+A=$(herdr pane split "$HERDR_PANE_ID" --direction right --cwd "$PWD" --no-focus | jq -r '.result.pane.pane_id')
+# agent 区再分一列
+B=$(herdr pane split "$A" --direction right --cwd "$PWD" --no-focus | jq -r '.result.pane.pane_id')
+# 两列各自向下分，得到 2×2
+C=$(herdr pane split "$A" --direction down --cwd "$PWD" --no-focus | jq -r '.result.pane.pane_id')
+D=$(herdr pane split "$B" --direction down --cwd "$PWD" --no-focus | jq -r '.result.pane.pane_id')
+```
+
+6 只羊同理：先分出 3 列，再把 3 列各向下分一次。
+
+如果不想让主控和羊挤在同一 tab：主控留在原 tab，另开一个 tab 专门做 2 行网格（`fanout.sh` 默认这样做）。
+
+### 怎么找到“自己的羊”
+
+**从主控视角：**
+
+```bash
+herdr agent list
+herdr agent get worker-a
+herdr pane list --workspace "$HERDR_WORKSPACE_ID"
+```
+
+`agent list` 会返回每个 agent 的 `name`、`pane_id`、`tab_id`、`cwd`、`agent_status`。用 agent 名字操作最稳：
+
+```bash
+herdr agent prompt worker-a "..."
+# 多条件任一命中即返回：claude/opencode 干完停在 idle，只等 done 会白等满超时
+herdr agent wait worker-a --until idle --until done --until blocked --timeout 1800000
+herdr agent read worker-a --lines 160
+```
+
+**从 agent 自己视角：**
+
+```bash
+echo "$HERDR_PANE_ID"
+echo "$HERDR_TAB_ID"
+echo "$HERDR_WORKSPACE_ID"
+herdr pane current
+```
+
+`HERDR_PANE_ID` 是当前进程所在 pane，最可靠。`herdr pane current` 返回的是当前**焦点** pane；如果别的 pane 被点中，它可能不是你自己，所以优先用环境变量。
+
+**从脚本视角：**
+
+`fanout.sh` 会写 manifest（落在 `$PWD/.fangyang/`，主控读写无需授权）：
+
+```text
+.fangyang/herdr-<label>-agents.tsv
+#controller_tab_id=w7:t3
+#controller_tab_label=1
+name    pane    tab    workspace
+worker-1 w7:pB  w7:t5  w7
+...
+```
+
+第 4 列记录这群羊所在的 workspace；`#` 开头是元数据行（主控 tab 配对信息），`harvest.sh` 读 agent 时会跳过，`--close-tab` 用它恢复主控 tab 原名——旧 manifest 没有这些行也能正常收割。收割时直接（**不带 `--close`，羊圈保留待审**）：
+
+```bash
+"$SKILL_DIR/scripts/harvest.sh" \
+  --manifest .fangyang/herdr-主控的羊圈_·_P2_补齐-agents.tsv \
+  --wait 1800000
+```
+
+审查完毕、用户确认后再关整圈：
+
+```bash
+"$SKILL_DIR/scripts/harvest.sh" \
+  --manifest .fangyang/herdr-主控的羊圈_·_P2_补齐-agents.tsv \
+  --close-tab
+```
+
+`--tasks` 按逗号拆分作为任务名，脚本自动给每只羊加主控 slug 前缀：`--tasks lsp-tool,ui-persist` 实际起名 `night-owl-lsp-tool`、`night-owl-ui-persist`（同 workspace 多圈隔离；撞名自动 `-2/-3` 后缀）。任务文件同名跟随：`.fangyang/night-owl-lsp-tool-task.md`。直接用任务语义命名即可，不要手动加主控前缀。
+
+## 4. 派发
+
+```bash
+herdr agent prompt worker-a \
+  "Read .fangyang/my-task-a.md and execute it exactly. Stay strictly within the listed write scope. Do not commit. Run every acceptance command and report changed files, tests, and gaps."
+```
+
+一次派发所有 agent；不要等第一只完成再派第二只。
+
+## 5. 权限卡住怎么办
+
+任务文件和 manifest 都已放在仓库内 `.fangyang/`，正常流程**不会**触发目录授权弹窗。仅当 agent 去读仓库外的路径（如 `/tmp`、`~/Downloads`）时才可能出现：
+
+```text
+Permission required: Access external directory /tmp
+Allow once | Allow always | Reject
+```
+
+处理（兜底手段，不要预先批量发）：
+
+```bash
+# 选中 Always allow
+herdr agent send-keys worker-a right enter
+# 再确认一次
+herdr agent send-keys worker-a enter
+```
+
+如果已选到 `Confirm`，直接 `enter`。
+
+查看当前画面：
+
+```bash
+herdr agent read worker-a --source visible
+```
+
+`agent read` 报 `agent_not_idle` 时：
+
+```bash
+# 看当前可见屏幕
+herdr agent read worker-a --source visible
+# 或等 agent 进入 idle
+herdr agent wait worker-a --until idle --timeout 300000
+```
+
+## 6. 等待与收割
+
+```bash
+herdr agent list
+herdr agent wait worker-a --until idle --until done --until blocked --timeout 1800000
+```
+
+注意：`wait` 可能匹配到中间 idle。看到完成汇报前，再检查一次：
+
+```bash
+herdr agent list
+herdr agent read worker-a --lines 160
+```
+
+如果还在 working，`read` 可能失败；用：
+
+```bash
+herdr agent read worker-a --source visible
+```
+
+收割后检查每只羊的最终报告：
+
+- 改了什么文件
+- 测试数量/结果
+- 是否越界
+- 是否把无关文件格式化了
+- 有没有未完成项
+
+**收割 ≠ 拆圈。** `harvest.sh` 不带 `--close` 时只读输出、不动 pane——羊圈原样保留，用户随时可以点开 tab 查看每只羊的现场。主控完成审查和验证后，在汇报里明确提示"羊圈还开着"，等用户确认审查完毕再执行关闭。
+
+## 7. 主控统一验证
+
+不要只相信 agent 的“测试通过”。主控至少跑：
+
+```bash
+git status --short
+git diff --check
+```
+
+按仓库门禁跑：
+
+```bash
+# Rust
+cargo test --manifest-path harness-rs/Cargo.toml --workspace
+cargo clippy --manifest-path harness-rs/Cargo.toml -p <crate> --all-targets --no-deps -- -D warnings
+
+# Electron
+pnpm --dir apps/electron typecheck
+pnpm --dir apps/electron build
+pnpm --dir apps/electron test:rust-harness-host-callbacks
+pnpm --dir apps/electron test:renderer-navigation
+
+# 如果仓库提供统一脚本
+bash scripts/verify-coding.sh
+pnpm coding:check
+```
+
+如果 agent 跑了 `rustfmt lib.rs` 导致其他模块被递归格式化：
+
+```bash
+git checkout -- <unrelated-files>
+```
+
+只保留任务 scope 内的 diff。
+
+## 8. 关闭羊圈（审查完毕后）
+
+关闭的时机：**主控已汇报、用户已查看并确认审查完毕**。不是收割完就关。
+
+汇报时提示用户（示例话术）：
+
+> 羊圈「主控的羊圈 · P2 补齐」还开着，你可以点开 herdr 里这个 tab 查看每只羊的现场和产出。确认没问题后我就把圈关掉；要保留也行，说一声即可。
+
+用户确认后，整圈一次关掉（推荐，manifest 第 3 列就是 tab id）：
+
+```bash
+"$SKILL_DIR/scripts/harvest.sh" --manifest .fangyang/herdr-<label>-agents.tsv --close-tab
+# 或手工
+herdr tab close <tab-id>
+```
+
+只想关单个 pane：
+
+```bash
+herdr pane close <pane-id>
+```
+
+确认没有 agent 还在 working 再关（`--close-tab`/`--close` 遇 working 会自动跳过并提示）。`--close-tab` 关圈后还会按 manifest 里的 `#controller_tab_*` 元数据把主控 tab 恢复为放羊前的原名。
+
+## 9. 提交
+
+只有用户明确要求提交时：
+
+```bash
+git status --short
+git diff --check
+git add <intended-files>
+git diff --cached --stat
+git commit -m "<type>(<scope>): <summary>"
+```
+
+不要把以下内容混进提交：
+
+- 过期的根目录重复文档
+- agent 留下的临时脚本/调试文件
+- 无关的格式化噪音
+- 未跟踪的截图、日志、benchmark 输出
+
+## 任务模板
+
+见 `templates/task.md`。
+
+## 脚本
+
+- `scripts/fanout.sh`：创建 tab、网格 pane、启动 N 个 agent；同步把主控 tab 改名 `<owner> · <work>`；在 herdr pane 外执行时自动 bootstrap（装 herdr、起 headless server、建专属牧场 workspace），`--no-bootstrap` 可关闭
+- `scripts/ensure-herdr.sh`：确保 herdr CLI 与 headless `herdr server` 可用（已有则复用、缺失则安装/拉起），幂等；供 fanout.sh 外部模式调用，也可单独执行
+- `scripts/kaio-ken-orchestrate.sh`：界王拳三层编排**自动化备选**（主路径是主控手工编排，见「怎么开」）——启动即把主控 workspace 改名「<主角> · <工作名>」（原标签存 `.origin-workspace`、EXIT 自动恢复、已带界王拳标签则跳过防嵌套覆盖）、建专属 workspace、固化 SPEC（`--spec` 或推断草稿）、按通用模板分解 Manager 任务、一次 fanout 把全部 Manager 并列进指挥部 tab、派发、Loop 监控、收割 + `--verify` 质量门、Goal 模式自动返工，最后聚合报告
+- `scripts/dbz-roster.sh`：按一线/二线/三线领不重复的七龙珠角色 slug（`--count --tier --used-from --exclude --explain`）
+- `lib/spec.sh`：需求规格推断与提问清单（`SPEC_QUESTIONS.md`）、Goal 质量门判据
+- `lib/decompose.sh`：按任务类型（code/report/design/mixed）给出 Manager 分片建议
+- `lib/dbz-characters.sh`：三线七龙珠角色名池（主控/Manager/Worker 命名，含去重）
+- `templates/manager-task.md`：Manager 任务模板（七个步骤，Worker 用 fanout.sh 开**独立 Worker 圈 tab** 并固定 `--label "<Manager> · <模块>"`，`--cwd` 用绝对路径）
+- `templates/worker-task.md`：Worker 任务模板（write scope / 验收 / 越界自查）
+- `tests/run-tests.sh`：离线 stub 测试（伪 herdr CLI），覆盖 fanout/harvest 的主控 tab 配对行为
+- `install.sh`：安装到 `~/.agents/skills/fangyang-le` 并链接到 agent skill 目录
+- `bootstrap.sh`：从 GitHub 克隆后自动安装
+- `uninstall.sh`：卸载
+
+## 故障排查
+
+| 现象 | 处理 |
+|---|---|
+| `pane not found` | 重新 `herdr pane list`，不要手写不存在的 pane id |
+| `agent start` 卡住 | pane 必须在 shell prompt，不能在 agent/editor 里 |
+| agent 一直 blocked | `read --source visible`，通常是 `/tmp` 或命令权限 |
+| `wait` 很快返回 done 但还在跑 | 再 `wait` 一次或 `agent list` 确认 |
+| `agent read` 报 working | 用 `--source visible` 或等 idle |
+| 两个 agent 改同一文件 | 立刻停一个，主控接管该文件 |
+| cargo file lock 等待 | 正常，让它们排队；不要并行跑同一 target 的重型构建 |
+| agent 格式化无关文件 | 主控 revert 无关文件，只保留 scope 内 diff |
+| `fanout.sh` 报 `HERDR_WORKSPACE_ID is unset` | 在 herdr pane 外跑脚本且传了 `--no-bootstrap`；去掉 `--no-bootstrap` 让它自动装环境并建牧场 workspace，或回到主控 pane 执行 |
+| 外部放羊 bootstrap 失败（herdr 装不上 / server 起不来） | `herdr status server` 手动确认；`FANGYANG_HERDR_BIN` 指定二进制路径、`FANGYANG_HERDR_INSTALL` 覆盖安装命令、`FANGYANG_HERDR_SERVER_LOG` 查看 headless server 日志；启动慢就调大 `FANGYANG_SERVER_START_WAIT` |
+| `fanout.sh` 报检测不到 agent kind | 控制方 pane 不是已注册 agent，或无 `$HERDR_PANE_ID`；显式传 `--kind claude / opencode / codex` |
+| `harvest.sh` 警告 cross-workspace harvest | 当前 shell 与起羊时的 workspace 不一致；`echo $HERDR_WORKSPACE_ID` 确认后，回到原 workspace 重新收割 |
+
+## 一句话
+
+**先拆干净，再放出去；羊只负责吃自己那片草，主控负责收网、验证和提交。**

@@ -1,0 +1,100 @@
+---
+name: homology-search
+description: >
+  Route all homology / similarity search paradigms for shotgun metagenomics, including
+  the Steinegger/Söding stack (MMseqs2, HH-suite, Foldseek family, PLASS, MetaEuk,
+  Petasearch), vector DB (ERAST), and genome warehouse search (Phylign, LexicMap). Use
+  when choosing how to search proteins, genes, or genomes.
+license: MIT
+metadata:
+  metagenomics.category: "orchestration"
+  metagenomics.tags: "homology, search, Steinegger, Foldseek, MMseqs2, vector-DB, routing"
+  metagenomics.stage: "function"
+  metagenomics.maturity: "reviewed"
+  metagenomics.last-reviewed: "2026-10-24"
+  metagenomics.command-status: "search-paradigm routing reviewed; execution is delegated to child skills"
+---
+
+# Homology search routing
+
+Shotgun projects need **many search paradigms**. This hub chooses among them.
+For LM dark-matter framing also see `metagenomics-llm`. For protein LMs see
+`protein-language-model`. For trees see `phylogenomics`.
+
+## Steinegger / Söding search stack
+
+| Role | Prefer |
+|------|--------|
+| Sequence search / cluster / taxonomy | `mmseqs2` |
+| Profile HMM remote homology | `hh-suite` |
+| Protein-level assembly from reads | `plass` |
+| Eukaryotic gene call via homology | `metaeuk` |
+| Structure compress/index | `foldcomp` |
+| Structure search / multimer / ProstT5 | `foldseek` |
+| Structural motifs | `folddisco` |
+| Multiple structure alignment | `foldmason` |
+| Peta-scale protein search | `petasearch` |
+| Conserved gene neighborhoods | `spacedust` |
+| Taxonomy (DNA/protein) | `metabuli` (separate taxonomy skill) |
+
+## Other paradigms
+
+| Paradigm | Prefer |
+|----------|--------|
+| PLM embedding search | `protein-language-model` → `plmsearch` · `deepblast` |
+| Vector DB + rerank | `erast` |
+| Phylogeny-compressed genomes | `phylign` |
+| Gene vs million genomes | `lexicmap` |
+| Catalogue AA aligner | `diamond` |
+
+Hard rules:
+
+1. Do not merge BLAST/MMseqs, HH-suite, Foldseek, PLM, and vector-DB tables unlabeled
+2. Pin software **and** database/index release
+3. Low pLDDT structures inflate Foldseek false positives
+4. `plass` proteins ≠ binnable contigs; `metaeuk` is for eukaryotes
+
+## Search and evidence contract
+
+Require query molecule/type, search objective, expected evolutionary distance,
+reference/index release, scale/resources, sensitivity/coverage target, and
+whether coordinates, taxonomy, alignments, or structures are needed. Deliver raw
+hits plus a normalized table preserving query/target IDs, method, score scale,
+E-value/probability, aligned coverage, identity or structural similarity,
+rank/tie policy, database release, and no-hit/failed queries.
+
+Cross-method consensus must be defined before inspection and retain each native
+score. Similarity supports homology only within method-appropriate evidence;
+function, orthology, taxonomy, and common ancestry require additional context.
+Inspect low-complexity, short-query, multidomain, paralog, database-redundancy,
+and structure-confidence failure modes.
+
+## Decision tree
+
+```text
+What are you searching / recovering?
+│
+├─ Proteins / ORFs
+│   ├─ Close / catalogue-scale → mmseqs2 / diamond
+│   ├─ Profile remote homology / MSA for folding → hh-suite
+│   ├─ Structures or ProstT5 / AFDB → foldseek (± folddisco / foldmason / foldcomp)
+│   ├─ Peta-scale protein targets → petasearch
+│   ├─ Sequence-only PLM → protein-language-model (plmsearch / deepblast)
+│   ├─ AA embeddings / ProstT5 → protein-language-model (esm / prostt5)
+│   └─ Billion-scale vector retrieval → erast
+├─ Recover more proteins from reads → plass
+├─ Eukaryotic genes on contigs → metaeuk
+├─ Genes / plasmids vs huge genome sets
+│   ├─ Phylogeny-compressed 661k-style → phylign
+│   └─ Million-genome nucleotide index → lexicmap
+├─ Dark modules / neighborhoods → spacedust
+└─ Unsure → this hub + tool-selection
+```
+
+## Related skills
+
+`mmseqs2` · `hh-suite` · `plass` · `metaeuk` · `foldcomp` · `foldseek` ·
+`folddisco` · `foldmason` · `petasearch` · `spacedust` ·
+`plmsearch` · `deepblast` · `erast` · `phylign` · `lexicmap` · `diamond` ·
+`protein-language-model` · `metagenomics-llm` · `phylogenomics` · `unicore` ·
+`tool-selection`

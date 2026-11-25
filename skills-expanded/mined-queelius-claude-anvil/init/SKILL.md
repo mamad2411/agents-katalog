@@ -1,0 +1,320 @@
+---
+name: init
+description: >-
+  Initialize a paper repository: discover structure, infer format, gather
+  author info, and create .papermill/state.md. On existing repos, refresh
+  mode adds missing schema fields without overwriting data. Migrates legacy
+  .papermill.md to .papermill/state.md automatically.
+---
+
+# Papermill Init
+
+Initialize a paper repository for use with papermill. Follow every step below in order. Be thorough in discovery but conservative in action: never overwrite existing state.
+
+---
+
+## Step 1: Check for Existing State
+
+Check for state files in this order (Read tool):
+
+1. **`.papermill/state.md`** (current format)
+2. **`.papermill.md`** (legacy format: needs migration)
+
+### Case A: `.papermill/state.md` exists
+
+Read it, display a summary (title, stage, format, authors), then offer refresh:
+
+  > This repository is already initialized. Current state is shown above.
+  >
+  > Would you like to **refresh** the state file? This will:
+  > - Add any missing YAML fields from the current schema (preserving all existing data)
+  > - Re-discover repo structure for new files or assets
+  > - Ask about anything not yet captured (e.g., related papers)
+  >
+  > Nothing will be overwritten or removed. Or use `/papermill:status` for a quick look.
+
+  If the user declines refresh, stop here. If they accept, proceed to **Refresh Mode** below.
+
+### Case B: `.papermill.md` exists (legacy)
+
+Migrate it by following the "Migration From Legacy `.papermill.md`" steps in `${CLAUDE_PLUGIN_ROOT}/docs/state-schema.md` (Read tool), then tell the user:
+
+  > **Migrated state file.** Moved `.papermill.md` → `.papermill/state.md` and created `.papermill/reviews/` for review output. All existing data preserved.
+
+Then display the summary and offer refresh as in Case A.
+
+### Case C: No state file found
+
+Continue to Step 2 (fresh initialization).
+
+---
+
+## Refresh Mode
+
+Refresh is **additive only**: it fills gaps without touching existing data. Run through each check below, report what was found, and apply changes only with user confirmation.
+
+### 1. Schema migration
+
+Compare the existing YAML frontmatter against the Full Template in `${CLAUDE_PLUGIN_ROOT}/docs/state-schema.md` (Read tool). For each field in the template that is missing from the file, add it with the template's default value.
+
+Report what was added: "Added N missing fields to bring the state file up to the current schema." If nothing is missing, say so.
+
+### 2. Re-discover repo structure
+
+Run the same discovery as Step 2 (format detection, asset scan). Compare against what the state file already records. Report any new findings:
+
+- New `.bib` files since initialization
+- New code directories (`research/`, `scripts/`, etc.)
+- Format change (e.g., repo now has `.Rmd` files but format says `latex`)
+
+For format mismatches, ask the user: "The state file says `latex` but I also found `.Rmd` files. Should I update the format?" Only update with confirmation.
+
+### 3. Fill in missing context
+
+Check for content that the current init flow captures but older versions may not have asked about:
+
+- **Related papers (Step 6)**: If `related_papers` is empty or missing, run the repoindex discovery query (Step 6, if repoindex is available) and present any papermill-tracked projects found. Also re-ask the Step 6 question about related work and software. If `related_papers` is already populated, still offer repoindex discovery to catch newly-initialized projects: "You have N related papers linked. Want me to check for any new papermill-tracked projects?"
+- **Related work and software (Step 6)**: If the Notes section does not contain a `## Related Work` heading, run the related-work question from Step 6. If the user provides context, append it to the notes.
+- **Author ORCID**: If `authors[].orcid` is empty, check `deets` and offer to fill it in.
+- **Title**: If `title` is empty or looks like a placeholder, re-run title inference from Step 4.
+
+### 4. Report and finish
+
+Display what changed:
+
+> **Refresh complete.**
+>
+> | Action | Details |
+> |--------|---------|
+> | Schema fields added | N (list them) |
+> | New assets discovered | (list or "none") |
+> | Context updated | (what was added or "nothing new") |
+
+Append a timestamped note to the markdown body:
+
+```
+- YYYY-MM-DD (init refresh): Refreshed state file. [brief summary of changes].
+```
+
+Do NOT modify existing field values (stage, thesis, prior_art content, experiments, reviews, venue selections) unless the user explicitly asks. Those are managed by their respective skills.
+
+---
+
+## Step 2: Discover Repository Structure
+
+Search the repository to understand what kind of paper project this is (Glob tool). Look for all of the following and report what you find:
+
+### Format detection (check in this order)
+
+1. **LaTeX**: Search for `*.tex` files (Glob tool). If found, set `format: latex`.
+2. **R Markdown**: Search for `*.Rmd` files (Glob tool). If found, set `format: rmarkdown`.
+3. **Markdown**: Search for `paper.md`, `manuscript.md`, or any markdown file that looks like a JOSS-style paper (contains `title:` in YAML frontmatter) (Glob/Grep tools). If found, set `format: markdown`.
+4. If none of the above are found, ask the user what format they plan to use. Default to `format: latex` if they are unsure.
+
+### Additional assets
+
+- `*.bib` files (bibliography)
+- `research/` or `code/` or `scripts/` or `analysis/` directories (computational work)
+- `CITATION.cff` (citation metadata)
+- `figures/` or `img/` or `images/` directories (graphics)
+- `Makefile`, `latexmkrc`, or build configuration files
+- `README.md` or `CLAUDE.md` (project documentation)
+
+Report a brief inventory of what was found, for example:
+
+> **Discovered structure:**
+> - Format: latex (found `paper/main.tex`)
+> - Bibliography: `paper/references.bib` (12 entries)
+> - Research code: `research/` directory present
+> - Figures: `figures/` directory with 3 PDF files
+> - Build system: `latexmk` configuration found
+
+---
+
+## Step 3: Get Author Information
+
+Try to obtain the primary author's identity using the `deets` CLI tool, which manages personal metadata (Bash tool).
+
+Run these commands (each may fail if deets is not installed: that is fine):
+
+```bash
+deets get identity.name
+deets get contact.email
+deets get academic.orcid
+```
+
+- **If `deets` is available** and returns values: Use them as the primary author. Show the user what was found and ask for confirmation.
+- **If `deets` is not available** or returns errors: Ask the user directly:
+  > I could not find author information via `deets`. Please provide:
+  > 1. Your full name (as it appears on papers)
+  > 2. Your email address
+  > 3. Your ORCID (optional, e.g., 0000-0002-1234-5678)
+
+Also check for author info in existing files (Read/Grep/Bash tools):
+- `\author{}` blocks in `.tex` files
+- `CITATION.cff` author fields
+- Git config (`git config user.name`, `git config user.email`)
+
+If multiple sources conflict, prefer: deets > tex file > CITATION.cff > git config. Always confirm with the user.
+
+---
+
+## Step 4: Infer the Paper Title
+
+Attempt to extract the title automatically (Grep/Read tools):
+
+- **LaTeX**: Search for `\title{...}` in `.tex` files. Handle multiline titles and macro-containing titles.
+- **Markdown/R Markdown**: Look for the first `# heading` or a `title:` field in YAML frontmatter.
+- **CITATION.cff**: Check the `title:` field.
+
+If a title is found, show it to the user and ask for confirmation. If no title is found, ask:
+
+> I could not detect a paper title. What is the working title for this paper?
+
+---
+
+## Step 5: Infer the Current Stage
+
+Determine the project stage based on what exists in the repository:
+
+| Condition | Stage |
+|-----------|-------|
+| No paper content files exist (empty or new repo) | `idea` |
+| Only outline/notes exist, minimal prose | `outlining` |
+| Substantial paper content exists (multiple sections with prose) | `drafting` |
+| Paper appears complete with abstract, conclusion, references | `review` |
+
+Use your judgment. When in doubt, default to `drafting` if paper content exists, or `idea` if the repo is new or nearly empty. Tell the user what stage you inferred and why.
+
+---
+
+## Step 6: Ask About Related Work and Software
+
+Ask the user whether this paper connects to any of their other projects or software:
+
+> Is this paper related to any of your other work? For example:
+> - Part of a series (e.g., "Part II of...")
+> - Builds on a foundation paper you wrote
+> - A companion covering a different angle of the same research
+> - Has an associated software package (CRAN, PyPI, GitHub, etc.)
+> - Uses results or software from another project
+>
+> If so, briefly describe the relationships. If not, just say "standalone" and we'll move on.
+
+This step is optional: if the user says "standalone" or skips it, proceed without adding anything. Do not press for detail.
+
+If the user describes relationships or software, do two things:
+
+1. **Freeform notes**: Note them verbatim for inclusion in the Notes section of `.papermill/state.md` (Step 7), under a `## Related Work and Software` heading. This preserves context for Claude in future sessions.
+
+2. **Structured entries**: For each relationship the user describes, create a `related_papers` entry. Ask the user to confirm for each:
+   - The **path** to the related project (absolute or `~/`-relative).
+   - The **relationship type** (`rel`). Present the `rel` vocabulary table from `${CLAUDE_PLUGIN_ROOT}/docs/state-schema.md` and suggest the best fit.
+   - A **one-line label** describing the relationship.
+
+   Example interaction:
+
+   > You mentioned this paper extends the foundation paper in `~/github/papers/masked-causes-in-series-systems`. I'll add:
+   >
+   > ```yaml
+   > - path: ~/github/papers/masked-causes-in-series-systems
+   >   rel: extends
+   >   label: "Foundation paper: general masked-cause framework"
+   > ```
+   >
+   > Does that look right?
+
+### Repoindex discovery (opt-in)
+
+After the manual question, query the repoindex catalog for other papermill-tracked projects:
+
+1. Run `SELECT name, path FROM repos` through the repoindex MCP `run_sql` tool (e.g. `mcp__repoindex__run_sql`) if it is available. Only if no repoindex MCP tool exists, fall back to the CLI (Bash tool), guarded by `command -v repoindex`:
+
+   ```bash
+   repoindex sql "SELECT name, path FROM repos" --json
+   ```
+
+2. For each returned `path`, keep only repos where `[ -f "$path/.papermill/state.md" ]` holds (the repoindex DB has no per-file table, so the papermill filter happens on the filesystem). Filter out the current project.
+
+3. If matches are found, present them:
+
+   > I found **N** other papermill-tracked projects via repoindex:
+   >
+   > | Project | Path |
+   > |---------|------|
+   > | masked-causes-in-series-systems | ~/github/papers/masked-causes-in-series-systems |
+   > | maskedcauses | ~/github/rlang/maskedcauses |
+   > | ... | ... |
+   >
+   > Are any of these related to this paper? If so, I'll add them to the `related_papers` block.
+
+4. For each confirmed match, ask for `rel` type and label as above.
+
+If neither the MCP tool nor the CLI is available, or the query fails, skip silently and proceed.
+
+### Repo-clue scanning
+
+Also check for clues already in the repo (Read/Glob/Grep tools):
+- CLAUDE.md, README.md for mentions of related papers or packages
+- Bibliography for self-citations or references to sibling projects
+- DESCRIPTION file (R package), setup.py/pyproject.toml (Python package), or package.json (Node): these indicate associated software
+- CITATION.cff for software DOIs
+
+If any are found, mention them: "I noticed this repo contains a DESCRIPTION file for an R package called `foo`; is the paper about this package? I also see references to [X] in the bibliography; is that related work of yours?"
+
+---
+
+## Step 7: Create `.papermill/state.md`
+
+Create the `.papermill/` directory structure and the state file.
+
+1. **Read the canonical schema** (Read tool): `${CLAUDE_PLUGIN_ROOT}/docs/state-schema.md`. This is the single source of truth for the state file structure, field constraints, and list field shapes.
+
+2. **Create the directory** (Bash tool): `mkdir -p .papermill/reviews`
+
+3. **Write `.papermill/state.md`** (Write tool) using the template from the schema doc. Populate placeholder values from earlier steps:
+   - `title` from Step 4
+   - `stage` from Step 5
+   - `format` from Step 2
+   - `authors[0].{name, email, orcid}` from Step 3
+   - Leave the other structured fields at their empty defaults (they will be filled by thesis, prior-art, experiment, review, venue skills over time)
+
+4. **Append related-work context** (if the user described related papers or software in Step 6): add a `## Related Work and Software` section below the `## Notes` section with the user's description in their own words. Preserve this verbatim; it is context for future Claude sessions.
+
+---
+
+## Step 8: Report and Suggest Next Steps
+
+After creating `.papermill/state.md`, display a summary:
+
+> **Papermill initialized.**
+>
+> | Field   | Value              |
+> |---------|--------------------|
+> | Title   | <title>            |
+> | Stage   | <stage>            |
+> | Format  | <format>           |
+> | Author  | <name> (<email>)   |
+>
+> State file: `.papermill/state.md`
+
+Then suggest the next skill based on the inferred stage:
+
+| Stage | Suggestion |
+|-------|------------|
+| `idea` | "Run `/papermill:thesis` to develop your core claim and novelty statement." |
+| `thesis` | "Run `/papermill:thesis` to refine your thesis, or `/papermill:prior-art` to survey related work." |
+| `literature` | "Run `/papermill:prior-art` to survey related work and identify gaps." |
+| `outlining` | "Run `/papermill:outline` to structure your paper sections." |
+| `drafting` | "Run `/papermill:draft` to continue drafting with the multi-agent writer, or `/papermill:review` once a full draft exists." |
+| `review` | "Run `/papermill:review` to get feedback on your draft." |
+| `submission` | "Run `/papermill:status` to review submission readiness." |
+
+---
+
+## Error Handling
+
+- If the repository root cannot be determined, ask the user which directory to use.
+- If file creation fails due to permissions, report the error clearly.
+- Never silently skip steps. If any inference fails, ask the user explicitly.
+- If the user interrupts or provides corrections during any step, incorporate them before proceeding.

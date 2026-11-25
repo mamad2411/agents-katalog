@@ -1,0 +1,290 @@
+---
+name: helm-generator
+description: Comprehensive toolkit for generating best practice Helm charts and resources following current standards and conventions. Use this skill when creating new Helm charts, implementing Helm templates, scaffolding Chart.yaml and values.yaml, defining deployment templates, service definitions, ingress configurations, .tpl helpers, or building Helm projects from scratch. Trigger phrases include "create", "generate", "build", "scaffold" alongside terms like "kubernetes helm", "k8s charts", "helm package", "chart dependencies", "values.yaml", or "helm install".
+---
+
+# Helm Chart Generator
+
+## Overview
+
+Generate production-ready Helm charts with best practices built-in. Create complete charts or individual resources with standard helpers, proper templating, and automatic validation.
+
+**Official Documentation:**
+- [Helm Docs](https://helm.sh/docs/) | [Chart Best Practices](https://helm.sh/docs/chart_best_practices/) | [Template Functions](https://helm.sh/docs/chart_template_guide/function_list/) | [Sprig Functions](http://masterminds.github.io/sprig/)
+
+## Philosophy
+
+- Ask rather than assume: critical settings such as image, ports, limits and probes come from the user.
+- Build on helpers: names and labels come from `_helpers.tpl`, never from repeated literals.
+- Keep the chart environment-neutral: defaults in `values.yaml`, environment overrides outside the chart.
+- Validate rendered output, not just the templates.
+
+## When to Use
+
+- Creating or scaffolding a new Helm chart with `Chart.yaml`, `values.yaml` and templates.
+- Writing individual templates such as Deployments, Services, Ingress, HPAs or `.tpl` helpers.
+- Converting raw Kubernetes manifests into a parameterised chart.
+- Adding custom resources (ServiceMonitor, Certificate and similar) to a chart.
+
+## When Not to Use
+
+- Validating or linting an existing chart: use **devops-skills:helm-validator** instead.
+- Writing raw Kubernetes YAML with no Helm: use **k8s-generator** instead.
+- Debugging a failed release or cluster state.
+- Writing Terraform, Kustomize or other deployment tooling.
+
+## Chart Generation Workflow
+
+### Stage 1: Understand Requirements
+
+**REQUIRED: Use `AskUserQuestion`** if any of these are missing or ambiguous:
+
+| Missing Information | Question to Ask |
+|---------------------|-----------------|
+| Image repository/tag | "What container image should be used? (e.g., nginx:1.25)" |
+| Service port | "What port does the application listen on?" |
+| Resource limits | "What CPU/memory limits should be set? (e.g., 500m CPU, 512Mi memory)" |
+| Probe endpoints | "What health check endpoints does the app expose? (e.g., /health, /ready)" |
+| Scaling requirements | "Should autoscaling be enabled? If yes, min/max replicas and target CPU%?" |
+| Workload type | "What workload type: Deployment, StatefulSet, or DaemonSet?" |
+| Storage requirements | "Does the application need persistent storage? Size and access mode?" |
+
+**Do NOT assume values** for critical settings. Ask first, then proceed.
+
+### Stage 2: CRD Documentation Lookup
+
+If custom resources are needed:
+
+1. **Try context7 MCP first:**
+   ```
+   mcp__context7__resolve-library-id with operator name
+   mcp__context7__get-library-docs with topic for CRD kind
+   ```
+
+2. **Fallback to WebSearch:**
+   ```
+   "<operator>" "<CRD-kind>" "<version>" kubernetes documentation spec
+   ```
+
+See `references/crd_patterns.md` for common CRD examples.
+
+### Stage 3: Create Chart Structure
+
+Use the scaffolding script:
+```bash
+bash scripts/generate_chart_structure.sh <chart-name> <output-directory> [options]
+```
+
+**Script options:**
+- `--image <repo>` - Image repository (default: nginx). **Note:** Pass only the repository name without tag (e.g., `redis` not `redis:7-alpine`)
+- `--port <number>` - Service port (default: 80)
+- `--type <type>` - Workload type: deployment, statefulset, daemonset (default: deployment)
+- `--with-templates` - Generate resource templates (deployment.yaml, service.yaml, etc.)
+- `--with-ingress` - Include ingress template
+- `--with-hpa` - Include HPA template
+- `--force` - Overwrite existing chart without prompting
+
+**Important customization notes:**
+- The script uses `http` as the default port name in templates. **Customize port names** for non-HTTP services (e.g., `redis`, `mysql`, `grpc`)
+- Templates include checksum annotations for ConfigMap/Secret changes (conditionally enabled via `.Values.configMap.enabled` and `.Values.secret.enabled`)
+
+### Stage 4: Generate Standard Helpers
+
+Use the helpers script or `assets/_helpers-template.tpl`:
+```bash
+bash scripts/generate_standard_helpers.sh <chart-name> <chart-directory>
+```
+
+### Stage 5: Generate Templates
+
+> **⚠️ CRITICAL REQUIREMENT: Read Reference Files NOW**
+>
+> You **MUST** use the `Read` tool to load these reference files **at this stage**, even if you read them earlier in the conversation:
+>
+> ```
+> 1. Read references/resource_templates.md - for the specific resource type patterns
+> 2. Read references/helm_template_functions.md - for template function usage
+> 3. Read references/crd_patterns.md - if generating CRD resources (ServiceMonitor, Certificate, etc.)
+> ```
+>
+> **Why:** Prior context may be incomplete or summarized. Reading reference files at generation time guarantees all patterns, functions, and examples are available for accurate template creation.
+>
+> **Do NOT skip this step.** Template quality depends on having current reference patterns loaded.
+
+Reference templates for all resource types in `references/resource_templates.md`:
+- Workloads: Deployment, StatefulSet, DaemonSet, Job, CronJob
+- Services: Service, Ingress
+- Config: ConfigMap, Secret
+- RBAC: ServiceAccount, Role, RoleBinding, ClusterRole, ClusterRoleBinding
+- Network: NetworkPolicy
+- Autoscaling: HPA, PodDisruptionBudget
+
+**Key patterns (MUST include in all templates):**
+```yaml
+# Use helpers for names and labels
+metadata:
+  name: {{ include "mychart.fullname" . }}
+  labels: {{- include "mychart.labels" . | nindent 4 }}
+
+# Conditional sections with 'with'
+{{- with .Values.nodeSelector }}
+nodeSelector: {{- toYaml . | nindent 2 }}
+{{- end }}
+
+# Checksum annotation (REQUIRED for Deployments/StatefulSets/DaemonSets to trigger restarts on config changes)
+annotations:
+  checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+```
+
+### Stage 6: Create values.yaml
+
+**Structure guidelines:**
+- Group related settings logically
+- Document every value with `# --` comments
+- Provide sensible defaults
+- Include security contexts, resource limits, probes
+
+See `assets/values-schema-template.json` for JSON Schema validation.
+
+### Stage 7: Validate
+
+Run validation using **devops-skills:helm-validator** skill (helm lint, template render, schema checks, dry-run).
+
+## Template Functions Quick Reference
+
+See `references/helm_template_functions.md` for complete guide.
+
+| Function | Purpose | Example |
+|----------|---------|---------|
+| `required` | Enforce required values | `{{ required "msg" .Values.x }}` |
+| `default` | Fallback value | `{{ .Values.x \| default 1 }}` |
+| `quote` | Quote strings | `{{ .Values.x \| quote }}` |
+| `include` | Use helpers | `{{ include "name" . \| nindent 4 }}` |
+| `toYaml` | Convert to YAML | `{{ toYaml .Values.x \| nindent 2 }}` |
+| `tpl` | Render as template | `{{ tpl .Values.config . }}` |
+| `nindent` | Newline + indent | `{{- include "x" . \| nindent 4 }}` |
+
+## Working with CRDs
+
+See `references/crd_patterns.md` for complete examples. Ship CRDs in `crds/` directory (not templated); template CR instances in `templates/`.
+
+## Converting Manifests to Helm
+
+1. Parameterize names (use helpers) and extract values
+2. Apply label/conditional patterns, use `toYaml` for complex objects
+3. Create `_helpers.tpl` with standard helpers
+4. Validate with **devops-skills:helm-validator**
+
+## Error Handling
+
+| Issue | Solution |
+|-------|----------|
+| Template syntax errors | Check `{{-` / `-}}` matching, use `helm template --debug` |
+| Undefined values | Use `default` or `required` functions |
+| Indentation issues | Use `nindent` consistently |
+| CRD validation fails | Verify apiVersion, check docs for required fields |
+
+## Post-Generation Validation
+
+After generating charts, invoke **devops-skills:helm-validator** to ensure quality.
+
+## Anti-Patterns
+
+### NEVER hardcode image tags in `values.yaml`
+
+**WHY:** Pinning to `:latest` or a hard-coded version in the chart prevents version overrides at deploy time.
+
+**BAD:** `image: repository: myapp tag: latest`
+
+**GOOD:** `image: repository: myapp tag: ""` with `appVersion` as the default, overridden via `--set image.tag=v1.2.3`.
+
+### NEVER omit `resources:` limits and requests on containers
+
+**WHY:** Containers without resource constraints are evicted unpredictably under node pressure and cannot be scheduled by the Kubernetes cluster autoscaler.
+
+**BAD:** No `resources:` block in the container spec template.
+
+**GOOD:** Set both `requests` and `limits` for CPU and memory, with documented tuning guidance in `values.yaml`.
+
+### NEVER use `helm upgrade --install` without `--atomic` in CI/CD
+
+**WHY:** Without `--atomic`, a failed upgrade leaves the release in a broken state that blocks future upgrades and requires manual `helm rollback`.
+
+**BAD:** `helm upgrade --install myapp ./chart`
+
+**GOOD:** `helm upgrade --install --atomic --timeout 5m myapp ./chart`
+
+### NEVER place environment-specific values inside the chart's default `values.yaml`
+
+**WHY:** Mixing production values into the chart couples the chart to one environment.
+
+**BAD:** Production database URLs in `values.yaml`.
+
+**GOOD:** Use a layered values approach: `values.yaml` for defaults, `values-prod.yaml` for overrides, `-f values-prod.yaml` at deploy time.
+
+### NEVER skip `helm template` + `kubeval`/`kubeconform` validation
+
+**WHY:** A chart that renders without error can still produce invalid Kubernetes manifests.
+
+**BAD:** Only run `helm lint` before deploying.
+
+**GOOD:** `helm template . | kubeval --strict --ignore-missing-schemas` to validate rendered manifests against the Kubernetes API schema.
+
+### NEVER assume values for critical settings
+
+**WHY:** guessed images, ports, limits or probe paths produce a chart that installs but does not work.
+
+**BAD:** silently choosing `nginx` and port 80 when the user did not say.
+
+**GOOD:** ask for the missing image, port, limits, probes, scaling, workload type and storage before generating.
+
+### NEVER skip reading the reference files at the template stage
+
+**WHY:** earlier context may be incomplete or summarised, so patterns and function usage drift from the references.
+
+**BAD:** writing templates from memory because the references were read earlier.
+
+**GOOD:** read the resource templates, template functions and (for CRDs) CRD patterns at generation time.
+
+### NEVER hardcode resource names or labels in templates
+
+**WHY:** literal names and duplicated labels drift between resources and break release naming.
+
+**BAD:** `name: myapp` and hand-written `app: myapp` labels.
+
+**GOOD:** `{{ include "mychart.fullname" . }}` and `{{- include "mychart.labels" . | nindent 4 }}`.
+
+### NEVER omit the checksum annotation on workloads that consume config
+
+**WHY:** without it, Deployments, StatefulSets and DaemonSets do not restart when a ConfigMap or Secret changes.
+
+**BAD:** a Deployment that mounts a ConfigMap with no `checksum/config` annotation.
+
+**GOOD:** add the checksum annotation, gated by `.Values.configMap.enabled` and `.Values.secret.enabled`.
+
+### NEVER put CRDs in `templates/`
+
+**WHY:** CRDs must exist before their instances and should not be templated or re-rendered per release.
+
+**BAD:** a CRD manifest under `templates/`.
+
+**GOOD:** ship CRDs in the `crds/` directory and template only the custom resource instances.
+
+### NEVER leave the default `http` port name on a non-HTTP service
+
+**WHY:** the scaffolding script names the port `http`, which misleads probes, services and operators for other protocols.
+
+**BAD:** a Redis service port named `http`.
+
+**GOOD:** rename the port after the protocol, for example `redis`, `mysql` or `grpc`.
+
+## References
+
+| Topic | Reference | When to Use |
+| --- | --- | --- |
+| Template functions | [references/helm_template_functions.md](references/helm_template_functions.md) | Using `required`, `default`, `toYaml`, `tpl` and friends |
+| Resource templates | [references/resource_templates.md](references/resource_templates.md) | Writing any Kubernetes resource template |
+| CRD patterns | [references/crd_patterns.md](references/crd_patterns.md) | cert-manager, Prometheus, Istio and ArgoCD resources |
+| Chart scaffolding script | [scripts/generate_chart_structure.sh](scripts/generate_chart_structure.sh) | `bash scripts/generate_chart_structure.sh <chart-name> <output-dir>` |
+| Helpers script | [scripts/generate_standard_helpers.sh](scripts/generate_standard_helpers.sh) | `bash scripts/generate_standard_helpers.sh <chart-name> <chart-dir>` |
+| Values schema | [assets/values-schema-template.json](assets/values-schema-template.json) | JSON Schema validation of `values.yaml` |

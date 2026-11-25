@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/okyssta/skills (path: cybersecurity/detecting-suspicious-oauth-application-consent/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Detect risky OAuth application consent grants in Azure AD / Microsoft

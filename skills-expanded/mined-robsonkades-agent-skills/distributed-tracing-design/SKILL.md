@@ -1,0 +1,235 @@
+---
+name: distributed-tracing-design
+description: >
+  Designing trace topology and semantics: selecting actionable span boundaries, stable
+  operation names, kinds, status and attributes; modelling synchronous, asynchronous,
+  messaging, batch, retry and long-running workflows with parentage and links; and making
+  traces usable with metrics, logs and profiles during incidents. Use when traces are noisy,
+  fragmented, mis-parented, high-cardinality, misleading about errors, or unable to model
+  batches and asynchronous causality. Sampling, propagation mechanics and overhead belong to
+  opentelemetry-performance; metric cardinality to metrics-and-cardinality.
+---
+
+# Distributed Tracing Design
+
+## Purpose
+
+Model causal and temporal work so a trace supports a concrete operational question. Span
+trees are not call-stack recordings: parentage expresses one primary causal relationship,
+links express additional or cross-trace relationships, and timing comes from each span's
+own start/end—not from an assumption that parents must wait for or enclose children.
+
+The design must follow the pinned OpenTelemetry semantic-convention version. Protocol
+domains have different stability and migration rules. The protocol guidance here was
+reviewed against semantic conventions 1.44.0; this is a reference baseline, not an upgrade
+target. Use the project's emitted conventions when they differ.
+
+This is a telemetry-modeling skill, with no Java syntax baseline or executable examples.
+Inspect the target language/runtime, resolved OpenTelemetry API/SDK and instrumentation,
+collector and backend versions, plus semantic-convention opt-ins and schema URLs. Their
+compatibility requirements govern implementation; do not upgrade to match the online docs.
+
+## Workflow
+
+### 1. Define questions and units of work
+
+For each journey list protocol operations, application stages, retries, queue residence,
+batching and background workflows. Create a span when its latency/failure/cause is
+independently actionable or required by a semantic convention. Crossing a process boundary
+often earns protocol spans, but automatic instrumentation may already supply them and some
+boundaries are intentionally summarized.
+
+When changing an instrumented journey, follow the actual caller/consumer through enabled
+agent, library and manual instrumentation. Where records exist, match a representative raw
+span's resource and instrumentation scope/version to that path; a configuration entry or
+backend display name alone does not establish its creator. Apparent duplicates require the
+[identity and origin check](references/traces-in-incidents.md#apparent-duplicate-spans).
+
+Use attributes for properties of a span, events for notable points within it, and logs for
+detailed records. Avoid a span for every trivial method or loop item unless per-item timing
+is the explicit question and sampling/cost support it.
+
+### 2. Name stable operation classes
+
+Names should identify statistically meaningful operation classes: route templates, RPC
+methods, bounded messaging destinations or application stages. Keep request/entity IDs,
+raw paths, SQL literals and tenant values out of span names. Attributes can be
+high-cardinality relative to metric labels, but still cost storage/indexing and can expose
+data; govern them.
+
+### 3. Select kind and semantic conventions
+
+SpanKind describes the operation's role across boundaries, not whether a method blocks:
+
+- SERVER: inbound request/response;
+- CLIENT: outbound request/response;
+- PRODUCER: outgoing deferred work;
+- CONSUMER: processing externally initiated deferred work;
+- INTERNAL: other local work.
+
+An asynchronous HTTP client still creates a CLIENT span. Messaging receive/settle operations
+can also be CLIENT spans; use the domain convention, not an executor or callback's presence.
+
+Do not infer that every backend builds service maps or RED metrics identically. Correct
+kind and stable semantic attributes make such analysis possible; backend behavior must be
+verified.
+
+### 4. Model parentage and links deliberately
+
+A span can have one parent and many links. Parent/child spans are causally related but need
+not have nested lifetimes. Use a link when there are multiple causes, when representing a
+relationship across traces, or when the applicable semantic convention recommends it.
+
+At an ingress trust boundary, establish whether project policy accepts the incoming context
+or intentionally starts a new trace. A valid carrier proves neither authenticated origin nor
+causal truth. Use the [boundary decision](references/span-modelling.md#trust-boundaries)
+before repairing a disconnected trace or choosing an external parent/link.
+
+Messaging conventions use links as the generally consistent default because messages can
+batch, fan out, redeliver and run inside another ambient context. For a single-message
+process span, the reference conventions permit the message creation context as parent in defined
+cases. Therefore “consumer is never a child of producer” is false. Pin and document the
+chosen topology.
+
+Add known links/attributes at span creation when sampling decisions need them.
+
+### 5. Model completion and errors
+
+Span duration must correspond to its named operation: enqueue, send acknowledgment,
+processing, settlement or end-to-end logical call. Async APIs require completion callbacks,
+not a synchronous method return, when the operation continues.
+
+Define the owner of span completion for success, synchronous submission failure, asynchronous
+failure, timeout and cancellation. A caller timeout span may end while a remote processing
+span continues; do not imply the effect stopped. Java context Scope lifetime and Span lifetime
+are separate; route thread/context propagation mechanics to `opentelemetry-performance`.
+
+Status and error attributes follow domain conventions plus application knowledge. Recording
+an exception does not itself set the span's status. Explicitly setting OK can prevent later
+ERROR updates under the API status precedence; generic instrumentation should normally leave
+successful status UNSET. A recovered child failure need not make the root ERROR. Equally,
+some business failures represented by normal protocol statuses need an outcome attribute.
+Do not set status solely to satisfy a backend filter.
+
+Choose exception logs versus span events from the target conventions and supported
+instrumentation. Changing that signal requires export and query compatibility checks;
+read the migration rules in [Semantic conventions](references/semantic-conventions.md).
+
+### 6. Validate with fixtures
+
+Use isolated SDK fixtures with explicit test recording/export settings to assert names,
+kinds, parent IDs, links, timestamps, attributes, status and counts. Select the relevant
+success, error, timeout, cancel, retry, batch, redelivery and async cases for changed span
+classes; preserve adequate existing instrumentation.
+
+Separately test deployed sampling/export behavior and actual propagation boundaries when
+those contracts change or remain uncertain. Test mixed instrumentation versions during
+migration and verify affected backend queries/service maps. Local span assertions alone do
+not establish transport propagation or backend retention; report each evidence layer.
+
+### 7. Connect signals
+
+Use metrics for population/SLOs, exemplars to reach sampled traces, logs for detailed events
+and profiles/JFR for code/runtime inside wide spans. Sampling-aware trace data may support
+estimated counts only when inclusion probabilities and policy bias are known; “traces can
+never answer how often” is too absolute.
+
+## Span decision framework
+
+Create a span when:
+
+- a remote/protocol operation requires semantic representation;
+- work has a distinct actionable failure/latency;
+- a hidden wait or expensive stage owns meaningful elapsed time;
+- retry attempts or batch stages must be distinguished.
+
+Prefer an attribute/event when:
+
+- the information describes an existing operation;
+- individual duration is not actionable;
+- a loop can be summarized safely;
+- extra spans exceed retrieval and cost budgets.
+
+Consider links, optionally with a new trace, when:
+
+- the workflow is independently operated/retained;
+- multiple causes cannot have one parent;
+- long-lived steps would be clearer as separate trace units;
+- semantic conventions prescribe links.
+
+Links are valid within a trace too; multiple causes alone do not require a new trace.
+
+Prefer same-trace parentage when:
+
+- one primary causal chain should be queried/sampled together;
+- protocol conventions support it;
+- trace duration/retention and ambient-context trade-offs are acceptable.
+
+## Messaging and batch rules
+
+- Model create/send, receive/process and settle according to the pinned messaging
+  conventions; they are not interchangeable durations.
+- One batch span can link to each message creation context and expose bounded batch count.
+- Per-record process spans are justified when individual latency/error/retry matters.
+- A hybrid batch span with record work must define whether children belong to the batch
+  trace and how producer links are retained.
+- Propagated context does not prove delivery, order, uniqueness or causation integrity.
+  Validate untrusted carriers.
+- Redelivery creates another attempt; preserve message/logical-work identity without using
+  it as a metric label or span name.
+
+## Failure modes
+
+| Symptom                                   | Candidate cause                                  | Response                                   |
+| ----------------------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| operation view has one row per request    | ID/raw path in span name                         | stable template name                       |
+| apparent duplicate HTTP/DB spans          | multiple creators or repeated delivery           | compare identities and origins first       |
+| missing service edge                      | absent/wrong kind or semantic attributes         | fixture-test pinned instrumentation        |
+| consumer attached to unrelated batch item | arbitrary single parent                          | links to all creation contexts             |
+| send span ends before broker callback     | synchronous boundary on async operation          | end on defined completion                  |
+| root green despite failed journey         | outcome/status not propagated at boundary        | model logical outcome explicitly           |
+| all roots ERROR after recovered retries   | child status copied mechanically                 | distinguish attempt from call outcome      |
+| trace too large/unreadable                | per-loop/item spans or recursive instrumentation | stage aggregation and sampling             |
+| linked trace not retained                 | link added late or sampler ignores it            | add at creation and verify sampling policy |
+
+## Anti-patterns
+
+**Parent must enclose and await child:** not required by the trace model. Use timing fields
+for duration and choose parentage from semantics.
+
+**Always new trace for asynchronous work:** async work can remain in one trace; messaging
+conventions allow several structures. Choose based on causal query, batching, ambient
+context and retention.
+
+**Always record exception and ERROR:** expected/recovered outcomes and domain conventions
+need different treatment.
+
+**Attributes are cheap and IDs are fine:** span attributes can create backend index,
+storage/privacy and sampling costs. Minimize and govern.
+
+**Trace ID on every log is guaranteed:** context can be absent, but a valid unsampled context
+still has trace/span IDs. Include valid IDs when available without promising a retained trace,
+and retain business/request correlation appropriate to logs.
+
+## Cross-skill routing
+
+- [Span modelling](references/span-modelling.md) — read when choosing parent/link topology, retries, batches or long-running units.
+- [Semantic conventions](references/semantic-conventions.md) — read before selecting protocol kind/name/status or migrating instrumentation.
+- [Traces in incidents](references/traces-in-incidents.md) — read when interpreting missing/biased evidence, investigating apparent duplicates or testing backend queries.
+- opentelemetry-performance for sampling, propagation and cost.
+- structured-logging for event/correlation fields.
+- metrics-and-cardinality for aggregate schemas.
+- continuous-profiling for code ownership within spans.
+
+Deliver a compact model card for changed span classes, pinned instrumentation/conventions,
+relevant fixture assertions and backend query validation. Separate executed results from
+proposed tests; unknown versions or missing spans limit the conclusions, not the need for evidence.
+
+## Authoritative references
+
+- [OpenTelemetry Trace API](https://opentelemetry.io/docs/specs/otel/trace/api/)
+- [OpenTelemetry Trace SDK sampling](https://opentelemetry.io/docs/specs/otel/trace/sdk/)
+- [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/)
+- [HTTP spans](https://opentelemetry.io/docs/specs/semconv/http/http-spans/)
+- [Messaging spans](https://opentelemetry.io/docs/specs/semconv/messaging/messaging-spans/)
+- [Recording errors](https://opentelemetry.io/docs/specs/semconv/general/recording-errors/)

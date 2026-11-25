@@ -1,0 +1,291 @@
+---
+name: discuss
+description: Explore a task and validate the overall strategy before implementation. TRIGGER for ambiguous tasks, design discussions, multi-step work, risky changes, or when the user asks a question before implementation.
+argument-hint: '[task number or description]'
+effort: high
+model: opus
+---
+
+## Context
+
+- The task (or issue, problem, ticket, etc) the user wants to discuss is what they mentioned here:
+  $ARGUMENTS
+
+## Your task
+
+This is a discussion/strategy skill. Do not make side-effecting changes while using it: no edits,
+writes, mutating shell commands, commits, posted comments, or ticket creation. Read-only exploration
+is allowed when needed. Do not plan fine implementation details (type design, commit-level slices,
+tests) — that belongs to `/design`, which runs after the user approves the approach.
+
+### Phase 1: Load Context Progressively
+
+1. Read `~/.agents/standards/README.md` and `~/.agents/standards/decision-making.md`. Both always
+   apply: recommending an approach is a decision. When the change runs in a deployed environment,
+   also read `~/.agents/standards/deployment.md`, because how a change is measured and rolled out
+   shapes the PRs the approach divides it into.
+2. List `~/.agents/standards/` and load any other file whose theme matches the task.
+3. Load additional standards files only when the investigation shows they matter.
+4. If the task scope is still unclear, prefer asking a clarifying question over loading every file.
+5. Read the project's recorded decisions. List the titles in `DECISIONS.md`, `docs/decisions/`,
+   `docs/adr/`, `doc/adr/`, `adr/` and `docs/architecture/decisions/`, and search the repo for
+   "ADR". A project may record decisions somewhere else, so also check its `CLAUDE.md`,
+   `AGENTS.md`, `README.md` and `docs/README.md` for where it says decisions live. Open a record
+   only when its title touches the task. If the task came from a ticket with a **Decisions**
+   section, repeat this search anyway: records may have been added or superseded since the ticket
+   was written, and its author knew less than you do now.
+
+### Phase 2: Understand Intent
+
+1. If the user did not specify what they want to discuss, ask them for that information.
+2. If the user asked a question, answer the question before proposing anything.
+3. Use read-only exploration and subagents only as needed to understand the current code, docs,
+   constraints, and likely impact.
+4. Look past the ticket's wording for the cause of the problem it describes, since a ticket often
+   names a symptom. Prefer an option that fixes the cause when it is within reach, and put a
+   cause-level fix outside this ticket's scope under **Deferred**. Run `git log` and `git blame` on
+   the lines an option would change, to tell a slip from a choice someone made on purpose.
+5. Find out what the simplest fix would break by running it, not only by reading it. In a copy of
+   the repo under `mktemp -d`, apply the most obvious fix the ticket suggests, then run every path
+   that fix can reach, with external tools replaced by stubs that succeed and then fail. Compare
+   each result with today's. A path whose result changes in a way the ticket did not ask for is a
+   risk the approach must cover. Never edit the repo itself, and delete the copy when done.
+6. Run once every call to another program that an option you might recommend depends on: a CLI
+   command, an API method, an action in another app. A stub shows what the code does with an
+   answer, never whether the real program gives one. Use arguments that change nothing, such as an
+   ID that does not exist or the value already in place, and read what comes back. A refusal for a
+   permission, a setting or a missing feature is a constraint on the options, found before the user
+   approves one rather than after. Where no call that changes nothing exists, the approach lists the
+   call under assumptions.
+7. If the idea seems stale or poorly matched to the current codebase, investigate enough to help the
+   user decide whether to redefine, defer, or skip it.
+8. Facts are your job, not the user's — dispatch subagents to find them. Ask the user only what
+   blocks a correct approach decision, and batch those into one numbered round with a recommended
+   answer for each rather than drip-feeding one question per turn. Don't ask about anything still
+   gated on a question you haven't gotten an answer to yet. For a two-way-door decision, derive a
+   recommendation from the properties rather than handing the choice to the user. Being easy to
+   reverse does not excuse skipping the derivation.
+
+### Phase 3: Recommend an Approach
+
+A recorded decision that covers the task binds what may be built without asking, not which option
+is recommended. An option that contradicts one is scored like any other. If it wins, recommend it,
+and present superseding the record under **Open decisions** with the record linked and the fact it
+lacked named. Where applying a record to this task
+takes interpretation, whether it applies is also an open decision.
+
+When the work changes what an agent does, such as a skill, an agent definition or an instruction
+file, the system is the agent, and what it mostly runs on is the model's judgement. Its properties
+are observed by replaying fresh agents on real inputs, not by types or tests of code. The first
+option scored is instructions alone: the bar the agent's output must meet, with the method left to
+the model. An option that adds code to the skill, such as a script, a parser or a fixed output
+format, is scored against that one. It wins only on a property a replay showed the instructions
+failing, or on one that prose cannot deliver at all, such as narrowing a permission. Code that
+makes a judgement the model could make limits what the model can produce, and is scored as that
+cost.
+
+1. Derive the properties a good answer must have, from what the system will actually do, before
+   considering any option. Not from what the ticket or existing docs say it needs; that is the
+   previous author's list and it reads as complete because it was written as a summary. State each
+   as an observable property, and say which bind and which do not.
+
+   Observable means something observes it. For each property that binds, name what does: a type, a
+   test, an assertion, a check against recorded state, or a measurement that already exists. A
+   check that already runs, such as a lint, a test, a CI step or a type, counts as that observer.
+   New code whose only job is to observe a property is justified only when no running check would
+   fail on that property's breach. Where nothing observes it, taking that measurement is part of
+   the work rather than an assumption carried past this point. A property nobody can observe is an
+   intention, and every option below is scored against this list.
+
+   Some properties can be observed only in production: which callers rely on a behavior, what old
+   data looks like when it is read, how often a path runs. Where a binding property is one of these
+   and nothing records it yet, its measurement is a deploy of its own. That deploy records each case
+   the change would affect without changing behavior, and the approach puts it first and waits for
+   its records before the slice that relies on them. `deployment.md` states this for new
+   restrictions.
+
+   Where the work sets out to move a measurable outcome, such as a latency, an error rate or a
+   memory figure, the property names the outcome and the query that will measure it in production,
+   and the approach plans what judging it needs, as `deployment.md`'s Should "A change made to move
+   a measurable outcome is judged against an expected range set before it ships" describes. Each
+   option is scored partly on its anticipated effect on that outcome, so an estimate an option's
+   score rests on is checked, by a prototype or a measurement, before the option is chosen, wherever
+   that costs less than choosing wrongly. When no production signal can answer the query yet, the
+   signal ships first, in a deploy of its own, and the approach waits for a baseline from it before
+   the change ships. The expected range itself is set in `/design`, once the baseline's noise is
+   known.
+
+   Where the change runs in a deployed environment, how it reaches users is part of the approach:
+   all at once, behind a flag, or one group at a time. The choice follows from the properties, such
+   as how many users a defect could reach before anyone notices, and from whether a claim can be
+   observed only in production, where a flag enabled for the person testing lets it be proven before
+   anyone else sees it. `deployment.md` sets the defaults.
+
+   Where the change is hard to make in the code as it stands, such as a value read globally in many
+   places that must become a parameter, the approach makes the change easy first, then makes the
+   easy change. The reshaping ships on its own, before the change, and changes no behavior: running
+   every entry point on the same input gives the same result before and after.
+
+   The approach says how the work divides into PRs when dividing it gains something: independent
+   designs, or an assumption only the running system can confirm that later work would build on
+   (the vertical-slice and design-coupling Shoulds in `deployment.md`). How each PR is sliced into
+   commits is left to `/design`.
+
+   Scope each property to the behaviour this work changes. Where a risk this work exposes could be
+   stated broadly enough to bind code the work does not otherwise touch, state it at the narrowest
+   scope that still covers that risk, and name what it deliberately leaves uncovered among the
+   properties that do not bind. A broad property becomes an instruction to change and test code the
+   ticket never asked about.
+
+   An observer counts only if it covers every place the property could be broken, including code
+   added later. A check that runs on every change, such as a lint over the whole tree or a CI step,
+   covers code added later too, so it counts without new code beside it. A property that only this
+   work's code can break is covered by tests of that code.
+   A property that code elsewhere can break, such as a rule every handler or every config file
+   follows, is cross-cutting: its observer is a check over every instance, not a test of the
+   instances this work creates. Mark each cross-cutting property as such. The project also records
+   it, in `docs/invariants/` when it has no sanctioned exception or in `docs/standards/` when it
+   has one, so whoever writes the code that could break it reads the rule before the check fails.
+   Where the project has neither folder, creating one is an open decision.
+
+2. Recommend the simplest approach that delivers those properties. Simplicity is how a property is
+   reached cheaply, never a reason to drop one. Push back on scope, abstraction, configurability or
+   compatibility work that no stated property requires.
+
+3. The effort to build an option is a constraint, never a merit, and the complexity it leaves
+   behind is a cost. Effort rules an option out only against a budget the user stated. "X is
+   simpler to build" is not a reason to prefer X unless it also names a property X delivers better.
+   What an option leaves behind is different: each moving part, file, concept and rule a maintainer
+   has to keep in mind enters the table as an experience cost, weighed against what the option
+   delivers.
+
+4. Score every option against every property in one table, options as rows and properties as
+   columns, plus one `Leaves behind` column for the new functions, types, files, concepts or rules
+   each option leaves a maintainer to keep in mind. That column is scored like any property, so a
+   mechanism earns its place only through a property it delivers. Before accepting any tradeoff,
+   state the theoretical maximums for safety, performance and experience for the thing being
+   decided, as `decision-making.md` defines them, and look for a design that comes close to all
+   three. First list the ways a bad design could go wrong or cause harm, be slow, or be hard to use
+   or change, in all three categories and not only the one the task is about. Options
+   framed as points on one curve,
+   such as "fast or correct" or "simple or safe", are the sign this step was skipped. A tradeoff
+   that remains is accepted only where a physical fact forces it, or where reaching the maximum
+   would cost more than the harm it prevents and the user agrees after seeing both. It names the
+   fact or the cost.
+
+   If more than one option survives and they tie on every column, including `Leaves behind`, the
+   one with fewer moving parts wins. That is the zoom into `Leaves behind`, taken first because the
+   property easiest to add to the list is one the more elaborate option happens to have. Only when
+   they tie on that too is the list not finished. Zoom into each property every survivor passes,
+   and extend the list to moments and softer properties not yet covered, each citing its source.
+   Score again. An unknown cell is resolved before the option it belongs to is kept or dropped.
+   Recommend only what the table yields, and present the passes that got there.
+
+5. Flag reversibility for each significant decision:
+   - **Two-way door** (easily reversible) — it may be taken earlier than a one-way door, but it is
+     derived and scored just as carefully. Reversibility lowers the cost of being wrong, not the
+     care owed to being right.
+   - **One-way door** (costly to undo: public APIs, data schemas, pricing, core UX patterns users
+     learn) — requires explicit sign-off; include an ADR-lite entry in the plan:
+
+   ```
+   ## Decision: [short title]
+   Context: [problem, constraints]
+   Options considered: [A, B, C]
+   Choice: [X], because [reason]
+   Reversibility: one-way door
+   Revisit trigger: [metric / date / condition that reopens this]
+   ```
+
+   A revisit trigger naming a metric requires that metric to exist. Where nothing records it,
+   recording it is part of the decision rather than a later step: a trigger keyed to a measurement
+   nobody takes never fires, and the record then reads as revisitable while being permanent.
+   `decision-making.md` asks for the observable condition that would reopen a decision, and an
+   unobservable one does not satisfy it.
+
+6. Where the approach spans processes, asynchronous work, or separate runs, settle what ties events
+   together across that boundary and where anything durable is kept. `decision-making.md` names a
+   missing identifier that turns a later feature into a migration as a canonical example of an
+   option closed without anyone noticing, and a correlation identifier is exactly that: adding one
+   later means changing every interface it crosses. Whether a store exists that a later check can
+   read, and which one, is the same kind of decision, since a slice can conform to such a store but
+   cannot invent one. Name both, or name their absence, so `/design` is not left to improvise a
+   mechanism from inside a single slice.
+
+### Phase 4: Present and Stop
+
+Before presenting, review what you are about to claim:
+
+1. Every claim is either verified — with how — or explicitly tagged as an assumption. An untagged
+   claim is a defect regardless of whether it turns out to be true.
+2. For each assumption, ask "would this being wrong change the recommendation?" If yes and
+   investigation can settle it, settle it before presenting. If only the user or someone outside the
+   repo can settle it, it goes in open decisions with a recommended answer, not in assumptions.
+3. An assumption that contradicts observable code or config is surfaced, not silently recorded as
+   fact. If the user states how something works and the codebase disagrees, the contradiction
+   becomes an open question — not a quietly resolved assumption in either direction.
+
+End with the approach, written the same way in the terminal and in the ticket comment, so a reader
+sees what was chosen first and how it was chosen right after:
+
+1. `# Approach`, then one paragraph saying what the chosen approach does. For a change users will
+   see, the paragraph starts with what they will be able to do or notice afterwards, in words a
+   user would follow, and then says how the approach delivers it.
+2. `## What a good fix must achieve 🎯`: a table with an empty first header, a `Property` column and
+   a `Category` column, one row per binding property, numbered `P1`, `P2` and so on, each in one
+   line. `Category` is `🛡️ Safety`, `⚡ Performance` or `🙂 Experience`. Safety covers everything
+   about the system going wrong or causing harm that is not about speed or ease of use:
+   correctness, reliability, security, data integrity and the like. Leave out properties that do
+   not bind. This table is also the done-when. A cross-cutting property's row says it is checked
+   over every instance.
+3. `## Assumptions 🤔`: only those that, if wrong, would change which option wins. Write what you
+   observed about each into its wording rather than labelling it checked or unchecked.
+4. `## Constraints 🧱`: facts about the code or environment that limit which options can work. Only
+   when there are some.
+5. `## Options ⚖️`: a table with `Option`, then one column per property (`P1`, `P2`, …), then
+   `Leaves behind`, and nothing else. The chosen option is the first row, in bold, starting with 🏆
+   and ending in "(chosen)". Every cell is ✅ or ❌. A `Leaves behind` cell is ✅ when the option adds
+   nothing a maintainer keeps in mind that a property does not need, and otherwise ❌ followed by
+   what it adds. Leave no cell unknown: settle it by running something.
+6. `## Decided by 🧭`: one short paragraph reasoning through what separated the options still
+   standing, including when they all score ✅.
+7. `## How it fits 🗺️`: a Mermaid diagram of the chosen approach, only when it shows the approach
+   more clearly than the paragraph does. Where the approach changes how components, processes or
+   runs interact, it shows that, drawn to the diagram standards in
+   `~/.agents/standards/documentation.md`, and marks what ties events together across a boundary
+   and where anything durable is kept.
+8. `## Deferred ⏳`: only when discussion found something worth doing that this work does not do,
+   such as a fix to a deeper cause that lies outside the ticket, or a bug found on the way.
+9. `## For the later PR 📌`: only when the approach leaves part of this ticket to a later PR. The
+   facts found during this discussion that the later PR's author would otherwise have to find
+   again or would get wrong: where the code it changes lives and how that code behaves now, what
+   users see now, what this work changes for it, and how it touches related tickets. Each fact
+   names the file or record it comes from, and a fact nobody has observed is written as an open
+   question.
+
+In the terminal, follow it with `## Open decisions ❓`, only those that block correct implementation,
+numbered, each with a recommended answer, and then the approval request, offering to post the
+approach above as the ticket comment when the work is on a ticket, and to run `/design` next.
+
+Write for someone who opens the ticket with no context and a few seconds to spare: a teammate, or
+the user in three months. They came for the decision: what was chosen, what it had to achieve, and
+why it beat the alternatives. Everything you did to reach it, such as the runs, the commands, the
+line numbers and the dead ends, was for you, not them, and stays in this session. The exception is
+what a later PR on this ticket needs, which item 9 carries. Say each thing
+once, in the plainest words that carry it, and stop when the decision is clear. A sentence that
+would not change what the reader understands, or what they would want to check, does not belong. The
+opening paragraph says what the approach does, not the evidence for it. A property says what must be
+true, not how it is checked or which files are involved. A section with nothing to say is one line
+saying so, or is left out where its item above says "only when", so the approach's length follows
+the size of the change. Nothing appears outside the sections above.
+
+When the work is on a ticket, the comment is the approach above without the open decisions and the
+approval request. Offer to post it, then post it once the user approves.
+If answers to the open decisions change the text, show the changed text and offer to post that
+instead.
+
+If the user answers clarifying questions, incorporate the answers, present the updated strategy,
+and stop again. Do not treat answers to questions as approach approval.
+
+When the user explicitly approves the approach, recommend running `/design` to translate it into a
+concrete implementation plan before any code is written.

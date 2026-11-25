@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/pyfagorass/bookofspells (path: skills/microsoft/azure-ai-voicelive-py/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build real-time voice AI applications using Azure AI Voice Live SDK (azure-ai-voicelive). Use this skill when creating Python applications that need real-time bidirectional audio communication with Az

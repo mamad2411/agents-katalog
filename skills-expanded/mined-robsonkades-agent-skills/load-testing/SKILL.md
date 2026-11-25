@@ -1,0 +1,200 @@
+---
+name: load-testing
+description: >
+  Designing valid service load experiments: choosing open or closed workload models,
+  defining offered, admitted and successful work, controlling generator and environment
+  bias, representative workload and data, state-based warmup, run validity, uncertainty,
+  and reproducible evidence. Use when designing or reviewing k6, Gatling, JMeter or similar
+  tests, diagnosing a throughput plateau, validating a baseline, or deciding whether a run
+  measured the target rather than the generator. Profile selection and breakpoint, burst,
+  stress and soak procedures belong to load-testing-advanced; coordinated omission belongs
+  to coordinated-omission; inference belongs to latency-statistics.
+---
+
+# Load Testing
+
+## Purpose
+
+Design an experiment whose result applies to a declared production question. Precise
+percentiles can still describe the wrong workload, a saturated generator, unrepresentative
+data, a changing JVM, censored failures, or an arrival process that slows itself when the
+service slows.
+
+Distinguish offered work, started/admitted work, attempts including retries and fan-out,
+successful useful work, and rejected/abandoned/timed-out work. They answer different
+questions and diverge under overload.
+
+## Workflow
+
+Start from the requested claim and reuse applicable scripts, traces, pilot results and
+environment records. A narrow review may need only a verdict, its evidence and one missing
+check; preserve an adequate design and say when no change is needed. Use the steps below
+when designing an experiment or auditing evidence that could change the decision, rather
+than requiring a fresh run or complete protocol for every question.
+
+### 1. State the claim and experimental unit
+
+Define population, system boundary, configuration, response variable, applicable SLO window and
+intended generalization. Decide whether one run, node, build, cluster or time block is the
+independent unit. Requests within one run are correlated and do not make one deployment
+thousands of independent replications.
+
+### 2. Choose the workload model from causality
+
+Use an **open model** when arrivals occur independently of prior completion: public
+requests, scheduled messages or an externally imposed rate. Use a **closed model** when a
+fixed population genuinely waits or thinks before its next operation.
+
+For a closed population in equilibrium:
+
+\[
+X=\frac{N}{R+Z}
+\]
+
+where \(N\) is population, \(R\) mean response time and \(Z\) mean think time. This is
+the interactive response-time law, not a ceiling on individual latency. A closed test can
+show saturation, but its offered rate falls as response time grows.
+
+An open system with unbounded backlog and \(\lambda>\mu\) has no steady state. Real
+systems often have finite queues, deadlines, rejection or shedding and can reach a lossy
+steady state; measure those outcomes.
+
+### 3. Model workload and state
+
+Derive operation mix, payload/data/key and tenant distributions, workflows, locality,
+session/think times, retries and background work from a relevant production window.
+Preserve meaningful correlation and bursts.
+
+Define cold-start, cold-cache and warm steady state separately. End warmup when relevant
+signals stabilize—compilation, cache hit rate, connection establishment, allocation/GC and
+response distribution—not after a universal duration. Do not discard startup when startup
+is the subject.
+
+Predeclare the stability criterion and maximum warmup budget. If stability never arrives,
+report that state rather than extending warmup until a favorable interval can be selected.
+
+### 4. Control environment and generator
+
+Pin artifact, JDK, JVM, resources, dependencies and placement. Prefer isolated generators
+and a representative network path. Colocation is valid only when it reproduces production
+or shared contention is deliberately under test.
+
+Capacity-plan generator CPU, memory, network, connections, ephemeral ports and result
+output. Little's Law supplies an initial arrival-executor concurrency estimate from
+iteration rate and duration; a pilot must verify scheduled starts and generator headroom.
+
+### 5. Define validity before the headline run
+
+Verify business correctness, data isolation, output schema, clock alignment and telemetry
+overhead. Predeclare:
+
+- reconciliation of scheduled/offered and started arrivals;
+- generator CPU, pauses, network and connection bounds;
+- target identity and dependency state;
+- missing/dropped-start classification;
+- timeout, graceful-stop and incomplete-work treatment;
+- workload-fidelity checks.
+
+A dropped scheduled iteration limits a claim about the configured arrival schedule, but
+the run can still reveal overload behavior. Occupied VUs may reflect slow target responses,
+slow scenario code or insufficient allocation, not necessarily saturated generator hardware.
+Record start lateness as well as missing starts: zero drops alone does not prove timing fidelity.
+The missing attempts are unobserved target outcomes; do not invent their latencies or silently
+classify the executor as a closed loop.
+
+### 6. Repeat and quantify uncertainty
+
+Choose repetitions from between-run variability and the decision-relevant effect, not a
+fixed count. Randomize or block version/order comparisons. Report run-level distributions,
+uncertainty and environment drift; do not pool all requests as independent observations.
+
+### 7. Diagnose through a causal chain
+
+Correlate arrival/admission, queues, useful throughput, latency/error, resources, JVM events
+and dependencies. A plateau alone does not identify its cause. Collect discriminating
+evidence, change one causal factor, and reproduce.
+
+## Measurement rules
+
+- Use the mean for total-work, conservation and resource-demand questions; use relevant
+  quantiles/tails for latency objectives. No statistic is universally forbidden.
+- Publish sample count, duration, histogram precision/range, timeout/censoring policy and
+  aggregation dimensions with percentiles.
+- Do not average or add percentiles across replicas, windows or path components.
+- Do not treat error responses as fast successes. Report outcome and latency jointly.
+- For asynchronous operations, distinguish admission from the required terminal effect.
+  A fast accepted-job response does not establish completion throughput or latency; use
+  the asynchronous boundary checks in `references/test-plan.md` when that is the claim.
+- Separate client- and server-observed latency.
+- Name each timer's start/end and included phases. Report scheduled-to-start delay separately
+  from started-request latency; a tool's request-duration metric may omit DNS, connection or
+  TLS time. Client timeout ends the client wait, not necessarily server work.
+- Choose JVM diagnostics only when they can resolve the question. Reuse relevant recordings;
+  if JFR capture is needed, explicitly start it and account for its overhead. Native Memory
+  Tracking requires startup configuration and does not enumerate Java objects; it is not a
+  universal prerequisite for a load-test review. Inspect the actual target JDK and generator
+  versions before recommending commands or changing configuration.
+
+## Decision table
+
+| Need                       | Prefer                                      | Avoid                             |
+| -------------------------- | ------------------------------------------- | --------------------------------- |
+| externally imposed traffic | open arrival schedule                       | fixed VUs as sole evidence        |
+| bounded users/workers      | closed population with realistic think time | forced RPS with changed semantics |
+| compare builds             | randomized/blocked repeated runs            | one-off sequential before/after   |
+| production peak            | representative mix, skew and state          | uniform IDs and tiny hot data     |
+| overload behavior          | retain rejection, timeout and recovery      | abort at first SLO breach         |
+| dependency capacity        | transformed demand and occupancy            | linear pod-QPS extrapolation      |
+
+## Failure modes
+
+| Symptom                         | Distinguish with                                            | Response                                                             |
+| ------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| arrivals below schedule         | busy VUs and iteration phases; CPU/GC/network/output limits | diagnose occupancy versus resource limits; qualify achieved arrivals |
+| throughput plateaus as VUs rise | response law, target queues/resources, generator            | separate closed feedback from saturation                             |
+| p99 jumps with stable server    | client/network queues, timeout boundary, histogram range    | inspect end-to-end semantics                                         |
+| run-to-run drift                | compilation/cache/state, neighbors, dependency data         | block/randomize or model variance                                    |
+| test faster than production     | skew, TLS/reuse, payload and omitted workflows              | rebuild workload model                                               |
+| useful throughput collapses     | retries, queues, health checks and crash loops              | test shedding/recovery                                               |
+
+Long target waits can occupy every VU while generator hardware still has headroom. Use
+target/iteration timing and VU availability to distinguish that from generator scheduling,
+resource or output saturation. Increase allocated VUs only within measured resource and
+test bounds when needed to reproduce the intended schedule; resize/distribute the generator
+when its resource limits justify it. Preserve the target-slowdown evidence and recheck
+actual start timing after either adjustment.
+
+## Anti-patterns
+
+**Validity equals SLO pass.** A stress run can be valid while deliberately violating its
+SLO. Validity asks whether the scheduled experiment occurred; acceptance asks whether the
+system met its objective.
+
+**One request equals one iteration.** An iteration can execute a workflow, parallel
+resources or retries. Calibrate rate to the declared work unit.
+
+**Precision without replication.** Millions of requests in one run estimate that run's
+distribution, not build/node/time variability.
+
+**Universal generator rules.** Separate hosts and generous preallocation are common good
+choices, but topology and allocation must follow the production claim and measured
+generator behavior.
+
+## Cross-skill routing
+
+- Read [test plan and validity](references/test-plan.md) when defining a run protocol or
+  checking generator, timing, outcome or validity evidence.
+- Use load-testing-advanced for breakpoint, burst, stress and soak profiles.
+- Use coordinated-omission for scheduled-arrival loss and correction limits.
+- Use latency-statistics for uncertainty and comparisons.
+- Use capacity-planning for provisioning decisions.
+
+## Authoritative references
+
+- [Grafana k6: open and closed models](https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/open-vs-closed/)
+- [Grafana k6: arrival-rate VU allocation](https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/arrival-rate-vu-allocation/)
+- [Gatling: workload models](https://docs.gatling.io/concepts/injection/)
+- [Apache JMeter: Open Model Thread Group](https://jmeter.apache.org/usermanual/component_reference.html#Open_Model_Thread_Group)
+- [JDK 17 jcmd diagnostics](https://docs.oracle.com/en/java/javase/17/docs/specs/man/jcmd.html) — recording controls; verify the target JDK's supported commands.
+- [JDK 17 Native Memory Tracking](https://docs.oracle.com/en/java/javase/17/vm/native-memory-tracking.html) — startup configuration and tracked scope.
+- [k6 dropped iterations and their causes](https://grafana.com/docs/k6/latest/using-k6/scenarios/concepts/dropped-iterations/)

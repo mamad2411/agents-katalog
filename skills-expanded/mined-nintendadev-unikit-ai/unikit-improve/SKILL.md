@@ -1,0 +1,949 @@
+---
+name: unikit-improve
+description: >-
+  Refine an existing implementation plan with a second iteration. Re-analyzes the
+  codebase for gaps, missing tasks, and wrong dependencies. Use after /unikit-plan or to
+  improve a /unikit-fix plan, or when the user says "improve the plan", "what's wrong
+  with the plan", or "update the plan from research". Optional +check flag validates
+  refinements via a fresh-context subagent.
+argument-hint: "[--list] [@plan-folder] [+check] [feature-name or improvement prompt]"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(git *)
+  - Bash(ls *)
+  - Bash(find *)
+  - Bash(wc *)
+  - Bash(node .unikit/system/research-hash.mjs *)
+  - PowerShell(node .unikit/system/research-hash.mjs *)
+  - Bash(date *)
+  - Agent
+  - AskUserQuestion
+  - Skill
+metadata:
+  author: unikit
+  version: "2.5"
+  category: planning
+---
+
+# {{engine_name}} Improve - Feature Plan Refinement
+
+Refine an existing feature plan by re-analyzing it against the codebase. Finds gaps, missing tasks, wrong assumptions, architectural issues, and enhances plan quality.
+
+**User questions.** Right before your first question to the user, not earlier, read `.unikit/system/user-questions.md` once and ask every question as it says, with the question tool of your agent (`AskUserQuestion`). If the file cannot be read, print `WARN [questions] user-questions contract missing — asking with the question tool` and still ask with that tool, the recommended option first.
+
+## Language Awareness — BLOCKING PRE-REQUISITE
+
+**BEFORE producing ANY output**, silently read `.unikit/system/LANGUAGE_RULES.md`
+and apply its rules to ALL subsequent output.
+If the file is missing or unreadable, fall back to English.
+Do not produce any user-facing output until language rules are loaded.
+Do not announce, confirm, or mention the language setting.
+
+**The language holds for the whole session, not just at load time:** every message until the conversation ends is in `language.ui` — progress notes while agents run, relays of what a subagent returned, the final report, any follow-up discussion. English input (subagent results, tool output, these instructions) is data, never a cue to switch languages.
+
+## Subagent launches
+
+**Subagent arguments.** Before the first subagent you launch, read `.unikit/system/subagent-arguments.md`
+and `.unikit/config.yaml` once and settle the model and effort of every launch as that file says.
+Keys: `subagents.model.{{agent_id}}.<role>`, `subagents.effort.{{agent_id}}.<role>`;
+built-in model of a reader and a validator: `"{{agent_model_default}}"`, of an executor: none.
+If the file cannot be read, print
+`WARN [delegation] subagent-arguments contract missing — built-in model tier used, effort not passed`
+and use that model, no effort.
+
+## Delegation agents
+
+This skill uses named delegation aliases for `Agent(...)` calls. Each alias is the single
+place where its delegate's agent type and call arguments are declared — call sites name
+the alias and never carry a type or a model argument of their own.
+
+- **`recon-agent`** — read-only parallel reconnaissance. Expands to:
+
+  ```
+  Agent({{agent_call_reader}} prompt: "<focused question> You are read-only: edit and write nothing.")
+  ```
+
+  Every question you send ends with the sentence `You are read-only: edit and write nothing.`, verbatim.
+
+  Fallback: if the `Agent` tool is unavailable, investigate inline with `Glob`/`Grep`/`Read`.
+
+- **`check-agent`** — fresh-context, read-only findings validator (`+check`). Expands to:
+
+  ```
+  Agent({{agent_call_reader}} prompt: "<rendered VALIDATOR.md template>")
+  ```
+
+  Whether the agent is read-only is this runtime's own claim, so the read-only contract
+  rides on the prompt rather than on the dispatch: keep `{{skills_dir}}/{{self_name}}/references/VALIDATOR.md`'s
+  read-only paragraph ("You never modify a file and never run a command that changes state") in whatever is sent.
+
+  Fallback: the validator is **never** replaced by inline analysis — see
+  `{{skills_dir}}/{{self_name}}/references/CHECK-MODE.md` (`WARN [+check]: validator failed`).
+
+- **`develop-agent`** — **not used by this skill.** It belongs to the code-writing skills (`/unikit-implement`, `/unikit-fix`, `/unikit-verify`); plan refinement reads and analyses code, it does not write it. Recorded here so the alias named in "Code Analysis Rules" can be looked up in the one place aliases are documented.
+
+## Skill calls
+
+Where this skill says to **invoke `<skill>`** — optionally "with the argument `<text>`" — it means one call, made in this session, now, on every runtime: not a command printed for the user and not a delegation (delegations are the aliases of `## Delegation agents`). A call site that names no argument passes none.
+
+1. If you have a `Skill` tool that accepts arguments, call it with that skill and the arguments of the call site, in full and unchanged, then follow the skill.
+2. Otherwise — no `Skill` tool, or one that takes only a name — Read `{{skills_dir}}/<skill>/SKILL.md` in full, treat it as the instructions of this step and carry them out here, in this session, now, with the arguments of the call site as the skill's arguments.
+3. When the skill has run, go on to the step the call site names. Do not print a command for the user to run and do not stop.
+4. Only if that file cannot be read: print `Run: /unikit-<skill> <arguments>` for the user and stop.
+
+## Core Idea
+
+```
+existing feature plan (the PLAN.md manifest)
+    + project rules (Bootstrap: RULES_INDEX → core/stack rules)
+    + deeper codebase analysis via Explore tasks (with doc references)
+    + user feedback (optional)
+        ↓
+find gaps, missing edge cases, wrong assumptions, architectural issues
+        ↓
+enhanced plan with better tasks, correct dependencies, more detail
+```
+
+## Code Analysis Rules
+
+This skill is a **plan refinement orchestrator**, not a code writer. It loads project rules itself (Step 0.5 Bootstrap) and delegates codebase exploration to Explore tasks.
+
+**For deep code analysis, use the `recon-agent` alias**:
+- Launch 2-3 tasks in parallel for different aspects of the codebase
+- Each task MUST receive references to project doc files in its prompt — paths to `.unikit/ARCHITECTURE.md`, the architecture topic files matched to its focus, and relevant core/stack rule files loaded in Bootstrap
+
+**Do NOT use `/unikit-execute` or `develop-agent`** — these are for code-writing skills (`/unikit-implement`, `/unikit-fix`, `/unikit-verify`). Plan refinement needs code reading and analysis, not code writing.
+
+**What you CAN do directly** (without Explore tasks):
+- Read any `.md` documentation files (the plan manifest, `.unikit/*.md`)
+- **Lightweight structural queries** via Glob/Grep — checking if a file/folder exists, listing `.asmdef` names, counting files matching a pattern, verifying a namespace or class name is present
+
+**What you MUST delegate to Explore tasks:**
+- Reading `.cs` file contents for understanding logic or implementation details
+- Finding code patterns, existing implementations, integration points
+- Checking architectural consistency against actual code
+- Verifying assumptions about class relationships, DI bindings, inheritance hierarchies
+
+The distinction: use Glob/Grep when you need a **yes/no structural fact** (does this file exist? does this class name appear anywhere?). Delegate to Explore tasks when you need to **understand how code works** or **evaluate architectural correctness**.
+
+## Workflow
+
+### Step 0: Find the Feature
+
+Parse `$ARGUMENTS` for special tokens first:
+
+```
+- --list    → list available plans only (read-only, then STOP)
+- @<path>   → explicit plan folder override (highest priority)
+- +check    → run the fresh-context findings validator (see Step 3.5); strip the token, remember check = true
+- remaining text → feature name or improvement prompt
+```
+
+When both `--list` and `@<path>` are present, `--list` wins and no refinement is executed. Strip `+check` from `$ARGUMENTS` before extracting the feature name / improvement prompt so it is never mistaken for prompt text; `+check` together with `--list` is silently ignored (no refinement to validate).
+
+#### Priority 1: `@<path>` — explicit path override
+
+If `$ARGUMENTS` contains `@<path>`:
+
+1. Resolve the path (relative to project root; absolute paths allowed)
+2. If the path is a directory holding a plan manifest (`<path>/PLAN.md`) → use it
+3. If the path is a directory containing `TASKS.md` (a pre-merge plan) → tell the user to run `unikit-ai update` and **STOP**. Do not read or convert it here — `update` is the sole migrator, the same refuse-over-autofix principle `rules sync` applies with exit 8.
+4. If missing → show "Plan folder not found: `<path>`" and **STOP**
+5. If the path is an unfinished plan (*An unfinished plan is not a plan* below) → print its `NOTE` line and **STOP**
+
+Remaining argument text (after removing `@<path>`) is the improvement prompt.
+
+```
+/unikit-improve @.unikit/code/plans/2026-03-08_customers-system добавь обработку ошибок
+→ folder: .unikit/code/plans/2026-03-08_customers-system, prompt: "добавь обработку ошибок"
+```
+
+#### Priority 2: `--list` — show available plans
+
+If `$ARGUMENTS` contains `--list`, run read-only discovery and **STOP**:
+
+```
+1. Check if .unikit/code/PLAN.md exists (fast-mode plan)
+2. Check if .unikit/code/FIX_PLAN.md exists (bugfix plan from /unikit-fix)
+3. Get current branch:
+   git branch --show-current
+4. Scan .unikit/code/plans/ for all feature folders (all three name formats — see Branch match)
+5. For each, check if its .unikit/code/plans/<folder>/PLAN.md has uncompleted tasks (- [ ]);
+   a folder with .planning/STATE.md and no manifest is listed as "unfinished planning" and is
+   never counted as a plan with open tasks
+6. Mark which folder matches the current git branch (if any), by the three formats of Branch match
+7. Print availability summary (sorted by the manifest's Updated: descending — newest first):
+
+## Available Feature Plans
+
+Current branch: feature/customers-system
+
+💾 Fast plan: .unikit/code/PLAN.md (3 tasks remaining)
+🔧 Fix plan:  .unikit/code/FIX_PLAN.md (2 tasks remaining)
+
+  * 🔄 customers-system                   ← matches branch (4 tasks remaining)
+    ✅ 2026-03-10_customers-service-pool   (completed)
+    🔄 002-customer-config-refactor        (2 tasks remaining)
+    ⏳ inventory-rework                   (unfinished planning — /unikit-plan ultra inventory-rework)
+
+Use:
+  /unikit-improve                                              # auto-detect (.unikit/code/PLAN.md → branch → latest)
+  /unikit-improve customers-system                             # by name
+  /unikit-improve @.unikit/code/plans/customers-system         # by path
+
+8. STOP.
+```
+
+**Important:** In `--list` mode — do not execute refinement, do not modify files.
+
+#### Priority 3: `$ARGUMENTS` contains a feature name
+
+If `$ARGUMENTS` contains a feature name (e.g., `2026-03-08_customers-system`, `customers-system`, or legacy `001-customers-system`):
+
+1. Look for `.unikit/code/plans/$ARGUMENTS/` directory (exact match)
+2. If not found by exact match → try partial match: scan `.unikit/code/plans/` for folders
+   whose name **ends with** `_$ARGUMENTS` (new format) or `*-$ARGUMENTS` (legacy `DDD-*` format)
+3. If found → use it; a folder that is an unfinished plan (*An unfinished plan is not a plan* below) → print its `NOTE` line and **STOP**
+4. If NOT found → tell the user:
+
+```
+Feature "$ARGUMENTS" not found in .unikit/code/plans/.
+
+Available features:
+- [list existing feature folders]
+
+What would you like to do?
+1. Choose one of the existing features
+2. Create a new feature plan
+```
+
+→ Ask it with the question tool of your agent (`AskUserQuestion`), the two options as listed: `Choose one of the existing features` → take the folder the user names and go on from Priority 3; `Create a new feature plan` → print `/unikit-plan <description>` and **STOP**.
+
+#### Priority 4: No arguments — auto-detect by fast plan, fix plan, git branch, then latest
+
+If `$ARGUMENTS` is empty (no parameters):
+
+1. **Collect candidates:**
+   - Check if `.unikit/code/PLAN.md` exists (flat fast-mode plan)
+   - Check if `.unikit/code/FIX_PLAN.md` exists (bugfix plan from `/unikit-fix`)
+   - Get current git branch: `git branch --show-current`
+   - If on a prefixed branch (`feature/*`, `experiment/*`) → extract the part after the prefix (e.g., `feature/customers-system` → `customers-system`)
+   - **Branch match.** From branch `<prefix><name>`, collect every folder in `.unikit/code/plans/` that matches any of the three name formats: (1) exactly `<name>` — the current format; (2) ending with `_<name>` — the `YYYY-MM-DD_<name>` format; (3) ending with `-<name>` and beginning with three digits — the legacy `DDD-<name>` format. An experiment plan's folder does not carry its dated branch name (`experiment-<topic>` on `experiment/<date>-<topic>`), so its own record adds the folders whose manifest has, inside `## Experiment Context`, a `Branch:` line equal to the current branch and a `Base:` other than `none` (`Grep` `^Branch: ` over `.unikit/code/plans/*/PLAN.md`); a folder found both ways counts once. Exactly one match → use it. **More than one → ask the user which one**, listing each with its `Updated:` — do not pick by format precedence: two folders for one feature is exactly the state the date used to prevent, and choosing silently is how the resolver starts finding the wrong one. No match → fall through to *latest*.
+     - Example: branch `feature/customers-system` matches folder `customers-system`, `2026-03-08_customers-system` or `001-customers-system`
+   - If no branch match → **Latest.** Read the `Updated:` line from each candidate's `.unikit/code/plans/<folder>/PLAN.md` and sort descending; ties break on `Created:` descending, then on folder name descending. A manifest with no `Updated:` is **excluded and named** — `WARN [plan] <folder>: manifest has no Updated: — excluded; run unikit-ai update to backfill it` — never guessed from the folder name and never from the file's mtime, which `git checkout` and a fresh clone rewrite. Note the winner as "latest folder plan".
+     **`latest fallback` is a guess, not a resolution:** the branch named no plan. With two
+     or more plans present, print the candidate table (folder, `Updated:`, tasks remaining)
+     and ask — never auto-select. With exactly one plan present there is nothing to choose
+     between: announce it with the branch miss named in the reason and continue.
+   - **An unfinished plan is not a plan.** A folder under `.unikit/code/plans/` that holds `.planning/STATE.md` but not its manifest `.unikit/code/plans/<folder>/PLAN.md` is an ultra plan still being written: it is never a candidate, and it is named once:
+
+     ```
+     NOTE [plan] <folder> — unfinished planning: .planning/STATE.md is there, the manifest is not. Continue it with: /unikit-plan ultra <folder>
+     ```
+
+2. **Resolve ambiguity:**
+   - If **no candidates** found (no flat plans, no folder plans) → show "No plans found" message and **STOP**:
+     ```
+     ⚠️ No plans found in .unikit/code/plans/, .unikit/code/PLAN.md, or .unikit/code/FIX_PLAN.md.
+
+     Create a plan first:
+     - /unikit-plan <description>  — for a feature plan
+     - /unikit-fix <bug description> — for a bugfix plan
+     ```
+   - If **exactly one candidate** → use it
+   - If **multiple candidates** (e.g., PLAN.md + FIX_PLAN.md, or a flat plan + folder plans, or multiple flat plans + branch-matching folder) → **ask the user** which plan to improve via the question tool of your agent (`AskUserQuestion`), listing all candidates. Print the candidate plans, each with its `Updated:` and tasks remaining, to the screen as plain markdown first.
+
+3. **Use the resolved plan.**
+
+**Announce the resolution.** Whichever priority resolved the plan — `@<path>`, a feature
+name, the fast plan, the fix plan, a branch match or the latest fallback — print exactly
+one visible line, before Step 0.5 and before any other output:
+
+```
+INFO [plan] resolved: <path> (<reason>)
+```
+
+`<reason>` is exactly one of: `explicit path` · `feature name` · `fast plan` · `fix plan` ·
+`branch match: <branch>` · `latest fallback`. This is plain output, never the payload of an
+interactive question. Without it the skill's first visible event is a question: Step 0.5
+forbids narrating the Bootstrap, so nothing else here speaks.
+
+**Ultra bundle check.** Read the first line of the resolved plan manifest. If it equals `<!-- unikit:plan-mode:ultra -->`, this is an ultra bundle: follow `.unikit/system/ultra-plan-read.md` for reading depth, integrity and mutability. Otherwise continue unchanged. **Discovery itself does not change** — the folder is found the way it always was; only what is read inside it differs.
+
+**Reading depth:** read the manifest plus **every** phase file — improvement is not local, and moving a task between phases touches two of them.
+
+### Step 0.5: Bootstrap Context (MANDATORY)
+
+Before any analysis — silently load the project knowledge base. Do NOT narrate the loading process to the user.
+
+#### Required reads (always, every time, in parallel)
+
+1. **`.unikit/DESCRIPTION.md`** — project description, tech stack, constraints
+2. **`.unikit/ARCHITECTURE.md`** — architecture decisions, folder structure, module rules, dependency directions. **Architecture topics:** the root now; then the topic files listed under its `## Topics` whose `Load when` matches any phase of the plan under review — its name and tasks — loaded with the rule topics; when unsure, load. A listed file that is missing → `WARN [architecture] topic file missing: .unikit/architecture/<slug>.md`, continue.
+3. **Read `.unikit/memory/code/RULES_INDEX.md`**. Load rules:
+   - **RULES.md**: ALWAYS read `.unikit/RULES.md` first (highest priority) **Rule topics:** once the plan is loaded, load the topic files listed under its `## Topics` whose `Load when` matches any phase of that plan — its phase names and tasks; when unsure, load (`RULES_INDEX.md` → Step 1).
+   - **Core**: read the Core table. For EACH row where Required By = `all` or contains `{{self_name}}` — read that file from `.unikit/memory/code/core/` using the Read tool. Do NOT skip any matching row. Always re-read at skill start, never rely on prior conversation cache
+   - **Stack**: load dynamically when the current task or context matches "Load When" column, or when a need arises during work
+4. **`.unikit/skill-context/{{self_name}}/SKILL.md`** — project-specific skill overrides (if exists)
+5. `.unikit/system/dev-principles.md` — engine development principles, read on **two** levels (used in Step 2.3/2.4 architectural consistency checks and in the Guard B pass, Step 3.3a). Everything **above** the LAZY-READ BOUNDARY is read here, every time (`Grep -n '^<!-- === LAZY-READ BOUNDARY === -->'`, then `Read` with `limit` set to that line): the evidence contract, the claim-class → evidence-class lattice, the nine failure-class names, phase order, the lane, and the `kind` / area vocabularies. The section **below** the boundary — the deep reference, D1–D8 — is read **once per session: at plan load when the plan's checklist carries an `Editor:` line, otherwise at the first task that touches editor state**, and read **unconditionally**: never gated on which rules happen to be installed, because that is exactly where the universal safety net would disappear (A9).
+6. **`.unikit/system/ultra-plan-read.md`** — the reader contract for an ultra plan bundle: detection, per-consumer reading depth, what is mutable during execution, and the blocking integrity checks. Name it and follow it; never restate it here — one contract, one place.
+   **If `.unikit/system/ultra-plan-read.md` is missing or unreadable, do not block:** treat every plan as a single-file plan and continue exactly as before — a project that predates the ultra port has no bundles to read.
+
+Remember loaded rule file paths — pass them to Explore tasks in Step 2.
+
+<!-- unikit:extension-point:bootstrap -->
+
+### Step 1: Load Feature Plan
+
+- Read the **plan manifest** — `.unikit/code/plans/<folder>/PLAN.md` for a folder plan, `.unikit/code/PLAN.md` for a flat fast-mode plan. In fast and full one file carries everything: `## Overview`, `## Settings`, the `## Checklist` with phases and dependencies, and `## Technical Context` (constraints, interfaces, key patterns, dependency graph, files, editor targets, DI bindings). **In an ultra bundle it does not:** the manifest carries the checklist and only the cross-phase part of `## Technical Context`, while every task's own detail lives in its phase file — the reading depth is stated in `.unikit/system/ultra-plan-read.md`. For the full section list see `{{skills_dir}}/unikit-plan/references/TASK-FORMAT.md` → *Plan Manifest Template*; it is not restated here.
+- The plan folder holds `recon/` → read `{{skills_dir}}/{{self_name}}/references/recon-baseline.md` and follow it: it sets the scope of Step 2 from the plan's reconnaissance and adds a report section. No `recon/` → the file is not read.
+- **The manifest has `## Balance Context`** → read `{{skills_dir}}/{{self_name}}/references/balance-sync.md` and follow it: it synchronises the plan with the current Balance Checkpoint and never rewrites it. Missing → `WARN [balance] balance-sync reference missing — plan not synchronised; run unikit-ai update`.
+- **The manifest has `## Experiment Context`** → read `.unikit/system/prototype-profile.md` and follow its `## Role: planning`. Missing or unreadable → `WARN [prototype] profile contract missing — plan improved as an ordinary plan; run unikit-ai update`.
+- If the manifest has a `## Based on` section → parse all linked research entries (folder name + the recorded hash field for each — the form it takes is resolved by the research-link contract's ladder in Step 1.5). Store as `linked_researches` list for Step 1.5. Also read each linked research's `RESEARCH.md` — `## Active Summary` **alongside** the manifest's `## Technical Context` (not instead of it) — in Step 1.5, once the contract is loaded, from the folder its `## Finding the folder` returns (an archived research is read where it lies); both are needed for cross-referencing in Step 3.8.
+
+Understand:
+- Feature scope and goals
+- Current phases and tasks
+- Dependencies between tasks
+- Which tasks are already completed (checkboxes `- [x]`)
+- Architecture decisions made
+- Which researches are linked, and the `Summary SHA256` recorded for each
+
+### Step 1.5: Research Check
+
+**The research-link contract.** Read `.unikit/system/research-link.md` at the first linked entry or selected research, never at Bootstrap and not for the index. Ordinary discovery stays active-only.
+
+**Research index.** The `INDEX.md` of a research root is a generated table (an older project has `### title` cards) and only navigates: take `<slug>` only from a link to a direct child of that root and read `<slug>/RESEARCH.md` before acting on a row. No readable index → print `INFO [research-index] <root>: no readable index — searching the folders`, search that root's `*/RESEARCH.md` for the title and header fields, and write nothing.
+
+**If `.unikit/system/research-link.md` is missing or unreadable, do not block:** record no `Summary SHA256` and check none — print `WARN [research-drift]: research-link contract missing — drift detection off for this run; run unikit-ai update` once, and continue.
+
+Check whether research context has changed since the plan was created or if new relevant researches exist. This step is **optional enrichment** — if no research updates are found, proceed silently to Step 2.
+
+#### Case A: Plan has linked researches (`## Based on` exists with entries)
+
+1. For each entry in `linked_researches`, run `## Checking an entry` against it — the ladder decides the outcome; this skill only decides what comes next.
+   - **drift** → mark `research_updated = true`.
+   - Either **unknown** outcome → add a `Re-link: <folder>` finding to `research_improvements`, carrying the `Summary SHA256` of the summary as read now. This branch only **proposes** — the consent is the user's answer to that finding in Step 4, and the write is the re-link branch of Step 5.5.
+   - Every other outcome → its line only; no further action here.
+
+2. If any `research_updated = true`:
+   - Re-read the updated research's `## Active Summary`, and `CONTRACTS.md` when it exists
+   - Compare new constraints, interfaces, and decisions against the current manifest — its `## Technical Context` and its `## Checklist`
+   - Collect differences as `research_improvements` (these will appear in the report under a dedicated section)
+
+3. After processing linked researches → check for **new** researches:
+   - Read `.unikit/code/researches/INDEX.md`
+   - The boundary for "researches newer than this plan" is the manifest's own `Created:` field — the header field the on-disk migration backfilled into every plan. It is **not** read from the folder name and **not** from the file's modification time: the folder name is losing its date prefix, and mtime is rewritten by `git checkout` and by a fresh clone, so both answer this question only by luck. The flat `.unikit/code/PLAN.md` uses the same field.
+   - A manifest carrying no `Created:` is a plan the migration has not reached. Say so and skip this sub-step rather than guess a boundary: `WARN [plan] <plan>: manifest has no Created — cannot bound "researches newer than this plan"; run unikit-ai update`.
+   - Filter the index for records whose `Updated` is **newer** than that boundary and whose `Lifecycle` is not `superseded` (a record carrying no `Lifecycle` line counts as `active`)
+   - **Log the drop**, always, in the form `/unikit-plan` uses: `INFO [research] index: <N> entries, <K> shown (<a> not newer than the plan, <b> superseded)`. A record with no `Updated` is excluded and **named** — `WARN [research] <folder>: index row has no Updated — excluded; run /unikit-explore to redraw the index` — never guessed at from another field.
+   - Take up to 5 entries, check relevance against the plan's feature scope (compare title and Summary against plan Overview)
+   - If relevant entries found → ask user:
+     ```
+     The question tool of your agent (`AskUserQuestion`): Found new researches since the plan was created:
+
+     1. <Title> (<Date>) — <Summary>
+     2. <Title> (<Date>) — <Summary>
+
+     Use them to improve the plan?
+
+     Options:
+     1. Yes — use all
+     2. Let me pick — then ask which ones: the user writes their numbers (`1, 3`)
+     3. Skip — improve without new researches
+     ```
+   - If user selects researches → read their `RESEARCH.md` (`## Active Summary` first, then `CONTRACTS.md` when it exists), add findings to `research_improvements`, compute each one's `Summary SHA256` over the summary just read and keep the digest for Step 5.5, and prepare to attach them to `## Based on` in Step 5
+
+4. If Step 1.5 collected nothing into `research_improvements` (no drift, no re-link, no new research) → proceed to Step 2 silently.
+
+#### Case B: Plan has NO linked researches (no `## Based on` or empty)
+
+1. **Check current session** — look in the conversation history for results of `/unikit-explore`. If found and relevant to the plan → use as research context, add to `research_improvements`.
+
+2. **Check index** — if no session context:
+   - Read `.unikit/code/researches/INDEX.md`
+   - Drop records whose `Lifecycle` is `superseded` (a record carrying no `Lifecycle` line counts as `active`), then take up to 5 entries — the **first 5**, because the index is sorted newest-first, so these are the most recent
+   - **Log the drop**, always, in the same form as Case A: `INFO [research] index: <N> entries, <K> shown (<c> superseded)`
+   - Check relevance against the plan's feature scope (title and Summary)
+   - If relevant entries found → ask user (same question format as Case A step 3)
+   - If user selects → read their `RESEARCH.md` (`## Active Summary` first, then `CONTRACTS.md` when it exists), add to `research_improvements`, compute each one's `Summary SHA256` over the summary just read and keep the digest for Step 5.5, prepare to attach in Step 5
+
+3. If nothing found or user skips → proceed to Step 2 silently.
+
+#### After Step 1.5
+
+Regardless of the outcome, **always continue to Step 2** (Deep Codebase Analysis). Research improvements are collected separately and will be merged into the final report in Step 4, appearing in a dedicated section before the standard codebase analysis findings.
+
+### Step 2: Deep Codebase Analysis
+
+Follow the delegation rules from **Code Analysis Rules** section above.
+
+Formulate analysis questions based on the feature plan, then launch Explore tasks in parallel. With a scope set from the plan's reconnaissance (`recon-baseline.md`), they cover only the paths that changed since a recon file's `HEAD` and what the reconnaissance does not cover. Each task MUST receive references to project doc files in its prompt.
+
+**Doc references to include in every Explore task prompt:**
+- `.unikit/ARCHITECTURE.md` root — always (module boundaries, dependency rules); plus the topic paths matched to the task's focus
+- Core rule files loaded in Bootstrap — pass the **paths from RULES_INDEX.md** relevant to the task's focus
+- Stack rule files loaded in Bootstrap — pass if the task's focus involves that framework
+
+**Example: launching parallel tasks for a customer system feature:**
+
+```
+Task 1 — Existing code & bindings:
+recon-agent(prompt:
+  "Before analysis, read these project docs:
+   - .unikit/ARCHITECTURE.md
+   - [architecture topic paths relevant to focus]
+   - [core rule paths from RULES_INDEX.md Core table]
+
+   Find all existing customer-related classes, interfaces,
+   and installers. Show their relationships and Zenject bindings.
+   Check for ICustomer, SimpleCustomer, CustomerInstaller, etc.
+   Thoroughness: medium.")
+
+Task 2 — Integration points:
+recon-agent(prompt:
+  "Before analysis, read these project docs:
+   - .unikit/ARCHITECTURE.md
+   - [architecture topic paths relevant to focus]
+   - [core rule paths from RULES_INDEX.md Core table]
+
+   Find all SignalBus events (ISignal structs) related to
+   gameplay flow. Check how Bootstrap loading operations work
+   and what integration points exist for new systems.
+   Thoroughness: medium.")
+
+Task 3 — Save & controller patterns:
+recon-agent(prompt:
+  "Before analysis, read these project docs:
+   - .unikit/ARCHITECTURE.md
+   - [architecture topic paths relevant to focus]
+   - [core rule paths from RULES_INDEX.md Core table]
+
+   Check existing SaveSerializer implementations.
+   Find the pattern for adding new save data to the system.
+   Look at existing GRASP controllers for reference patterns.
+   Thoroughness: medium.")
+```
+
+**Fallback:** If Agent tool is unavailable, investigate directly using Glob/Grep for structural checks and Read for code understanding.
+
+After tasks return, **synthesize** their findings with the project rules loaded in Bootstrap.
+
+**What to analyze (delegate these questions):**
+
+**2.1: Trace existing code paths**
+- Existing patterns the plan should follow
+- Code that already partially implements what a task describes
+- Hidden dependencies the plan missed
+- Shared utilities or services the plan should reuse
+
+**2.2: Check integration points**
+- Zenject installer registrations needed
+- SignalBus events that need declaring
+- Addressable asset references
+- SaveSystem serializers needed
+- Bootstrap loading operations
+- Module boundary violations (Modules → Game is FORBIDDEN)
+
+**2.3: Check architectural consistency**
+- Non-MonoBehaviour first principle adherence
+- Model-View separation, GRASP controller patterns
+- R3 reactive subscription cleanup (`.AddTo()`)
+- UniTask with CancellationToken on every async method
+- Proper DI registration patterns (`.NonLazy()` for controllers/presenters)
+
+**2.4: Check edge cases**
+- Missing `CancellationToken` propagation
+- Missing R3 subscription disposal
+- Missing Odin `[Required]` attributes
+- ZLinq usage instead of System.Linq in hot paths
+
+### Step 3: Identify Improvements
+
+Compare the plan against what you found. Categorize issues:
+
+**3.1: Missing tasks**
+- Tasks that should exist but don't (e.g., installer registration, save serializer, signal declarations)
+- Tasks for edge cases not covered
+- Missing test tasks for new systems
+
+**3.2: Task quality issues**
+- Descriptions too vague (no file paths, no specific implementation details) — a test-checkpoint task, and a PR checkpoint task with no `Files:` is normal: neither leaves anything in the project; in a plan with a `## Balance Context` the `Measure:` and `Hand-back:` tasks carry no `Files:` either — normal, never a finding
+- Missing specific class names or namespaces
+- Incorrect assumptions about existing code
+- Missing reference to existing patterns that should be followed
+
+**3.3: Dependency issues**
+- Wrong task/phase order
+- Missing dependencies between phases
+- Tasks that could run in parallel but are sequential
+
+**3.3a: Guard B — a phase carrying an `Editor:` task must be serialized alone in its execution layer**
+
+This skill is the **third writer of tasks** (after `/unikit-plan` and `/unikit-plan add`), so it checks the constraint on a plan it did not write.
+
+The unit of parallelism downstream is the **phase**: `unikit-implement-coordinator` builds the phase graph from the `**Dependencies:**` lines, computes execution layers (Layer 0 = phases with no dependencies; Layer N = phases whose dependencies all sit in layers 0..N-1) and runs **every phase of one layer concurrently**, while tasks inside a phase run in order.
+
+Procedure:
+
+1. Collect the phases carrying at least one `Editor:` line.
+2. Recompute the execution layers from the plan's `**Dependencies:**` lines, exactly as the coordinator does.
+3. A layer that holds an editor phase **and** any other phase is a finding.
+
+Two things this check is **not**. It is not a rule about tasks — two `Editor:` tasks inside one phase are already sequential, and recommending they be split would manufacture the very collision the guard exists to prevent; never propose that fix. And it is not limited to editor-versus-editor conflicts — a neighbouring **code** phase writes a source file, the editor re-reads it, the domain reloads, and minutes of unavailability land in the middle of another phase's mutation. Any co-resident phase is the finding, whatever it is doing.
+
+The fix is always on the dependency lines, never on the phase contents: make the editor phase depend on everything that must precede it, and make every remaining phase depend on it directly or transitively.
+
+Each finding goes into the 🔄 Dependency Fixes group in the format below — it must name the **layer**, every phase sharing it, and the `Editor:` task that forces the serialization, because without those three the reader cannot tell which dependency line to add.
+
+```
+🔒 Layer <N> holds Phase <X> beside editor Phase <Y>
+   Editor task: Phase <Y> / Task <n.m> — `Editor: [kind] <container> → <target> : <action>`
+   Fix: add `Phase <Y>` to Phase <X>'s **Dependencies:** (or the reverse, if <X> must run first)
+```
+
+**3.3b: Run policy — check the plan against its own `Test checkpoints:` line**
+
+Read the setting from the plan's `## Settings` and check the plan against it. Each of these is a finding with a proposed fix, never an automatic change:
+
+- under `phase` or `plan` — a test-run command sitting in a per-task `### Tests` or `### Verification` (Integrity Check 10: in that mode a run lives only in a test-checkpoint task, and a command left here is executed a second time by `/unikit-verify`);
+- under `Testing: yes` — no final task carrying `Test checkpoint: plan` (Integrity Check 11: the final full run has no off switch; in a plan with a `## Balance Context` the final task is `Hand-back:` and the final full run stands directly above it — that is not a finding);
+- a test-checkpoint task standing immediately after another with nothing changed between them;
+- a `## Phase Completion Checklist` that restates the run instead of leaving it to the task's own checkbox.
+
+**A plan with no `Test checkpoints:` line is legacy and is exempt from this check** — its placement was never declared, and criticising a plan for lacking a policy that did not exist when it was written produces a finding nobody can close.
+
+**3.3c: Modules and PR checkpoints — check the plan against its own grammar**
+
+The grammar is `{{skills_dir}}/unikit-plan/references/TASK-FORMAT.md` → `### Modules section` and `### PR checkpoint task grammar`. Each of these is a finding with a proposed fix, never an automatic change:
+
+- `## Modules` does not cover the phases in order, or a module longer than four phases carries no `why long:` (Integrity Check 12);
+- a PR checkpoint task that is not the last task of its module, a PR checkpoint task in the last module, `PR checkpoints: yes` with no PR checkpoint task, or a `PR: task N.M` that names another task (Integrity Check 13);
+- the module barrier is broken: recompute the layers exactly as in 3.3a — a layer holding phases of two modules is a finding in the 🔄 Dependency Fixes group, in the form `🔒 Layer <N> holds Phase <X> (M<a>) beside Phase <Y> (M<b>)` / `Fix: add Phase <closing phase of M<a>> to Phase <Y>'s **Dependencies:**`;
+- a `### Commit N` range crosses a module boundary (Integrity Check 15).
+
+**A plan with PR checkpoint tasks but no `PR checkpoints: yes` line is legacy** — its PR checkpoint tasks are exempt from the second point, exactly as a plan without `Test checkpoints:` is exempt from 3.3b. A plan without `## Modules` and without PR checkpoint tasks is one module: 3.3c finds nothing there.
+
+**3.4: Redundant or duplicate tasks**
+- Two tasks doing the same thing
+- Task unnecessary because code already exists
+- Task that duplicates existing module functionality
+
+**3.5: Scope issues**
+- Tasks too large (should be split into smaller steps)
+- Tasks too small (should be merged)
+- Tasks outside feature scope (gold-plating)
+
+**3.6: Architectural issues**
+- Module boundary violations in the plan
+- Wrong namespace assignments
+- Missing SOLID/GRASP principle adherence
+- Plan suggests patterns that contradict project conventions
+
+**3.7: User-prompted improvements (if specific feedback in `$ARGUMENTS`)**
+
+If the user provided improvement instructions beyond just a feature name:
+- Apply the user's feedback to the plan
+- Look for tasks that need modification
+- Add new tasks if required
+
+**3.8: Research consistency (only when `research_improvements` is non-empty)**
+
+If Step 1.5 produced `research_improvements` (from updated, newly linked or re-link-proposed researches) — a `Re-link` finding is compared too, because it is exactly the comparison between the plan and the summary about to become its new baseline that makes consenting to the re-link informed, not blind:
+- Compare the research's `## Active Summary` → `Constraints:` against the manifest's `### CONSTRAINTS` — find mismatches
+- Find interfaces defined in research but missing from plan tasks
+- Find decisions in research that contradict plan tasks
+- Flag research open questions that the plan resolved without justification
+- Each finding goes into `research_improvements` list with source attribution (which research it came from)
+
+### Step 3.5: Validate Findings (`+check` only)
+
+Run this step **only** when `check = true` (the `+check` flag was parsed in Step 0) and Step 3 produced at least one finding in a validated group. Otherwise skip it entirely — no validator lines appear anywhere in the output and the Step 4 / Step 5.8 Summary keeps its default shape.
+
+Follow the full procedure in **`{{skills_dir}}/{{self_name}}/references/CHECK-MODE.md`**: it dispatches one fresh-context `check-agent` validator over the four codebase-traceable groups (`missing`, `improvements`, `architectural`, `removals`), applies each `keep`/`modify`/`drop` verdict, recomputes the 🔄 Dependency Fixes group on the filtered list (phase b), and tracks the `hidden` / `adjusted` counters. The **Research-Based Findings** (`research_improvements`) and the 🔄 Dependency Fixes group are **not** validated.
+
+**Fallback (do NOT inline-analyze):** if the validator agent is unavailable/blocked or the dispatch fails, the procedure keeps **all** findings as-is and emits the single line `WARN [+check]: validator failed (<reason>), all items kept as-is` — it never re-does the validator's work with Glob/Grep/Read. An unavailable validator is silently skipped; the user is never asked.
+
+The filtered findings (and recomputed dependencies) are what Step 4 renders.
+
+### Step 4: Present Improvements
+
+Show the user what you found. When `research_improvements` is non-empty, the report has two sections: research-based findings first, then codebase analysis findings. When empty, only the standard section appears.
+
+**BLOCKING PRE-REQUISITE — the report reaches the screen before the question is asked.**
+Render every group below in full as visible output — the findings themselves, not a count
+of them — and only then ask the decision question. **Never ask about improvements the user
+has not seen:** a bare "Apply improvements?" with nothing above it is the failure this rule
+exists to prevent. Print the findings to the screen as plain markdown first. The same holds for the `Choose which`
+follow-up below: its `#N` labels mean something only because the numbered report is already
+on screen.
+
+```
+## Plan Improvement Report
+
+Feature: [feature folder name]
+Files: <plan folder>/PLAN.md
+Phases analyzed: N
+Tasks analyzed: N
+Researches checked: N (list names if any)
+Recon: used N · re-explored N · skipped N   (only when recon was used)
+
+### Research-Based Findings (only if research_improvements is non-empty)
+
+Source: [research folder name(s)]
+
+#### Updated Constraints (N)
+1. **[Constraint from research]**
+   Change: [what changed in the research vs what the plan has]
+   Action: [update the constraint in `## Technical Context` / update task description]
+
+#### New/Changed Interfaces (N)
+1. **[Interface name]**
+   Change: [new method / changed signature / removed]
+   Action: [add task / update existing task]
+
+#### Research-Plan Contradictions (N)
+1. **[Issue]**
+   Research says: [X]
+   Plan says: [Y]
+   Recommendation: [which to follow and why]
+
+#### Re-links (N) (only for a linked research whose drift is unknown)
+1. **<folder>** — drift since the plan was made is unknown (<no hash recorded | recorded against the retired brief field>)
+   Action: record the hash of the summary as it is now; drift before now is written off as unknowable
+
+#### New Researches to Attach (N) (only if new researches were selected in Step 1.5)
+1. **[Research title]** (<date>)
+   Relevant findings: [brief summary of what this research adds]
+
+### Recon-Based Findings (only when recon was used)
+1. **Phase X, Task Y: [name]** — [what the phase misses or gets wrong] (recon/<file> § <section>)
+
+### Codebase Analysis Findings
+
+#### ⚠️ Missing Tasks (N)
+1. **[Task description]**
+   Reason: [why this task is necessary]
+   After: [dependency on phase/task]
+
+#### 🔍 Task Improvements (N)
+1. **Phase X, Task Y: [name]**
+   Issue: [what's wrong]
+   Fix: [what needs to change]
+
+#### 🔄 Dependency Fixes (N)
+1. Phase X should depend on Phase Y
+   Reason: [why]
+2. 🔒 Layer N holds Phase X beside editor Phase Y
+   Editor task: Phase Y / Task n.m — `Editor: [kind] <container> → <target> : <action>`
+   Fix: add `Phase Y` to Phase X's **Dependencies:** (or the reverse, if X must run first)
+
+#### 🏗️ Architectural Notes (N)
+1. **[Issue description]**
+   Recommendation: [how to fix]
+
+#### 🗑️ Removals (N)
+1. **Task: [name]**
+   Reason: [why it's redundant]
+
+### Summary
+- Research-based changes: N
+- Missing tasks: N
+- Tasks to improve: N
+- Dependencies to fix: N
+- Architectural notes: N
+- Tasks to remove: N
+- Hidden by +check: N      (only when +check ran successfully — see Step 3.5)
+- Adjusted by +check: M    (only when +check ran successfully — see Step 3.5)
+```
+
+The decision question is asked **after** that report is on screen, as its own block:
+
+```
+Apply improvements?
+1. Yes, apply all
+2. Choose which to apply
+3. No, keep the plan as is
+```
+
+Based on choice:
+- **Apply all** → apply all improvements to the manifest, proceed to Step 5
+- **Choose which** → use the question tool of your agent (`AskUserQuestion`) with `multiSelect: true` to let the user pick items. Group options by category (Research-Based, Missing Tasks, Task Improvements, Dependency Fixes, Architectural Notes, Removals). Each option label = `"#N: short description"`. After the user selects → proceed to Step 5, applying **only the selected items**. Unselected items are skipped without comment.
+- **No** → keep plan as is → **STOP**
+
+**If no improvements found:**
+
+```
+## Plan Review Complete
+
+✅ The plan looks good! No significant issues found.
+
+Feature: [feature folder name]
+Phases: N, Tasks: N
+
+Ready to proceed with implementation.
+```
+
+### Step 5: Apply Approved Improvements
+
+Based on user's choice, apply changes sequentially.
+
+Use `Edit` for every change. **`Write` over a plan manifest is forbidden** — the file carries `## Technical Context` (and, in an ultra bundle, `## Phase Index`), and a regenerating write silently drops whatever the current pass did not reconstruct. When a change is too large for a single `Edit`, split it into several `Edit` calls; do not fall back to `Write`.
+
+**Executor data is preserved whole.** `## Engine Bridge Findings`, `## Rule Candidates`, `## Test Runs` and `## Measurements` are carried over with all their content — rows, candidate statuses and the run log alike. They are not a draft of the plan: they are what execution recorded, and this skill has no authority to edit or drop them. That is one more reason the `Write` ban above is absolute rather than a preference.
+
+**Editing an ultra bundle.** The manifest and every affected phase file are edited **together** — never regenerate the manifest alone when phase detail changed, and never write a checkbox into a phase file. After the write, re-run the bundle integrity checks named in `.unikit/system/ultra-plan-read.md`; a bundle left inconsistent by an improvement blocks the next consumer that opens it.
+
+**5.1: Add missing tasks to the manifest's `## Checklist`**
+
+For each new task from the report:
+1. Determine the correct phase (create a new phase if needed)
+2. Insert the task with `- [ ]` checkbox at the correct position within its phase
+3. Include file paths, class names, and a brief WHY context in the description
+4. If the task has dependencies, note them inline (e.g., `(after Phase 1)`)
+5. Add an `Editor:` line — one per editor target, placed after `Files:`, in the form `Editor: [kind] <container> → <target> : <action>` — **only** when the change touches the editor's **serialized state**. A pure code task omits the field, and when `engine_rules_loaded = false` (no `ENGINE_RULES.md` for this engine) it is not generated at all. Use `TASK-FORMAT.md` → `### Checklist layout` for all task fields.
+6. **Ultra bundle only** — the checklist line is a pointer, so create what it points at: a `## Task N.M:` section in the phase file of that phase, with all seven subsections (`### Intent`, `### Implementation Steps`, `### Required Interfaces and Contracts`, `### Error Handling and Logging`, `### Tests`, `### Acceptance Criteria`, `### Verification`), and append the `([details](phase-NN-<slug>.md#task-nm-<slug>))` link to the checkbox line — the anchor is the GitHub slug of the task heading, per `{{skills_dir}}/unikit-plan/references/ULTRA-PLAN-FORMAT.md`. When the task needs a **new** phase, create `phase-NN-<slug>.md` and register it in the manifest's `## Phase Index` with its task range; an unregistered file is an orphan and blocks every consumer.
+
+**Test-checkpoint tasks.** When adding tasks, honour the policy the plan itself records — the `Test checkpoints:` line in `## Settings`. The grammar and how a run's width is derived are canonical in `{{skills_dir}}/unikit-plan/references/TASK-FORMAT.md` → `### Test checkpoint task grammar`; **do not restate them here**.
+
+- **New tasks are inserted ABOVE the final full run** (`Test checkpoint: plan`). A task that ends up after it will be run by nothing at all: the final full run being last is exactly what REQ-007 rests on.
+  In a plan with a `## Balance Context` new tasks go above `Hand-back:` as well — `references/balance-sync.md` → `## Synchronising by item id`.
+- **No `Test checkpoints:` line in the plan (legacy) → add no test-checkpoint tasks.** The placement was never declared, and guessing it while editing someone else's plan is not this skill's call. Say so as a finding, and print `WARN [testing] plan carries no Test checkpoints: line — no test-checkpoint tasks were added`. The refusal has to be loud: silently adding nothing is indistinguishable from a run not being needed.
+- A new phase that changes executable code, under `Test checkpoints: phase` → give it a checkpoint by the same trigger the planner uses; if the phase does not meet that trigger, its goals pass to the next checkpoint, and the phase text says so in one line.
+- Under `Testing: no`, no test-checkpoint task is added at all.
+
+At the start of the edit print one line — `INFO [testing] plan policy: checkpoints=<value|legacy>` — so the decision to insert tasks, or not to, is explainable from the output.
+
+**Plans with modules.** When the plan has `## Modules` or any `PR checkpoint:` line, print `INFO [plan] modules: <n>, PR checkpoints: <yes|no|legacy>` next to that line, and insert by the grammar in `{{skills_dir}}/unikit-plan/references/TASK-FORMAT.md` → `### Modules section`. Only the insertion decisions are stated here:
+
+- a new task of an existing module goes above that module's PR checkpoint task and its module test-checkpoint task;
+- a new module after the last: under `PR checkpoints: yes` the former last module gets a PR checkpoint task at the end of its closing phase and a `PR: task N.M` field, and under `Testing: yes` the final full run moves to the new last phase — except in a plan with a `## Balance Context`, which takes no module after the last: nothing stands after `Hand-back:` (`references/balance-sync.md` → `## Horizon`);
+- a new module before the first gets phase `0` and, under `PR checkpoints: yes`, its own PR checkpoint task;
+- a new module between two modules is not created — its work joins an existing module, above that module's PR checkpoint;
+- `## Modules` and the module barrier in the `**Dependencies:**` lines are updated in the same edit; `PR checkpoints: yes` is never written or removed here; no task is renumbered.
+
+In an ultra bundle a new PR checkpoint task gets its `## Task N.M:` section with all seven subsections — its `### Tests` carries `Not applicable — this task closes a module, it runs no tests` — and its `([details](…))` link, per `{{skills_dir}}/unikit-plan/references/ULTRA-PLAN-FORMAT.md`.
+
+**5.2: Improve existing task descriptions in the manifest**
+
+For each task flagged for improvement:
+1. Locate the exact task line in the manifest's `## Checklist`
+2. Replace the vague description with the improved one from the report
+3. Add specific file paths, class names, namespace references
+4. Do NOT change `- [x]` to `- [ ]` — preserve completion status
+
+**5.3: Fix dependency ordering in the manifest**
+
+1. Move tasks/phases to correct positions if ordering was wrong
+2. Update inline dependency references if task numbers shifted
+3. Verify that no task references a dependency that comes after it
+
+**Ultra bundle — renumbering is not a local edit.** A task identifier appears in three projections: the task range in the manifest's index, the checkbox in `## Checklist`, and the `## Task N.M:` heading in the phase file. Changing it also invalidates the `([details](…))` anchor, which is derived from that heading. Change an identifier only together with all three projections **and** the anchor; when in doubt do not renumber — add the task under a new number instead.
+
+**5.4: Remove redundant tasks from the manifest**
+
+1. Delete the task line (and its sub-items if any)
+2. Check if the parent phase is now empty — remove the phase header too if so
+3. Update any other tasks that referenced the removed task
+4. **Ultra bundle only** — delete the task's `## Task N.M:` section from its phase file. If the phase is now empty, delete `phase-NN-<slug>.md` **and** its index row together: the file without its row is an orphan, the row without its file is a dangling link, and each on its own is a blocking violation.
+
+**5.5: Update research references in the manifest (`## Based on`)**
+
+Only when `research_improvements` is non-empty (Step 1.5 found updates, new researches or re-links):
+
+1. **Newly attached researches** — for each new research the user selected in Step 1.5: add a new entry to `## Based on` in the form of `.unikit/system/research-link.md` → `## The entry` (folder name, the `Summary SHA256` computed in Step 1.5 when the research was read, file links). The contract was already read in Step 1.5; it is not re-read here. If `## Based on` section doesn't exist yet, create it after `## Overview`.
+
+2. **Re-linked researches** — for an entry already in `## Based on` that carries **no** `Summary SHA256` and whose `Re-link` finding the user approved in Step 4: write the digest that finding carries as a `- **Summary SHA256**: <64 hex chars>` line into that entry. "No field" covers **two** shapes and the branch handles both — an entry with no hash line at all, and an entry still carrying a legacy `- **Brief SHA256**: …` line, which is deleted as the new line is written, dropping the dead `- **Brief SHA256**: …` line (the retired brief field) exactly the way the dead `- **Attached**: …` line (the retired link-timestamp field) is dropped if the plan still carries one. This is the only writer that **records the field on an entry that has none**: the on-disk plan migration rewrites the manifest but never touches `## Based on`, so without this branch a plan created before the field reports `drift unknown` on every run forever, and `/unikit-verify` holds its gate at `warn` with no command able to clear it. The recorded hash describes the summary as it was read in Step 1.5, and that is honest only because the user was asked: an accepted re-link writes the earlier drift off as unknowable, it does not measure it. Never perform this write without that answer — silently hashing at read time would claim "no drift" about a period nobody looked at.
+
+3. **Drifted researches** — do **NOT** rewrite the hash automatically. A stale hash is the record of what the plan was built against; overwriting it silently erases the only evidence that the plan and its source have diverged, at the exact moment that evidence is needed. Rewrite it **only** when the user explicitly asks for a rebase onto the new research, and only together with the corresponding updates to the tasks and to `## Technical Context`.
+
+**5.6: Update `## Technical Context`**
+
+In fast and full every subsection below is edited in the manifest. In an ultra bundle only
+`### CONSTRAINTS` stays there — `### INTERFACES`, `### FILES`, `### DI BINDINGS` and
+`### EDITOR TARGETS` are edited in the phase file of the task that owns them, by the one rule
+that decides every case: cross-phase goes in the manifest, task-scoped goes in the phase
+(`{{skills_dir}}/unikit-plan/references/ULTRA-PLAN-FORMAT.md`).
+
+Only when the applied improvements changed the technical picture:
+1. `### INTERFACES` — add interfaces that appeared in new tasks or from research; remove interfaces for deleted tasks
+2. `### CONSTRAINTS` — update if architectural assumptions changed during analysis or from updated research constraints
+3. `### FILES` — add new paths from new tasks; remove paths for deleted tasks
+4. `### DI BINDINGS` — update if new bindings are needed for new tasks
+5. `### EDITOR TARGETS` — add a row for every editor target in new tasks; remove rows for deleted tasks (symmetric with FILES). Leave the subsection absent when the plan has no `Editor:` task
+
+The section always exists — there is no "create it if missing" branch any more.
+
+**5.7: Update Overview section and the header timestamp**
+
+Move the header's `Updated:` to today's date (`Bash(date *)`) — unconditionally, because reaching Step 5 at all means the manifest was rewritten, and that field is what every "latest plan" resolver sorts on. `Created:` is never rewritten: it records when the plan was made, not when it was last touched. `Planned at:` is never rewritten either: it marks where the plan's work starts.
+
+If the total number of tasks or phases changed significantly (added a phase, removed multiple tasks):
+1. Update `## Overview` task/phase counts
+2. Update scope description if new tasks expanded or narrowed the feature
+
+**5.8: Confirm completion**
+
+```
+## Plan Improved
+
+Research updates: (only if research_improvements was non-empty)
+- Researches: N linked, M drifted, K rebased, R re-linked (list names) — drift is shown even when no rebase was requested; `re-linked` counts entries that had no `Summary SHA256` — including those that carried the retired brief field's `Brief SHA256` — and now do
+- New researches attached: N (list names)
+- Constraints/interfaces updated from research: N
+
++check validation: (only when +check ran successfully — see Step 3.5)
+- Hidden by +check: N
+- Adjusted by +check: M
+
+💾 Changes applied to .unikit/code/plans/[feature]/PLAN.md:
+- Tasks added: N (list brief names)
+- Descriptions improved: N
+- Dependencies reordered: N
+- Tasks removed: N
+- Technical Context updated: interfaces N, constraints N, files N (only if changed)
+```
+
+### Step 6: Next Steps
+
+```
+Plan improved. What's next?
+
+Options:
+1. 🚀 Implement now — start /unikit-implement
+2. 🔄 Review plan again — re-run /unikit-improve
+3. ✅ Done for now
+```
+
+Based on choice:
+- **Implement now** → invoke `unikit-implement` with the argument `@<resolved-plan-path>`, passing the same plan path used in this session (e.g., `@.unikit/code/plans/2026-03-08_customers-system` or `@.unikit/code/PLAN.md`)
+- **Review again** → invoke `unikit-improve` with the argument `@<resolved-plan-path>` to reload the skill from scratch with full re-analysis
+- **Done for now** → suggest `/clear` or `/compact` → **STOP**
+
+### Context Cleanup
+
+Suggest the user to free up context space if needed: `/clear` (full reset) or `/compact` (compress history).
+
+## Important Rules
+
+1. **Don't rewrite from scratch** — improve the existing plan, don't replace it
+2. **Preserve completed work** — never modify or remove `- [x]` completed tasks
+3. **Traceable improvements** — every change must be justified by codebase analysis
+4. **No gold-plating** — don't add tasks outside the feature scope unless critical
+5. **User approves first** — never apply changes without user confirmation
+6. **Keep the plan internally consistent** — after improvements, `### INTERFACES`, `### FILES` and `### EDITOR TARGETS` must match the tasks in `## Checklist`. In fast and full those subsections sit in the manifest and the check runs inside that one file. In an ultra bundle they live in the phase file of the task that owns them, and what is reconciled is the manifest's checklist against those `## Task N.M:` sections — the rule is unchanged, only its reach is wider
+7. **Agent-based delegation** — follow the rules in the **Code Analysis Rules** section; single source of truth for what to delegate vs. do inline
+8. **Respond in the configured language** — use `language.ui` from `.unikit/config.yaml` (default: English)
+
+## Examples
+
+### Example 1: Auto-detect by git branch
+
+```
+User: /unikit-improve
+(current branch: feature/customers-system)
+
+→ Branch: feature/customers-system → looking for *_customers-system
+→ Found: .unikit/code/plans/2026-03-08_customers-system/
+→ Reading the plan manifest...
+→ Bootstrap: loading rules from RULES_INDEX...
+→ Deep codebase analysis via Explore tasks...
+→ Report with findings → User approves → Changes applied
+```
+
+### Example 2: Auto-detect fallback to latest
+
+```
+User: /unikit-improve
+(current branch: main — no matching feature)
+
+→ No branch match for "main"
+→ Latest feature by date: 2026-03-10_customers-service-pool
+→ Reading feature files...
+→ Analysis...
+```
+
+### Example 3: Specific feature by name
+
+```
+User: /unikit-improve 2026-03-08_customers-system
+
+→ Found: .unikit/code/plans/2026-03-08_customers-system/
+→ Reading feature files...
+→ Analysis...
+→ Report...
+```
+
+### Example 4: Partial name match
+
+```
+User: /unikit-improve customers-system
+
+→ No exact match for "customers-system"
+→ Partial match: .unikit/code/plans/2026-03-08_customers-system/
+→ Using it...
+```
+
+### Example 5: Explicit path override
+
+```
+User: /unikit-improve @.unikit/code/plans/2026-03-08_customers-system добавь обработку ошибок
+
+→ Explicit path: .unikit/code/plans/2026-03-08_customers-system/
+→ Improvement prompt: "добавь обработку ошибок"
+→ Reading feature files...
+→ Analysis focused on error handling...
+```
+
+### Example 6: List mode
+
+```
+User: /unikit-improve --list
+
+## Available Feature Plans
+
+Current branch: feature/customers-system
+
+  Fix plan:  .unikit/code/FIX_PLAN.md (2 tasks remaining)
+
+  * customers-system                   ← matches branch (3 tasks remaining)
+    2026-03-09_customer-config-refactor (completed)
+    001-customers-service-pool          (5 tasks remaining)
+
+Use:
+  /unikit-improve                                              # auto-detect
+  /unikit-improve customers-system                             # by name
+  /unikit-improve @.unikit/code/plans/customers-system         # by path
+```
+
+### Example 7: Fix plan auto-detected
+
+```
+User: /unikit-improve
+(no .unikit/code/PLAN.md, .unikit/code/FIX_PLAN.md exists)
+
+→ Found fix plan: .unikit/code/FIX_PLAN.md
+→ Reading plan...
+→ Bootstrap: loading rules from RULES_INDEX...
+→ Deep codebase analysis via Explore tasks...
+→ Report with findings → User approves → Changes applied
+```
+
+### Example 8: Feature not found
+
+```
+User: /unikit-improve nonexistent-feature
+
+→ Feature "nonexistent-feature" not found in .unikit/code/plans/.
+
+Available features:
+- 2026-03-08_customers-system
+- 2026-03-09_customer-config-refactor
+- 2026-03-10_customers-service-pool
+
+→ Asks what to do, with the question tool of your agent (`AskUserQuestion`): Choose one of the existing features · Create a new feature plan
+```

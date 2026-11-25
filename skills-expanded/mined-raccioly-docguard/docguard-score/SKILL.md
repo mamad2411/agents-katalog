@@ -1,0 +1,204 @@
+---
+name: docguard-score
+description: CDD maturity assessment with category-aware improvement roadmap. Runs scoring
+  engine, analyzes category breakdown, identifies highest-impact improvements, and
+  generates a before/after improvement plan with projected score gains.
+compatibility: Requires DocGuard CLI installed (npm i -g docguard-cli, or npx --yes docguard-cli@0.50.0)
+metadata:
+  author: docguard
+  version: 0.50.0
+  source: extensions/spec-kit-docguard/skills/docguard-score
+---
+<!-- docguard:version: 0.50.0 -->
+
+# DocGuard Score Skill
+
+## Running DocGuard
+
+Run `docguard` from PATH when it is installed. Otherwise run
+`npx --yes docguard-cli@0.50.0`, the release these instructions ship with, in its
+place. Every `docguard …` command below means one of the two.
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+You **MUST** consider the user input before proceeding (if not empty).
+
+## Goal
+
+Run DocGuard's CDD maturity scoring engine, analyze the category breakdown, identify highest-ROI improvements, and produce an actionable improvement roadmap showing projected score gains per fix.
+
+## Execution Flow
+
+### Step 1: Run Scoring Engine
+
+Execute both tools for comprehensive data:
+
+```bash
+docguard score 2>&1
+docguard guard 2>&1
+```
+
+If in DocGuard dev environment:
+```bash
+node cli/docguard.mjs score 2>&1
+node cli/docguard.mjs guard 2>&1
+```
+
+### Step 2: Parse Score Breakdown
+
+Extract the category-level scores:
+
+| Category | Score | Weight | Points | Potential Gain |
+|----------|:-----:|:------:|:------:|:--------------:|
+| Structure | X% | ×25 | N | [25 - N] |
+| Doc Quality | X% | ×20 | N | [20 - N] |
+| Testing | X% | ×15 | N | [15 - N] |
+| Security | X% | ×10 | N | [10 - N] |
+| Environment | X% | ×10 | N | [10 - N] |
+| Drift | X% | ×10 | N | [10 - N] |
+| Changelog | X% | ×5 | N | [5 - N] |
+| Architecture | X% | ×5 | N | [5 - N] |
+
+Calculate `Potential Gain` for each category = (weight - current points).
+
+### Step 3: Grade Classification
+
+| Grade | Score | Description |
+|-------|:-----:|------------|
+| A+ | 95-100 | Exemplary — production-grade documentation, CDD fully adopted |
+| A | 85-94 | Strong — minor improvements possible, CI-gate ready |
+| B | 70-84 | Good — documentation covers essentials, some gaps exist |
+| C | 50-69 | Fair — significant documentation debt, multiple gaps |
+| D | 30-49 | Poor — major structural gaps, limited doc coverage |
+| F | 0-29 | Critical — documentation infrastructure missing |
+
+### Step 4: ROI-Based Improvement Roadmap
+
+Sort categories by `Potential Gain / Effort` ratio:
+
+For each category below 100%, calculate:
+- **Gap**: What checks are failing?
+- **Effort**: How hard is it to fix? (LOW = update metadata, MEDIUM = add content, HIGH = research + write)
+- **Impact**: Points gained if fixed to 100%
+- **ROI**: Impact / Effort ranking
+
+Generate an improvement plan ordered by ROI:
+
+```markdown
+### Improvement Roadmap
+
+| Priority | Category | Current | Target | Points Gain | Effort | Action |
+|:--------:|----------|:-------:|:------:|:-----------:|--------|--------|
+| 1 | Structure | 80% | 100% | +5 | LOW | Create REQUIREMENTS.md |
+| 2 | Changelog | 60% | 100% | +2 | LOW | Add missing entry for v0.9.5 |
+| 3 | Doc Quality | 85% | 100% | +3 | MEDIUM | Fix negation language in SECURITY.md |
+| 4 | Testing | 70% | 100% | +4.5 | HIGH | Add E2E test documentation |
+```
+
+### Step 5: Guard Check Correlation
+
+Cross-reference the score with guard results. Run `guard --format json` (not the
+text output) so each finding's channels are available:
+
+- For each failing guard check, show which score category it impacts
+- **Split the findings on `disposition` before you count points.** `act` findings are correctable and belong in the roadmap. `escalate` findings are signals a human must judge — list them separately, under "decisions pending", with no point value attached. Promising points for clearing an escalation is an instruction to edit a document until a message stops printing, which is exactly the behaviour the channel exists to prevent. Severity does not settle this: a blocking `error` can be an `escalate`.
+- Calculate: "If you fix these N `act` findings, score will increase from X to Y"
+- Show the **minimum set of fixes** needed to reach the next grade level, counting only `act` findings
+- Note any finding whose `parserTier` is `regex-fallback`, `fallback-language` or `mixed`: no syntax tree was available, so the projected gain rests on a pattern match rather than parsed code
+
+```markdown
+### Path to Next Grade
+
+**Current**: B (78/100)
+**Next Grade**: A (85/100) — need +7 points
+
+**Minimum fixes for grade A**:
+1. Fix Structure (3 checks failing, all `act`) → +5 points
+2. Fix Changelog (1 check failing, `act`) → +2 points
+Total effort: ~30 minutes
+
+**Decisions pending (no point value)**:
+- Freshness FRS002 on ARCHITECTURE.md — `escalate`. Read `src/` since the last
+  review date and state whether the component map is now wrong. Leaving it in
+  place after a real review is a correct outcome; guard will still print it.
+```
+
+### Step 6: ALCOA+ Compliance Summary
+
+If the score engine reports ALCOA+ attributes, include:
+
+| Attribute | Status | Description |
+|-----------|--------|------------|
+| Attributable | ✅/❌ | Author information in metadata |
+| Legible | ✅/❌ | Readable formatting and structure |
+| Contemporaneous | ✅/❌ | Docs updated within freshness window |
+| Original | ✅/❌ | Primary source documentation |
+| Accurate | ✅/❌ | Content matches codebase |
+| Complete | ✅/❌ | All required sections present |
+| Consistent | ✅/❌ | No cross-document conflicts |
+| Enduring | ✅/❌ | Durable format (markdown, version controlled) |
+| Available | ✅/❌ | Accessible to all team members |
+
+### Step 7: Historical Comparison
+
+If user has run score before (check git log for score badge changes):
+
+```markdown
+### Score History
+| Date | Score | Grade | Change |
+|------|:-----:|:-----:|:------:|
+| 2026-03-14 | 100 | A+ | +22 |
+| 2026-03-13 | 78 | B | baseline |
+```
+
+### Step 8: Completion Report
+
+```markdown
+## CDD Maturity Assessment
+
+**Project**: [name]
+**Score**: [X]/100 ([grade])
+**Guard**: [N]/[M] checks passed
+**ALCOA+**: [N]/9 attributes met
+
+### Category Health
+[Table from Step 2]
+
+### Improvement Roadmap
+[Plan from Step 4]
+
+### Path to Next Grade
+[Analysis from Step 5]
+
+### Suggested Next Steps
+- the `docguard-fix` skill — Fix the top [N] issues automatically
+- the `docguard-review` skill — Deep semantic analysis for accuracy verification
+- the `docguard-guard` skill — Verify fixes pass all validators
+```
+
+## Behavior Rules
+
+- **ALWAYS run real CLI** — never simulate scores
+- **Show math** — explain how score is calculated (category × weight)
+- **Be actionable** — every recommendation must have a specific action
+- **Compare before/after** — if user has previously run score in this session, show improvement
+- **Focus on ROI** — surface the cheapest fixes with the biggest score impact first
+- **Never price an escalation** — a finding with `disposition: escalate` gets no projected point gain and never appears in a "minimum fixes" list. It is a decision, not a task. Report it separately and say plainly that it will still print after a correct run
+- **Keep assurance separate** — report `assurance.declaredEvidence` and remaining `unverifiedClaims` beside the structural score; never convert a scoped evidence pass into an accuracy score for a document or project
+- **Score is not accuracy** — the channels make this explicit: a code whose `evidence.status` is `not-measured` has never been scored by the reviewed corpus, so neither its confidence label nor the points attached to clearing it are measured quantities
+
+## When DocGuard says it is old
+
+If DocGuard's output says its version was released more than 14 days ago, tell
+the user and offer to run `docguard upgrade`, which checks npm for a newer
+version only when it runs. Never upgrade DocGuard without the user's agreement,
+and never treat the note as a failure: it says a newer version may exist, not
+that one does.
+
+## Context
+
+$ARGUMENTS

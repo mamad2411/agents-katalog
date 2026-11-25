@@ -1,0 +1,539 @@
+---
+name: cycle
+description: Post-session documentation chain — propagate changes through lab-notebook, journal, architecture, MEMORY, snapshot, and commit.
+user-invocable: true
+argument-hint: "[scope summary for commit message]"
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash
+---
+
+# Post-Session Cycle (Psychology Agent)
+
+Ensures every session's decisions, findings, and reasoning propagate through the
+full documentation chain. Run at the end of any session with meaningful work.
+
+### When to run
+
+Run /cycle **once, after all work in the session completes.** Do not run it
+mid-session when the user might continue working — any work done after /cycle
+produces undocumented changes that require running /cycle again, duplicating
+effort and creating redundant commits.
+
+**Gotcha (Session 57):** If the user asks "what's next?" and the answer leads to
+more work, that work should finish before /cycle runs. The phrase "what's next?"
+can mean "what should we do next session?" (safe to /cycle) or "let's keep going"
+(defer /cycle). When ambiguous, ask.
+
+/cycle does NOT call itself. If post-cycle work occurs, the next session's
+/cycle Step 2 cross-check catches anything that slipped through.
+
+**Design principle:** The psychology agent maintains several overlapping documents at
+different levels of abstraction. Each serves a distinct audience and purpose:
+
+| Document | Audience | Purpose | Abstraction |
+|---|---|---|---|
+| `journal.md` | Peer reviewers, future self | Research narrative — why decisions were made, what was resolved, what the data or reasoning revealed | Highest — tells the story |
+| `docs/architecture.md` | Technical collaborators | Design decisions and system spec — all resolved choices, authority hierarchy, component specs | Medium — shows the decisions |
+| `lab-notebook.md` | Future self, collaborators | Session log — what happened, when, with what artifacts; Current State block | Chronological — records the timeline |
+| `ideas.md` | Authors | Speculative research directions — not committed, not retired; marked by precondition | Generative — captures the possible |
+| `TODO.md` | Authors | Forward-looking task backlog — open items only; completed items route to lab-notebook | Operational |
+| `MEMORY.md` | Claude across sessions | Volatile orientation state — active thread, design decisions, cogarch quick-ref | Cross-session context |
+| `docs/cognitive-triggers.md` | Claude | Full T1–T12 trigger system — canonical, in-repo | Operational infrastructure |
+| `CLAUDE.md` | Claude Code (auto-read) | Stable conventions — communication policy, accessibility, project structure, skills | Foundational — how the project works |
+| `docs/MEMORY-snapshot.md` | Fresh Claude sessions | Committed copy of MEMORY.md — portable orientation for fresh installs | Bootstrap context |
+| `docs/cognitive-triggers.md` | Claude + fresh sessions | Full trigger system — canonical location (no separate snapshot needed) | Operational infrastructure + bootstrap |
+
+When something changes, update relevant documents *at the appropriate level of
+abstraction*. A resolved design decision needs an entry in architecture.md (facts),
+possibly a journal paragraph (if it reveals something significant), and an Active
+Thread update in MEMORY.md. A routine cogarch tweak might only need cognitive-triggers.md.
+
+---
+
+## Checklist
+
+Work through each step. Skip any that don't apply to the session's changes. When
+in doubt whether a step applies, check the document's current state — if accurate, skip.
+
+### 1. Identify What Changed
+
+- Summarize from context what was done this session
+- Categorize: design decisions, cogarch changes, new skills, architecture specs,
+  research findings, ideas, documentation-only, bugfix
+- Categorization determines which downstream documents need updates
+
+### 2. Update lab-notebook.md
+
+Always update. This is the most universal step — every session with meaningful work
+gets an entry.
+
+**Current State block** (top section, *overwrite in place* — not appended):
+
+- Update item statuses: ✓ (complete), ✗ (pending), ⚑ (blocked)
+- Add new tracked items if new deliverables emerged this session
+- Remove items that are now fully complete and stable (route to journal if significant)
+
+**New session entry** (append at bottom of session log):
+
+- Header: `## YYYY-MM-DDTHH:MM TZ — Session N (1-line summary)`
+  Run `date '+%Y-%m-%dT%H:%M %Z'` before writing. No approximate timestamps.
+- Bullet points: what was done, what decisions were made, what artifacts created
+- Cross-references: `▶ journal.md §N, docs/architecture.md` for detailed write-ups
+- Note skills created mid-session that need restart to load
+- **Dual-write (SL-2):** After writing the session entry to markdown:
+  ```bash
+  python scripts/dual_write.py session-entry \
+    --id {session_number} --timestamp "{YYYY-MM-DDTHH:MM TZ}" \
+    --summary "{1-line summary}" \
+    --artifacts "{comma-separated artifact list}" \
+    --flags "{epistemic flags or 'none'}"
+  ```
+
+**Open Questions** (end of current state block):
+
+- Strike through answered questions with `~~Q: text~~` and add `**ANSWERED:** ...`
+- Add new open questions that emerged from the session
+
+### 3. Update journal.md
+
+Update when the session produced something worth narrating — a significant design
+decision, a conceptual reframe, a resolved research question, a notable failure.
+
+**When to update:**
+- A design decision was resolved and the reasoning matters for the record
+- A conceptual reframe changed a class of problems (not just one answer)
+- A framework or approach was rejected for documented reasons
+- The session revealed something about the project's direction
+
+**When to skip:**
+- Routine documentation passes (/cycle itself, doc migrations)
+- Minor cogarch tweaks with no conceptual significance
+- Task completions that are already fully captured in lab-notebook.md
+
+**How to write:**
+- First-person plural ("we resolved," "our analysis found")
+- Focus on *why* — the reasoning, not just the outcome
+- Add to Table of Contents if a new section is added
+- In-text citations where connecting to established literature
+
+### 4. Update docs/architecture.md
+
+Update when any design decision is resolved, modified, or its implementation
+approach changes.
+
+- **Decisions table**: add or update resolved decisions with date
+- **Component specs**: if a component was designed (psychology agent identity,
+  sub-agent comm standard, evaluator logic), add its spec section
+- **Status markers**: update ✗ → ✓ for items that are now complete
+- **Authority hierarchy**: update only if the hierarchy itself changed (rare)
+- **Dual-write (SL-2):** For each decision added or updated:
+  ```bash
+  python scripts/dual_write.py decision \
+    --key "{kebab-case-decision-name}" \
+    --text "{choice text}" \
+    --date "{YYYY-MM-DD}" \
+    --source "docs/architecture.md"
+  ```
+
+Skip if no design decisions were made or changed.
+
+### 5. Update ideas.md
+
+- **New ideas surfaced**: add entries in appropriate category with precondition
+- **Promoted to TODO**: mark idea as `[→ TODO]` with date
+- **Retired**: mark as `[retired — reason]` if superseded by architecture decisions
+- **Precondition met**: flag ideas whose stated precondition is now satisfied
+
+### 6. Update TODO.md
+
+Safety net for in-session TODO updates. The primary convention (CLAUDE.md §TODO
+Discipline) requires updating TODO.md immediately when completing a work item.
+This step catches anything that slipped through.
+
+**Cross-check procedure:**
+1. Review what was accomplished this session (from Step 1 categorization)
+2. Read TODO.md and compare against session accomplishments
+3. Flag any completed work that still appears as open in TODO.md
+
+- **Completed items**: mark complete or remove (summary goes to lab-notebook.md)
+- **New items**: add items that emerged from this session's work
+- **Stale items**: update status if an in-progress or blocked item has changed state
+- **Blocked items**: note what's blocking and what would unblock
+- **Preconditions met**: flag items whose stated precondition was satisfied this session
+
+Skip only if the cross-check confirms TODO.md already reflects all session work.
+
+**Work carryover logging (Phase 8):** For each TODO item that remains open and
+was worked on this session but not completed, log to state.db:
+
+```bash
+python scripts/dual_write.py work-carryover \
+  --session-id {N} --work-item "{description}" \
+  --status {planned|in-progress|blocked|deferred} \
+  --reason "{context-pressure|session-end|blocked-on|deprioritized}"
+```
+
+For items completed this session that had prior carryover entries:
+
+```bash
+python scripts/dual_write.py work-resolved \
+  --session-id {N} --work-item "{description}"
+```
+
+This feeds the metacognitive pattern generator (CPG #13 frequency-amplitude
+coupling) — which work types complete in-session vs span multiple? Query
+`scripts/work_patterns.sql` for pattern analysis.
+
+### 6b. TODO Grounding Audit
+
+Spot-check 1–2 open TODO items against T3 Check 2 (grounding). For each item:
+
+1. **Verify preconditions** — does the stated precondition actually hold?
+   Check for the artifact, state, or dependency it claims exists.
+2. **Verify consumer** — who uses the output? Does that consumer exist and
+   can it consume the output in the format described?
+3. **Flag stale items** — if preconditions have changed, the item description
+   has drifted from current architecture, or the effort estimate no longer holds,
+   annotate the item with findings.
+
+Pick items that haven't been audited recently (no `Session N` annotation in
+their description) or that have been open longest.
+
+This step catches grounding failures that accumulate when TODO items persist
+across many sessions without re-evaluation. Added Session 56 after discovering
+the MCP faceted resource item had 3 undetected grounding failures across 5 sessions.
+
+### 7. Update Memory Files
+
+Memory uses an index + topic file pattern. MEMORY.md is the always-loaded index
+(~55 lines). Topic files hold detail and are read on demand.
+
+**Routing table — what changed this session → which file to update:**
+
+| Change type | Target file |
+|-------------|-------------|
+| Active thread (where we stopped, next) | `MEMORY.md` (index) |
+| Design decision resolved/modified | `memory/decisions.md` |
+| Authority hierarchy changed | `memory/decisions.md` |
+| Trigger added/changed, cogarch principle | `memory/cogarch.md` |
+| Knock-on depth, adjudication tiers | `memory/cogarch.md` |
+| Working principle (edit/date/anti-sycophancy) | `memory/cogarch.md` |
+| PSQ calibration, deploy, or open issues | `memory/psq-status.md` |
+| User preference | `MEMORY.md` (index) |
+| Memory hygiene rule | `MEMORY.md` (index) |
+
+**MEMORY.md index**: update Active Thread to reflect session end state. Keep under 60 lines.
+
+**Topic files**: update only the files that changed this session. No line limit on topic files.
+
+**ACT-R activation update (Phase 5):** For each topic file accessed this session,
+update access tracking in state.db:
+
+```sql
+UPDATE memory_entries
+SET last_accessed = datetime('now'),
+    access_count = access_count + 1
+WHERE topic = '{topic-stem}';
+```
+
+This feeds the activation scoring for topic file loading priority at T1:
+`priority = recency_score + frequency_score + relevance_score`. Topics with
+priority ≥ 5 load automatically (warm → hot). See `docs/working-memory-spec.md`.
+
+**Dual-write (SL-2):** For each memory entry added or updated in topic files:
+```bash
+python scripts/dual_write.py memory-entry \
+  --topic "{topic-filename-stem}" --key "{kebab-case-key}" \
+  --value "{value text}" --status "{✓|✗|⚑|null}" \
+  --session-id {current_session_number}
+```
+
+**Memory hygiene (T9)**:
+- Remove or update stale entries in any memory file
+- Check for duplicates across files (don't add what's already there)
+- Verify no speculation is persisted as fact
+- Check MEMORY.md line count: target < 60 lines (hard limit 200, but the index
+  should stay lean; detail goes to topic files)
+
+**EIC feedback intake (disclosure → trigger adjustment):**
+After memory updates, run the EIC feedback consumer to close the disclosure →
+trigger sensitivity loop. Disclosures from agent_disclosures (state.local.db)
+adjust trigger relevance_score and decay_rate in trigger_state (state.db):
+```bash
+python3 scripts/eic-feedback-consumer.py          # apply adjustments
+# or --dry-run to preview without writing
+# or --summary to display current disclosure→trigger map
+```
+Report the summary in Step 13 output: how many disclosures processed, which
+triggers adjusted, and in which domains.
+
+### 8. Update docs/cognitive-triggers.md
+
+Update when cogarch itself was modified — triggers added, changed, or retired;
+failure analyses added; future mitigations updated. This file lives in the repo
+(canonical location), not in auto-memory.
+
+- **New triggers**: add to the appropriate T-slot or after T12
+- **Modified triggers**: update the relevant section
+- **Future mitigations**: if T11 produced deferred items, ensure each has a
+  mitigation entry in the Future Mitigations table
+- **Failure analyses** (FA): if a cogarch failure was analyzed this session,
+  add an FA entry with the 6-order cascade
+
+Skip if no cogarch changes were made.
+
+### 8b. Update lessons.md
+
+Lessons are written in-moment by T10 and T12 — /cycle is the safety net that
+catches anything that should have been written but wasn't.
+
+- **T10 review:** Did any of these fire this session?
+  - A transferable pattern error was identified
+  - User said "grok" or "internalize"
+  - A conceptual reframe changed how a class of problems should be approached
+  If yes: verify a lessons.md entry exists. If not, write it now.
+
+- **T12 review:** Did the user signal "good thinking" or "good defensive thinking"?
+  If yes: verify the named principle has a lessons.md entry. If not, write it now.
+
+- **Format check:** Any entries written this session — do they have full timestamps?
+  Date-only entries need a timestamp if the exact time is known; otherwise leave as-is.
+
+- **Duplicate check:** No two entries for the same pattern. Update rather than append.
+
+- **Schema check:** Any entries written this session — do they have YAML frontmatter
+  with `pattern_type`, `domain`, `severity`, `recurrence`, `trigger_relevant`,
+  `promotion_status`? If not, add the frontmatter now.
+
+- **Promotion scan:** Count entries by `pattern_type` and `domain`. If 3+ lessons
+  share the same value, mark them `promotion_status: candidate` and flag with
+  `[→ PROMOTE]`. Promotion targets:
+  - Recurring `pattern_type` → candidate for CLAUDE.md convention or cogarch trigger
+  - Recurring `domain` → candidate for domain-specific `.claude/rules/` file
+  - Action: add a one-line note to the /cycle summary identifying the promotion
+    candidate and the proposed target. Do not promote automatically — surface to
+    the user as a recommendation (T3 substance decision).
+
+- **Graduation scan:** Check lessons.md for entries with `promotion_status: approved`.
+  For each approved entry, execute the graduation ceremony:
+  1. Append the convention to CLAUDE.md under the relevant section (plain imperative
+     sentence, no jargon)
+  2. Update the lessons.md entry: `promotion_status: graduated`, add
+     `graduated_to: "CLAUDE.md §[section]"` and `graduated_date: YYYY-MM-DD`
+  3. Log in lab-notebook session entry: "Graduated lesson: [pattern] → CLAUDE.md §[section]"
+  If no `approved` entries exist, skip.
+
+Skip if no T10 or T12 firings occurred this session and no `approved` entries exist.
+
+### 9. Update CLAUDE.md
+
+Update when stable conventions change or new skills are created.
+
+- **Skills section**: add any new skills with a one-line description
+- **Communication conventions**: update if a communication policy changed (rare)
+- **Cognitive accessibility policy**: update if the policy itself changed (rare)
+- Check line count — advisory limit ~200 lines.
+
+Skip for volatile-state-only sessions.
+
+### 10. Update docs/MEMORY-snapshot.md
+
+Three-layer update to prevent silent loss of canonical state. Run in order.
+
+**Step A: Versioned archive** — archive the *current canonical* before overwriting it.
+This preserves every prior session state and enables recovery to any point.
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ARCHIVE_TS=$(date '+%Y-%m-%dT%H%M%S')
+cp "${PROJECT_ROOT}/docs/MEMORY-snapshot.md" \
+   "${PROJECT_ROOT}/docs/snapshots/MEMORY-snapshot-${ARCHIVE_TS}.md"
+```
+
+**Step B: Content guard** — verify the incoming MEMORY.md is substantive before
+allowing it to overwrite the canonical. With the topic-file pattern, MEMORY.md
+is the index (~55 lines). Threshold lowered to 30 lines.
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+_HASH="$(echo "$PROJECT_ROOT" | tr '/' '-')"
+MEMORY_DIR="$HOME/.claude/projects/${_HASH}/memory"
+LINE_COUNT=$(wc -l < "${MEMORY_DIR}/MEMORY.md" | tr -d '[:space:]')
+echo "MEMORY.md line count: ${LINE_COUNT}"
+# Proceed only if LINE_COUNT >= 30. If below threshold, STOP and investigate.
+```
+
+If `LINE_COUNT < 30`: do **not** overwrite. Report the anomaly in the cycle summary.
+
+**Step C: Update canonical** — copy index + all topic files. Only after A and B
+complete successfully.
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+_HASH="$(echo "$PROJECT_ROOT" | tr '/' '-')"
+MEMORY_DIR="$HOME/.claude/projects/${_HASH}/memory"
+SNAPSHOT_DIR="${PROJECT_ROOT}/docs"
+
+# Index
+cp "${MEMORY_DIR}/MEMORY.md" "${SNAPSHOT_DIR}/MEMORY-snapshot.md"
+
+# Topic files → docs/memory-snapshots/ (committed alongside MEMORY-snapshot.md)
+mkdir -p "${SNAPSHOT_DIR}/memory-snapshots"
+for topic_file in "${MEMORY_DIR}"/*.md; do
+  [ -f "${topic_file}" ] || continue
+  topic_name="$(basename "${topic_file}")"
+  [ "${topic_name}" = "MEMORY.md" ] && continue  # index handled above
+  cp "${topic_file}" "${SNAPSHOT_DIR}/memory-snapshots/${topic_name}"
+done
+```
+
+The canonical (`docs/MEMORY-snapshot.md`) always reflects end-of-session state.
+The archive (`docs/snapshots/`) accumulates one file per /cycle run (timestamp-keyed,
+safe to run multiple times in the same day without collision).
+BOOTSTRAP.md references the canonical — do not change that reference.
+
+### 10b. Verify docs/cognitive-triggers.md
+
+Cognitive triggers now live in-repo at `docs/cognitive-triggers.md` (canonical
+location). No snapshot copy needed — the file itself is committed. Step 8
+handles edits; this step verifies the file is substantive after any changes.
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+LINE_COUNT=$(wc -l < "${PROJECT_ROOT}/docs/cognitive-triggers.md" | tr -d '[:space:]')
+echo "docs/cognitive-triggers.md line count: ${LINE_COUNT}"
+# Expected >= 100 lines. If below threshold, investigate.
+```
+
+Skip if no cogarch changes were made this session.
+
+### 11. Orphan Check
+
+- Check for references in docs to files that no longer exist or were renamed
+- Check for skills created mid-session that haven't been verified post-restart
+  (flag in lab-notebook.md if so — don't verify here, that requires a restart)
+- Check for open questions in lab-notebook.md that have been answered but not struck
+- Check BOOTSTRAP.md step sequence against what files actually exist
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+grep -o '`[^`]*\.md`' "${PROJECT_ROOT}/BOOTSTRAP.md" | tr -d '`' | sort -u
+```
+
+### 11b. Sync Project Board
+
+Reconcile TODO.md against the GitHub Projects board using the project tracking
+configuration from `cogarch.config.json`.
+
+**Pre-check:** Read `cogarch.config.json` → `project_tracking.enabled`. If `false`
+or the section does not exist, skip this step entirely.
+
+**Execute:**
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+python3 "${PROJECT_ROOT}/scripts/sync_project_board.py" --apply
+```
+
+**Report:** Include the sync summary in the /cycle Step 13 output:
+- Items added to board
+- Items marked done on board
+- Orphaned board items (on board but not in TODO.md)
+- Errors encountered
+
+**Skip if:** `project_tracking.enabled` evaluates to `false`, the section
+does not exist in `cogarch.config.json`, or `gh` CLI authentication fails.
+
+### 11c. Epistemic Debt Check
+
+Run the epistemic debt summary and include it in the Step 13 output:
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+python3 "${PROJECT_ROOT}/scripts/epistemic_debt.py" --summary
+```
+
+**Report:** Include the one-line summary in Step 13. If transport flag count
+has increased since last session, note the delta. No action required — this
+step surfaces the debt level, not resolves it.
+
+**Skip if:** `state.db` does not exist or `scripts/epistemic_debt.py` is missing.
+
+### 12. Git Commit and Push
+
+Commit and push all documentation changes made this session.
+
+```bash
+# Guard — skip gracefully if no .git directory exists yet
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$PROJECT_ROOT"
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+  echo "Step 12 SKIPPED: no .git directory yet — commit deferred to post-reconstruction"
+  # Proceed to Step 13
+else
+
+git add -A
+git status
+```
+
+Review staged files. Then commit and push:
+
+```bash
+git commit -m "Session N: [scope summary]"
+git push
+
+fi  # end guard
+```
+
+The scope summary should match the one-line description from the lab-notebook
+session entry header written in Step 2 (e.g., "Architecture design, skill
+creation"). Keep it under 72 characters.
+
+**Skip if:** `git status` shows nothing staged (read-only session, or all
+changes were to gitignored files such as `lessons.md`). Note the skip in
+Step 13.
+
+### 13. Summary
+
+**Summary-first convention:** When presenting /cycle results, lead with a 3-line
+summary:
+
+```
+/cycle complete: {N} files updated, {M} skipped, commit {hash}
+Next: {what's first next session}
+MEMORY: {line count} / 200
+```
+
+Then provide the detailed breakdown only if the user asks or the session
+produced significant changes (>5 files touched).
+
+**Detailed breakdown** (present on request or when >5 files touched):
+- **Documentation updated**: which files, what was added or changed
+- **Skipped**: which steps, with reason
+- **Git commit + push**: hash + one-line message, or reason skipped
+- **Skills created mid-session** that need restart to load (list them)
+- **Next session**: what's first, what's blocked
+- **MEMORY.md line count**: current / 200
+- **Epistemic debt**: one-line summary from Step 11c
+- **Feedback intake**: {N} trigger adjustments from {M} disclosures (domains: {list})
+  — from EIC feedback consumer run in Step 7
+
+---
+
+## Propagation Rules
+
+**A resolved design decision touches:**
+architecture.md (facts) → journal.md if significant (narrative) →
+MEMORY.md Design Decisions table → lab-notebook.md Current State
+
+**A new cogarch trigger touches:**
+docs/cognitive-triggers.md (Step 8) →
+MEMORY.md quick-ref table → lab-notebook.md session entry
+
+**A new skill touches:**
+.claude/skills/ → CLAUDE.md Skills section → lab-notebook.md session entry
+
+**An idea promoted to TODO touches:**
+ideas.md (mark [→ TODO]) → TODO.md (add item) → lab-notebook.md session entry
+
+**A stable convention change touches:**
+CLAUDE.md → MEMORY.md (remove from MEMORY if it was there) → lab-notebook.md

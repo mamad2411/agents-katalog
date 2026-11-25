@@ -1,0 +1,118 @@
+---
+name: g-voice
+description: Set how G-Forge communicates with you. With no argument, runs a short 2-question intake and sets the right profile automatically — you never need to know the tier names. With `dev`, `mid`, or `eli5` as an argument, applies that profile directly. Writes `.claude/voice-profile`. Every G-Forge skill reads this and renders its output accordingly.
+---
+
+**Announce:** "Using g-voice to set the communication style."
+
+The voice profile is PM's communication register. Same facts, same verdicts, same enforcement — what changes is how PM frames results, how much context accompanies a finding, and how terse or explanatory the output is. The developer should never self-select a tier they don't understand — when called with no argument, run the intake interview and derive the right profile from their answers.
+
+## Step 1 — Resolve intent
+
+Inspect `$ARGUMENTS`:
+
+1. **Empty** — run the language intake (Step 1a). Do not show the current profile or ask the developer to pick a tier — interview first, write second.
+2. **One of `dev` / `mid` / `eli5`** — skip to Step 2 (power-user shortcut).
+3. **Anything else** — print:
+   ```
+   ✗ Unknown value '[arg]'. Run /g-voice with no argument to answer a couple of questions and have the right style set for you. Or use: dev · mid · eli5
+   ```
+   Stop.
+
+## Step 1a — Language intake (empty-arg case only)
+
+Ask these two questions one at a time, in plain language. Never mention `dev`, `mid`, `eli5`, or "profile" to the developer.
+
+**Question 1:**
+> "A quick question so I can communicate in a way that actually helps — how long have you been writing code?
+> a) New or just getting started — under a year
+> b) A year or two in — I've built some things, still learning
+> c) Three or more years — I ship regularly"
+
+Wait for the answer.
+
+**Question 2:**
+> "When something important happens — a test failing, a review flagging issues, a wave finishing — how much explanation do you want?
+> a) Plain language — explain what it means, not just the technical term
+> b) A brief note of context alongside the result
+> c) Just the result — I'll figure out the rest"
+
+Wait for the answer. Derive the profile:
+
+| Q1 | Q2 | Profile |
+|----|----|---------|
+| a (new) | a (plain) | `eli5` |
+| a (new) | b (context) | `eli5` |
+| a (new) | c (just result) | `mid` |
+| b (some experience) | a (plain) | `mid` |
+| b (some experience) | b (context) | `mid` |
+| b (some experience) | c (just result) | `dev` |
+| c (experienced) | a (plain) | `mid` |
+| c (experienced) | b (context) | `dev` |
+| c (experienced) | c (just result) | `dev` |
+
+Proceed to Step 2 with the derived profile name.
+
+## Step 2 — Apply the switch
+
+Create `.claude/` if missing. Write the profile name as a single bare word followed by a newline to `.claude/voice-profile`. Overwrite any existing content.
+
+## Step 3 — Confirmation rendering
+
+The confirmation message is rendered using the profile value just written in Step 2 (no re-read needed — the value is known). This gives the developer an immediate sense of what they just opted into:
+
+- `dev`:
+  ```
+  Voice: dev. Active.
+  ```
+- `mid`:
+  ```
+  Voice profile set to `mid`.
+  Every skill report will now include a brief context sentence on important results — same facts, lightly explained.
+  ```
+- `eli5`:
+  ```
+  ✓ I'll talk to you in plain language from now on.
+
+  When something important happens — a review passing, a risk surfacing,
+  a wave finishing — I'll explain what it means, not just say the technical
+  name for it. Same facts, plainer words.
+
+  You can switch back any time with /g-voice dev (terse) or /g-voice mid
+  (a middle ground).
+  ```
+
+## Step 4 — Show samples (read mode only)
+
+If Step 1 was the read case, after printing the status block, render the same example report in all three profiles so the developer can compare. Use a short, neutral example like a `/g-review MERGE READY` summary. See `g-docs/voice-profiles.md` for canonical samples.
+
+## Step 5 — Status block (read mode)
+
+```
+G-Forge voice status
+  Active profile:  [dev / mid / eli5]
+  Profile file:    .claude/voice-profile ([present / absent — using default])
+
+  Samples — same content in each register:
+
+  --- dev ---
+  [terse sample]
+
+  --- mid ---
+  [explained sample]
+
+  --- eli5 ---
+  [plain-language sample]
+
+  To switch:  /g-voice dev   |   /g-voice mid   |   /g-voice eli5
+```
+
+## Rules
+
+- The voice profile changes **rendering only**. Never let a profile change the underlying verdict, the numeric values, or the file references in a skill report. A `HOLD` is a `HOLD` in every profile.
+- All three profiles must surface the **same facts**. The eli5 profile adds explanation; it never withholds information that `dev` includes.
+- File refs (`file:line`) appear in all three profiles. They are unconditionally useful and never replaced with prose.
+- Switching is never destructive — no confirmation prompts, no warnings, no migration. Just write the file.
+- Skills that read the profile should fall back to `dev` on absent or malformed file. Never crash on missing voice config.
+- This skill is **always available** regardless of integration tier. Voice is independent of tier — a `light`-tier developer can still set `eli5`.
+- Do not invent new profiles or register intermediate values (e.g. `dev-verbose`). Three discrete profiles, no spectrum.

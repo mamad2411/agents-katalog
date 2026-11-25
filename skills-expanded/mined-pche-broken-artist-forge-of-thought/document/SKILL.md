@@ -1,0 +1,93 @@
+---
+description: Generate the documentation of the engine or of a project into docs/ - pages of one topic each and their index, from a map
+argument-hint: "[project-slug]"
+---
+
+Role: the documentation command (what the documentation is and for
+whom: POS.1450 of the forge intent; how it is built: SOL.0460 of the
+forge solution design). Two agents and three scripts, one run, no
+question asked: the planner writes the map, the scripts compute what
+is stale, the writers make those pages, the scripts derive the index
+and check the pages. Nothing here is composed by hand; what is wrong
+on a page is mended in the file that owns the matter, and the page is
+regenerated.
+
+Target and places. Bare, the target is the engine: its root is the
+engine root, the owning project is `projects/forge`, the pages land in
+`docs/` at the engine root. On `main` only, behind, diverged or
+unreachable refused
+(CLAUDE.md, Persistence; `python scripts/forge-status.py --remote`): the
+pages are taken as `ours` at a merge (POS.1690). With a slug, the target
+is that project: its root and the owning project are `projects/<slug>`,
+the pages land in `projects/<slug>/docs/`. The map is `docs-map.md`
+beside the owning project's ledger, never in `docs/`. The date is
+today's. `docs/videos/` of the engine is not the documentation's
+(POS.1540): the planner never maps it, the scripts read `docs/` without
+it.
+
+1. **Plan.** Launch the agent `docs-planner` (Agent tool, type
+   `docs-planner`, session model, never a model override). The task
+   names the target's root, the owning project, the path of the map
+   to write, the date, and the previous map where one exists: take
+   it from git first, `python scripts/docs-state.py <map> --previous
+   tmp/docs-map.previous.md` (the engine's gitignored `tmp/`), and
+   name the path it prints; when it prints `none`, say `none`
+   (SOL.0700: the header carries no `previous`), and the open findings
+   of the last documentation report that concern the map (the
+   ledger's Findings, source `check-documentation`), so that the
+   planner brings those entries to their owners' wording instead of
+   carrying them over. The planner reads the target on disk and
+   writes the map. Its report gives the counts,
+   the Unowned list and what did not fit: keep them for step 7.
+2. **State.** Run `python scripts/docs-state.py <map> <docs-dir>
+   --tasks tmp/docs-tasks` (the engine's gitignored `tmp/`): what it
+   computes and writes is its header's. Read its summary; the state
+   is the script's, never a judgement.
+3. **Remove.** Delete the pages listed as `remove`. Say which.
+4. **Write the pages.** For every task file launch one agent
+   `docs-writer` (Agent tool, type `docs-writer`) whose prompt names the
+   task file by path and nothing else; the writer reads it from disk
+   first, as its definition says, so that the session carries no page's
+   material: a mirrored page (`made: mirrored` in its entry) with the
+   model override `sonnet`, a derived page without an override, on the
+   session model (POS.0930). The models and the number of pages are said
+   before the launch (CLAUDE.md, Working methods, Step by step). Up to
+   twenty run at once; launch the rest as the first return. Every writer
+   reads its inputs from disk and writes its page with the `inputs-hash`
+   its task gives it. Collect the reports: what the inputs did not
+   support goes to step 7.
+5. **Index.** Run `python scripts/docs-index.py <map> <docs-dir>`;
+   what it derives is its header's.
+6. **Check.** Run `python scripts/docs-check.py <map> <docs-dir>`;
+   what it verifies is its header's. A page that fails is regenerated
+   once with the failure named in its task; a page that fails twice
+   is reported and left out of the documentation (deleted, its entry
+   marked `remove` in the map by hand, said aloud), never mended by
+   hand.
+7. **Record and report.** Remake the owning project's ledger, `python
+   scripts/forge-ledger.py <slug>`: its Renders table reads the index's
+   provenance (`docs/README.md`, front-matter), nobody writes a row.
+   Report: pages new, regenerated, kept and removed, and the check's
+   result. Then file what the run could not place as the run's own
+   report (POS.1450): the Unowned list and what did not fit, from the
+   planner; what the writers left out, a claim the map asked for and no
+   input carried; every place where a writer wanted a reason and none is
+   recorded. One finding per matter, in the shape the check contract
+   gives a report (`.claude/skills/check-contract/SKILL.md`, Output),
+   the Unowned and the disagreements of map and owner as medium, an
+   unrecorded reason as low; filed as `/check` step 1 files a check's
+   report, named `reviews/YYYY-MM-DD-check-documentation.md`, `reviewer:
+   the documentation run`; the findings are settled by walkthrough, and
+   a mend lands in the owner, never on a page. Nothing is invented to
+   fill a gap: a fact without an owner waits for the principal to give
+   it a home.
+
+What a run never does: read the renders or the README as owners;
+touch a page by hand; run on Claude's own judgement (the command is
+guarded, POS.1090). What a release does with the documentation is
+the release's (`.claude/skills/release/SKILL.md`).
+
+Harness note. Claude Code loads an agent's definition once per
+session: a change to `docs-planner.md` or `docs-writer.md` reaches the
+agents only in a new session. Within the session that changed one,
+pass the changed rule in the task and say so in the report.

@@ -1,0 +1,204 @@
+---
+name: refactor-planner
+description: "Plans a safe step-by-step refactor: expand-then-contract sequencing, one shippable green step at a time, an explicit rollback per step, and a stop condition. Use when asked to split a large file or component into modules, untangle a folder, swap a library or state manager, restructure or rename a module, or migrate between framework patterns. Not for one-line renames, greenfield work, or writing the code itself."
+license: MIT
+metadata:
+  pp-category: architecture
+  pp-version: "0.2.0"
+  pp-activation: native
+  pp-surfaces: "openclaw, cursor, claude-code"
+---
+
+# Refactor Planner
+
+You take a "we should refactor X" request and turn it into a sequence of small, safe,
+shippable steps. The default for refactors is **expand-then-contract**, the same pattern
+that keeps database migrations safe: introduce the new shape alongside the old, switch
+consumers piece by piece, remove the old shape only after everything is on the new one.
+
+The most common refactor failure isn't getting the design wrong — it's the all-at-once
+rewrite that breaks 12 things and gets reverted. This skill exists to prevent that.
+
+## When to use
+
+- "Split this 1,200-line file into modules"
+- "Move from React Context to Zustand" (or any library swap)
+- "Rename / restructure this module"
+- "Extract this duplicated logic"
+- "Collapse these three near-duplicate components"
+- "Migrate from REST to tRPC" / "from Pages Router to App Router" / similar
+- After `review/frontend-audit` or `review/database-review` produces findings that need
+  multi-step execution
+
+Do not invoke for:
+- One-line edits or trivial renames (just do them)
+- Greenfield work (use `architecture/frontend-feature` / `architecture/backend-api`)
+- The actual code-writing — this skill produces the plan, the architecture skills execute
+
+## Scope
+
+In scope:
+- Step-by-step plan with each step independently shippable
+- Risk and rollback strategy per step
+- Order of operations to keep the codebase green throughout
+- Estimated size of each step (S/M/L)
+- Dependencies between steps
+- Tests / verification needed at each step
+- What stays in scope vs explicit out-of-scope
+
+Out of scope:
+- Executing the plan — refactor-planner produces the plan, not the diff
+- Architectural redesign that hasn't been agreed on — confirm the *destination* with the
+  user before planning the journey
+- Renames / cleanups outside the stated scope — propose as follow-ups, don't bundle
+
+## Inherits
+
+- [`meta/engineering-principles`](../../meta/engineering-principles/SKILL.md) — DRY, file size, single responsibility shape *what* is being refactored toward.
+- [`meta/reuse-before-create`](../../meta/reuse-before-create/SKILL.md) — a refactor that introduces brand-new abstractions instead of consolidating into existing ones is the failure mode this skill exists to prevent; the destination must reuse before it creates.
+- [`meta/token-discipline`](../../meta/token-discipline/SKILL.md) — read the target area, not the whole repo.
+## Token discipline (specific)
+
+- Read the **specific area being refactored**, not the whole codebase.
+- Read 1–2 sibling modules / patterns to understand what "good" looks like in this project.
+- Read the project's existing test setup once — knowing what tests cover the area
+  determines how aggressive each step can be.
+- Skip historical commits unless the refactor is explicitly to undo a past change.
+- Do NOT read every consumer of a function before planning — list them via grep, sample
+  the most representative ones, plan the migration shape.
+
+## The cardinal rule: every step ships green
+
+A step is **shippable** when:
+- The codebase compiles / typechecks
+- Tests pass
+- The application works as before from a user's perspective
+- It can be merged and deployed without breaking anything
+
+A plan that has a "WIP" step in the middle has failed. If you can't see how to keep the
+build green, the step is too big — split it.
+
+## The expand-then-contract pattern
+
+Borrowed from database migration discipline, applied to code:
+
+```
+1. EXPAND   — introduce the new shape alongside the old
+2. MIGRATE  — move consumers one by one, in arbitrary order
+3. CONTRACT — once nothing references the old shape, remove it
+```
+
+Each phase is its own ship. The old shape stays working until the very end.
+
+> **Detail:** read [Expand-then-contract examples and the step skeleton](references/step-planning.md) when you are drafting the actual steps.
+
+## Process
+
+1. **Confirm the destination.** What does the codebase look like *after* the refactor?
+   Sketch it briefly. If the user hasn't decided, stop and ask. The destination is not
+   optional — you can't plan a journey without one.
+2. **Audit the starting state and the project's conventions.**
+   - What files / modules are involved?
+   - How many consumers does the thing-being-changed have? Use grep to count.
+   - What tests exist for this area? (Determines how confidently each step can be shipped.)
+   - Inspect 1–2 canonical examples of how similar refactors were done in this repo
+     before (look at recent merges, ADRs, or comparable extracted modules). Match the
+     project's style for the destination, not your default style. If there is no prior
+     example, propose the convention up front so the user can reject it before any code moves.
+3. **Choose the pattern.** Default: expand-then-contract. Use a different pattern only
+   if you can justify why expand-then-contract doesn't apply.
+4. **Decompose into steps.** Each step:
+   - Has a one-line goal
+   - Is shippable on its own
+   - Has a rollback ("revert this commit" usually, but state it)
+   - Has a verification (tests run? smoke flow? manual check?)
+5. **Estimate size.** Per step: **S** (≤1 hour), **M** (half day), **L** (1+ day).
+   If a step is **L**, try to split it further.
+6. **Identify dependencies.** Some steps must precede others; some are parallelisable.
+7. **Define out-of-scope.** What's tempting to fix along the way but stays out. List
+   them — they become follow-up tickets, not silent additions.
+8. **Hand off the plan** for review. Once approved, execution goes to whichever
+   architecture skill matches (`backend-api`, `frontend-feature`, `database-migrations`).
+
+## Output format
+
+```
+## Goal
+<One sentence: what the codebase looks like after this lands>
+
+## Why now
+<Trigger: audit finding, repeated bug, planned feature blocked, etc>
+
+## Starting state
+- Files involved: <list>
+- Consumers of changing code: <count + how to find them>
+- Test coverage of area: <good / spotty / none>
+
+## Pattern
+<Expand-then-contract / other, with one-line justification>
+
+## Steps
+
+### Step 1: ...
+### Step 2: ...
+...
+
+## Out of scope (intentional)
+- <Tempting cleanup that stays out, with reason>
+- <Adjacent refactor for a separate plan>
+
+## Risks
+- <What could go wrong, even with the staged plan>
+- <What the steps don't protect against>
+
+## Open questions
+- <Things blocking finalization>
+```
+
+## Sizing intuition
+
+Use these as calibration, not law:
+
+| Refactor | Realistic step count | Total effort |
+|---|---|---|
+| Rename a function (≤50 consumers) | 3 (expand / migrate / contract) | ~half day |
+| Split a 1,000-line file into 5 modules | 5–7 | 1–2 days |
+| Library swap (state, forms, fetching) | 6–10 | 3–5 days |
+| Move from REST to tRPC | 8–15 | 1–2 weeks |
+| Pages Router → App Router (small app) | 10–20 | 1–3 weeks |
+
+If your plan has 3 steps for a library swap, you're cheating the steps. If your plan has
+20 steps for a function rename, you're over-engineering.
+
+## Anti-patterns
+
+- ❌ A "WIP" step that doesn't compile or doesn't work
+- ❌ "Big-bang" refactor in one diff — that's a rewrite, not a refactor
+- ❌ Bundling unrelated cleanups into the plan ("while we're here...")
+- ❌ Skipping the destination — "let's just start cleaning this up" without a target
+- ❌ A plan with no rollback strategy per step
+- ❌ Steps without verification — "run tests" doesn't count if there are no tests
+- ❌ Renaming + behaviour change in the same step (do them separately so blame is clean)
+- ❌ Migrating consumers in a single step when there are >10 of them
+- ❌ Removing the old shape before all consumers are gone — guaranteed regression
+- ❌ Treating the planner as the executor — this skill outputs the plan, not the diff
+- ❌ Estimating L for everything because "refactors are hard" — split the L into S/M
+- ❌ "Refactor" that's actually a redesign without product-side discussion
+
+## Notes
+
+When the destination is fuzzy ("just clean this up"), refuse to plan until it's
+specific. "Move all data fetching to a hooks layer" is plannable; "make this less of a
+mess" isn't.
+
+When tests are sparse, the plan must add **observability before changing behaviour**.
+That might be its own step early in the plan: add tests / add logs / add a feature flag,
+*then* start the refactor. Refactors without verification are wishes, not plans.
+
+When the refactor is risky enough to need a feature flag, say so explicitly. Some
+refactors are best done behind a flag with the new path running for a subset of users
+before flipping the default.
+
+For database refactors, defer to [`architecture/database-migrations`](../database-migrations/SKILL.md)
+— it has the lock-aware, expand-then-contract patterns specific to schema work. This skill
+covers code-side; that one covers DB-side. Most real refactors involve both.

@@ -1,0 +1,393 @@
+---
+name: building-plugins
+description: >-
+  Use this when asked to build, create, write, scaffold, or publish a protoAgent
+  plugin — e.g. "make a plugin that …", "add a plugin for X", "package this as a
+  plugin", "write a plugin that adds a tool/dashboard/workflow", "publish a plugin
+  so others can install it". Covers the plugin contract (manifest + register()),
+  the full contribution surface (tools, subagents, SKILL.md skills, workflows,
+  console views, routes, MCP servers, config/secrets/settings), the conventional
+  repo layout, testing, and distribution by git URL — with the safety model.
+  Not for: using an already-installed plugin, or extending via a one-off SKILL.md
+  skill or MCP server (smaller asks — see the Skills / MCP guides).
+---
+
+# Building a protoAgent plugin
+
+A plugin is a self-contained directory (optionally its own git repo) that extends
+a running agent **without forking** core. Authoritative refs: ADR 0018 (surfaces),
+0019 (config/secrets/settings), 0026 (console views), 0027 (distribution), 0045
+(chat slot); guides `plugins`, `building-react-plugin-views`, `plugin-registry`.
+The shipped `plugins/hello/` is the worked backend example — read it first. For a
+**console view**, copy `examples/plugins/chat_example` — the gold-standard view
+(the four rules + the init/theme handshake + slug-aware routing + the DS kit).
+
+## Scale to the ask
+A one-tool plugin is ~15 lines (manifest + `register()`). A "full bundle"
+(tools + subagents + skills + workflows + a console view + config) is a directory
+of conventional subdirs. Build the smallest thing that satisfies the ask; don't
+scaffold a dashboard for a single tool.
+
+## 1. Decide what it contributes
+Map the ask to the contribution surface:
+- **tool / subagent / route / MCP server** → code, via `register(registry)`.
+- **SKILL.md skills** / **`*.yaml` workflows** → data, auto-discovered from
+  conventional `skills/` and `workflows/` subdirs (no code).
+- **console view** (rail icon + page, or a `slot: "chat"` panel) → declared in the manifest
+  `views:`; a **sandboxed iframe** of a page your plugin serves (ADR 0026/0038/0045). Copy
+  `examples/plugins/chat_example`; full guide: `building-react-plugin-views`.
+- **events** (broadcast / react) → `registry.emit("x", data)` / `registry.on("topic.*", fn)`;
+  declare `emits:` / `subscribes:` in the manifest (ADR 0039). Plugins coordinate via the bus,
+  never by importing each other.
+- **config / secrets / Settings fields** → declared in the manifest.
+- **chat integration** (Discord/Slack/Telegram-style) → it's a *communication
+  plugin* — use `scaffold_plugin(..., with_comms=True)` to get a `ChatAdapter`
+  skeleton on the shared wirer (ADR 0029); you implement only connect/receive/send.
+  See `docs/guides/communication-plugins.md` and `plugins/telegram` for a reference.
+
+## 2. Lay out the directory
+```
+my-plugin/
+  protoagent.plugin.yaml   # manifest (data — read without importing)
+  __init__.py              # def register(registry): … (code contributions)
+  skills/   <name>/SKILL.md # optional — auto-discovered
+  workflows/ <name>.yaml    # optional — auto-discovered
+```
+Place it in `plugins/<id>/` (bundled with a fork) or install it from a git URL
+into the live plugins dir (step 6).
+
+## 3. Write the manifest (`protoagent.plugin.yaml`)
+```yaml
+id: my-plugin               # unique; must match the directory name
+name: My Plugin
+version: 1.0.0
+enabled: false              # author default; operators opt in via plugins.enabled
+config_section: my-plugin   # top-level YAML section it claims (NOT a list)
+config: { api_base: "https://…" }      # defaults (ADR 0019)
+secrets: [api_key]          # keys routed to secrets.yaml, never tracked YAML
+settings:                   # render in Settings → its group
+  - { key: api_base, label: "API base", type: string }
+  - { key: api_key, label: "API key", type: secret }
+views:                      # console rail view (ADR 0026/0038) — a sandboxed iframe of a page you serve
+  # `path` MUST be a path a registered router serves, same-origin RELATIVE (no scheme/host).
+  # The PAGE is public (an iframe load can't carry a bearer); its DATA calls are gated /api/.
+  - { id: board, label: "Board", icon: LayoutDashboard, path: /plugins/my-plugin/board }
+emits: ["my-plugin.updated"]     # event-bus topics you broadcast (ADR 0039; optional, for discovery)
+subscribes: ["other-plugin.*"]   # topics you listen for
+requires_pip:                    # deps — declared, NOT auto-installed (ADR 0027)
+  - "httpx>=0.27"                          # hard: gates the frozen desktop install (ADR 0058 D2)
+  - { pkg: "pillow>=10", optional: true }  # optional (#1953): missing → warn, feature degrades
+repository: https://github.com/owner/my-plugin
+```
+
+**Optional deps pair with lazy-import degradation.** Mark a dep `optional: true`
+only if the plugin genuinely runs without it: import it **inside** the tool body
+(never at module top) and catch `ImportError` to return a readable error naming
+the fix, so the plugin's other tools keep working:
+
+```python
+@tool
+async def resize_image(path: str) -> str:
+    """Resize an image."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return "resize_image needs pillow — run: python -m server plugin install-deps my-plugin"
+    ...
+```
+
+A missing hard dep refuses the frozen (desktop) install outright; a missing
+optional dep installs with a warning, and `install-deps` treats it best-effort
+(a failed optional install warns instead of failing).
+
+## 4. Write `register(registry)`
+The registry collects code contributions (mounted once at init):
+```python
+def register(registry):
+    cfg = registry.config                       # this plugin's resolved config (ADR 0019)
+    registry.register_tool(my_tool)             # a LangChain @tool
+    registry.register_subagent(my_subagent)     # a SubagentConfig
+    registry.register_router(my_router, prefix="/api/plugins/my-plugin")  # gated FastAPI routes
+    registry.register_mcp_server(my_factory)     # a managed MCP server
+    registry.emit("updated", {"n": 1})          # broadcast on the bus → "my-plugin.updated" (ADR 0039)
+    registry.on("other-plugin.*", on_event)     # react to another plugin without importing it
+    # skills/ and workflows/ subdirs auto-load — no call needed.
+```
+A `views:` page is served by your router (e.g. `@router.get("/board")` returning HTML). Mount **data**
+routes under **`/api/plugins/<id>`** so they inherit the operator bearer gate; serve the **page itself**
+under the public **`/plugins/<id>`** prefix (an iframe page-load can't carry a bearer, so the page is
+public chrome — its data calls are the gated part). The console iframes the page (sandboxed) and
+`postMessage`s it the bearer + theme; the page derives a slug-aware base and uses the DS kit's
+`apiFetch` for authed same-origin calls — copy `examples/plugins/chat_example`, full guide
+`building-react-plugin-views`. An event under `<id>.*` lights your plugin's rail icon (a notification
+dot) until the user opens it.
+
+## Agent-driven views
+
+Start with `scaffold_plugin(..., with_view="bus")`. Tests and a usage skill are
+included by default; keep both and fill in the domain procedure. The console
+must supply the plugin kit bus helpers.
+
+1. The tool calls `registry.emit("<plugin-id>.show", payload)` **before**
+   `registry.navigate("main")`, so the request is retained before the view mounts.
+2. Serve the page from `views/` on the public `/plugins/<id>` prefix. Derive the
+   fleet-aware base from the page URL and dynamically import `/_ds/plugin-kit.js`.
+3. Call `kit.initPluginView()`, then `kit.subscribe("<plugin-id>.show", handler)`.
+   The kit handles replay on remount. Render the request and `kit.publish` a
+   namespaced reply. Receive replies with `registry.on`; expose results to the
+   agent through a tool. Declare the matching `emits` and `subscribes`.
+4. Send binary results (such as a canvas screenshot) with `kit.apiFetch` to a
+   POST route under `/api/plugins/<id>`, which inherits operator authentication.
+   Cap bytes while streaming, save via `registry.save_media`, and return a small
+   media reference. Test the event order, page, replies, auth and upload limit.
+
+No side web servers, no headless browsers, no polling, and no `background: true`
+for heavy views. Use the kit helpers rather than raw bus `postMessage` traffic.
+
+See the [plugin view bridge reference](../../../../docs/reference/plugin-view-bridge.md)
+for replay, topic qualification and delivery limits.
+
+## 5. Consume core capabilities (`graph.sdk`)
+A plugin doesn't only *contribute* — it can call **back into the host** through the stable
+`graph.sdk` surface (so core can refactor underneath you). Keep these imports **lazy** (inside
+functions/tools) so your plugin still loads + tests host-free. The surface:
+
+- **Run the model / a subagent** — `run_subagent(...)` (a full tool-using subagent),
+  `complete(prompt)` (a bare LLM completion).
+- **A supervised background engine** — `supervise(work, …)`: run a unit of work back-to-back
+  with a watchdog that re-kicks a crash, restarts a stall, and recovers via `on_crash`
+  (`.start()` / `.stop()` / `.request_stop()` / `.status()`). The deterministic heartbeat for a
+  long-running engine — don't hand-roll task/restart machinery.
+  ```python
+  from graph.sdk import supervise
+  engine = supervise(run_one_window, name="fleet", interval=90,
+                     stall_check=lambda: not busy(), on_crash=recover)
+  engine.start()
+  ```
+- **A tunable control surface** — `Knobs()` + `make_knob_tools(knobs, prefix=…)`: declare typed
+  knobs (clamped, `choices`) + named presets, read live in your engine; auto-generate the
+  `<prefix>_knobs` / `_tune` / `_preset` agent tools.
+  ```python
+  from graph.sdk import Knobs, make_knob_tools
+  KNOBS = Knobs().define("min_margin", 30, lo=0).preset("trade-max", {"min_margin": 20})
+  registry.register_tools(make_knob_tools(KNOBS, prefix="fleet"))
+  ```
+- **Hand the user a generated file (image/audio/video)** — `registry.save_media(data, mime, meta=None)` (#1929):
+  persists the bytes (or a source file path) into the core media store and returns a
+  `MediaRef {id, url, path, mime}`. Embed `ref.url` in the tool's returned markdown and the
+  console renders it inline — no plugin-owned route, no UI change. The URL carries a per-file
+  HMAC signature, so inline `<img>` rendering works even on a bearer-gated deployment; files
+  land under the instance data dir and survive restart (`media.retention_days` prunes,
+  `media.public` opts the store public). A `media.saved` bus event fires per save. Pairs with
+  `multimodal_tool_result` below: save for the *user*, envelope for the *model*.
+  ```python
+  @tool
+  async def generate_image(prompt: str) -> str:
+      """Generate an image and show it in chat."""
+      png = await _generate(prompt)                      # bytes
+      ref = registry.save_media(png, "image/png", {"prompt": prompt})
+      return f"![{prompt}]({ref.url})"
+  ```
+- **Return an image the model can SEE** — `multimodal_tool_result(caption, images=[…])` (#1930):
+  a tool that just produced an image (a render, a chart, a screenshot) returns this instead of a
+  path string. On a vision model (`model.vision: true`) the image rides the ToolMessage as
+  content blocks the model actually looks at — enabling generate → look → refine loops; on a
+  text-only model it degrades to the caption (plus a description via
+  `knowledge.image_describe_model`, when configured). Each image is `{"path": p}` or
+  `{"b64": data}` + optional `"mime"` (default `image/png`). Limits: `MAX_IMAGES_PER_RESULT`
+  (3) images per result, `MAX_IMAGE_BYTES` (2 MiB) decoded per image — downscale in the tool.
+  ```python
+  from graph.sdk import multimodal_tool_result
+
+  @tool
+  async def render_chart(spec: str) -> str:
+      """Render the chart and show it to the model."""
+      path = _render(spec)
+      return multimodal_tool_result("Rendered chart:", images=[{"path": path}])
+  ```
+- **A self-driving goal loop (OODA)** — `start_goal_loop(…)` (#2060): arm a **watch** on the
+  goal, verified by your plugin verifier, **and** schedule the recurring tick that drives it —
+  in one call. Sugar over `create_watch` + `schedule_recurring` under a shared derived id
+  (goals themselves are drive-only since ADR 0067 — the "wait for the metric" half is a
+  watch). Register the verifier + an `on_met` watch hook in `register()` first; the hook
+  calling `stop_goal_loop` is what retires the cadence when the verifier passes. Pass
+  `session_id` from your tool's `InjectedState`.
+  ```python
+  from graph.sdk import start_goal_loop, stop_goal_loop
+
+  start_goal_loop(goal="reach 1M credits", verifier="fleet:credits",
+                  verifier_args={"min": 1_000_000}, every="30m",
+                  prompt="Run the OODA tick and report.",
+                  plugin_id=registry.plugin_id, loop_id="credits-1m",
+                  session_id=sid)
+
+  # in register(): the self-retiring half
+  PREFIX = "fleet:goal-loop:"
+  async def on_met(watch):
+      if watch.id.startswith(PREFIX):
+          stop_goal_loop(plugin_id="fleet", loop_id=watch.id.removeprefix(PREFIX))
+  registry.register_watch_hook(on_met=on_met)
+  ```
+- **Observability** — `DecisionLog` (an audit trail of what the agent changed, and why),
+  `telemetry(…)` (the standard status/metrics/hints/decisions envelope), `render_html(env)` (a
+  themed panel for your console view).
+  ```python
+  from graph.sdk import DecisionLog, telemetry, render_html
+  LOG = DecisionLog(); LOG.record("tune", "min_margin 30→15", reason="cr/hr falling")
+  return render_html(telemetry(status="running", metrics={"credits": cr}, decisions=LOG))
+  ```
+
+These generalize the patterns the SpaceTraders two-loop fleet proved (its `manage-the-fleet`
+skill is the worked example: a deterministic engine steered by an agentic OODA loop).
+
+### Where your plugin's own files go (`sdk.plugin_store`)
+For a SQLite database, cache, or exports, ask the SDK for your writable directory:
+
+```python
+from graph import sdk
+
+db = sdk.plugin_store(plugin_id=registry.plugin_id) / "state.db"   # your dir, created for you
+exports = sdk.plugin_store("exports", plugin_id=registry.plugin_id)  # an optional subdir under it
+```
+
+`plugin_store` creates the directory and returns a `Path` at exactly
+**`<instance root>/<plugin_id>[/<subdir>]`**. In `graph.sdk`, it calls
+`instance_paths().store(plugin_id)`, which returns `instance_root / plugin_id`.
+The dev sandbox and each fleet member therefore have separate stores.
+
+- **Never hand-roll a path** such as `<instance>/plugin-data/<id>` or an absolute sandbox
+  directory; use the SDK so the path follows the running instance.
+- **Your `plugin_id` can't collide with core's data.** An id that names a core store
+  (`memory`, `knowledge`, `media`, `goals`, `tasks`, …) is **rejected at plugin load**, because
+  `plugin_store(plugin_id="memory")` would hand you core's own `memory` directory.
+- `subdir` must stay inside your store — an absolute or `..`-escaping value raises `ValueError`
+  rather than writing somewhere unexpected.
+- **Under the host-free testkit** (`install_host_stubs`), the call returns a created directory
+  under a temporary root, so tools run unchanged and need no fallback path. Install fresh
+  stubs per test for a per-test temp dir: the root is allocated once per stub installation,
+  and calls sharing that installation share the root. Calling `install_host_stubs` again
+  leaves existing stubs in place; it also leaves an importable real host in place.
+
+Keep runtime state out of the plugin installation directory, where updates or reinstalls
+can replace it; write to the store instead.
+
+## 6. Test it — live, no restart
+You don't need to restart to try a plugin you built. With **plugin-devkit** enabled,
+the whole loop is tool-driven (ADR 0096): scaffold → edit → test → hot-swap.
+- `scaffold_plugin(...)` already **enabled** it (the default) — its tools/view are
+  live on your **next turn**. Call its `<id>_hello` to confirm.
+- Inspect + edit it with **`plugin_list_files` / `plugin_read_file` /
+  `plugin_write_file`** (fenced to the plugins dir — they can't touch anything else),
+  then call **`reload_plugins`** — the loader re-execs every file, so your change is
+  live next turn (no restart).
+- **`test_plugin("<id>")`** runs the plugin's own pytest suite in a subprocess
+  (included by default by `scaffold_plugin`) and reports pass/fail + the output
+  tail — go green before you hand it to the user. It runs against a **disposable
+  copy** of the plugin dir, so a destructive test can't touch live files. Still:
+  keep runtime STATE (data files, logs) **out of the plugin dir** — an update or
+  reinstall wipes it; write under the instance root instead.
+- A load failure reports **with its traceback** — read it, fix with
+  `plugin_write_file`, `reload_plugins` again. `reload_plugins` reports only
+  *enabled* plugins that failed.
+- For a **substantial build** (multi-file logic, a real feature), hand the edit step
+  to a coding agent: **`develop_plugin("<id>", "…what to build…")`** dispatches the
+  configured `acp` delegate into the plugin dir (fresh session, git off), then
+  auto-runs `test_plugin` + `reload_plugins` and reports all three. Small edits:
+  do them yourself with `plugin_write_file`.
+- Built a plugin some other way (CLI / by hand)? Call **`enable_plugin("<id>")`** to
+  turn it on + hot-reload, or toggle it in the console Plugins panel (#822).
+- `GET /api/runtime/status` → the plugin shows `loaded: true` with its tools/views.
+- Unit-test the tool/registration like `tests/test_plugins.py` does.
+- If it declares `requires_pip`, `python -m server plugin install-deps my-plugin`
+  first (a missing dep gives a clear error on enable).
+
+For a **standalone-repo** plugin (its own git repo, not bundled in protoAgent), pass
+`with_tests=True` (`scaffold_plugin`) / `--tests` (the CLI) to also get a **host-free
+test suite + CI + requirements-dev + pyproject** so the repo is green from birth, and
+`ruff` + `pytest` run in GitHub Actions.
+
+The suite ships a **vendored testkit** (`tests/_plugin_testkit.py`, a verbatim copy of
+`graph/plugins/testkit.py`) so it depends on no running host. The testkit loads the plugin
+as a **package**, so you can unit-test the REAL engine modules — relative imports and all —
+not just `register()`:
+
+```python
+def test_engine(plugin):            # `plugin` = the loaded package (conftest fixture)
+    import importlib
+    engine = importlib.import_module(plugin.__name__ + ".engine")
+    assert engine.classify([...]) == ...
+```
+
+`install_host_stubs()` (run in the conftest) registers stand-ins for `graph.*` / `knowledge.*`
+so a module that imports the host loads with no host present — monkeypatch a seam to assert
+its behaviour. So you no longer have to extract logic into dependency-free modules just to
+test it; keeping host-only imports lazy is still good practice but no longer a hard
+requirement. In-repo (bundled) plugins import the same testkit directly:
+`from graph.plugins.testkit import load_plugin, install_host_stubs, FakeRegistry`.
+
+`FakeRegistry` mirrors **every** public `PluginRegistry` method (a parity test in core
+enforces it), so run `register()` against it bare — no `hasattr` guards — and assert every
+contribution: `reg.tools`, `reg.chat_commands["issue"]`, `reg.subagents`, … . Where the live
+registry warns-and-skips an invalid registration (a chat command named `goal` — reserved,
+an unslugifiable name, a duplicate token), the fake **raises `ValueError`**, so a typo'd
+registration fails your suite instead of shipping green.
+
+From the shell (no agent): `python -m server plugin new "My Plugin" --view --skill --tests`
+scaffolds the skeleton; `plugin new-bundle "My Archetype" --member id=url@ref --builtin delegates`
+scaffolds an ADR-0040 bundle.
+
+## 6b. Graduate it (optional — ADR 0096 D6)
+A plugin that outgrows the in-place loop becomes a first-class project:
+1. Scaffold with `git_init=True` (or `git init` later) so it has history.
+2. Create + push a remote (`gh repo create`, an operator step).
+3. **`register_plugin_project("<id>", github="owner/repo")`** — registers the plugin
+   dir in the managed-projects registry (ADR 0095): fs tools address it by name, the
+   github plugin's repo picker sees it, and a projectBoard instance can target it via
+   `project_board.project: <id>`. Scoped to the plugins dir — arbitrary paths stay an
+   operator/console action.
+4. Long-lived iteration then flows through the board's worktree → PR → CI loop; the
+   running agent consumes releases via the normal update path.
+
+## 7. Distribute (optional)
+Publish as a git repo; others install by URL:
+`python -m server plugin install <git-url> --ref <tag>` (or the console Plugins
+panel). Install pins a commit SHA in `plugins.lock`; `plugin sync` reproduces it.
+**install ≠ enable ≠ trust holds on the CLI only** — `plugin install` fetches code and
+never runs it; enabling is the trust decision. The **console** install path is
+different: it auto-enables and RUNS the plugin immediately (set
+`PROTOAGENT_PLUGIN_INSTALL_NO_ENABLE=1` to restore strict install ≠ enable there).
+For untrusted code, ship an MCP server instead (sandboxed).
+Remove cleanly with `plugin uninstall <id>` (`--purge` also drops config + secrets).
+
+## Gotchas (learned the hard way)
+- `config_section` must be a **string**, never a list (reserved-section check).
+- An `@tool`'s description comes from its **docstring** — use a plain string
+  literal, not an f-string (`__doc__` is None for f-string "docstrings").
+- Discovery reads the manifest as **data**; code runs only on **enable**. Keep the
+  manifest importable-free.
+- **Enabling, disabling and reloading are all live for routes** — none needs a
+  restart. Enabling rebuilds tools/subagents/middleware/MCP with the graph and
+  hot-mounts the plugin's router, which serves any view (#822). `_mount_plugin_routers`
+  (`src/server/plugin_wiring.py`) runs at boot AND on every reload and **remounts**: a
+  reloaded key's old `Route` objects are removed from `app.router.routes` and the fresh
+  ones served, and a plugin absent from the roster (disabled or uninstalled) has its
+  routes removed outright — so a disabled plugin's route goes away now, not at the next
+  restart. During a swap a request can still use the old route (stale), never a 404. The rail
+  picks up a new view from `runtime-status` without a console rebuild.
+- Don't edit core files to wire a plugin in — if you need to, you're missing a
+  seam; file it (see the operator-fork contract) instead of re-porting each sync.
+- **`from __future__ import annotations` + a FastAPI import inside `register()` → 422.**
+  If the top of your `__init__.py` has `from __future__ import annotations` and you
+  import `Request` / `WebSocket` / `Response` / `BackgroundTasks` *inside* `register()`
+  (not at module top), those annotations become strings FastAPI can't resolve — so a
+  route's `request: Request` is read as a required *query* param and the route 422s on a
+  normal page load. Fix: import those FastAPI types at **module level**, or drop the
+  `from __future__ import annotations` line (the scaffold no longer emits it). The
+  host-free testkit now **raises** when it sees this combination, so the plugin
+  catches the mistake in its own suite.
+- **A `@tool` parameter named `config`, `callbacks`, or `run_manager` is swallowed.**
+  LangChain treats those names as injected runtime args (the `RunnableConfig`, callback
+  manager, run manager), so they never reach the model as real tool parameters and the
+  agent can't pass them. Rename the parameter to something domain-specific (`settings`,
+  `options`, …). The host-free testkit now **raises** on a tool with one of these names,
+  so you catch it before it ships.

@@ -1,0 +1,140 @@
+---
+name: metagenomics-llm
+description: >
+  Route genomic/protein language models and Steinegger-lab structure/sequence search for
+  shotgun metagenomics. Use when: (1) Choosing gLMs vs PLMs vs classical homology, (2)
+  MMseqs2 vs Foldseek vs PLM search, (3) Spacedust / AlphaGEM, (4) Distinguishing
+  foundation-model corpora from SRA/MGnify reanalysis. For DNA gLMs use
+  genome-language-model; for protein LMs use protein-language-model (esm, esmc, saprot,
+  prostt5, plmsearch, deepblast). Classical pipelines: metagenomics-workflow /
+  tool-selection.
+license: MIT
+metadata:
+  metagenomics.category: "orchestration"
+  metagenomics.tags: "LLM, PLM, gLM, Foldseek, MMseqs2, Folddisco, structure-search, AI"
+  metagenomics.stage: "mining"
+  metagenomics.maturity: "reviewed"
+  metagenomics.last-reviewed: "2026-10-24"
+  metagenomics.command-status: "AI/search routing and evidence boundaries reviewed; execution is delegated"
+---
+
+# Metagenomics × LMs & structure search
+
+Foundation models and **structure-aware search** (Steinegger / Söding stack)
+are a **parallel track** to QC→assembly→binning. They help when homology is
+remote, functions are dark, or you need embeddings — they do **not** replace
+CheckM2, GTDB-Tk, or abundance profilers.
+
+For **genome language models** prefer `genome-language-model`. For **protein
+language models** prefer `protein-language-model`.
+
+## Analytical thinking
+
+### Steinegger stack (sequence → fold → multimer → motif)
+
+| Conservation level | Prefer | Typical claim |
+|--------------------|--------|---------------|
+| Amino-acid sequence | `mmseqs2` (± `diamond`) | Catalogue search, NR, contig taxonomy |
+| Single-chain fold | `foldseek` | AFDB/PDB structural homologs; ProstT5 from FASTA |
+| Multimer / interface | `foldseek` `easy-multimersearch` | Complex TM / chain pairing |
+| Local structural motif | `folddisco` | Catalytic / metal-site geometry |
+| Gene neighborhood modules | `spacedust` | Conserved clusters (Foldseek-aware) |
+
+### Language models & dark metabolism
+
+| Claim type | Prefer | Do not treat as |
+|------------|--------|-----------------|
+| Genome language models (route all gLMs) | `genome-language-model` | Taxonomy or abundance tables |
+| Protein language models (route all PLMs) | `protein-language-model` | Taxonomy or abundance tables |
+| Metagenomic corpus + gLM2 | `omg` | ENA study reanalysis |
+| ESM-2 / ESM C / SaProt / ProstT5 | `esm` / `esmc` / `saprot` / `prostt5` | Experimental structure proof |
+| Remote protein homology (sequence-only PLM) | `plmsearch`, `deepblast` | Experimental structure proof |
+| GEM + structure/dark metabolism | `alphagem` (± `gapseq`/`vmh`) | Flux measurements |
+| Classical KO/COG annotation | `eggnog-mapper`, `dram`, `kegg` | Obsolete — still primary for many papers |
+
+Hard rules:
+
+1. Embeddings / LM / structure hits are **hypotheses** — pin model + DB + software
+2. OMG/Hugging Face corpora ≠ ENA study reanalysis (`sra-ena` / `mgnify`)
+3. Do not merge PLM / Foldseek rankings with BLAST/MMseqs tables unlabeled
+4. GPU/memory needs differ wildly from KneadData/MEGAHIT nodes
+5. Low pLDDT structures and over-long Folddisco motifs are common failure modes
+
+## Decision tree
+
+```text
+AI / homology need in a metagenomics project?
+│
+├─ Genome language models (NT, DNABERT-2, Caduceus, Evo 2, gLM2, …)
+│     → genome-language-model
+├─ Protein language models (ESM-2, ESMC, SaProt, ProstT5, PLMSearch, …)
+│     → protein-language-model
+├─ Sequence catalogue / contig taxonomy
+│     → mmseqs2
+├─ Structure search (AFDB/PDB) or ProstT5 from FASTA
+│     → foldseek  (± prostt5)
+├─ Multi-chain complexes / interfaces
+│     → foldseek easy-multimersearch
+├─ Short discontinuous motifs
+│     → folddisco
+├─ Conserved gene clusters / functional modules
+│     → spacedust
+├─ Improve GEMs with structure / dark metabolism mining
+│     → alphagem  (± gapseq, vmh)
+├─ Classical function at catalogue scale
+│     → eggnog-mapper / dram / humann
+├─ Full homology-search menu (vector DB, Phylign, …)
+│     → homology-search
+├─ Trees / phylogenomics
+│     → phylogenomics
+└─ Unsure
+      → this skill + tool-selection
+```
+
+## Where it sits in the pipeline
+
+```text
+contigs / MAG proteins (after QC)
+   ├─ classical: eggnog-mapper · diamond · mmseqs2
+   ├─ structure: foldseek · folddisco · spacedust
+   ├─ vector DB / genome warehouse search → homology-search
+   └─ protein language models
+         └─ protein-language-model → esm · esmc · saprot · prostt5 · plmsearch · deepblast
+genome language models
+   └─ genome-language-model → omg · nucleotide-transformer · dnabert2 · caduceus · evo2
+metabolic models
+   └─ gapseq · alphagem · vmh
+trees / evolution
+   └─ phylogenomics
+```
+
+## Required AI/search deliverable
+
+Keep one evidence table per paradigm with native identifiers/scores, query and
+target coverage, database/model release, no-hit/failure state, and coordinate or
+window mapping. Any consensus table must retain the source row and a predeclared
+combination rule. Benchmark against an appropriate classical method and a held-out
+set; do not select a model because it yields more desired annotations.
+
+For model work, archive checkpoint/config/tokenizer/license, split and leakage
+audit, seeds, layer/pooling/windowing, hardware/precision, calibration and full
+metrics. For structure search, archive structure confidence and alignment/motif
+fields. Candidate novelty requires checking training/reference overlap.
+
+## Methods caveats
+
+- Report software version, database release, and (for LMs) checkpoint URL
+- For dark-matter genes, state that LM/structure annotations lack wet-lab support
+- Prefer holding out known systems when claiming de novo discovery
+  (`spacedust` vs `defensefinder` / PADLOC-style tools)
+- Foldseek-Multimer metagenomic CRISPR–Cas examples illustrate sensitivity at
+  <20% sequence identity — still validate priority systems
+
+## Related skills
+
+`genome-language-model` · `protein-language-model` · `omg` ·
+`nucleotide-transformer` · `dnabert2` · `caduceus` · `evo2` · `esm` ·
+`esmc` · `saprot` · `prostt5` · `homology-search` · `phylogenomics` ·
+`mmseqs2` · `foldseek` · `folddisco` · `erast` · `plmsearch` · `deepblast` ·
+`spacedust` · `alphagem` · `eggnog-mapper` · `public-databases` ·
+`tool-selection` · `metagenomics-workflow`

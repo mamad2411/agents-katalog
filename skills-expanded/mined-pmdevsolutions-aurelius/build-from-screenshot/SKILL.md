@@ -1,0 +1,224 @@
+---
+name: build-from-screenshot
+description: Autonomous screenshot- or URL-to-working-app pipeline for React, Vue, Svelte or React Native. Captures or reads the screenshots, infers tokens with user confirmation, writes failing tests first, builds components in per-component lanes, and verifies against the source with pixel diffs, E2E and the quality gate. Use when the user gives a live URL or image files and wants a working app. Keywords: build from screenshot, clone this site, URL to code, image to code
+argument-hint: "<url | image-path...>"
+disable-model-invocation: true
+allowed-tools: Skill, Agent, Workflow, Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion, mcp__chrome-devtools__*, mcp__playwright__*
+---
+
+# /build-from-screenshot — Autonomous Screenshot/URL-to-Working-App Pipeline
+
+You are the master orchestrator for converting screenshots or a live URL into a fully working, tested application. You receive one or more image file paths OR a URL and guide the entire process through 12 phases, using specialized skills and agents. The output target (React, Vue, Svelte, React Native) is determined during intake and drives agent selection in the build phase.
+
+**Key enforcement rules:**
+- **TDD is mandatory** — Phase 3 (TDD) MUST complete before Phase 4 (Build). No exceptions.
+- **Visual QA uses pixel diff** — Phase 5 uses `scripts/visual-diff.js` for programmatic comparison, not manual eyeballing.
+- **E2E tests are generated** — Phase 6 generates and runs Playwright E2E tests appropriate to the app type.
+- **App-type aware** — Chrome extensions, PWAs, and web apps each get tailored test strategies.
+- **Token inference requires confirmation** — Phase 2 extracts tokens via AI vision and MUST get user confirmation before locking.
+- **Renderer-driven** — Phase 4 dispatches the converter agent named by the resolved renderer manifest (`renderer-registry.js resolve <renderer>`), not a hardcoded `outputTarget` table.
+
+## Input
+
+The user provides: `$ARGUMENTS` (a URL or one or more image file paths)
+
+**Detect input type:**
+- If `$ARGUMENTS` starts with `http://` or `https://` → **URL capture mode**
+  - The pipeline will navigate to the URL and capture screenshots automatically
+  - Store the original URL for the build report
+- Otherwise → **File paths mode**
+  - Treat `$ARGUMENTS` as one or more image file paths (space-separated or glob)
+  - Verify each file exists before proceeding
+
+**URL capture mode steps:**
+1. Use Chrome DevTools MCP to navigate to the URL: `mcp__chrome-devtools__navigate_page`
+2. Resize to standard viewports (desktop 1440px, tablet 768px, mobile 375px): `mcp__chrome-devtools__resize_page`
+3. Take screenshots at each viewport: `mcp__chrome-devtools__take_screenshot`
+4. Save screenshots to `.claude/visual-qa/screenshots/source/`
+
+## Configuration
+
+Load `.claude/pipeline.config.json` at the start. This provides:
+- Visual diff thresholds and iteration limits
+- TDD enforcement settings
+- E2E strategy per app type
+- Quality gate thresholds
+- Lighthouse score minimums
+- Token inference confidence threshold
+
+## Progress Tracking
+
+Track the run in `.claude/plans/pipeline-state.json`, in the shape `/build-from-figma` defines (`.claude/skills/build-from-figma/SKILL.md` → Progress Tracking), with `"pipeline": "screenshot"` and the URL or file list as `source`. Rewrite it at every phase boundary and after each component and page result; the SessionStart hook reads it to report where an interrupted run stopped. Phases the renderer excludes are recorded as `skipped`.
+
+Phases: 0 token-sync, 1 intake (screenshot-intake), 2 token-inference (canva-token-inference, needs user confirmation), 3 tdd-scaffold, 4 component-build, 4.5 storybook, 5 visual-diff (against the source screenshots), 5.5 dark-mode, 6 e2e-tests, 7 cross-browser, 8 quality-gate, 8.5 responsive, 9 report.
+## Phase 0: Token Drift Check (Conditional)
+
+Identical to `/build-from-figma`. Only runs when `tokenSync.autoCheck` is `true` AND a lockfile exists.
+
+```bash
+./scripts/sync-tokens.sh --json
+```
+
+## Phase 1: Intake
+
+Invoke the `screenshot-intake` skill.
+
+**Input:** The URL or file paths from $ARGUMENTS, plus captured screenshots (if URL mode)
+**Output:** `.claude/plans/build-spec.json` with `"source": "screenshot"` and `"outputTarget": "react"|"vue"|"svelte"|"react-native"`
+
+This phase:
+1. If URL mode: screenshots are already captured during input processing
+2. If file mode: validates and catalogs the provided image files
+3. Analyzes screenshots with Claude vision for structure, components, text, layout
+4. Scans the local project for framework, existing components, UI libraries
+5. Asks the user 3-5 targeted questions (scope, output target, component confirmation, reuse, business logic, integration)
+6. Writes the build spec including `outputTarget` based on the user-chosen framework
+
+**Resume check:** If `.claude/plans/build-spec.json` already exists with `"source": "screenshot"`, ask the user if they want to reuse it or regenerate.
+
+## Phase 2: Token Inference
+
+Invoke the `canva-token-inference` skill.
+
+**Input:** build-spec.json with screenshot paths (source: `"screenshot"`)
+**Output:** `src/styles/design-tokens.lock.json`, framework-appropriate config, `src/styles/tokens.css`
+
+This phase:
+1. Analyzes source screenshots with Claude vision to extract colors, typography, spacing, effects
+2. Assigns confidence scores (high/medium/low) to each token
+3. **Presents tokens to user for confirmation** — this is MANDATORY, do not skip
+4. After user confirms/corrects, writes the lockfile
+5. Generates framework-appropriate config (Tailwind for React/Vue/Svelte, StyleSheet tokens for React Native) and CSS custom properties from lockfile
+6. Validates completeness
+
+**Resume check:** If `src/styles/design-tokens.lock.json` already exists with `"source": "screenshot"`, ask the user if they want to reuse it or re-infer.
+
+## Phase 3: TDD Scaffold
+
+Invoke the `tdd-from-figma` skill. (This skill reads `build-spec.json` and works identically regardless of source.)
+
+**Input:** `build-spec.json` + `design-tokens.lock.json`
+**Output:** Test files appropriate to the output target
+
+Identical to `/build-from-figma` Phase 3.
+
+## Phases 4-9: Component Lanes, then Parallel Phases
+
+After Phase 3 confirms RED, resolve the renderer manifest (`node scripts/renderer-registry.js resolve <renderer> --json`) and run Phases 4-9 exactly as `/build-from-figma` describes (`.claude/skills/build-from-figma/SKILL.md` → Phases 4-9): the `component-lanes` workflow for Phases 4-5 when the Workflow tool is available, then `parallel-orchestration` for Phases 4.5-9. The screenshot differences:
+
+- **Workflow args:** `"source": "screenshot"`; `converter` is `manifest.converter` (`figma-react-converter`, the generic React builder, for React renderers; `react-native-converter` for expo); `testCommand` is `manifest.commands.test`. The page `references` are the source captures in `.claude/visual-qa/screenshots/source/`, keyed by the width they were captured at. A page whose build-spec entry carries `reference` (a `renderWidth` and/or a `crop`, screenshot-intake Step 5) passes it through as an object, `"1280": { "path": "…", "renderWidth": 1265, "crop": { "x": 0, "y": 180, "width": 1265, "height": 2400 } }`, so the visual stage captures at that width and diffs only that region of the capture (issue #145). Set `skipVisual` when the manifest excludes `visual-diff` (expo).
+- **parallel-orchestration:** drop every phase in `manifest.phases.exclude` (expo excludes `visual-diff`, `dark-mode`, `cross-browser` and `responsive`), and also `cross-browser` for `appType: "chrome-extension"`. Context: pipeline source `"screenshot"`, test files `src/components/**/*.test.*`, reference screenshots `.claude/visual-qa/screenshots/source/`. `e2e-tests` follows `component-build` when `visual-diff` is excluded.
+
+Without the Workflow tool, invoke `parallel-orchestration` with all of `["component-build", "storybook", "visual-diff", "dark-mode", "e2e-tests", "cross-browser", "quality-gate", "responsive", "report"]` minus those exclusions. If `orchestration.enabled` is `false`, run the phases sequentially as documented below.
+
+## Phase 4: Component Build (Renderer-Driven)
+
+Read `renderer` from `build-spec.json`, resolve its manifest, and dispatch the converter it names:
+
+```bash
+node scripts/renderer-registry.js resolve <renderer> --json
+```
+
+**Converter selection:**
+- If `manifest.language === "react"`, prefer the source-appropriate React converter. For the screenshot pipeline that is `figma-react-converter` (the generic React builder) — it builds React components from reference screenshots regardless of source. The shipped React manifests (nextjs, vite) already set `converter` to `figma-react-converter`.
+- Otherwise dispatch `manifest.converter` directly (e.g. `react-native-converter` for the expo renderer, and the future `vue-converter` / `svelte-converter`).
+
+The component file extension, directory, and page-routing convention come from `manifest.component` (`ext`, `dir`, `pageRouting`); the test command comes from `manifest.commands.test`.
+
+**Input:** build-spec.json, resolved renderer manifest, lockfile, existing test files, source screenshots
+**Output:** Component and page files for the renderer's framework
+
+This phase:
+1. Reads build-spec.json — verifies `source` is `"screenshot"` and reads `renderer`
+2. Resolves the manifest and dispatches the converter (see selection rule above)
+3. References lockfile for all token values (no approximating)
+4. Uses source screenshots for layout/structure decisions
+5. Generates components (at `manifest.component.dir` with `manifest.component.ext`) that satisfy the test files from Phase 3
+6. Runs `manifest.commands.test` after each component batch to confirm GREEN
+7. Sets each page's `<title>` and `<meta name="description">` from `pages[].seo` in the build spec (`index.html` for Vite, the route's metadata for Next.js) and keeps `public/robots.txt`. The quality gate's SEO floor (`qualityGate.lighthouseThresholds.seo`, 90) applies to a screenshot build too; these come from the intake, not from the design, and the build report lists them as additions
+
+**Critical rule:** If tests fail, fix the component — never modify the test files.
+
+## Phase 4.5: Storybook Generation (Non-Blocking)
+
+Identical to `/build-from-figma` Phase 4.5. Skipped when the renderer has no browser story (e.g. expo), and skipped by design when the app's `package.json` lists no Storybook package: `generate-stories.sh` then exits 0 with `status: skipped` and the install command, and the phase is recorded as `skipped` in `pipeline-state.json`. Stories without Storybook installed would break `tsc` and the build. When the app is scaffolded beside the framework, run it from the app directory (`cd my-app && ../scripts/generate-stories.sh`).
+
+```bash
+./scripts/generate-stories.sh
+```
+## Phase 5: Visual Verification (Automated Pixel Diff)
+
+Same process as `/build-from-figma` Phase 5, but reference screenshots come from the source captures (URL screenshots or provided image files).
+
+**Reference screenshots:** Stored in `.claude/visual-qa/screenshots/source/`
+
+For each page:
+
+```
+1. Start: pnpm dev (background) — skip if appType is chrome-extension or the renderer excludes `visual-diff` (e.g. expo)
+2. Wait for server ready
+
+3. Reference screenshots already exist in .claude/visual-qa/screenshots/source/
+
+4. FOR iteration IN 1..maxVisualIterations:
+   a. Chrome DevTools MCP: navigate → resize → take_screenshot
+      → Save to .claude/visual-qa/screenshots/chromium/
+
+   b. Run pixel diff:
+      → node scripts/visual-diff.js --batch \
+          .claude/visual-qa/screenshots/chromium \
+          .claude/visual-qa/screenshots/source \
+          --output-dir .claude/visual-qa/diffs --json
+
+   c. Parse JSON results:
+      → IF all mismatchPct <= threshold: PASS → break
+      → IF any FAIL and iteration < max:
+        - Read diff images + region analysis
+        - Fix component code targeting specific regions
+        - Run test command (ensure tests still pass)
+        - Continue to next iteration
+
+5. Stop dev server
+```
+
+**Note:** When the resolved renderer excludes `visual-diff` (e.g. expo, which has no browser rendering), this phase is skipped. Record it as `skipped` in `pipeline-state.json`.
+
+## Phases 5.5 through 9
+
+Identical to `/build-from-figma`. All shared phases work the same regardless of design source:
+
+- **Phase 5.5:** Dark Mode verification (`check-dark-mode.sh`) — skipped when the renderer excludes `dark-mode`
+- **Phase 6:** E2E test generation (`e2e-test-generator` skill)
+- **Phase 7:** Cross-browser screenshots (Firefox, WebKit) — skipped when the renderer excludes `cross-browser`
+- **Phase 8:** Quality gate (coverage, types, build, tokens, Lighthouse)
+- **Phase 8.5:** Responsive screenshots (`check-responsive.sh`) — skipped when the renderer excludes `responsive`
+- **Phase 9:** Build report (`.claude/visual-qa/build-report.md`)
+
+The build report should note:
+- `Source: Screenshot (URL)` or `Source: Screenshot (files)` depending on input type
+- `Source URL: <url>` if URL mode was used
+- `Output Target: react|vue|svelte|react-native`
+- Include the token inference confidence summary
+
+## Error Recovery
+
+- **URL unreachable:** Check the URL is valid and the site is accessible. Offer to retry or accept manually captured screenshots instead.
+- **Screenshot capture fails:** Ask user to manually capture screenshots and provide file paths.
+- **Image files not found:** List missing files. Ask user to verify paths.
+- **Token inference low confidence:** Present all tokens with detailed confidence breakdown. Offer to accept user-provided brand guidelines as override.
+- **Converter agent missing:** If the converter named by the resolved manifest does not exist yet, inform the user. For `react` renderers, fall back to `figma-react-converter` (the generic React builder).
+- **Dev server will not start:** Check for port conflicts, missing dependencies. Run `pnpm install` if needed.
+- **Tests will not pass after 3 attempts:** Mark component as needing manual intervention, continue with remaining.
+- **Build fails:** Check TypeScript errors first, then dependency issues. Report blockers.
+- **Session interrupted:** On resume, read `.claude/plans/pipeline-state.json`. Skip completed phases whose artifacts still exist and resume from the first incomplete one.
+
+## Completion
+
+When all phases complete, present:
+
+1. The build report summary
+2. Source type (URL or files) and output target framework
+3. Count of pages/components built and verified
+4. Token inference accuracy (how many tokens were confirmed vs corrected)
+5. Any items needing manual review
+6. Next steps (e.g., "run `pnpm dev` to see the app")

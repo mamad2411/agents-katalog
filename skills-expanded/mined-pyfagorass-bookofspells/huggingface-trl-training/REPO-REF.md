@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/pyfagorass/bookofspells (path: skills/huggingface/trl-training/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Train and fine-tune transformer language models using TRL (Transformers Reinforcement Learning). Supports SFT, DPO, GRPO, KTO, RLOO and Reward Model training via CLI commands.

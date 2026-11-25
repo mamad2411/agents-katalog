@@ -1,0 +1,282 @@
+---
+name: archive-event
+description: Archive a meeting or event into Calendar from a narrative source — a meeting notice, an announcement, a message thread — deriving the time from the thread's authoritative correction, recording the source in the event notes, and labelling any value the source did not state. Use when the user hands over a notice, forwards a thread, or asks to "put this meeting in the calendar" from something they read. The boundary with quick-event is the SOURCE, not completeness: a fully specified notice still belongs here whenever the basis should be recorded; quick-event is for times the user states directly with nothing to cite.
+allowed-tools:
+  - mcp__che-ical-mcp__list_calendars
+  - mcp__che-ical-mcp__list_events
+  - mcp__che-ical-mcp__search_events
+  - mcp__che-ical-mcp__create_event
+  - mcp__che-ical-mcp__update_event
+  - mcp__che-ical-mcp__check_conflicts
+  - mcp__che-ical-mcp__list_reminders
+  - Read
+  - Write
+  - Edit
+  - Bash
+---
+
+# Archive an event from a source
+
+Turning "here is the notice" into a calendar entry requires judgements the 29 EventKit tools will never prompt for. Two of those judgements fail **silently** — the event is created, the calendar looks normal, and the content is wrong:
+
+- **The time was superseded.** A notice goes out, then the organizer corrects it. Reading only the first message puts the wrong day in the calendar.
+- **An estimated value reads as a stated fact.** Notices often omit the end time. An estimate that is not labelled is indistinguishable, later, from something the source actually said.
+
+Failures that raise an error can live in a README — the reader will look it up. Silent failures cannot, because nobody knows to look. That is what this skill is for.
+
+## What already exists — do not rebuild it
+
+| Mechanism | Covers | Does not cover |
+|---|---|---|
+| `quick-event` command | parse → list calendars → **conflict check** → create | source derivation, correction tracking, evidence |
+| `create_event` built-in idempotency | same-calendar repeat of (title, start ±30s, same kind: timed, or all-day on the same day) | the same activity after its start time changed |
+| `find_duplicate_events` tool | duplicates **across** calendars | within one calendar (it skips same-calendar pairs by design) |
+| `calendar-management` skill | tool catalogue and common workflows | the judgements below |
+
+Conflict checking exists as a tool — this skill still invokes `check_conflicts` itself before any create (it does not go through quick-event, so it inherits nothing). What it adds are the five judgements that no existing mechanism covers.
+
+## Procedure
+
+```
+source ──▶ 1. authoritative time ──▶ 4. which calendar ──▶ 3. compose notes
+                                                               │
+                              2. update or create  ◀───────────┘
+                              （check_conflicts before create）
+                                            │
+                                            └──▶ 5. same-day deadlines
+```
+
+Numbers refer to the sections below (ordered by topic, not execution): calendar choice and the notes body must be resolved BEFORE the create/update call that consumes them, and a `check_conflicts` on the resolved time precedes any `create_event`.
+
+---
+
+## Configuration and state
+
+Two optional files under `.claude/.ical/` steer this skill. Both may be absent — absence is never an error.
+
+**`config.yaml`** — human-authored; comments record the reasoning behind each setting. Found by the lookup in [`rules/calendar-routing.md`](../../rules/calendar-routing.md) (nearest one walking up from the working directory, then `~/.claude/.ical/`), which also defines its `calendar_routing` block. Besides that block and the module switches of [`rules/event-modules.md`](../../rules/event-modules.md) (`conference_module`, `lodging_module`), this skill reads one field:
+
+```yaml
+# Which calendar archived events land in when no routing rule matched.
+# Reason recorded here, e.g.: 系上行政活動一律進「行政」，家庭行程勿混入.
+default_calendar: "行政"
+```
+
+**`state/archives.json`** — always in the working directory's own project (`.claude/.ical/state/`), even when `config.yaml` came from a parent directory. Machine-queried map from source identifier to the archived event. Written by this skill after every successful archive; never hand-edited:
+
+```json
+{
+  "<message-id>": {
+    "event_id": "…",
+    "calendar": "行政",
+    "archived_at": "2026-08-31T14:00:00+08:00"
+  },
+  "<message-id>#lodging:<reservation>": {
+    "event_id": "…",
+    "calendar": "旅遊",
+    "archived_at": "2026-10-29T14:00:00+09:00",
+    "reservation": "123456"
+  },
+  "<cancelling-message-id, percent-encoded>-<deleted-event-id>#lodging:<reservation>": {
+    "reservation": "123456",
+    "property": "examplehoteltokyo",
+    "check_in": "2026-11-10",
+    "check_out": "2026-11-13",
+    "cancelled_at": "2026-11-02T09:30:00+09:00"
+  }
+}
+```
+
+The second entry is a stay (`reservation` is its number). The third is a cancellation record written when the lodging module deletes a stay: it has no `event_id`, because the event is gone, and it holds the normalised property name and the deleted stay's days, so a reused number at another property is not taken for it (module section 4). A record written before #365 has only `reservation` and `cancelled_at`. Every key ends in `#lodging:<reservation>` (a mail cancellation's record adds the deleted event's identifier before it, as the deletion paragraph below says). In a key, `<reservation>` is the normalised number (upper case, `／` written as `|`) percent-encoded (every UTF-8 byte other than ASCII `A`–`Z`, `a`–`z` and `0`–`9` as `%` and two upper-case hex digits, so `AB/12` and `AB_12` get different keys); a record of a delete the user asked for is keyed `user-request-<the request's UTC date and time, YYYYMMDDTHHMMSSZ>-<the deleted event's identifier, percent-encoded>#lodging:<reservation>`, with the request's time as `cancelled_at` and `"by_user": true`; lookups compare the `reservation` field, never the key. **The state file holds private trip data** (reservation numbers, properties, dates of stays): in a work project under git, keep `.claude/.ical/state/` out of the repository with the project's `.gitignore`.
+
+If either file fails to parse, say so explicitly in the report and proceed as if it were absent — a malformed config must never silently change behavior.
+
+---
+
+> **An input that matches a module's trigger** in [`rules/event-modules.md`](../../rules/event-modules.md) (today: a conference program or a booking for a stay), when that module is on, is built as the module says; otherwise carry on below. This paragraph is for a conference program; a booking for a stay is covered by the next paragraph and none of this paragraph's "Still apply" list applies to it. For a conference program the module replaces §2's create/update of one event and its search by source identifier; §4 stays as the module's calendar fallback. Judge the trigger on the program the thread holds, not on the newest message alone. Still apply: §1 (the authoritative message; a newest message that corrects only some items is a partial correction, applied to the existing set as the module's section 6 says, or, when nothing was archived yet, folded into the thread's full program before the program is built); §2's `state/archives.json` lookup and its write-back, which maps the source identifier to the umbrella event (to none when the run left the umbrella kept, declined, not updated or pending: a candidate set's umbrella that was not updated stays under the old marker; a later correction then finds the set by name). When the lookup maps the source to an event, read that event's notes in full (`search_events` in the calendar the state names, keyword `-module:`, which matches both modules' markers, from two years before to two years after the entry's `archived_at`, and take the hit with the mapped id): if they hold both a conference marker pair and a `lodging-module:` line, the event belongs to neither module: list it and ask, and build nothing; else if they carry the module's `conference-module-item: umbrella` marker, that marker finds the set; else if they hold a `lodging-module:` marker line, it is a stay (below); if there is no hit, it is undetermined (an event with no marker, or one not found): it is treated as a single event archived before the module, so tell the user and ask before building the program; a mapped event that holds a `lodging-module:` marker line is a stay, which the conference module leaves alone (the shared rule "Whose event it is"). §3 (the source line and any estimate line, placed in each event's notes above the module's marker lines; a session without an end time uses the module's estimate instead of asking); and §5 over the program's days, leaving out the program's own events. The report says corrections are tracked by the module's marker lines. Normative: the `event-source-archiving` requirement "A conference program is archived through the conference module".
+
+> **A booking confirmation, change notice or cancellation notice for a stay** is archived through the lodging module ([`rules/modules/lodging.md`](../../rules/modules/lodging.md)). The conference paragraph's umbrella lookup, its `conference-module` marker lines and its estimated session end do not apply to a stay. What applies:
+>
+> - **The thread-root rules do not apply to a stay.** §2's "resolve the thread's first message and use its Message-ID" and §3's "Message-ID of the thread's original notice" are for the single-event path. For a stay, the source line, the state keys and the cancellation record use the Message-ID of the message actually reflected, so a later change or cancellation in the same thread is a different message and is not reported as unchanged. §2's notes search never updates, as a single event, an event that holds a `lodging-module:` marker line; such a message goes to the module whatever its content, and the module's eligibility check decides.
+> - This paragraph applies when the lodging module is on and triggered; otherwise carry on with the steps below, where §2's rule still keeps a stay from being updated as a single event. Other items in the same message (a flight) still go through §2 to §5.
+> - **§1 is replaced**: the sender-and-time rule does not fit a stay (a change notice can come from another address, a cancellation usually states no time), and its From comparison could be forged anyway. The authoritative message is the latest **booking-party** message (confirmation, change or cancellation) carrying the **reservation number** (the module's "Who may change the event"), ordered by each message's own `Date` and time (the original's for a forwarded one), and the order is asked when unclear.
+> - **§2's `state/archives.json`**: the stay is stored under the key `<message-id>#lodging:<reservation>` (one entry per reservation, because one message can confirm several) with its `reservation` number, so a source that also built a conference (key `<message-id>`) does not overwrite or get mistaken for it. The mapping is only a hint, because a change or cancellation arrives as a different message with its own Message-ID: find it by scanning the entries' `reservation` field, and the reservation number in the `lodging-module:` marker line finds the stay, by the module's section 4. When a mapping names an event, read its notes; if its marker, or the `(also …)` part of its `Reservation:` line, holds the same reservation number it is the stay; if its marker holds another number and the message's number is in neither place, it is a possible-match row (module section 4, step 2), never dropped; and if it holds no marker it is a hand-built event, so show a mapping table and ask before touching it. The bare `<message-id>` key, and the bare key of the thread's first message, are also read, for a booking archived before the module existed (the thread-root rule still applies to this one lookup), but only after the module's section 4 steps 1 and 2 found nothing and only when the mapped event looks like a stay (its title or location matches the property); an event that is a flight or a meeting is never offered for adoption: an event it maps to that holds neither a stay nor a conference marker is shown in a mapping table and adopted only after the user's yes. After a deletion, write one cancellation record for each number on the deleted stay's `Reservation:` line (the marker's number and every number in its `(also …)` part) and one for each state entry that names the deleted event (one per distinct number), each an entry keyed `<cancelling message-id, percent-encoded>-<deleted event id, percent-encoded>#lodging:<number>`, so one notice that cancels two stays sharing a number keeps two records, with `reservation` (that number), `property`, `check_in`, `check_out` and `cancelled_at` (the date and time of the cancelling message), as the module's section 4 says. Then remove every mapping that names the deleted event, the second number's entry included: the records, not the mappings, keep a cancelled number from being created again under any of its numbers. A deleted `unconfirmed` stay has no number and leaves no record (module section 7). A cancellation left pending writes nothing. The record is found by `reservation`, not by Message-ID. When the user answers that a message under another number is the same stay (module section 4, "The same stay under two numbers"), also write an entry for that message under the other number (`<message-id>#lodging:<other number>`, its `reservation` the other number, naming the stay), so a stay later deleted by hand is still found under any of its numbers; no entry is written while the message stays pending (an event that belongs to neither module, module section 4).
+> - **A create asks while a stay at the same property exists.** Before a stay is created without a question, the module's guard "No create beside a stay at the same property" (section 4) runs: an event with a `lodging-module:` marker line in any calendar, at the same property, within one year of the stay's nights makes the create ask, whatever `state/archives.json` holds or lacks (an answer about an event carries only within the message it was given for, never to another message of the same run); with nobody to answer, nothing is created.
+> - **§3**: the stay's source line is the module's labelled `Source:` line (its section 3, item 8: for a forwarded message the forwarder's own `From:` as sender, the claimed sender only shown), not §3's single-event line, and there is **no estimate line**: when the check-out day is missing, ask.
+> - **§4** (calendar fallback) and **§5** (same-day deadlines, leaving out the events every module built from this source) apply as written.
+> - **A cancellation notice** follows the module's section 7. This skill does not list `delete_event` in `allowed-tools`, so the delete asks for permission on top of the module's own question, and in a run nobody can answer the cancellation is only reported as pending.
+>
+> The report says corrections are tracked by the module's marker line. Normative: the `event-source-archiving` requirement "A booking confirmation is archived through the lodging module".
+
+## 1. Authoritative time: sender identity + parsable time
+
+Walk the thread **from the newest message backwards**. Select the first message that satisfies **both**:
+
+- **(a)** its sender matches the sender of the original notice
+- **(b)** its body contains a parsable date-time
+
+Stop at the first match. Do not keep walking.
+
+**Do not select by recency.** The last message in a thread is very often an attendee's acknowledgement, not the organizer's correction. Taking it silently yields the wrong time.
+
+**Do not use a keyword list.** Organizers do not reliably write "correction" or "rescheduled" — real notices say "更正資訊如下", "因故調整", "新的時間是", and endlessly more. Every phrasing missing from the list is another silent failure.
+
+Condition (b) is what makes this work: a message with no time cannot, by definition, be a reschedule. It excludes exactly the "shall we push it later?" proposals that a recency rule would wrongly take.
+
+### Reading the two conditions precisely
+
+| Term | Means | Not |
+|---|---|---|
+| sender matches | the **email address** is identical | the display name — those vary between clients and mail systems |
+| parsable date-time | a date **and** a time-of-day (`Aug 13 15:30`, `8/13 下午 3:30`) | a bare date, a weekday alone, or a month reference |
+
+A message that gives only a date is not a reschedule notice; it is a mention. Treat it as failing (b).
+
+### Worked example
+
+A four-message thread, in chronological order:
+
+| # | Sender | Content |
+|---|---|---|
+| 1 | organizer | notice for Aug 12 14:00 |
+| 2 | someone else | "shall we push it later?" — no specific time |
+| 3 | organizer | new time: Aug 13 15:30 |
+| 4 | attendee | "noted, thank you" |
+
+The backward walk:
+
+| Step | Message examined | (a) sender matches? | (b) parsable time? | Result |
+|---|---|---|---|---|
+| 1 | (4) attendee reply | no | no | continue |
+| 2 | (3) organizer new time | yes | yes | **select — stop** |
+
+The event starts **Aug 13 15:30**. Messages (1) and (2) are never examined.
+
+Why not message (4)? It is the newest, and a recency rule would take it — but it carries no time, so the skill would then have to fall back to some earlier message anyway, and any rule for choosing *which* earlier message is the rule above. Condition (b) rejects (4) outright.
+
+### When neither condition can be satisfied
+
+**Do not infer a time.** List the candidate messages with their senders and times, and ask the operator which is authoritative.
+
+The common trigger is one person writing from two addresses — the institutional account for the original notice, a personal account for the correction. Condition (a) misses it. Handing the choice back is correct here: an operator glancing at two candidates resolves it in seconds, and the alternative is a wrong time nobody notices.
+
+---
+
+## 2. Update or create, keyed on the source
+
+Record a **source identifier** whenever the source provides one, in two places: the `state/archives.json` index (primary) and the event notes' source line (fallback + human-readable evidence; notes may be hand-edited later, the state file is written only by this skill).
+
+**The stable key is the ORIGINAL notice's `Message-ID`** — the first message of the thread, not the correction being archived. A correction arrives in a different mail with its own Message-ID; keying on it would orphan the event archived from the original. When archiving any message of a thread, resolve the thread's first message and use ITS Message-ID for both lookup and write-back.
+
+**A stay is never updated here as a single event (applies whatever the lodging switch says).** This protects the stay itself: a hit from the state mapping or from the notes search that holds a `lodging-module:` marker line is never updated by this section. If the lodging module is on and triggered, the message goes to the module; if it is off or not triggered, the report names the event and says it was left as it is. (A `conference-module` marker is not covered here: the conference module keeps its own rule that, when it is off, this section runs unchanged.) The trigger is judged on the whole thread: **any** message in a thread that already produced a stay (a traveler's reply included) goes to the lodging module even when it carries no reservation number, and the module decides what it changes. A thread has produced a stay when `state/archives.json` holds an entry whose key starts with the Message-ID of any message of the thread (from its References / In-Reply-To chain) followed by `#lodging:`, or a notes search for those Message-IDs hits an event with a `lodging-module:` marker line.
+
+**Other items are not the stay.** A flight, a meeting or any item in the same message or thread that is not the stay continues through §2 to §5 as a single event: for such an item a hit that carries a `lodging-module:` marker line is skipped and is not counted as a match, and `create_event` is not blocked. With the lodging module off, only the single-event create of the **stay itself** (a hotel booking whose thread already holds a stay) is blocked: nothing is created for it and the report names the stay.
+
+Before creating anything, resolve the identifier:
+
+1. **`state/archives.json` maps it** → read the mapped event's notes first: `search_events` over **all calendars** (no calendar filter), keyword `lodging-module:`, over an explicit range from two years before to two years after the entry's `archived_at`, and take the hit with the mapped id. **The id found with a lodging marker** → the rules above apply. **The id found without it** → `update_event` on the mapped event directly. **The id not found** (moved out of range, or deleted) → unknown, not "no marker": report it, update nothing, and ask.
+2. **Index miss** (state absent, or entry missing) → search existing events for the identifier in their notes: **found** → if it holds a `lodging-module:` marker line and the item is the stay, the rules above apply; if it holds the marker and the item is not the stay, skip it; otherwise `update_event`; **not found** → `create_event` (unless the stay-itself block above applies).
+
+After every successful archive, write the mapping back to `state/archives.json` (creating the file on first use).
+
+### Why the built-in idempotency is not enough
+
+`create_event` already refuses same-calendar duplicates, keyed on **(title, start time ±30s, calendar, same kind)** (#364: a timed create matches only a timed event, an all-day create only an all-day event starting on the same day). After a reschedule from Aug 12 14:00 to Aug 13 15:30 the start time no longer matches, so that key sees a *new* event — it creates the second one and leaves the superseded event in place.
+
+The source identifier does not move when the time does. That is the whole reason to key on it.
+
+### When the source has no stable identifier
+
+A verbal account, a screenshot, a forwarded excerpt with headers stripped — none carry an identifier.
+
+Fall back to the existing create-time behavior, and **state in the report** that later corrections to this source cannot be detected. Do not silently accept the degraded guarantee: the operator needs to know that re-archiving will not clean up after itself.
+
+---
+
+## 3. Event notes: source citation and estimate labelling
+
+Notes carry two lines. The source line is always present. The estimate line appears **only** when a value was estimated.
+
+```
+來源：<sender> <date>「<subject>」
+推估：結束時間 17:30（沿用同行事曆前次同類活動時長；通知未載明）
+```
+
+### The source line
+
+Names the sender, the date, the subject or title of the source, and the source identifier (`Message-ID` of the thread's original notice) — the same key the state index uses, so the notes-search fallback in §2 has a concrete string to find.
+
+Its purpose is recovery: months later someone opens the event in Calendar with none of the conversation in which it was archived. The notes have to answer "where did this come from" on their own.
+
+### The estimate line — mandatory, not configurable
+
+Whenever the skill supplies a value the source did not state, the line states three things:
+
+1. the estimated value
+2. the basis for the estimate
+3. that the source did not state it
+
+**This is not optional and there is no setting to turn it off.** The moment it is most likely to be skipped — a busy archive, an "obviously fine" estimate — is exactly the moment it matters. An unlabelled estimate is a guess wearing the costume of a fact.
+
+**When nothing was estimated, omit the line entirely.** Do not emit an empty line or a placeholder such as `推估：（無）`. Noise trains readers to skip the field, which defeats it.
+
+### Worked example
+
+A notice states: a meeting on **Aug 13 at 15:30**, room 2008. No end time. The two most recent events of the same kind on the target calendar each ran two hours.
+
+Result:
+
+- Event: **15:30 – 17:30**
+- Notes:
+
+```
+來源：<sender> <date>「<subject>」
+推估：結束時間 17:30（沿用同行事曆前次同類活動時長；通知未載明）
+```
+
+"Same kind" means events matching this one's title pattern on the same calendar — a recurring lab meeting, a recurring coordination meeting. If no prior comparable event exists, do not invent a duration: ask the operator.
+
+Had the notice stated both start and end times, the notes would carry the source line and **no** estimate line.
+
+---
+
+## 4. Which calendar
+
+Four tiers, first hit wins:
+
+1. **Routing** — a `calendar_routing` rule that matches the event, resolved as [`rules/calendar-routing.md`](../../rules/calendar-routing.md) says (including asking when two rules match, and the `Routed to …` report line).
+2. **`config.yaml` → `default_calendar`** — if the config sets one, use it without asking. Only this skill reads it.
+3. **Derivation** — look up where activities of this kind were filed previously, and follow that.
+4. **Ask** — nothing comparable found: ask the operator.
+
+Derivation matches its accuracy from the second occurrence onward; the config tiers remove even the first-occurrence question for projects that declared their intent.
+
+---
+
+## 5. Same-day deadlines
+
+After creating or updating the event, check for other deadlines on the same day and list any found in the report:
+
+- calendar events on that date
+- reminders due on that date
+
+**Scope this claim honestly.** The check covers calendar events and reminders. Deadlines living in mail, issue trackers, or anywhere else are not visible here — do not report "no other deadlines" as though the sweep were exhaustive.
+
+---
+
+## Report
+
+After archiving, report:
+
+- the event created or updated, with its final time and calendar
+- how the calendar was decided: the `Routed to …` or `Not routed: …` line from [`rules/calendar-routing.md`](../../rules/calendar-routing.md)
+- which message the time came from, when the source was a thread
+- any estimated field and its basis
+- whether correction tracking is available for this source
+- same-day deadlines found, scoped as above
+
+## Related
+
+- **`quick-event`** — the time and place are already known and stated; just create it.
+- **`calendar-management`** — which tool does what, and common workflows.
+- **`troubleshoot-tcc`** — calendar tools failing or silently doing nothing.

@@ -1,0 +1,77 @@
+---
+name: omnistudio-asynchronous-data-operations
+description: "Use Integration Procedures queues, DataRaptor Chain, and Remote Actions with async patterns for long-running OmniStudio flows. NOT for simple DataRaptor reads — use omnistudio/dataraptor-patterns."
+category: omnistudio
+salesforce-version: "Spring '25+"
+well-architected-pillars:
+  - Scalability
+  - Reliability
+triggers:
+  - "integration procedure queue"
+  - "dataraptor chain"
+  - "omnistudio async"
+  - "omniscript long running"
+tags:
+  - omnistudio
+  - integration-procedure
+  - async
+inputs:
+  - "use case with >5s response or multi-system orchestration"
+outputs:
+  - "IP design with queued steps + error handling"
+dependencies: []
+runtime_orphan: true
+version: 1.1.0
+author: Pranav Nagrecha
+updated: 2026-08-01
+---
+
+# OmniStudio Asynchronous Data Operations
+
+OmniStudio Integration Procedures (IPs) can chain DataRaptors, HTTP calls, Apex, and Business Rules into a single orchestration. For operations that exceed the 5-second browser wait or need parallel calls, queue the IP (invoke from Platform Event or Queueable) instead of running synchronously.
+
+## Adoption Signals
+
+Multi-system orchestrations >5s or bulk data transformations driven from an OmniScript.
+
+- Any IP that exceeds the synchronous CPU limit when run against production-volume data.
+- DataRaptor chains (sometimes called a dataraptor chain) where each step depends on the prior output and total runtime exceeds user-tolerable latency.
+
+## Recommended Workflow
+
+1. Model the orchestration as an IP; label each step by purpose.
+2. For long steps, split: a synchronous IP kicks off a Queueable or publishes a Platform Event; the worker IP runs async.
+3. Consumer polls status via a DataRaptor read; show progress screen in the OmniScript.
+4. Error path: each IP step has Abort On Error; always catch at top with a retry/fail branch.
+5. Observability: log IP execution via custom logger or Salesforce Log Entry framework.
+
+## Key Considerations
+
+- The "120s overall, 10s per callout" figures are **Apex callout limits**, not OmniStudio settings — they bind an IP because its HTTP action runs in an Apex transaction. Default is 10s per callout (settable from 1 ms to 120,000 ms), with 120s cumulative across all callouts in the transaction. There is no OmniStudio screen for either.
+- Cache responses where safe (cache-enabled IP) to reduce backend load.
+- Parallel Remote Actions reduce wall-clock; IP supports Send/Response parallel.
+- Don't put heavy transforms in DataRaptor — use Apex Action for perf-sensitive paths.
+
+## Worked Examples (see `references/examples.md`)
+
+- *Async order placement* — OmniScript checkout
+- *Parallel enrichment* — Credit + address verification
+
+## Common Gotchas (see `references/gotchas.md`)
+
+- **Cumulative callout timeout exceeded** — the Apex 120s per-transaction ceiling aborts the whole IP.
+- **Cache stale** — Users see old data.
+- **No error branch** — Silent failure to user.
+
+## Top LLM Anti-Patterns (full list in `references/llm-anti-patterns.md`)
+
+- Everything sync
+- No caching on hot IPs
+- Heavy Apex in DataRaptor transformations
+
+## Official Sources Used
+
+- OmniStudio Developer Guide — https://developer.salesforce.com/docs/atlas.en-us.omnistudio_developer.meta/omnistudio_developer/
+- Callout Limits and Limitations (10s default / 120,000 ms maximum per callout, 120s cumulative per transaction) — https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_callouts_timeouts.htm
+- OmniStudio for Salesforce — https://help.salesforce.com/s/articleView?id=sf.os_omnistudio_for_salesforce_overview.htm
+- OmniScript to LWC OSS — https://developer.salesforce.com/docs/atlas.en-us.omnistudio_developer.meta/omnistudio_developer/os_migrate_from_vf_to_lwc.htm

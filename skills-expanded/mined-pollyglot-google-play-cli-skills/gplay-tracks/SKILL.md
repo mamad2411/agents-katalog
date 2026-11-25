@@ -1,0 +1,55 @@
+---
+name: gplay-tracks
+description: Release tracks and their testers with `gplay tracks` and `gplay testers`. Use when checking what a track holds, creating a closed-testing track, reading country availability, or setting a closed track's tester groups.
+---
+
+# gplay tracks (+ availability + testers)
+
+Shared conventions are in `gplay-cli-usage`; shipping builds onto tracks is
+`gplay-release-flow`.
+
+## Inspect tracks
+
+```bash
+gplay tracks list --package com.example.app          # every track on the app
+gplay tracks view --track production                 # one track's full state
+```
+
+## Create a closed track
+
+```bash
+gplay tracks create qa-team
+gplay tracks create qa-team --if-exists skip     # idempotent: prints the existing track, commits nothing
+gplay tracks create beta-wear --form-factor wear  # created as wear:beta-wear
+```
+
+`--form-factor wear|automotive` prefixes the name the way Play requires
+(`wear:beta-wear`); use that full name in later `--track` flags. A name that
+already carries the right prefix is kept; another form factor's prefix exits
+`2`.
+
+Creates a closed-testing track; open/internal tracks have no API path (they
+always exist). An upload or promote to a missing custom track fails with exit
+`30`: create it here first (`gplay-release-flow`, trackhint). A re-create
+fails with exit `30` too; in a CI script that runs on every build, pass
+`--if-exists skip` (`[experimental]`) instead of swallowing the exit code.
+
+## Country availability (read-only)
+
+```bash
+gplay tracks availability view --track production
+```
+
+Read-only at the API level (ADR-0012); changing availability is a Play
+Console job.
+
+## Testers (closed-track audience)
+
+```bash
+gplay testers list --track qa-team
+gplay testers set --track qa-team --group qa@googlegroups.com,beta@googlegroups.com
+gplay testers set --track qa-team --clear        # close the closed test
+```
+
+`testers set` replaces the whole audience (no add/remove) and takes Google
+Groups only.

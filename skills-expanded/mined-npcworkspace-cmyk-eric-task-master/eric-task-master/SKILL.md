@@ -1,0 +1,66 @@
+---
+name: eric-task-master
+description: Run durable local Chrome automation with the installed Task Master CLI. Use when an Agent needs to create and execute a one-off browser task, follow its progress, or manage its Chrome Profile.
+---
+
+# Eric Task Master
+
+Use the installed or extracted portable `taskmaster` launcher. For a normal request, do not inspect the project source or create another controller. For a new Agent or Skill update, locate the existing application as below, verify its absolute launcher with `--help`, and install/update only this Skill when the launcher works. Agents running as the same OS user share the selected Manager and Profiles; different working folders do not create new defaults. Retain the absolute launcher because an Agent host may still have an old PATH.
+
+Use `--state-dir ABSOLUTE_DIRECTORY` on every command only when the user requests an isolated data project. Its Manager selects its own port unless `--port` is explicitly supplied. Normal startup, including `manager start`, reuses a compatible Manager without replacing it. Runtime upgrade is an explicit Owner action: `manager start --upgrade`; on Windows it can consolidate the complete selected legacy view once while retaining its source. Incomplete-view errors require Owner upgrade, not replacement Profiles. Native install/uninstall refuse an in-use runtime. Never stop the shared Manager to install or update an Agent Skill.
+
+## Run the task
+
+1. Write the smallest useful `.mjs` task for the request. Do not register or install it.
+2. Start it once. `run` starts Manager automatically and uses the default Profile:
+
+   ```text
+   taskmaster run ./job.mjs --input '@input.json' --detach --json
+   ```
+
+3. Retain the returned task ID, run `taskmaster panel --json`, and give the user its fixed Dashboard URL. This only returns the link; run `taskmaster panel` without JSON only when the user asks to open it. Reuse the same panel across tasks.
+4. Follow it with `taskmaster follow TASK_ID --json`; optionally add `--wait-ms 30000` to bound a call. Retain `after` and continue with `--after SEQUENCE`. Report meaningful processed counts during a long run.
+5. Use `taskmaster files TASK_ID --json` and `files TASK_ID --read RELATIVE_PATH --json` to inspect outputs, following listing/read pagination when truncated. `follow` exits 1 for error/stopped after printing JSON: still read that output and deliver usable partial results. Summarize task state separately from business completion: report evidenced counts, missing work and artifact references, not an assumed success from `finished`. If outputs were cleared or unavailable, say so.
+
+When handing work to another Agent or conversation, retain a secret-free receipt: absolute launcher, explicit state/port selectors if used, task ID, Profile identity, `after`, latest state/progress, pending wait/probe and artifact references. The receiving Agent refreshes `status` and continues `follow --after` for that same task; stale receipt state or `canResume` is not authority to resume, repeat actions or create another task. Report truncated event history as incomplete. No Agent registration is needed.
+
+Use `--profile NAME_OR_ID` only when the user names a Profile. Do not add a preflight check to a normal task. For new-Agent/Skill deployment on Windows, or when PATH or the assumed launcher fails, run the bundled read-only locator (replace `<SKILL_ROOT>` with this Skill folder; optionally pass `-PortableRoot 'KNOWN_EXTRACTION'`):
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '<SKILL_ROOT>/scripts/find-launcher.ps1'
+```
+
+It identifies a live Manager's embedded runtime and matching package, then the shared location and installation record before PATH; `%LOCALAPPDATA%\Programs\Eric Task Master` is only a fallback. An unlocatable live Manager is `unresolved`, never permission to select an older launcher. For `found`, verify and use the returned absolute launcher. A failed launcher, `unresolved`, query/permission failure, `MANAGER_STATE_MISMATCH`, `MANAGER_STATE_AMBIGUOUS`, or `MANAGER_LOCATION_INVALID` requires reporting the observed path/error and stopping deployment repair: do not reinstall, edit PATH/registry/configuration, move/delete state, merge data or recreate Profiles. Retain state-error `error.details`, including physical state and identity fingerprints; do not hand-recompute identity. Only `absent` supports a user-requested fresh install. macOS `/usr/local/bin/taskmaster`; Linux `/usr/bin/taskmaster`; otherwise use a known portable launcher. For `DEFAULT_PROFILE_REQUIRED`, ask the user to choose an existing Profile in `taskmaster panel`, including a recovered directory-only Profile, or create one only if none is available.
+
+When no launcher is available, the Windows locator also checks `127.0.0.1:19946` (or `ERIC_TASK_MASTER_PORT`); on other systems check the matching loopback endpoint before installing. Existing installation evidence or an uncertain probe requires reporting the locator error. For confirmed absence, use the [latest Release](https://github.com/npcworkspace-cmyk/eric-task-master/releases/latest). If the installer fails, download its `eric-task-master-v<VERSION>-<TARGET>-portable.zip`: TARGET is `windows-x64`, `macos-arm64`, `macos-x64`, `linux-x64`, or `linux-arm64`, matching this computer. Verify `SHA256SUMS`, extract to a permanent folder, and use the absolute `eric-task-master/bin/taskmaster.cmd` (Windows) or `eric-task-master/bin/taskmaster` (macOS/Linux) path for every command. It bundles Node.js and Playwright; only stable Chrome must already be installed. The separate Skill ZIP includes instructions and a read-only locator, not the Manager. OS security approval may still be required; ZIP does not bypass it.
+
+## Minimal task module
+
+```js
+export async function run({ page, context, input, outputDir, progress, wait, signal }) {
+  await page.goto(input.url, { waitUntil: 'domcontentloaded' });
+  // Use Playwright, page.evaluate(), CDP, HTTP, and local files as the task needs.
+  await progress({ current: 1, total: 1, message: 'Done' });
+  return { processed: 1 };
+}
+```
+
+The `page` and `context` values are normal Playwright objects. The task decides navigation, selectors, concurrency, retry, pacing, waiting, recovery, and result format. Write valuable output incrementally under `outputDir`; do not wait until the end to persist a large batch. For restartable work, the script atomically saves a secret-free checkpoint with its version/input fingerprint, committed IDs or cursor, pending external effects and next step. The script validates and consumes it; Manager does not interpret business checkpoints. Use `progress()` after meaningful units and generic `wait()` only when this task chooses to pause.
+
+Only the entry `.mjs` is copied and frozen. Keep it self-contained: use Node built-ins, bare `playwright`, task `input`, absolute paths, or `outputDir`. Relative sibling imports/files are not copied. For uncertain submission retries, optionally use `run --request-key KEY` (1-160 ASCII letters/digits/`._:-`, starting with a letter/digit): identical submissions return the same task; changed content requires a new key. This prevents duplicate submission, not duplicate business actions. After `MANAGER_RESTARTED`, the old Worker cannot resume and original input is not retained. Read partial outputs first; only explicitly start a new attempt with a compatible script/checkpoint, freshly supplied authorized input and a distinct attempt key when continuation is safe.
+
+For errors, inspect `status`/`follow` error details, last progress and nullable `task.failureScreenshot`. When present, it is an artifact-relative hint: confirm it through `files`, decode base64 if returned, and inspect locally; it is not a filesystem path or proof of the current page. For older Managers or a missing reference, inspect the artifact listing; do not assume a screenshot exists. If an external effect has an unknown outcome, inspect the page/service before repeating it; if still uncertain, stop and ask. Never put cookies, tokens, passwords or authorization headers in progress, outputs, checkpoints or handoff receipts. Artifacts are raw task-written bytes, not automatically redacted; review files and screenshots before sharing.
+
+## Verification waits
+
+When the task detects a verification page, stop dispatching work and call `await wait({ reason: 'verification' })`. If it is in another tab, pass `page: thatPage`. Detection belongs to the task; Manager does not intercept arbitrary raw scripts. Do not add a screenshot timer to the task.
+
+Manager retains Chrome, Worker and heartbeat, freezes execution timeout, and requests a system notification immediately and every 30 seconds until actual resume or the 20-minute deadline. Page screenshots occur at 5/10/15/20 minutes. Before the deadline, `follow` returns screenshot `attention` and an `after` cursor. Open `attention.screenshotPath`; only if clearly recovered, run `taskmaster resume TASK_ID --probe PROBE_ID --json` with `attention.probeId`. Otherwise continue following with `--after SEQUENCE`; uncertainty means stay waiting.
+
+At 20 minutes Manager automatically pauses and stops reminders, preserving the browser and checkpoint. `follow` returns `manualResumeRequired`; the final screenshot is diagnostic only and must not trigger probe-based resume. The Dashboard Resume button or user's resume request maps to `taskmaster resume TASK_ID --json`. `stop`/`delete` cancel reminders and end the task. Keep following before automatic pause: CLI cannot wake an Agent whose turn or terminal session ended. Any later wakeup belongs to a supported, user-authorized Agent-host mechanism, not Manager; otherwise hand off the receipt without promising automatic continuation. Notification presentation follows OS settings; failures never block task control.
+
+## Control
+
+Use `taskmaster status TASK_ID --json`, `taskmaster stop TASK_ID --json`, `taskmaster resume TASK_ID --json` or `taskmaster delete TASK_ID --json`. Resume requires a live waiting Worker; it does not restart a dead script.
+
+Manager owns browser startup, one-writer Profile leases, process cleanup, and task persistence. The task module owns the work. For manual sign-in, open the Profile in the Dashboard or with `taskmaster profiles open NAME_OR_ID`: this is native Chrome without a debugging connection. Close all its windows before starting a task. Automation reuses that same Profile; individual sites can still require verification again.

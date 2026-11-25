@@ -1,0 +1,32 @@
+---
+name: literature-analysis
+description: 文献分析/综述完整任务入口（乔淼PhD · AI学术训练营 · AI学术工作流）。编排步骤 skill 跑完一次完整的文献综述：knowledge-module-list 模块清单 → review-blueprint 综述蓝图 → research-gap-scan gap 识别 → knowledge-module-gen 模块生成 →（可选 critical-paper-reading 深读）→ review-draft-assembly 综述初稿。只要单独某一步（只列模块/只找 gap/只组装）时直接用对应步骤 skill。Trigger on："帮我做文献综述"、"文献分析工作流"、"从我的 Zotero 集合跑出综述初稿"、"literature review from my collection"。
+---
+
+# Literature Analysis · 文献综述任务编排
+
+一次完整的文献综述 = 步骤 skills 按序执行：
+
+| 步骤 | 调用 skill | 产出 |
+|------|-----------|------|
+| 1a 模块清单 | `knowledge-module-list` | 知识模块清单.md |
+| 1b 综述蓝图 | `review-blueprint` | 综述蓝图.md + .html |
+| 1c Gap 识别 | `research-gap-scan` | 蓝图 Section 3（gap + 定位） |
+| 2 模块生成 | `knowledge-module-gen` | 知识模块/M1-Mn.md + 执行日志.md |
+| （可选）单篇深读 | `critical-paper-reading` | 深读-AuthorYear.md（组装时自动并入 Section 2） |
+| 3 初稿组装 | `review-draft-assembly` | 综述初稿.md + .docx + 引用核验报告.md |
+
+## 编排规则
+
+- 开工前一次问齐：选题 context（RQ/PXYV 一句话或 `选题.md`）、文献数据源（Zotero 集合 / 本地 PDF 文件夹 / 文献清单，三选一）、主数据通道（本地 PDF / Zotero，默认本地 PDF）、总字数目标、引用格式、输出语言。
+- 1a→1b→1c 连续跑完后停一次给用户看蓝图；2 全程不打断（靠执行日志把关）；3 之前问一次是否做单篇深读。
+- 各步骤严格按对应 skill 协议执行；步骤 skill 不可用时读其 SKILL.md 内联执行。
+- 单篇深读推荐顺序（按性价比）：⭐⭐⭐ Classic 1 篇（理论根基）→ ⭐⭐ 与 RQ 概念正面对话的 Key（概念近邻区分）→ ⭐⭐ 与方法/经验维度正面对话的 Key（经验机制）→ ⭐ 同框架同方法的对话伙伴（张力来源）。不跑也能走完流程。
+- **调用方覆盖约定**：调用方（工作台 prompt / 用户）显式给出的参数、输入路径、落盘路径与工具选择，一律覆盖本 skill 的默认；但本 skill 的方法步骤、硬约束与停点不可被省略或稀释——调用方若要求跳过某硬约束，以本 skill 为准并提示冲突。
+
+## 快速模式
+
+调用方（工作站 / 用户）说「快速模式」时启用。快速模式是本 skill 自己定义的停点精简，不算稀释停点；**硬约束（不编造文献 / 数据 / 引语、验真、页码诚实、落盘路径）一条都不放松**。被跳过的停点由你按默认、项目材料和用户已给的输入做决定，在最终产出末尾附一张「快速模式 · 我替你做的决定」表（`| 停点 | 我的决定 | 依据 | 你想改就告诉我 |`），方便用户回头改。
+
+- **只停一次**：蓝图（1a→1b→1c）完成后停下给用户看蓝图（和默认一样）。
+- 组装前不再问是否做单篇深读：默认不做；项目里已有 深读-*.md 的照常并入。

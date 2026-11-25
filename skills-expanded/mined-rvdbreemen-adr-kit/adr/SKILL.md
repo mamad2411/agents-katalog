@@ -1,0 +1,782 @@
+---
+name: adr
+description: "Create or review Architecture Decision Records. Use for ADRs, architecture decisions, durable trade-offs, new dependencies, contracts, or patterns."
+argument-hint: "[short title of the decision]"
+license: MIT
+---
+
+# ADR Skill: Architecture Decision Record Management
+
+Reply in the language the user writes in; default to English. Keep command output, identifiers, paths, and ADR file content unchanged.
+
+Use `$ARGUMENTS` as the decision title or review target. If it is empty, infer
+the target only from the user's current request; otherwise ask one short question.
+
+## Overview
+
+This skill enables systematic creation, maintenance, and enforcement of Architecture Decision Records. ADRs document significant architectural choices along with their context, alternatives considered, and consequences. They serve as living documentation so current and future developers (and AI agents) understand why the system is built the way it is.
+
+## Guided authoring contract
+
+Treat `/adr-kit:adr <subject>` as the complete creation flow; do not add or
+suggest a separate create command.
+
+1. First decide whether the subject is consequential and difficult to reverse.
+   End with no ADR for an ordinary implementation choice.
+2. For a qualifying subject, invoke `python <plugin-root>/bin/adr propose` so
+   the lifecycle command creates a `Proposed` record.
+3. Continue with `/adr-kit:grill ADR-NNN`. Cover context, decision,
+   alternatives, consequences, evidence, scope, ownership, conflicts, and Open
+   Questions. Also propose concise retrieval topics/components/symbols and a
+   Decision Contract from settled facts so future agents can query the record
+   selectively; the human reviews these candidates with the decision.
+4. Show an acceptance packet containing decision, rationale, alternatives,
+   consequences, evidence, scope, conflicts, and lifecycle effect. Require an
+   explicit `yes` in this active session.
+5. Only then invoke `python <plugin-root>/bin/adr accept ADR-NNN --confirm`.
+   The flag is refused-by-default for a reason: without it an acceptance can
+   happen by accident, and it writes a name into a history that is immutable
+   afterwards. Pass it only after the human has said yes in this session.
+   Missing
+   evidence, strict lint failures, conflicts, and unresolved Open Questions
+   remain authoritative blockers and become the next grill question.
+
+The skill bundles three patterns that distinguish it from a basic ADR template:
+
+1. **Anti-Rationalization Guards**: a table of excuses agents and humans use to skip writing an ADR, paired with counter-arguments. Pre-flight discipline.
+2. **Verification Gates**: four named gates an ADR must pass before its Status flips from `Proposed` to `Accepted`. Reviewers can block on a single named gate.
+3. **Human Decision Documentation**: explicit `Decision Maker:` attribution so user-driven choices are visible in the record, distinct from agent-generated ADRs.
+
+---
+
+## When to Use
+
+### Automatic triggers
+
+Use this skill automatically when:
+
+- Reviewing a PR or analysing code changes for architectural impact.
+- A change introduces a new pattern, dependency, or contract.
+- Refactoring proposals affect system design.
+- A user asks an architectural question ("why did we choose X?", "should we use Y or Z?").
+
+### Explicit triggers
+
+Use this skill when the user mentions:
+
+- "Create an ADR" / "Document this decision" / "Architecture decision".
+- "Why did we choose...?" / "What alternatives did we consider?".
+- "Document my choice" / "Capture this trade-off".
+
+### Decision triggers
+
+Create a new ADR when making a decision that:
+
+- Has long-term impact on architecture.
+- Affects multiple components or modules.
+- Involves trade-offs between alternatives.
+- Constrains future development choices.
+- Addresses a significant technical challenge.
+- Changes existing architectural patterns.
+- Requires a human decision that should be preserved.
+
+### Do NOT create an ADR for
+
+- Bug fixes that do not change architecture.
+- Refactors that maintain the same external behaviour.
+- Configuration changes within an existing range.
+- Documentation updates (unless the doc *is* an ADR).
+- Minor feature additions within established patterns.
+- Temporary workarounds or experiments.
+
+---
+
+## Anti-Rationalization Guards
+
+ADRs fail not from lack of templates but from the agent (or human) talking themselves out of writing one. Below is a table of common excuses with their counter-arguments. When you hear yourself reaching for one of the left-column entries, stop and apply the right-column response.
+
+| Excuse | Counter-argument |
+|---|---|
+| "This decision is obvious" | Obvious to you, today, with the context fresh in your head. Not obvious to a maintainer in six months, an open-source contributor, or an AI agent reviewing the PR. Document the *why*. |
+| "I'll document it later" | You will not. The pattern goes in once and only comes out if a future bug forces it out. Cost of writing now: 15 to 30 minutes. Cost of re-deriving later: hours, sometimes a full incident. |
+| "The code speaks for itself" | Code shows *what* and *how*. ADRs document *why*. The why is never derivable from source: it lives in the constraints, the alternatives that were rejected, and the trade-offs accepted. |
+| "Everyone knows this pattern" | Everyone on the team *today*. Not the maintainer in three years. Not the contributor who shows up next week. Not the model running a future code review. |
+| "This is just the framework default" | Then say so explicitly. "Status: Accepted. We took the framework default for X because Y." Defaults embed assumptions; an ADR makes those assumptions inspectable. |
+| "It is too small to need an ADR" | Small *architecturally*? Then no ADR. Small *implementation* of a contract change? Still an ADR, because the contract is what future developers will trip over. |
+| "We can always change it later" | Every architectural choice constrains the next one. Document the chosen path now so a future change is a *deliberate* supersede, not an accidental drift. |
+| "I don't have time" | Pay 30 minutes now or pay hours when someone challenges the choice in code review six months from now and nobody can remember the rationale. |
+| "There are no real alternatives" | Almost never true. If you cannot name one, the alternative is "do nothing" or "the framework default": that is an alternative. Document it and the reason it lost. |
+
+This pattern was originally introduced by [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) and was first combined with verification gates in a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` adapts that pairing.
+
+---
+
+## Initial Codebase Analysis
+
+### First-time use: discovering undocumented decisions
+
+When introducing this skill to an existing codebase, perform a comprehensive architectural analysis to identify and document existing but undocumented decisions.
+
+#### Workflow
+
+**Step 1: identify architectural patterns.** Areas to analyse:
+
+- Platform and runtime choices (language, framework, deployment target).
+- Data and storage (database, schema, persistence patterns).
+- Protocol and integration (sync vs async, REST vs RPC, message bus).
+- Memory and resource management (when load-bearing).
+- Network and security (TLS posture, auth model, trust boundaries).
+- Build and tooling (build system, CI gates, test strategy).
+- Cross-cutting concerns (logging, error handling, observability).
+
+**Step 2: ask critical questions.** For each pattern discovered:
+
+- WHY was this approach chosen? (context, constraints).
+- WHAT alternatives exist? (at least 2 to 3 viable options).
+- WHY were alternatives rejected? (specific technical reasons).
+- WHAT are the consequences? (benefits, costs, risks).
+- HOW is this implemented? (code references, key files).
+- WHEN was this decided? (estimate from git log or release history if unknown).
+
+**Step 3: generate ADRs systematically.** For each undocumented decision:
+
+1. Use a research subagent to understand the pattern.
+2. Review code, comments, git history for context.
+3. Identify constraints (memory, performance, compatibility, security).
+4. Research alternatives even if obvious.
+5. Document consequences: positive AND negative.
+6. Create the ADR with `Status: Proposed`, even when code already shipped.
+7. Link to actual implementation (files, commits), then grill the reconstructed
+   rationale and request independent acceptance for this ADR.
+
+**Step 4: prioritize.** Start with foundational decisions that:
+
+- Affect multiple components.
+- Constrain future choices.
+- Are non-obvious or counterintuitive.
+- Have significant trade-offs.
+- Are frequently questioned.
+
+#### Trigger phrases
+
+```
+"Analyze this codebase to identify undocumented architectural decisions"
+"Generate ADRs for existing architectural patterns in this codebase"
+"What architectural decisions should be documented in this project?"
+```
+
+---
+
+## ADR Principles
+
+### The golden rules
+
+1. **One decision per ADR.** Each ADR captures a single architectural choice.
+2. **Immutable history.** Never modify accepted ADRs; supersede with a new one instead.
+3. **Context is king.** Explain WHY the decision was made, not just WHAT.
+4. **Alternatives matter.** Document what was considered but rejected.
+5. **Human decisions marked.** Clearly indicate when the decision came from a user or stakeholder.
+6. **Critical analysis.** Be thorough, question assumptions, document trade-offs honestly.
+7. **Understandable language.** Write for a developer unfamiliar with the decision; avoid unexplained jargon.
+
+### Best practices
+
+```
+GOOD                                     AVOID
+Write for future developers              Use jargon without explanation
+Include code examples                    Assume reader knows the context
+Reference related ADRs                   Skip alternatives ("only way")
+Use clear, simple language               Make assumptions unstated
+Document driving constraints             Forget to update status when superseding
+Explain consequences both ways           Be vague ("better", "improves performance")
+Link to implementation                   Skip negative consequences
+Be critical, document risks              Write marketing copy
+Provide specific evidence                Use jargon without defining it
+```
+
+---
+
+## Verification Gates
+
+An ADR moves from `Status: Proposed` to `Status: Accepted` only after all four gates pass. The gates are intentionally *named* so a reviewer can cite a single gate when blocking acceptance: "This ADR fails the Evidence gate, please add measurements."
+
+### Gate 1: Completeness
+
+The ADR has filled every load-bearing section.
+
+- [ ] Problem statement is unambiguous; a reader knows what the decision is *about*
+- [ ] Decision is stated as a single, declarative sentence (not a discussion)
+- [ ] At least 2 alternatives considered, each with a "why not chosen" line
+- [ ] Consequences are listed in *both* directions (positive and negative); a one-sided ADR fails this gate
+- [ ] Risks are named explicitly, each with at least one mitigation
+
+### Gate 2: Evidence
+
+Every claim that a reader could challenge is backed by something verifiable.
+
+- [ ] No bare adjectives where numbers are achievable: "saves 5 to 8 KB RAM" beats "saves memory"; "reduces request latency from 120 ms to 40 ms" beats "faster"
+- [ ] Constraint claims are anchored to a source: "the runtime allows 256 MB per worker" cites where (vendor doc, measured, ops policy)
+- [ ] Code references include `file:line` so the reviewer can verify
+- [ ] External claims (specs, RFCs, vendor docs) are linked, not paraphrased
+
+### Gate 3: Clarity
+
+A reader who has never seen this codebase can follow the argument.
+
+- [ ] Acronyms defined on first use: "TLS (Transport Layer Security)"
+- [ ] Technical concepts explained when load-bearing: "back-pressure: a feedback signal from a slower consumer to a faster producer"
+- [ ] Code examples are concrete and runnable, not pseudo-code
+- [ ] The decision is explainable in one paragraph at the top, before the reader needs to read the alternatives
+
+### Gate 4: Consistency
+
+The ADR fits the existing record without creating contradictions.
+
+- [ ] No conflict with an `Accepted` ADR; if there is, this ADR is a supersede with explicit reference
+- [ ] Cross-references to related ADRs are present and accurate
+- [ ] Terminology matches the project glossary and other ADRs
+- [ ] ADR number is the next sequential, no gap, no reuse
+
+This pattern was originally introduced by [trailofbits/skills](https://github.com/trailofbits/skills) and was first combined with anti-rationalization guards in a single ADR skill by [Jim van den Breemen's adr-skill](https://github.com/Jvdbreemen/adr-skill); `adr-kit` adapts that pairing.
+
+---
+
+## ADR Template
+
+MADR is the default profile. Create from the project configuration with:
+
+```text
+python bin/adr profiles --format json
+python bin/adr new "Short imperative title" --adr-dir docs/adr
+```
+
+Use `--profile madr|nygard|canonical` for a one-record override. The bundled
+templates are `templates/adr-template.{madr,nygard,canonical}.md`; the
+unqualified `templates/adr-template.md` is the MADR default. All profiles keep
+frontmatter, Status, Status History, Related Decisions, References, and
+Enforcement invariant. The older example below is the `canonical` profile,
+retained for backward-compatible projects.
+
+When the user requests a non-default format, first read the JSON catalog.
+Accept only a returned `id`, require `available: true`, and scaffold from that
+entry's `template` path through `adr new --profile <id>`. Never invent a
+profile name, infer one from an arbitrary filename, hand-map headings, or
+generate a substitute for a missing shipped template.
+
+```markdown
+---
+id: "ADR-XXX"
+title: "Title in title case"
+status: Proposed
+date: "YYYY-MM-DD"
+binding: false
+gate: null
+documents_shipped: false
+verified_in: []
+supersedes: []
+superseded_by: null
+format: canonical
+---
+
+# ADR-XXX Title in title case
+
+## Status
+
+Proposed, YYYY-MM-DD.
+
+(Later: Accepted; Deprecated; Rejected; Superseded by ADR-YYY; or Amended by ADR-YYY.)
+
+## Status History
+
+status_history:
+  - date: YYYY-MM-DD
+    status: Proposed
+    changed_by: Agent or User
+    reason: Initial proposal
+    changed_via: adr-kit
+
+## Context
+
+One paragraph stating the problem clearly enough for a reader who has never seen this codebase. Include the constraints that drove the decision and the existing state that triggered the choice.
+
+## Decision
+
+A single declarative sentence stating what was chosen. Optionally followed by 2 to 4 short paragraphs unpacking the choice.
+
+## Alternatives Considered
+
+### Alternative A: name
+
+Description and rejection reasoning.
+
+### Alternative B: name
+
+(repeat structure)
+
+### Alternative C: do nothing
+
+If "do nothing" was rejected, document why. If it was the right choice, this ADR is probably not needed.
+
+## Consequences
+
+**Benefits**
+
+- Specific positive outcomes, with measurements when achievable.
+
+**Trade-offs**
+
+- The cost we accepted by making this choice.
+
+**Risks and mitigations**
+
+- *Risk*: what could go wrong. *Mitigation*: how we address it.
+
+## Related Decisions
+
+- **ADR-YYY (Title)**: how it relates (supersedes, amends, depends on, complements).
+
+## References
+
+- Implementation tasks or issue IDs.
+- Source files affected (file:line).
+- External specs, RFCs, vendor docs, or measurements.
+```
+
+A clean copy is available at `examples/ADR-template.md`.
+
+---
+
+## Naming Convention
+
+### Default
+
+```
+Format: ADR-XXX-short-descriptive-title.md
+
+Where:
+- XXX = zero-padded sequential number (001, 002, ..., 099, 100, etc.)
+- short-descriptive-title = kebab-case description
+
+Examples:
+- ADR-001-postgresql-for-sensor-data.md
+- ADR-014-rest-api-versioning.md
+- ADR-042-grpc-internal-rpc.md
+- ADR-099-deprecated-static-bundling.md
+
+Wrong:
+- ADR-1-postgresql.md (not zero-padded)
+- adr-001-PostgreSQL.md (lowercase prefix, mixed case)
+- ADR-001_PostgreSQL.md (underscore instead of hyphen)
+```
+
+### Number assignment
+
+- Sequential numbering starting from 001.
+- Check `docs/adr/` for the highest number and increment.
+- Do not reuse numbers from deprecated or superseded ADRs.
+- Do not leave gaps in numbering.
+
+### Project override
+
+The filename contract remains fixed. Select the body profile with
+`template.profile` in `docs/adr/.adr-kit.json`; choose `madr` (default),
+`nygard`, or `canonical`. A per-file `format` value is authoritative.
+
+---
+
+## ADR Categories
+
+Group ADRs by architectural domain for navigation. The category list is project-specific; below is a neutral starting set you can replace:
+
+- **Platform and Runtime**: language, framework, runtime, deployment target.
+- **Data and Storage**: database, schema, persistence, caching.
+- **Protocol and Integration**: sync vs async, REST/RPC/messaging, contracts.
+- **Memory and Resources**: when load-bearing for the project's constraints.
+- **Network and Security**: TLS posture, auth, trust boundaries, secrets.
+- **Build and Tooling**: build system, CI gates, packaging, testing.
+- **Observability**: logging, metrics, tracing, alerting.
+- **Cross-Cutting**: error handling, configuration, internationalization.
+
+In your `docs/adr/README.md`, replace these with categories that match your domain.
+
+---
+
+## ADR Workflow
+
+### 1. Before making architectural changes
+
+- Run the local doctor to repair the generated index and surface ADR health issues before relying on the decision log: `bin/adr-doctor --fix-index docs/adr/`.
+- Review existing ADRs (`docs/adr/README.md` index).
+- Search for related decisions.
+- Check whether the change conflicts with any `Accepted` ADR.
+- Determine if a new ADR is needed (long-term impact? multiple components? alternatives exist? future context?).
+
+### 2. During implementation
+
+- Create the ADR with `Status: Proposed`.
+- Run `python bin/adr new "Title" --adr-dir docs/adr`; it allocates the next
+  number and honors `template.profile`.
+- Complete the selected profile without renaming its semantic headings.
+- Reference the ADR in code comments at non-obvious enforcement sites: `// See ADR-XXX for why we use this pattern.`
+- Implement according to the ADR's decision.
+
+### 3. After implementation
+
+- Update Status: `Proposed` -> `Accepted`.
+- Add the implementation date in the Status line: `Accepted. Date: YYYY-MM-DD.`
+- Append the matching `Accepted` transition to `## Status History`; never rewrite an earlier entry.
+- **Decide which cross-references are warranted, then let the tool write both
+  sides.** Read the existing set (`bin/adr-index --adr-dir docs/adr --format md`
+  is the compact map) and ask, for each candidate, whether a reader arriving at
+  the *other* ADR would need to know this one exists. That judgement is yours;
+  no regex can make it. It is a real relationship when the two decisions
+  constrain each other, when one is the reason the other is possible, or when
+  changing one would force a rethink of the other. It is not a relationship
+  merely because both mention the same file.
+  - For each one you decide on: `bin/adr relate ADR-NEW --to ADR-OTHER`. It
+    writes the `related` field on **both** ADRs in one transaction and
+    regenerates the indexes, so neither side can end up carrying half a link.
+    Wrong call? `--remove` unwinds both sides the same way.
+  - Prose in `## Related Decisions` still counts and still reads well; keep
+    writing it. What it cannot do is update the other ADR, which is why the
+    reciprocal link goes in frontmatter. A backwards-only prose citation is
+    normal and is never flagged.
+  - Do not hand-edit the `related` field. `adr-lint` FAILs a one-sided one,
+    because the only way to produce one is a hand edit or a half-applied write.
+- Refresh the generated README, compact Markdown index, and JSON graph with
+  `bin/adr-index docs/adr/`.
+- Run `bin/adr-doctor --fix-index docs/adr/` or `bin/adr-lint --strict docs/adr/` before treating the ADR set as clean.
+
+### 4. When superseding an ADR
+
+- Write the new ADR explaining the change.
+- Reference the original in `## Related Decisions`: "Supersedes ADR-XXX (Title)".
+- Update the old ADR's Status line to `Superseded by ADR-YYY` and append that transition to `## Status History`.
+- Do NOT modify the old ADR's decision text or reasoning. Immutability is the rule.
+- Refresh all generated index views through `bin/adr-index docs/adr/` so both
+  sides appear in `README.md`, `ADR-INDEX.md`, and `ADR-INDEX.json`.
+
+### 5. When amending an ADR (lighter alternative to supersession)
+
+- Write the amending ADR.
+- Reference the original in `## Related Decisions`: "Amends ADR-XXX (Title)".
+- Update the old ADR's Status line: `Amended by ADR-YYY` (or leave as `Accepted` if the amend is content-additive).
+- Do NOT modify the old ADR's decision text.
+
+---
+
+## Code Review Integration
+
+### Automatic checks during review
+
+1. Do changes violate any existing ADRs?
+2. Do changes require a new ADR?
+3. Are ADR references in code accurate?
+4. Is the ADR Status up to date for any ADR being implemented in this PR?
+
+### Example review comments
+
+```
+NEGATIVE
+"This change violates ADR-NNN (Title).
+Please refactor or write a superseding ADR."
+
+POSITIVE
+"This change aligns with ADR-NNN (Title). Good use of the documented pattern."
+
+QUESTION
+"This introduces a new architectural pattern.
+Please create an ADR documenting the decision before merging."
+
+STATUS NUDGE
+"ADR-NNN is referenced but its Status is still 'Proposed'.
+Please flip it to 'Accepted' since this PR implements it."
+```
+
+### PR checklist
+
+```markdown
+## ADR Compliance Checklist
+
+- [ ] Changes reviewed against existing ADRs
+- [ ] No violations of architectural decisions (or a superseding ADR is included)
+- [ ] New ADR created if needed (Status: Proposed)
+- [ ] ADR Status updated if this PR implements an existing ADR
+- [ ] Code comments reference relevant ADRs at non-obvious enforcement sites
+- [ ] docs/adr/README.md updated if a new ADR was added
+- [ ] All four verification gates pass on any new or amended ADR
+```
+
+---
+
+## Human Decision Documentation
+
+When a user explicitly makes an architectural choice, document it as a human decision so the attribution survives.
+
+```markdown
+# ADR-XXX Title
+
+## Status
+
+Accepted. Date: YYYY-MM-DD.
+
+**Decision Maker:** User: [Name or role]   <- IMPORTANT: mark as human decision
+
+## Context
+
+[User's problem or request]
+
+## Decision
+
+**User Decision:** [What the user chose]
+
+The user explicitly chose [X] over [Y] because [reason given].
+
+## Alternatives Considered
+
+[What was presented to the user]
+
+### Alternative A: [Option presented]
+
+**User Feedback:** [User's reasoning for or against]
+
+### Alternative B: [Option presented]
+
+**User Feedback:** [User's reasoning]
+
+## Rationale
+
+**User's stated reasons:**
+
+- Reason 1
+- Reason 2
+
+**Technical context (from the agent):**
+
+[Agent's analysis of the decision's technical implications. Useful for future readers who want the technical lens alongside the user's intent.]
+```
+
+The Decision Maker line is the load-bearing part: it tells future readers that the choice was a human one, not an agent-generated default.
+
+---
+
+## Code Examples in ADRs
+
+### Show, don't just tell
+
+```markdown
+WRONG (no example)
+Use idempotent retry logic.
+
+RIGHT (concrete example)
+Use idempotent retry logic. Each request includes an Idempotency-Key
+header derived from the client's request body hash, and the server
+deduplicates within a 24-hour window.
+
+Example client wrapper:
+
+```python
+def submit(payload):
+    key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return http.post("/submit", json=payload, headers={"Idempotency-Key": key})
+```
+```
+
+### Diagrams when helpful
+
+```
+[Client] -- POST /submit (with Idempotency-Key) --> [Gateway]
+                                                         |
+                                                         v
+                                                    [Dedup Cache (24h)]
+                                                         |
+                                            cache miss   |   cache hit
+                                                  v      |       v
+                                            [Worker]     |   [Return cached response]
+                                                  |      |
+                                                  v      |
+                                            [Response]   |
+```
+
+ASCII diagrams travel well across tools and reviewers.
+
+---
+
+## ADR Index Management
+
+Maintain `docs/adr/README.md` as the navigation hub. Required sections:
+
+1. **What are ADRs?** Brief explanation for new readers.
+2. **Quick Navigation** with category counts.
+3. **ADR Index**: full categorized list with one-line summaries.
+4. **ADR Template**: link to or embed the template.
+5. **Key Architectural Themes**: cross-cutting concerns referenced by multiple ADRs.
+6. **Architectural Dependencies**: which ADRs depend on which.
+7. **When to Create an ADR**: guidance for new contributors.
+8. **Superseding ADRs**: how to handle changes.
+9. **Resources**: links to ADR best practices and external references.
+
+The ADR list inside the `<!-- adr-kit-index:begin -->` / `<!-- adr-kit-index:end -->` block, `ADR-INDEX.md`, and `ADR-INDEX.json` are generated from the same semantic records. Do not hand-edit them. Run `bin/adr-index docs/adr/` after ADR mutations, use `bin/adr-index --check docs/adr/` in CI, and use `bin/adr-doctor --fix-index docs/adr/` when an agent starts or finishes ADR work. Agents may explore the JSON graph to shortlist ADRs, but must read the linked Markdown record before applying a constraint.
+
+When adding a new ADR:
+
+1. Add or update the ADR file.
+2. Run `bin/adr-index docs/adr/`.
+3. Update "Foundational ADRs" or human-written notes only if the new decision changes that prose.
+4. Add cross-references in any older ADRs that relate.
+5. Run `bin/adr-doctor --fix-index docs/adr/` before reporting completion.
+
+---
+
+## ADR Metrics and Maintenance
+
+### Health indicators (healthy repository)
+
+- All ADRs have a clear Status.
+- Superseded ADRs reference their replacement.
+- Code references match existing ADRs.
+- README index is up to date.
+- Recent ADRs include implementation dates.
+- Each ADR has at least 2 alternatives documented.
+
+### Needs attention
+
+- Multiple ADRs with `Proposed` status for >30 days (review and accept or deprecate).
+- ADR numbers with gaps (consolidate or document the gap).
+- Code comments referencing non-existent ADRs (broken links).
+- ADRs without an alternatives section (low quality).
+- README categories that do not match actual ADRs (drift).
+
+### Periodic review (quarterly)
+
+```
+1. Are any 'Proposed' ADRs abandoned? (Mark deprecated.)
+2. Are any 'Accepted' ADRs being violated? (Update enforcement.)
+3. Do new patterns need ADRs? (Create them.)
+4. Are superseded ADRs properly linked? (Verify.)
+5. Is README accurately reflecting current state? (Update.)
+```
+
+---
+
+## Quick Reference
+
+### ADR creation checklist
+
+```markdown
+Creating a new ADR? Check these:
+
+- [ ] Next sequential number assigned (check docs/adr/)
+- [ ] Filename follows convention
+- [ ] Status field present
+- [ ] Date field present (YYYY-MM-DD)
+- [ ] Decision Maker identified (Agent or User: Name)
+- [ ] Context section explains the problem clearly
+- [ ] At least 2 to 3 alternatives documented
+- [ ] Pros and cons listed for each alternative
+- [ ] "Why not chosen" for each rejected alternative
+- [ ] Consequences section complete (positive, negative, risks)
+- [ ] Code examples included (if applicable)
+- [ ] Related ADRs referenced
+- [ ] Implementation notes with affected files
+- [ ] Ran `bin/adr-index docs/adr/` and `bin/adr-doctor --fix-index docs/adr/`
+- [ ] Category assigned
+- [ ] References / external links included
+- [ ] Four verification gates pass
+```
+
+### Common mistakes
+
+```
+- Writing "we should use X" without explaining why
+- Skipping alternatives ("this is the only way")
+- No code examples for technical decisions
+- Forgetting to update status after implementation
+- Not referencing related ADRs
+- Vague consequences ("it will be better")
+- No decision maker attribution
+- Missing constraints that drove the decision
+- Modifying accepted ADRs instead of superseding
+- Hand-editing a generated README, Markdown, or JSON index instead of running
+  `bin/adr-index`
+- Using jargon without defining it
+- Being superficial: not digging into the "why" behind constraints
+- Hiding negative consequences
+- Writing marketing copy instead of honest technical analysis
+- Skipping measurements ("faster" vs "68% latency reduction")
+- Not explaining technical trade-offs in understandable terms
+```
+
+### When in doubt
+
+Ask these questions:
+
+1. Will a developer in 6 months understand WHY we did this?
+2. Have I explained what we REJECTED, not just what we chose?
+3. Could this ADR help someone avoid making a wrong decision?
+4. Have I included enough code examples?
+5. Is the decision maker clearly identified?
+6. Can someone unfamiliar with this technology understand the core trade-offs?
+7. Have I been honest about negative consequences?
+8. Have I quantified impacts with actual measurements?
+
+If you answered "No" to any of these, improve the ADR.
+
+---
+
+## Companion skills and runners (v0.12+)
+
+The full adr-kit toolset wraps this skill with three operational modes:
+
+- **`/adr-kit:init`** — one-shot bootstrap of the kit in an existing project: hooks `CLAUDE.md`, drops `.claude/adr-kit-guide.md`, runs `bin/adr-discover` to enumerate decision-shaped artefacts, walks the user through batched approval to generate Accepted ADRs, installs the pre-commit hook. Use this once per project.
+- **`/adr-kit:judge`** — in-session review of a staged git diff against existing ADRs. Runs the deterministic `bin/adr-judge` for declarative `Enforcement` rules, then evaluates `llm_judge: true` ADRs in the active Claude Code session. On violation, walks three resolution paths (new ADR / supersede / fix code).
+- **`/adr-kit:install-hooks`** — install or uninstall the pre-commit hook. Default-on after `/adr-kit:init` (or `/adr-kit:upgrade`).
+- **`/adr-kit:upgrade`** — for users on v0.11: migrate to the v0.12 footprint without re-running the heavy audit. Refreshes the CLAUDE.md stub + guide, installs the hook, walks Accepted ADRs offering Enforcement-block backfill.
+- **`/adr-kit:lint`** — validate ADR file content against the four verification gates (Completeness / Evidence / Clarity / Consistency). The deterministic CLI is `bin/adr-lint`; the skill drives the heuristic gates.
+- **`bin/adr-doctor`** — local health check for agent start and finish: strict lint, generated-index freshness, shipped-but-Proposed ADRs, old Proposed ADRs, changed evidence behind Accepted ADRs, and missing named gates. Material drift auto-triggers a local `bin/adr-discover --root ...` pass and includes the audit summary in the doctor output. Use `--fix-index` to regenerate the index before checking it.
+- **`/adr-kit:migrate`** — preview metadata changes or convert between MADR,
+  Nygard, and canonical profiles; guided handling remains for legacy shapes.
+
+### When to invoke this skill (`/adr-kit:adr`) vs the others
+
+- **Authoring a single new ADR mid-session**: `/adr-kit:adr` (or invoke the `adr-generator` subagent).
+- **Diagnosing a staged diff against existing ADRs**: `/adr-kit:judge`. The model can self-call this before requesting a commit on the user's behalf.
+- **First-time setup**: `/adr-kit:init`.
+- **Migration from v0.11**: `/adr-kit:upgrade`.
+
+The four verification gates and the supersession workflow defined in this file remain the source of truth — every other skill delegates to them, never duplicates them.
+
+## Enforcement blocks (v0.12+)
+
+Every new `Accepted` ADR with a code surface SHOULD carry an `## Enforcement` section so `bin/adr-judge` (run by the pre-commit hook) can guard the boundary against future drift. The block is a fenced JSON object validated against `schemas/adr-enforcement.schema.json`. Three patterns:
+
+- Declarative regex / glob rules (`forbid_pattern`, `forbid_import`, `require_pattern`) — preferred when the rule is mechanically expressible. Fastest at hook time, no LLM round-trip.
+- `llm_judge` — for nuanced rules that need a model's judgement. It DEFAULTS TO TRUE: omit the key and this ADR is judged. Each opted-in ADR gets its own isolated call (never batched, so no sibling's Decision text can flip a verdict), resolved through `judge.backend` rather than a pinned model. A `VIOLATION` blocks the commit; a missing or unauthenticated backend degrades to advisory and never blocks on tooling drift. To opt out, write `"llm_judge": false` together with an `"llm_judge_reason"` — the reason is what makes the opt-out durable across upgrades. Cost is bounded by scope: an ADR is judged only when the diff touches a file matching its rules' `path_glob`, so a block with no glob is judged on every commit.
+- Section omitted with an in-body explanation — for governance / process ADRs with no code surface.
+
+Authoring is part of the agent's Step 3b (see `agents/adr-generator.md`). Code review applies Check 7 (see `instructions/adr.review.md`) to confirm the block is set appropriately.
+
+---
+
+## Resources
+
+### Official ADR resources
+
+- ADR best practices: <https://adr.github.io/>
+- Michael Nygard's original post (2011): <https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions>
+- MADR template: <https://github.com/adr/madr>
+- Joel Parker Henderson's ADR collection: <https://github.com/joelparkerhenderson/architecture-decision-record>
+
+### Tooling
+
+- adr-tools (npryce): <https://github.com/npryce/adr-tools>
+- Log4brains: <https://github.com/thomvaill/log4brains>
+
+### Related skill patterns
+
+- Anti-rationalization guards: <https://github.com/addyosmani/agent-skills>
+- Verification gates: <https://github.com/trailofbits/skills>
+
+---
+
+**Remember:** ADRs are *living documentation* stored as docs-as-code in the same repository as the implementation. They should be consulted during development, referenced in code reviews, and evolved through supersession (not modification). Good ADRs make architectural decisions visible, understandable, and enforceable.

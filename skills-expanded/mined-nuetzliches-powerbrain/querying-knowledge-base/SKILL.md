@@ -1,0 +1,280 @@
+---
+name: querying-knowledge-base
+description: Use when searching company knowledge, querying internal documentation, checking policies, or accessing the Powerbrain knowledge base via MCP
+---
+
+# Querying the Knowledge Base
+
+## Overview
+
+Query the Powerbrain knowledge base via its MCP server. The server exposes a set of tools for semantic search, structured queries, policy checks, graph queries, and data ingestion. All requests use **JSON-RPC 2.0 over HTTP POST** (MCP Streamable HTTP transport).
+
+## Server
+
+- **URL**: `http://localhost:8080/mcp`
+- **Transport**: MCP Streamable HTTP (JSON-RPC 2.0 over HTTP POST)
+
+## Access Methods
+
+### Option A: Native MCP server (recommended)
+
+If your agent supports MCP natively (Claude Code, OpenCode, Cursor, etc.), register the server in your agent configuration:
+
+**Claude Code** (`~/.claude/mcp_servers.json` or project-level `.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "powerbrain": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+**OpenCode** (`~/.config/opencode/config.json`):
+```json
+{
+  "mcpServers": {
+    "powerbrain": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+After registration, all Powerbrain tools are available directly as MCP tools — no curl required. The agent can call `search_knowledge`, `graph_query`, etc. like any other tool.
+
+### Option B: HTTP/curl (without native MCP integration)
+
+If the agent has no native MCP support, all tools can be called via HTTP POST.
+
+**Headers**: `Content-Type: application/json`, `Accept: application/json, text/event-stream`
+
+#### 1. Initialize (once per logical session)
+
+```bash
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {"name": "agent", "version": "1.0"}
+    }
+  }'
+```
+
+#### 2. Call a tool
+
+```bash
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{
+    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+    "params": {
+      "name": "search_knowledge",
+      "arguments": {
+        "query": "remote work policy",
+        "collection": "pb_general",
+        "top_k": 5,
+        "agent_id": "my-agent",
+        "agent_role": "analyst"
+      }
+    }
+  }'
+```
+
+The response contains `result.content[0].text` with the JSON payload.
+
+## Tools Reference
+
+### search_knowledge (semantic search)
+
+Most-used tool. Searches Qdrant vectors with OPA policy filtering and cross-encoder reranking.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `query` | yes | | Natural language search query |
+| `collection` | no | `pb_general` | `pb_general`, `pb_code`, or `pb_rules` |
+| `top_k` | no | 10 | Number of results to return |
+| `agent_id` | yes | | Identifier for the calling agent |
+| `agent_role` | yes | | `viewer`, `analyst`, `developer`, or `admin` |
+| `project` | no | | Filter by project name |
+
+**Collections:**
+- `pb_general` — Company docs, HR, policies, processes
+- `pb_code` — Code guidelines, architecture, API docs
+- `pb_rules` — Business rules, compliance, data governance
+
+**Roles and access levels:**
+- `viewer` — Only `public` documents
+- `analyst` — `public` + `internal`
+- `developer` — Like analyst + code repos + graph mutations
+- `admin` — Full access including `confidential` and `restricted`
+
+**Response structure:**
+```json
+{
+  "results": [
+    {
+      "id": "uuid",
+      "score": 0.57,
+      "rerank_score": 0.64,
+      "rank": 1,
+      "content": "Full document text...",
+      "metadata": {
+        "title": "Document Title",
+        "classification": "internal",
+        "source": "hr-wiki",
+        "project": "novatech-hr",
+        "type": "doc"
+      }
+    }
+  ],
+  "total": 3
+}
+```
+
+### get_code_context (code search)
+
+Like `search_knowledge` but defaults to `pb_code` collection. Same parameters.
+
+### check_policy (OPA policy check)
+
+All parameters are required and flat (no wrapper object).
+
+```json
+{
+  "name": "check_policy",
+  "arguments": {
+    "action": "read",
+    "resource": "document",
+    "classification": "confidential",
+    "agent_id": "my-agent",
+    "agent_role": "viewer"
+  }
+}
+```
+
+Returns `{"allowed": true/false, ...}`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `action` | yes | `read` or `write` |
+| `resource` | yes | Resource type (e.g., `document`) |
+| `classification` | yes | `public`, `internal`, `confidential`, `restricted` |
+| `agent_id` | yes | Calling agent identifier |
+| `agent_role` | yes | `viewer`, `analyst`, `developer`, `admin` |
+
+### query_data (SQL queries)
+
+Runs read-only SQL against PostgreSQL.
+
+```json
+{
+  "name": "query_data",
+  "arguments": {
+    "query": "SELECT * FROM datasets LIMIT 5",
+    "agent_id": "my-agent",
+    "agent_role": "analyst"
+  }
+}
+```
+
+### graph_query (knowledge graph)
+
+Query Apache AGE knowledge graph for entities and relationships.
+
+```json
+{
+  "name": "graph_query",
+  "arguments": {
+    "query_type": "neighbors",
+    "params": {"label": "Technology", "property_key": "name", "property_value": "PostgreSQL"},
+    "agent_id": "my-agent",
+    "agent_role": "developer"
+  }
+}
+```
+
+Query types: `neighbors`, `path`, `subgraph`, `search`.
+
+### graph_mutate (modify graph, developer/admin only)
+
+```json
+{
+  "name": "graph_mutate",
+  "arguments": {
+    "mutation_type": "add_node",
+    "params": {"label": "Technology", "properties": {"name": "Redis", "version": "7.0"}},
+    "agent_id": "my-agent",
+    "agent_role": "developer"
+  }
+}
+```
+
+Mutation types: `add_node`, `add_edge`, `update_node`, `delete_node`, `delete_edge`.
+
+### Other tools
+
+| Tool | Purpose |
+|------|---------|
+| `get_rules` | Business rules for a context |
+| `get_classification` | Classification level of a document |
+| `list_datasets` | List available datasets |
+| `ingest_data` | Ingest new data into the KB |
+| `submit_feedback` | Submit quality feedback on search results |
+| `get_eval_stats` | Get evaluation statistics |
+| `create_snapshot` | Create a versioned snapshot |
+| `list_snapshots` | List available snapshots |
+
+## Common Patterns
+
+### Search then verify access
+
+```bash
+# 1. Check if role has access
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"agent","version":"1.0"}}}'
+
+# 2. Search
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_knowledge","arguments":{"query":"salary bands compensation","collection":"pb_general","agent_id":"hr-bot","agent_role":"admin","top_k":3}}}'
+```
+
+### Multi-collection search
+
+For questions spanning multiple topics, search each collection separately and combine results. Rerank scores are comparable within a collection but NOT across collections.
+
+```bash
+# Search rules collection
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search_knowledge","arguments":{"query":"data protection GDPR","collection":"pb_rules","top_k":3,"agent_id":"my-agent","agent_role":"analyst"}}}'
+
+# Search general docs
+curl -s http://localhost:8080/mcp -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_knowledge","arguments":{"query":"data protection GDPR","collection":"pb_general","top_k":3,"agent_id":"my-agent","agent_role":"analyst"}}}'
+```
+
+Present results grouped by collection or merged by relevance to the user's question.
+
+## Access Control Behavior
+
+The search pipeline enforces access silently. Documents above the agent's clearance are **filtered out without error** — the response simply contains fewer results. A `viewer` searching `pb_general` will only see `public` documents, even if the collection contains `internal` and `confidential` ones. You may receive fewer than `top_k` results because of policy filtering.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Empty results | Wrong collection | Try all 3 collections |
+| `allowed: false` | Role too low for classification | Use higher role or search `public` docs |
+| Connection refused | MCP server not running | `docker compose up -d mcp-server` |
+| Timeout on search | Ollama embedding slow (CPU) | Wait, or check `docker logs pb-ollama` |
+| Reranker scores missing | Reranker unhealthy | Works without it (graceful fallback) |

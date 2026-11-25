@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/rodos4312/meu-agent (path: optional-skills/gaming/minecraft-modpack-server/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Host modded Minecraft servers (CurseForge, Modrinth)."

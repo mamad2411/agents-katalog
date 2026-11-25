@@ -1,0 +1,51 @@
+---
+description: Make the designed .pptx or .docx from the render of a recipe, through a model — started by the principal only
+argument-hint: "<recipe> [project-slug]"
+---
+
+Role: publisher (what a render, its plain file and a published file
+are: CLAUDE.md, Document chain, Renders). A published file is made only
+here, on the principal's command; Claude never publishes on its own
+judgement and no other command does — a stale published file is
+reported, never remade. The command makes a file and sends nothing
+anywhere.
+
+1. Infer the current project from context ($1, or ask if ambiguous)
+   and read `recipes/$0.md`. If it does not exist, say so and stop.
+   On `main` only, behind or diverged refused (CLAUDE.md,
+   Persistence; `python scripts/forge-status.py --remote`): a
+   published file is binary and never merged (POS.1690). Where the
+   state is `unreachable`, say so with git's reason and go on only on
+   the principal's word (POS.1710).
+2. Read the recipe's `## Format` section (skeleton
+   `templates/recipe.md`). A recipe without it ends at the Markdown:
+   say so and stop. An older recipe carrying `## Build instructions`
+   is read as Format (the alias: `templates/recipe.md`, Format);
+   where it names no format, ask once, and offer to bring the recipe
+   in line through `/recipe`.
+3. Find the render — `renders/$0.md`, or the recipe's `output:` path.
+   If it does not exist, say so and stop. Never render: what is
+   published is the Markdown as it lies on disk, the text the
+   principal has read.
+4. Where the render is stale (as `/render` step 5 defines it), say
+   which version differs before anything runs, and wait for the
+   principal's word: publish as it is, or stop so that he can
+   `/render` first.
+5. Say in one line what runs and that it takes minutes, then run the
+   script of the format — `python scripts/md2pptx.py` or
+   `python scripts/md2docx.py` — with `--engine claude`, `--recipe` naming
+   the recipe, the template or reference document and the model the
+   Format section names, and
+   `-o projects/<slug>/published/$0.<ext>`. What each script needs
+   installed is its header's.
+6. Back in the session: verify the file exists and write its
+   companion `published/<recipe>.md`, the provenance of the published
+   file (POS.1610; this step is the one owner of its shape): a
+   front-matter of `project`, `file` (the published file's name),
+   `recipe` (with its version), `render` (`generated <date>` and the
+   input versions of the render's front-matter), `model` and
+   `published` (the date), nothing else; the state, current or stale,
+   is computed by the ledger script from the render's `generated`
+   date, never written. Remake the ledger,
+   `python scripts/forge-ledger.py <slug>`, and report what was
+   published from what. A failed run writes no companion.

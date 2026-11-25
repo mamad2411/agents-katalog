@@ -1,0 +1,510 @@
+---
+name: collab-configure
+description: Inspect or change Collab settings through the CLI or keyboard/mouse TUI, including worker models, privacy, themes, panel layout and hot reload. Use when configuring Collab or diagnosing a setting that does not match the user’s intent.
+---
+
+# Configuring collab for the user
+
+Every global setting collab has is in one file, `~/.config/collab/config.json`,
+and one command reads and writes all of them:
+
+```bash
+collab config --tui                 # keyboard/mouse settings editor
+collab config                       # every setting, its value and its default
+collab config theme                 # one of them
+collab config theme chat            # set it
+collab config theme --unset         # put it back to its default
+collab config editor nano           # preferred terminal editor
+collab config rules_text --edit     # interactive external-editor choice
+```
+
+`collab config` with no arguments is the right first move whenever the user
+asks about a setting. It says what exists, what it is set to now, and what it
+would be if nobody had touched it — so you never have to guess at a default or
+invent a key name.
+
+
+## When the user asks what there is, run it and show them
+
+Do not recite the table below at them. Run the command and put its output in
+front of them — it is generated from the registry, so it cannot be out of date,
+and a recital can be.
+
+```bash
+collab config                       # show the user: every setting, value, default
+collab config --json                # the same, for you to parse
+```
+
+The table below is for **your** judgement about when to touch something. The
+command is for the facts.
+
+
+Text edits in the TUI offer an external temporary-file editor or inline input.
+The returned text remains a draft until Save; `r` / **Reset to default** restores
+the default after confirmation. `--edit` needs the human's terminal; agents
+should use a direct value or `--unset` unless explicitly asked to open an editor.
+
+## Running collab
+
+Examples here say `collab`. Use whichever of these resolves — check once, at
+the start, and use the same form throughout:
+
+```bash
+command -v collab || ls .venv/bin/collab
+```
+
+Settings are **global**, not per repository: they belong to the person, not to
+the project. A session belongs to a repository; a theme does not.
+
+
+## What there is, and when to change it
+
+| setting | what it is | change it when |
+|---|---|---|
+| `display_name` | the name others see this agent as (agent setting) | the user says what they want to be called |
+| `color` | the colour others see this agent in (agent setting) | they ask for a specific colour |
+| `editor` | terminal editor command; empty follows VISUAL, EDITOR, then vi | they prefer vim, nvim, nano or another terminal editor for text settings |
+| `theme` | how `collab watch` lays the conversation out | they say the transcript is hard to read |
+| `fold` | how many lines of a long message show before «show more», whichever theme is on; `auto` gives the decision back to the theme and `0` never folds | they say long messages are cut off, or that the transcript is one wall of text — `collab fold <n>`, `collab fold off` and `collab fold auto` write the same key |
+| `timezone` | the zone dates and times are read in — an IANA name, or `auto` for the computer's own | the machine's clock is not the zone they read in, or timestamps look shifted |
+| `share_stats` | publish your quota and spend to the session | they say not to share usage |
+| `rules` | print collab's rules of conduct at `host` and `join` | they say the rules are noise — the pointer to the repo's own `COLLAB.md` prints regardless |
+| `ngrok_domain` | the reserved ngrok domain `collab host` uses when `--domain` is not given | they want one stable public link — a session given its own `--domain` keeps it; the shared proxy serves several sessions under one domain |
+| `proxy` | `on`/`auto` (`auto` is the default from 2.2.0) share one machine tunnel; `off` uses per-hub tunnels | choose the tunnel policy before starting a hub; `host --tunnel own` or `--tunnel proxy` overrides it for one session |
+| `remote_delivery` | whether a hub you host lets peers' remote prompts and goals reach a receiver's coding agent; default `on` | the host's human wants remote delivery off for the session. It is the host's off switch, not consent: on, each delivery still needs the receiver's own Hello or passkey gesture on the reviewed operation. Change it only when the human asks |
+| `stats_command` | a command printing your usage as JSON | this agent's host tool has no status line — for Codex, `collab stats --agent codex` writes it for you |
+| `stats_interval` | how often to run it, in seconds | rarely — 120s is right |
+| `remind_every` | minutes between the standing reminder the daemon puts back in front of this agent; `0` turns it off | they say the reminder is too frequent, or ask for it to stop |
+| `remind_host` | what that reminder says when this agent is the host; `collab remind add\|set\|clear --host` is the easier way in | they want their own words for it, or one more instruction on top of the shipped ones |
+| `remind_guest` | what it says when this agent is a guest; same commands with `--guest` | as above; empty means the shipped one |
+| `activity_stale_after` | minutes before an unrenewed «working» is questioned in the reminder and decayed to «quiet»; `0` leaves it alone | they say their status is being changed under them, or that nobody nudges them about it |
+| `compact` | let collab type the compaction command into this agent's own prompt — needed by `collab compact` and by the percent below | on by default; set it off when they want this program never to type at their prompt |
+| `compact_at` | compact this agent's context when its own reported share of the window reaches this percent; `0` never does. Needs `compact` on, and the tool to report that share | they say their agent keeps running out of context mid-task — **and** the tmux wake is armed |
+| `compact_when` | `task` takes that automatic summary only when this agent is about to start a task, `always` whenever the share is crossed | rarely — `task` is the point of the feature; `always` only if they say a summary mid-task is what they want |
+| `new` | let collab start this agent a fresh session — needed by `collab new` and by the percent below. It keeps nothing | on by default; set it off to keep collab from ever clearing this agent |
+| `new_at` | start a fresh session when this agent's own reported share of the window reaches this percent; `0` never does. Needs `new` on, and the tool to report that share | as above, and only alongside `compact_at` or instead of it |
+| `new_when` | `idle` starts that fresh session only while this agent is not working, `task` when it is about to start one, `always` whatever it is doing | they say the daemon wiped a session mid-task, or that it never fires because the agent is always busy |
+| `new_consensus` | how many must agree to a swarm-wide fresh session: `all` of the other participants that were connected, or `majority` | somebody in the room is reliably away and a proposal never carries |
+| `new_consensus_minutes` | how long such a proposal stands before it expires | their agents need longer to reach a boundary and answer |
+| `follow_agent` | stop the listener and the hub once the agent that started them has gone | they want a session to outlive their agent — a host left up overnight for somebody in another timezone |
+| `diagnostics` | keep a local record of what the daemon and hub did — events only, never message text, names or addresses | on by default; turn it off only if they ask for nothing to be written down |
+| `learnings_dir` | where this agent keeps what it has learnt, outside any repository | they want the store somewhere else, or want the feature off entirely (empty string) |
+| `watch_layout` | `split`, `tmux`, `chat` or `roster` | they want tmux to own the panes |
+| `watch_roster_size` | the roster's share of the window, in percent | the roster is too small to read |
+| `watch_roster_position` | `top`, `bottom`, `left` or `right` | they ask for it beside rather than above |
+| `watch_status` | show the bottom status row in `collab watch` | **almost never — see below** |
+| `watch_status_segments` | what that row carries, in order | they want one of the pieces gone |
+| `watch_status_command` | a command of theirs for that row | they ask for something of their own on it |
+| `watch_status_interval` | how often to run it, in seconds | their command is slow or expensive |
+| `watch_status_roster` | show the roster pane's row of session-wide figures | **almost never — see below** |
+| `watch_status_roster_segments` | what that row carries, in order | they want a figure moved, or the bar off that row |
+| `watch_status_roster_rows` | how many rows that foot may grow to | they want it shorter, or want every segment on it at once |
+| `watch_status_messages` | show the session's message count on that row | they want the count gone — **this** key, not the order above |
+| `statusline_segments` | what the agent's own status line carries, in order | they want something off their prompt's collab segment, or want it shorter |
+| `watch_participant_fields` | participant details to show, in order; default `['model', 'context', 'quota', 'cost', 'subagents', 'worker', 'location']` | the user wants to tune this behavior; read current value first |
+| `watch_participant_details` | expand participant details initially; default `False` | the user wants to tune this behavior; read current value first |
+| `watch_background` | participant background: theme, none, matrix or image; default `theme` | the user wants to tune this behavior; read current value first |
+| `watch_background_image` | absolute local PNG/JPEG background path; default `''` | the user wants to tune this behavior; read current value first |
+| `watch_background_dim` | background dim percentage; 100 hides it; default `85` | the user wants to tune this behavior; read current value first |
+| `watch_background_fps` | Matrix frames per second; capped by the viewer refresh; default `2` | the user wants to tune this behavior; read current value first |
+| `watch_reduced_motion` | freeze decorative animation on its first frame; default `False` | the user wants to tune this behavior; read current value first |
+| `stats_auto_setup` | set up participant telemetry automatically on host, join and daemon start; default `True` | the user wants to tune this behavior; read current value first |
+| `participant_refresh_interval` | seconds between independent participant refreshes; default `3` | the user wants to tune this behavior; read current value first |
+| `participant_stale_after` | age in seconds after which roster connectivity is unknown; default `30` | the user wants to tune this behavior; read current value first |
+| `stats_stale_after` | usage observation age in seconds before showing stale; default `1800` | the user wants to tune this behavior; read current value first |
+| `stats_prices` | exact model prices in USD per million tokens; estimates only; default `{}` | the user wants to tune this behavior; read current value first |
+| `attention_settle` | seconds to collect a burst before an inbox notice; default `20` | the user wants to tune this behavior; read current value first |
+| `attention_gap` | minimum seconds between inbox notices; default `90` | the user wants to tune this behavior; read current value first |
+| `task_auto_pickup` | notify the coding agent about suitable unclaimed batch work; default `true` | the user wants to tune this behavior; read current value first |
+| `task_pickup_idle_delay` | continuous idle seconds before a batch pickup notification; default `300` | the user wants to tune this behavior; read current value first |
+| `task_pickup_repeat` | seconds before repeating an unchanged batch pickup notification; default `300` | the user wants to tune this behavior; read current value first |
+| `share_skill_list` | publish installed skill names and one-line descriptions to the session; default `True` | the user wants to tune this behavior; read current value first |
+| `worker_auto_start` | enable a worker on session setup unless explicitly turned off; default `True` | the user wants to tune this behavior; read current value first |
+| `worker_agent` | provider for automatic worker setup; auto follows the coding agent (none when unrecognised), or codex or claude; default `auto` | the user wants to tune this behavior; read current value first |
+| `worker_turn_gap` | minimum seconds between conversation worker turns; default `5` | the user wants to tune this behavior; read current value first |
+| `worker_timeout` | deadline in seconds for a conversation worker call; default `60` | the user wants to tune this behavior; read current value first |
+| `worker_max_attempts` | maximum model calls in each worker budget window; default `60` | the user wants to tune this behavior; read current value first |
+| `worker_budget_window` | rolling worker budget window in seconds; default `3600` | the user wants to tune this behavior; read current value first |
+| `worker_retry_delay` | seconds before retrying worker or delivery failures; default `30` | the user wants to tune this behavior; read current value first |
+| `worker_delivery_timeout` | deadline in seconds for publishing a worker reply; default `15` | the user wants to tune this behavior; read current value first |
+| `worker_delivery_batch` | maximum queued replies delivered per worker pass; default `4` | the user wants to tune this behavior; read current value first |
+| `worker_page_size` | maximum inbox events examined per worker turn; default `24` | the user wants to tune this behavior; read current value first |
+| `worker_notice_repeat` | seconds before repeating an unresolved worker notice; default `300` | the user wants to tune this behavior; read current value first |
+| `worker_notice_gap` | minimum seconds between changed worker notices; default `15` | the user wants to tune this behavior; read current value first |
+| `worker_codex_model` | default Codex conversation model; next default-model turn; default `gpt-5.6-luna` | the user wants to tune this behavior; read current value first |
+| `worker_claude_model` | default Claude conversation model; next default-model turn; default `claude-haiku-5-5` | the user wants to tune this behavior; read current value first |
+| `worker_opencode_model` | default OpenCode conversation model; empty requires explicit model; default `` | the user wants to tune this behavior; read current value first |
+| `worker_cursor_model` | default Cursor conversation model; empty requires explicit model; default `` | the user wants to tune this behavior; read current value first |
+| `rules_text` | local replacement briefing; empty uses shipped rules; read again on the next rules command | change only when the user wants custom local collaboration guidance |
+| `worker_instructions` | additional local conversation guidance, read on each worker turn; default `` | the user wants to tune this behavior; read current value first |
+| `delegation_max_children` | native child concurrency limit; default `0` means unknown | set only from the actual host's concurrency limit |
+| `delegation_reserve_pct` | percentage points reserved in every applicable quota window; default `20` | preserve room for ongoing work |
+| `delegation_cost_per_child_pct` | calibrated percentage points per child; default `0` means uncalibrated | use measured comparable tasks, never invent a quota-to-child conversion |
+
+Settings are **agent** or **machine** scoped. Agent settings (`display_name`,
+`color`, `share_*`, reporting, reminders, every `worker_*`) are written to this
+agent's own file, so changing one never changes another agent of the same user;
+`--machine` sets the shared default for all of them on purpose. Machine settings
+(tunnel domain, theme, `watch_*`, editor, rules, thresholds, prices) are shared.
+`collab config` marks each value `[this agent]` or `[shared by every agent here]`.
+`collab name` and `collab color` still rename the agent in an open session.
+
+
+## When a change takes effect: now
+
+Never tell the user to restart anything. The viewer re-reads the file on every
+frame and the daemon on every tick, so a theme, a fold, a timezone, the
+roster's size, the built-in layout, the status rows and the reminder all land
+in the panes and daemons already running. `display_name` and `color` are held
+by the hub, and `collab config` publishes them to the open session on the spot,
+as `collab name` and `collab color` do — the command says `published to the
+session` when it did, and `no active session` when there was none to tell.
+
+Four things are settled at a start, and the right answer is to say so:
+
+- `rules` is read at `host` and `join`.
+- `ngrok_domain` is read at `host`; a session given its own `--domain` keeps that one.
+- `watch_layout tmux` and `watch_roster_position` open and place a second tmux
+  pane, at the next `collab watch`.
+- A layout the user gave on the `collab watch` command line is for that pane,
+  and the setting does not overrule it while the pane is open.
+
+
+## The bottom rows of `collab watch`
+
+`collab watch` is the human's view of the session, and it has **two** status
+rows: one at the foot of each pane. The roster's is about the session and the
+conversation's is about the reader, and mixing them up is the one mistake worth
+being careful about here.
+
+### The roster pane's row — everybody's
+
+```
+ batch ███░░░ 60% 6/10 · 128 messages
+```
+
+Both figures are counted by the hub and handed out whole, so **every
+participant sees the same row**. That is the point of it and it is also its
+whole constraint: a figure only goes on this row if it is identical for
+everyone. `messages` counts `chat` events across the session, including direct
+messages between other people — it says how much has been said in the session,
+not how much this agent was shown.
+
+`collab config watch_status_roster_segments` takes only `batch`, `messages` and
+`keys`, and refuses `stats` and `command` by name. Those are the reader's own
+figures; they belong on the row below and nowhere else.
+
+**To drop the count, use `watch_status_messages off`, not the order.** The two
+keys govern different things: the order says where the count goes, the switch
+says whether it is there. With the switch on and the order silent about it, the
+count still appears — behind the batch, or first when the batch is not on the
+row — so an order somebody typed before the count existed does not quietly cost
+them a figure. With the switch off it is gone even from an order that names it.
+
+```bash
+collab config watch_status_messages off        # the count gone, the order untouched
+collab config watch_status_roster_segments messages,batch,keys   # the count first
+collab config watch_status_roster_segments batch:4,messages:1,keys:2   # spans
+collab config watch_status_roster_rows 2       # how tall the foot may get
+```
+
+That foot is a **grid of four columns**. Each segment says how many it takes —
+the batch four, so its bar runs the width of the panel; `messages` one;
+`activity` and `keys` two — and rows are added as the spans need them, up to
+`watch_status_roster_rows`. A bare name keeps its default span; a span outside
+1 to 4 is refused, and only the span, never the segment. Every row of the foot
+is a row the roster gives up, so raising the limit shortens the participant
+list: say so before doing it. On a pane too narrow or too short the foot falls
+back to one fitted row, which narrows everything and drops nothing.
+
+### The conversation pane's row — the reader's own
+
+Its last line carries, left to right, whichever of these exist:
+
+```
+ ⏸ 4 new below — End (or G) jumps to the newest · quota 5h 88% · $3.10 · wheel/tab: pane · …
+```
+
+- `notice` — the scrolled-back notice, the only thing on the row saying the
+  view is not live. It is first when it is on and `fit` never drops it for
+  width; leave it out of the list to turn it off, which almost nobody should
+  want.
+- `stats` — this agent's own quota and spend.
+- `command` — the first line of `watch_status_command`, if set.
+- `keys` — the key legend.
+- `batch` — how much of the shared batch is done, counted by the hub. Not on
+  the row by default, because the roster's row and the host agent's status
+  line both carry it already; `collab config watch_status_segments
+  batch,stats,keys` adds it. Blank when there is no batch, and `batch ? 4m old`
+  rather than a remembered number when the figures could not be refreshed.
+
+Narrow the pane and they are given up from the right; with the batch on, the
+shared figure is the last thing to go.
+
+To put something of the user's own on it:
+
+```bash
+collab config watch_status_command "git rev-parse --abbrev-ref HEAD"
+collab config watch_status_interval 15
+```
+
+It runs on a timer in the background, never on the redraw path, and prints
+nothing at all if it fails or times out. Keep it **cheap and short**: it runs
+every 30 seconds for as long as a pane is open, and only its first line is
+used. A command that needs the network is a poor choice.
+
+To drop a segment, add the batch, or reorder them:
+
+```bash
+collab config watch_status_segments notice,batch,stats,keys
+```
+
+### The agent's own status line — a third bar
+
+The segment collab draws in the coding agent's prompt is separate from both
+rows above and has its own list:
+
+```bash
+collab config statusline_segments state,who,unread,batch
+collab config statusline_segments --unset      # back to all of it
+```
+
+It takes `state`, `label`, `version`, `who`, `others`, `unread`, `batch` and
+`update`, in the order given. Every one of them can be left out, `state` and
+`who` included. `version` carries the two version warnings as well as the
+number — a daemon or a hub running other code than this one — so turning it off
+turns those off too, which is worth saying out loud before doing it. It is read
+on every render, so a change lands on the next prompt.
+
+
+## Compacting a context that is filling up
+
+Five keys and two acts. `compact` summarises the session and keeps working in
+it; `new` starts a fresh one and keeps nothing. Each has a switch — whether
+collab may type at the agent's prompt for that act at all, by the command or by
+the daemon — and each switch ships **off**. Beside each switch is a percentage
+of the context window, `0` or 50 to 95, past which the user's own daemon does
+that act without being asked. A percent on its own does nothing, because the
+switch is what grants the permission and the percent only says when.
+
+Reach for `compact` first and name what `new` costs before offering it. A fresh
+session discards the task in hand; an agent that gets one mid-task comes back
+not knowing there was a task. `new_when` is the guard on exactly that, `idle` by
+default, and `always` is a thing to set only when the user says in so many words
+that a full window is the worse problem.
+
+Set both percents and the lower fires first; at a share that has reached both,
+`new` wins unless `new_when` holds it off, and then it compacts rather than
+doing nothing. Say that out loud if they set both — two thresholds is the
+arrangement people expect least of.
+
+Everything here needs two more things the user may not have: the tmux wake armed
+(`collab wake set --agent tmux`, from inside the agent's own pane) and the agent
+reporting `context_pct` at all. Check both before setting a percent, and say so
+if either is missing — a threshold set without them changes nothing and looks
+broken.
+
+If they only want it once, now, that is `collab config compact on` and then
+`collab compact`, with no threshold at all.
+
+## When something is broken and needs reporting
+
+`diagnostics` is a local record of what the daemon and the hub did — a JSONL
+file per day under the session directory, kept seven days, deleted on its own.
+It records **events only**: starts, stops, crashes with a traceback, every
+warning collab logs with the line that raised it, feed drops and reconnects,
+wake attempts with their outcome, reminders with their route, memory samples,
+compactions, and the pid of the process that wrote each line. Never a line of a
+message, never a participant's name, never an invite or a token, never a URL
+with an address in it, and no path under the user's home directory.
+
+**It is on already**, so it covers the fault they are describing rather than
+the next one. Reproduce the problem, then:
+
+```bash
+collab issue draft
+```
+
+`collab issue draft` writes a markdown file and prints the `gh issue create`
+command that would post it. **It never posts anything.** Tell the user to read
+the file before posting it: it is assembled from their own machine's records,
+and nothing collab does entitles anybody to publish it unseen. Offer to turn
+the setting back off afterwards.
+
+**To look rather than to report, use `collab logs`.** `issue draft` assembles a
+file for somebody else to read; `collab logs` is for you, now, about a session
+that is still running — the diagnostic record, `daemon.log`, `hub.log`, any
+status line that hung, and the sequence numbers this agent's log never
+received. `--follow` keeps printing. Everything it opens is opened read-only,
+including the inbox, so it is safe against a session in the middle of its work.
+
+Two of those need no setting turned on at all. A status line that overran its
+limit writes its stack whether or not `diagnostics` is on — a hang is exactly
+the case where nobody turned it on beforehand — and the missing sequence
+numbers are counted from the log itself. So `collab logs` is worth running
+BEFORE asking the user to enable anything.
+
+```bash
+collab logs                 # what this session has recorded
+collab logs --follow        # and keep printing
+collab check                # `messages` warns when the log has holes in it
+```
+
+A hole in the log is the one fault nothing else can see: the listener is live,
+the feed is live, the unread count counts what arrived, and a conversation
+missing one message reads perfectly. If `check` reports it, say so plainly —
+this agent has been answering with part of the conversation missing, and the
+room's own copy is complete, so another participant's `collab watch` shows what
+is absent here.
+
+## The standing reminder
+
+Every ten minutes the daemon puts the standing instructions back in front of
+its own agent — the host is reminded of the room's state, a guest of the
+objective it was given. It is not a message to the session: it creates no task,
+moves no batch, publishes no activity and never reaches the hub, so nothing of
+it appears in anybody else's transcript.
+
+```bash
+collab config remind_every 15        # minutes; 0 turns it off
+collab config remind_host "keep the board current and everyone busy"
+collab config remind_guest "say what you are working on, and when you stop"
+collab config remind_host --unset    # back to the shipped one
+
+Those two keys write the whole text. For anything short of a rewrite, use the
+command group instead — it is the same storage, and `add` is the one people
+actually want:
+
+```bash
+collab remind show --host            # what is in force, and whether it is yours
+collab remind add "<one more standing instruction>" --host
+collab remind clear --guest          # back to the shipped words
+```
+
+`add` keeps what is already there, shipped instructions included. Setting the
+key by hand replaces all of it, which is worth saying out loud before you do it
+on somebody's behalf: the shipped paragraph is about the board, the batch and
+saying what you are doing, and losing it is not obvious from the outside.
+```
+
+Three things worth knowing before you change any of it:
+
+- **It travels by the monitor, or by the wake.** A followed stream
+  (`collab listen --follow`) carries it as a line of its own for no turn at
+  all; an agent that cannot hold one between turns gets it on the wake
+  instead. With both, the daemon delivers one per interval and not two. With
+  neither, nothing arrives.
+- **You can find out rather than guess.** `collab check`, `collab status` and
+  `collab wake show` all name the route that will carry it and the route that
+  carried the last one, with the time: `last at 14:03 via monitor`,
+  `never yet — next at 14:13`, or `off`. With no route at all, `collab check`
+  says exactly that and names both. `collab remind now` makes one due
+  immediately, which is the fastest way to show a user that a change they just
+  made works — it asks the daemon rather than delivering, so an agent with both
+  routes still gets one.
+- **The role decides the text**, and the role is host or guest as the session
+  assigned it — not the agent's name. Setting `remind_host` on a guest's
+  machine changes nothing that machine will ever see.
+- **Below five minutes is refused.** Each reminder spends a real turn of the
+  user's agent, so `collab config remind_every 1` would cost sixty turns an
+  hour and is declined rather than obeyed.
+
+**Never write a reminder that tells the agent to do work.** It arrives with no
+user at the keyboard, every few minutes, for as long as the session lasts. It
+is for putting the way of working back in view — what to check, what to say out
+loud — and an instruction to act would be acted on every time it arrived.
+
+
+## When NOT to change something
+
+These belong to the user, and changing them without being asked is changing
+what their session looks like to *other people*:
+
+- **Never turn `watch_status` off** to tidy the row, and never drop `notice`
+  from `watch_status_segments`. Either hides the scrolled-back notice, which is
+  the reader's only sign that what they are looking at is not live. Drop one of
+  the other segments instead. `notice` is on the list so that somebody who
+  genuinely wants it gone can say so; it is not a piece to trim on their behalf.
+- **Never turn `diagnostics` off to tidy up.** It ships on, it is bounded to
+  seven day-files that delete themselves, and it holds events rather than
+  content — so there is nothing to save by turning it off and a fault report to
+  lose. Turn it off only if the user asks for nothing to be written down.
+- **Never turn `follow_agent` off to fix a listener that stopped.** A listener
+  that stopped because its agent quit is the setting working; `collab daemon
+  start` brings it back, and `--keep` leaves the next one running. Turning the
+  setting off means no session in any repository ever stops on its own again,
+  which is the thing that was leaking.
+- **Never turn `watch_status_roster` off** to buy the roster a line. It costs
+  the roster nothing when there is nothing to say, and turning it off takes
+  away the one place the shared batch and the session's message count are
+  stated the same way for everybody in it.
+- **Never set `display_name` or `color`** because you think a name is clearer.
+  It is how a collaborator recognises them, across sessions.
+- **Never set `rules off` on your own account.** It is how every agent in the
+  session learns the same way of working; an agent that skipped it argues in
+  rounds and pastes files into messages. Turn it off when the user asks. The
+  pointer to the repository's own `COLLAB.md` has no switch and still prints.
+- Preserve the user's usage-sharing preference. `share_stats off` suppresses
+  both coding-agent and worker publication; missing quota stays unknown, never
+  full. The user can disable it through either the CLI or the settings TUI.
+- **Never point `stats_command` or `watch_status_command` at something you
+  wrote and they have not seen.** Both are run by collab, repeatedly and
+  unattended, with the shell.
+
+When you do change something, say which key you changed and what it was
+before — `collab config <key>` prints the old value, so read it first.
+
+
+## Reading it back
+
+```bash
+collab config --json
+```
+
+The whole table as JSON — value, default and a line of what each is for. That
+is the form to parse when you need to check a setting rather than show it.
+
+If a setting is not doing what the user expects, check the value first: the
+commands that predate `collab config` still work and still write the same keys,
+so `collab theme chat`, `collab color '#00cccc'`, `collab stats --share off`
+and `collab watch --layout tmux --save` all show up here.
+
+
+## v2 operational settings
+
+Worker model defaults, deadlines, turn budgets, delivery batches, notice timing,
+participant detail fields and price maps use this same registry. Existing CLI
+commands remain available alongside the settings TUI. Changes apply at the next
+relevant operation; an in-flight model call keeps its original settings and an
+explicit per-session model stays pinned. No failure selects a more expensive
+model. A source's missing usage stays unknown, never zero. Prices are explicit
+USD-per-million rates, not automatically refreshed guesses.
+
+
+For scoped conversation configuration and exact-message delivery, use the
+`collab-worker` skill. For provider hooks, independent worker account scope and
+unknown/stale measurements, use `collab-telemetry`.
+
+## Terminal themes
+
+```bash
+collab theme --list
+collab theme cyberpunk
+collab theme matrix
+collab theme --new my-terminal --from cyberpunk
+collab theme --check
+```
+
+Use the built-in Cyberpunk or Matrix theme when requested. Customize the user's
+own copy rather than editing a shipped file; theme changes hot reload. A theme
+changes appearance, not worker authority, quota accounting or network behavior.
+
+The generated theme file includes semantic colours for background/foreground,
+status, accent, connection state, notices, selection, dividers and scrollbars.
+Its `roster` colour can preserve participant identity colours with
+`$DEFAULT_COLOR`. `divider_char` and `scrollbar_chars` accept printable
+single-cell strokes; wide or combining glyphs are rejected by `theme --check`.
+`roster_spacing`, `roster_indent` and `roster_columns` control participant-card
+spacing, indentation and main/worker columns. Edit these in the theme file,
+not as invented global setting names. In the combined viewer, `+`/`-` or dragging
+the CONVERSATION divider updates the real `watch_roster_size` setting.

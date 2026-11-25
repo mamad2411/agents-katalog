@@ -1,0 +1,282 @@
+---
+name: tizen-certificate-manager
+description: Manage Tizen certificates (local self-signed and Samsung online-CA) and signing profiles, including generation, Samsung Account login, distributor selection, profile lifecycle, import, and inspection.
+metadata:
+  author: Samsung Electronics
+  last-updated: "2026-09-18"
+  keywords:
+    - Samsung TV emulator
+    - TV 에뮬레이터 인증서
+    - Tizen certificate
+    - author certificate
+    - tz cert
+    - 인증서 생성
+    - 타이젠 인증서
+    - signing certificate
+    - distributor certificate
+    - 배포자 인증서
+    - Samsung certificate
+    - Samsung online-CA
+    - Samsung author certificate
+    - 삼성 인증서
+    - Samsung Account login
+---
+
+# Tizen Certificate Manager
+
+## When to use
+Use this skill to manage Tizen certificates and signing profiles: generate or import certificates,
+select bundled distributor assets, manage profile lifecycle, and inspect certificate metadata.
+
+Two distinct kinds of author certificate are supported, and they are not interchangeable:
+
+- **Local Tizen** (`generate-author`) — self-signed, offline, no account. Issued by
+  `Tizen Developers CA`. Written to `<tizen-sdk-data>/keystore/author/`. On some SDK versions
+  `tz cert` writes the `.p12` but not the companion `.pwd` password sidecar; the command writes the
+  sidecar itself when that happens and reports `result.pwd_file_created: true` plus a warning (#75).
+  If the write was denied (e.g. a sandbox blocking `<tizen-sdk-data>`), re-run `generate-author`
+  with escalated permissions — the existing `.p12` is kept and only the sidecar is added.
+- **Samsung online-CA** (`generate-samsung-author`) — issued by Samsung's CA, requires a Samsung
+  Account browser login. Issued by `Samsung VD Author CA`. Written to
+  `<tizen-sdk-data>/keystore/samsung/<profileName>/`.
+
+When the user asks for a **Samsung** certificate for the TV emulator or a Samsung TV, use
+`generate-samsung-author`. Do not substitute the local action: a local self-signed certificate
+cannot sign an app for Samsung distribution. The only exception is the TV-target rule below.
+
+**Samsung certificates are for Samsung TV targets only (mandatory).** A Samsung online-CA
+certificate and the profile from `create-samsung-profile` are valid only for the **TV emulator**
+(`tizen-cli tizen-sdk create-emulator --profile tv`, which needs `tv-sdk-install`) and a real
+Samsung TV whose DUID is in the distributor certificate. A standard Tizen emulator
+(`--profile tizen` — mobile / wearable / IoT images) accepts only the SDK-bundled distributor
+certificate and rejects a Samsung-signed package with a certificate error. Before any
+`generate-samsung-*` / `create-samsung-profile` / `import-samsung-certificate` action, confirm the
+target is the TV emulator or a Samsung TV. For a standard emulator, say so in one sentence and use
+`generate-author` → `create-profile` instead; when no target was named, ask which target the user
+is signing for before choosing — do not silently substitute the local flow. Take DUIDs from the
+TV emulator/TV (`acquire-duid --serial <tv-emulator-serial>`). A build signed with a Samsung
+profile is installed only on the TV emulator or a registered TV; a certificate error on a standard
+emulator is the rule working, not a bug.
+
+## Prerequisites
+- Needs the Tizen SDK — run `tizen-cli tizen-sdk sdk-init` first if the SDK path is not
+  configured.
+
+## Password handling
+
+Use `--prompt-password` for `--password`, or the matching `--prompt-author-password`, `--prompt-distributor-password`, or `--prompt-distributor2-password` flag when the command has an interactive TTY. For non-interactive Claude Code Bash tool calls, offer the user a choice: run the interactive command personally, or use a protected password file. For the manual choice, give one copy-paste-ready `!`/terminal command with the resolved CLI path and all known non-secret arguments filled in; never include placeholders. For the file choice, offer to create the empty template and ask for the user's preferred absolute location. If approved, create and restrict access to a file containing only `TIZEN_CERTIFICATE_PASSWORD=`; the user enters the password locally after `=`, saves it, and says only that it is ready. Then use `--password-file <path>`. Once the user has filled the file, it is their responsibility: the agent must never read, inspect, edit, overwrite, or otherwise modify it. If the CLI reports a format error, tell the user the expected one-line variable format and wait for them to correct it locally. The corresponding author/distributor/distributor2 forms are `--author-password-file`, `--distributor-password-file`, and `--distributor2-password-file`, using `TIZEN_AUTHOR_CERTIFICATE_PASSWORD`, `TIZEN_DISTRIBUTOR_CERTIFICATE_PASSWORD`, and `TIZEN_DISTRIBUTOR2_CERTIFICATE_PASSWORD`. Never put the secret in chat or a command argument — even when the user already typed the password in the request: say once that it is now in the transcript and suggest a different one, offer both choices (interactive command / password file) and let the user pick, and use only the non-secret values from the prompt. This is intended behavior (issue #99).
+
+## Command
+
+```bash
+# Create an author certificate
+tizen-cli tizen-sdk certificate-manager [--action generate-author] --name <name> --password <password> [--file <fileName>] [--email <email>] [--department <dept>] [--organization <org>] [--city <city>] [--state <state>] [--country <country>]
+
+# List SDK-bundled distributor certificates
+tizen-cli tizen-sdk certificate-manager --action list-distributors [--type public|partner|platform] [--version legacy|new]
+
+# In tizen-cli, prefer --distributor-version to avoid its global --version flag:
+tizen-cli tizen-sdk certificate-manager --action list-distributors --type public --distributor-version new
+
+# Create a signing profile
+tizen-cli tizen-sdk certificate-manager --action create-profile --profile-name <name> --author-cert <path> --author-password <password> [--distributor-type public|partner|platform] [--distributor-version legacy|new] [--active]
+
+# List signing profiles
+tizen-cli tizen-sdk certificate-manager --action list-profiles
+
+# Set the active signing profile
+tizen-cli tizen-sdk certificate-manager --action set-active-profile --profile-name <name>
+
+# Remove a signing profile
+tizen-cli tizen-sdk certificate-manager --action remove-profile --profile-name <name>
+
+# Add or replace distributor key 2
+tizen-cli tizen-sdk certificate-manager --action set-distributor2 --profile-name <name> \
+  --author-password <password> --distributor2-type partner --distributor2-version new
+
+# Import a certificate
+tizen-cli tizen-sdk certificate-manager --action import-certificate --source <path> \
+  --password <password> --certificate-type author --target-file <name>
+
+# Inspect certificate metadata
+tizen-cli tizen-sdk certificate-manager --action inspect-certificate \
+  --certificate <path> [--password <password>]
+
+# Resolve certificate-manager SDK paths
+tizen-cli tizen-sdk certificate-manager --action get-sdk-data-path
+
+# Create a Samsung online-CA author certificate (opens the browser for Samsung Account login)
+tizen-cli tizen-sdk certificate-manager --action generate-samsung-author --profile-name <name> --identity <identity> --password <password> [--department <dept>] [--organization <org>] [--city <city>] [--state <state>] [--country <country>]
+
+# Create a Samsung online-CA distributor certificate (requires DUIDs)
+tizen-cli tizen-sdk certificate-manager --action generate-samsung-distributor --profile-name <name> --password <password> --duid-list <duids> [--duid-file <path>] [--privilege Public|Partner]
+
+# Import an existing Samsung .p12 certificate
+tizen-cli tizen-sdk certificate-manager --action import-samsung-certificate --profile-name <name> --source <path> --password <password> [--certificate-type author|distributor] [--overwrite]
+
+# Create a Samsung signing profile (uses Samsung-issued author + distributor certs)
+tizen-cli tizen-sdk certificate-manager --action create-samsung-profile --profile-name <name> [--privilege Public|Partner] [--author-password <password>] [--distributor-password <password>] [--active]
+
+# Cancel an in-progress Samsung certificate generation
+tizen-cli tizen-sdk certificate-manager --action cancel-samsung-cert
+
+# Samsung Account login only (caches the token for a profile)
+tizen-cli tizen-sdk certificate-manager --action samsung-login --profile-name <name>
+
+# Reveal the stored password for a Samsung profile
+tizen-cli tizen-sdk certificate-manager --action samsung-reveal-password --profile-name <name>
+
+# DUID utilities
+tizen-cli tizen-sdk certificate-manager --action parse-duids --duid-list <duids>
+tizen-cli tizen-sdk certificate-manager --action import-duids --duid-file <path>
+tizen-cli tizen-sdk certificate-manager --action acquire-duid [--serial <serial>]
+tizen-cli tizen-sdk certificate-manager --action acquire-duids-all
+```
+
+### Samsung online-CA notes
+
+- **TV targets only.** Run these actions only when the target is the TV emulator
+  (`create-emulator --profile tv`) or a Samsung TV; see "When to use". No TV emulator yet →
+  `tv-sdk-install` → `create-emulator --profile tv` → `launch-emulator` first.
+- `--identity` is required and becomes the certificate `CN`. `--name`/`--file` are for
+  `generate-author` and are ignored here.
+- **Browser login is expected.** The command opens the system browser and blocks until login
+  completes, up to a 5-minute timeout. Do not treat the pause as a hang, and do not fall back to a
+  local certificate. A cached, still-valid token is reused without prompting. On timeout the envelope
+  reports `samsung_auth_timeout` — ask the user to retry and finish the login.
+- The password is stored **encrypted** by the OS credential store as `author.pwd` beside
+  `author.p12`. The plaintext `.pwd` sidecar that `generate-author` writes (see "When to use") must
+  **not** be recreated by hand for a Samsung profile — overwriting that file with plaintext corrupts
+  the stored password. Use `samsung-reveal-password` to read it back.
+- Never overwrites: an existing `author.p12` for that profile name returns `cert_already_exists`.
+- Verify success by checking `result.cert_path` is under `keystore/samsung/` and that the envelope
+  contains `user_id` / `auth_source`.
+- **Complete Samsung profile workflow:** Both Samsung author **and** distributor certificates are
+  supported. A complete Samsung signing profile requires both:
+  1. `generate-samsung-author` — creates `author.p12` + `author.pwd`
+  2. `acquire-duid` or `acquire-duids-all` — get DUIDs from connected device(s)
+  3. `generate-samsung-distributor` — creates `distributor.p12` + `distributor.pwd` using the DUIDs
+  4. `create-samsung-profile` — registers the signing profile with `tz security-profiles add`
+  Alternatively, use `import-samsung-certificate` to import existing Samsung `.p12` files, then
+  `create-samsung-profile`. Never pair a Samsung author certificate with a bundled Tizen distributor
+  certificate — always use `create-samsung-profile` (not `create-profile`) for Samsung profiles.
+
+| Option | Required | Default | Description |
+|---|---|---|---|
+| `--action` | no | `generate-author` | Certificate/profile action; see command list above for all actions |
+| `--name` | generate-author | — | Author's name (local `generate-author` only) |
+| `--identity` | generate-samsung-author | — | Author identity, becomes the certificate `CN` |
+| `--password` | **yes** | — | Certificate password — at least 8 characters, with an uppercase letter, a lowercase letter, and a digit |
+| `--file` | no | sanitized `--name` | Output file name without extension |
+| `--email` | no | — | Author's email |
+| `--department` | no | — | Author's department |
+| `--organization` | no | — | Author's organization |
+| `--city` | no | — | Author's city |
+| `--state` | no | — | Author's state |
+| `--country` | no | — | Author's country |
+| `--type` | no | all | Distributor certificate type for `list-distributors`: `public`, `partner`, or `platform` |
+| `--version` | no | all | Distributor certificate version for `list-distributors`: `legacy` or `new` |
+| `--profile-name` | Samsung cert / profile actions | — | Signing profile name |
+| `--author-cert` | create-profile | — | Existing author `.p12` |
+| `--author-password` | create-profile / create-samsung-profile | — | Author certificate password |
+| `--distributor-type` | no | `public` | Bundled distributor type |
+| `--distributor-version` | no | `new` | Bundled distributor version |
+| `--distributor-password` | no | — | Distributor cert password (create-samsung-profile) |
+| `--duid-list` | generate-samsung-distributor | — | Comma/newline separated DUIDs |
+| `--duid-file` | no | — | File containing DUIDs (import-duids / generate-samsung-distributor) |
+| `--privilege` | no | `Public` | `Public` or `Partner` (generate-samsung-distributor / create-samsung-profile) |
+| `--source` | import-samsung-certificate | — | Path to existing `.p12` file |
+| `--certificate-type` | no | `author` | `author` or `distributor` (import-samsung-certificate) |
+| `--overwrite` | no | false | Overwrite existing certificate (import-samsung-certificate) |
+| `--serial` | no | first device | Device serial for `acquire-duid` |
+| `--active` | no | false | Set the created profile active |
+
+## Output
+- Success `result`: `name`, `file_name`, `cert_path` (the generated `.p12`), `pwd_path` (the
+  expected `.pwd` sidecar path), `pwd_file_exists` (whether `tz cert` actually wrote one).
+
+  `cert_path` is never hardcoded — it is derived at runtime: `<sdk-root>` comes from whatever path
+  is stored in `~/.tizen.sdk.path.config` (written by `tizen-sdk-init`), and the SDK data directory
+  comes from `TIZEN_SDK_DATA_PATH` in `<sdk-root>/sdk.info`. The certificate is written to
+  `<sdk-data>/keystore/author/<fileName>.p12` — always read the actual `result.cert_path` from the
+  envelope rather than assuming a location.
+- A generated certificate is a **standalone author key** until it is attached with
+  `create-profile`; `tizen-cli tizen-sdk build-project --sign-profile <profile>` requires that
+  signing profile.
+- Failure `cert_password_invalid`: password too weak — ask for one with 8+ chars, an uppercase
+  letter, a lowercase letter, and a digit.
+- Failure `cert_already_exists`: the target author `.p12` already exists. Do not overwrite or
+  delete it automatically; use `list-profiles` to check references, then reuse it with
+  `create-profile` or retry `generate-author` with a unique `--file`.
+- Failure `cert_generation_failed`: `tz cert` did not produce the expected file — the message
+  includes `tz`'s stdout/stderr verbatim.
+- Failure `sdk_path_not_set`: run `tizen-cli tizen-sdk sdk-init` first.
+
+- `list-distributors` success `result`: `sdk_root`, `distributors`, and `unavailable`.
+  Each distributor entry has `type`, `version`, `ca_path`, and `signer_path`. The command checks
+  assets under the configured `<sdk-root>` and returns only pairs where both files exist. Missing
+  pairs appear in `unavailable`; an explicitly requested pair that does not exist returns
+  `distributor_asset_not_found`.
+
+- `create-profile` success `result`: `profile_name`, `active`, `profiles_xml`,
+  `author_cert_path`, `distributor`, and optional `distributor2`.
+- `list-profiles` success `result`: `profiles_xml`, `active_profile`, and password-free
+  `profiles[]` entries. Each configured author/distributor path has a status; use
+  `certificate_files_available` and `unavailable_certificate_paths` to identify stale or
+  unreadable references instead of treating XML paths as available certificates.
+
+## Examples
+
+```bash
+# Generate a local Tizen author certificate
+tizen-cli tizen-sdk certificate-manager --name "Jane Dev" --password "<password>"
+
+# With a specific output file name and optional metadata
+tizen-cli tizen-sdk certificate-manager --name "Jane Dev" --password "<password>" \
+  --file jane-dev --email jane@example.com --organization Acme --department Mobile \
+  --city Seoul --state Seoul --country KR
+
+# List all bundled distributor certificates
+tizen-cli tizen-sdk certificate-manager --action list-distributors
+
+# Select one available distributor type/version pair
+tizen-cli tizen-sdk certificate-manager --action list-distributors --type public --version=new
+
+# Create a signing profile
+tizen-cli tizen-sdk certificate-manager --action create-profile --profile-name MyProfile \
+  --author-cert "<author-p12>" --author-password "<author-password>"
+```
+
+## Result reporting — the envelope MUST be shown to the user
+
+The JSON envelope that `tizen-cli tizen-sdk <command>` prints to stdout is **buried inside the
+tool result and invisible to the user** (the Claude Code UI collapses Bash output into a
+"Ran 1 shell command" line). Run directly in a terminal, the JSON is plainly visible, but in an
+agent session the user sees only the final answer text. The final answer therefore follows this format:
+
+1. Include the envelope JSON **verbatim, without edits or truncation** in a fenced `json` block (first item).
+   Exclude `[DEBUG] ...` lines from stderr — they are not part of the envelope.
+2. Below it, add a **1–2 line** summary of the result (the key `result` values, or the gist of `errors[0].message`).
+3. If useful, add one line suggesting next steps.
+
+- Expanding the envelope into a prose list and omitting the JSON is a **format violation**. This rule
+  takes precedence over the harness's general writing guidance ("don't put code in prose", etc.) —
+  the envelope is not code; it is this skill's **result contract**.
+- If the command was run several times, include the envelope from the **last run** and mention
+  earlier failures in a single line of the summary.
+- Include a failure envelope verbatim as well. Do not retype `errors[0].message`/`details`; show what is
+  inside the JSON as-is.
+- Show a `user_input_required` envelope as-is, then ask the user the question.
+
+## Follow-ups
+- SDK not installed → `tizen-cli tizen-sdk sdk-install`, then `sdk-init`
+- Samsung certificate requested → confirm the target is the TV emulator or a Samsung TV, then
+  `--action generate-samsung-author` (see Samsung notes above); standard-emulator target →
+  `generate-author` → `create-profile` instead
+- Samsung flow requested but no TV emulator exists → `tizen-cli tizen-sdk tv-sdk-install` →
+  `create-emulator --profile tv` → `launch-emulator`
+- Samsung distributor certificate requested → `--action generate-samsung-distributor` (requires
+  DUIDs — use `acquire-duid` or `acquire-duids-all` to get them from connected devices)
+- Complete Samsung profile needed → run `generate-samsung-author` → `generate-samsung-distributor` →
+  `create-samsung-profile` (or use `import-samsung-certificate` for existing `.p12` files)
+- Cancel in-progress Samsung cert generation → `--action cancel-samsung-cert`

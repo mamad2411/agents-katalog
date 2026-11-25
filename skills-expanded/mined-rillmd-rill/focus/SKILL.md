@@ -1,0 +1,218 @@
+---
+name: focus
+description: Start (or resume) a Rill workspace from a theme, journal file, or workspace id. Automatically collects related vault context and creates a workspace/{id}/ directory for an interactive Deep Think session. Use when the user wants to begin or continue a workspace-scoped exploration.
+gui:
+  label: "/focus"
+  hint: "Start a focus session from this file"
+  match:
+    - "**/*.md"
+    - "workspace/**/*.html"
+  arg: path
+  order: 10
+  mode: live
+---
+
+# /focus — Workspace Start / Resume
+
+**Conduct all conversation with the user — and write all generated output — in the language defined by `.claude/rules/personal-language.md`** (or the user's input language if that file is absent). Follow the language rules in full — exceptions and translation quality are defined in the Language Rules of `.claude/rules/rill-core.md` and the vault's `personal-*.md` overrides, never restated per skill. The English instructions below are for skill clarity, not for output style.
+
+> **Tool references in this skill** (`Read`, `Edit`, `Grep`, `Glob`, `AskUserQuestion`, `shell`) describe **intent**, not Claude-specific tool calls. Each harness should map them to its native equivalent — Claude Code uses its built-in tools as named (Read / Edit / Grep / Glob / AskUserQuestion / Bash); Codex CLI uses `apply_patch` / `--search` / shell / its own question primitive as appropriate.
+
+Starts (or resumes) a workspace from a theme or file. Automatically collects related information and builds a workspace in `workspace/`, then begins an interactive session.
+
+## Arguments
+
+$ARGUMENTS — one of the following:
+- Theme text (e.g., `voice input optimization`) → Start a new workspace
+- Journal file path (e.g., `inbox/journal/2026-02-13-1950.md`) → Start new workspace from that journal
+- workspace/ path or id (e.g., `workspace/2026-02-13-rill-development/` or `rill`) → Resume existing workspace
+- Workspace artifact path — a file inside a workspace, `.md` **or** `.html` (e.g., `workspace/2026-02-13-rill-development/003-analysis.md`, `.../004-ui-mock.html`) → Resume the parent workspace with that artifact as the session's focal target (see Phase 0). An explicit `.html` artifact path is first-class here — never fall through to treating it as theme text
+- Omitted → Propose resuming active workspaces if any, otherwise ask for theme
+
+**Not accepted**: task file paths (`tasks/{slug}/_task.md`, or the legacy `tasks/{slug}.md`). ADR-077 retired task-originated /focus. If the user passes a task path, return an error immediately and suggest `/solve {slug}` instead — tasks are executed in place now, not through a workspace (ADR-076).
+
+## Procedure
+
+### Phase 0: Workspace Identification
+
+1. If argument is a `workspace/` path (the directory, or a file inside one) or an existing workspace id:
+   - For a file path inside a workspace (`workspace/{id}/...`, `.md` or `.html`), resolve the **parent workspace directory** first (the path segment directly under `workspace/`) and record the named file as the session's focal artifact for Phase 3:
+     - `.md` artifact → Read it on resume as usual
+     - `.html` artifact with a same-basename `.md` twin → the HTML is derived; Read the `.md` twin instead
+     - `.html` artifact with no `.md` twin (HTML-canonical, e.g. a UI mock) → Read the HTML file itself on resume — it is the only record of that artifact's state (`rill-html-output.md` principle 3)
+     - A path under `workspace/{id}/.view/` (derived snapshot) → do not Read it; just resume the workspace (snapshots are disposable read-moment renders regenerable from the MD sources)
+   - Read the metadata file in that directory (priority: `_workspace.md` > `_session.md` > `_project.md`)
+   - `status: active` → Resume workspace → Go to Phase 3
+   - `status: completed` or `status: distill-pending` → Ask "This workspace is closed (completed / waiting for distillation). Would you like to reopen it?" via the harness's question primitive. Yes → run `rill workspace reopen {id}` (never Edit `status`), go to Phase 3. Exit 3 means a distill run is in progress — tell the user to retry after it ends
+   - `status: on-hold` (legacy) → Ask "This workspace is on hold. Would you like to resume it?" via the harness's question primitive. Yes → `rill workspace reopen {id}`, go to Phase 3
+   - `status: active` with `snooze-until` → resume as usual; mention what it was waiting for (`snooze-reason`) and offer `rill workspace unsnooze {id}`
+2. If argument is omitted:
+   - Scan all directories directly under `workspace/` (exclude `daily`)
+   - Search for `_workspace.md` OR `_session.md` OR `_project.md` with `status: active`
+   - If active workspaces found, display the list and ask the user whether to resume or create new
+   - If no active workspaces, ask "What would you like to think about?"
+3. If argument starts with `tasks/` (either new `tasks/{slug}/_task.md` or legacy `tasks/{slug}.md`):
+   - Exit immediately with: "Task-originated /focus was retired by ADR-077. Tasks execute in place now — run `/solve {slug}` to work on this task, which writes artifacts directly under `tasks/{slug}/`. If you want a standalone Deep Think surface, start `/focus <theme>` with a theme (not a task path)."
+   - Do not create a workspace, do not Read the task file
+4. If argument is text or a journal path:
+   - Search for related existing workspaces (match on directory name, tags, _workspace.md body)
+   - If related workspace found, ask "An existing workspace exists. Resume or create new?"
+   - If creating new → Phase 1
+
+### Phase 1: Context Collection
+
+Automatically collect information related to the theme:
+
+1. **Bulk search**: Extract 2-3 keywords from the theme and run a single cross-cutting Grep:
+   ```
+   Grep(pattern="{keyword}", glob="{knowledge,inbox,workspace,reports,tasks}/**/*.md",
+        output_mode="files_with_matches", head_limit=30)
+   ```
+   - pages/ is excluded from search targets
+   - If results contain both inbox/{type}/ and inbox/{type}/_organized/ with same filename, use only the `_organized/` version
+2. **Supplementary search**: Only if bulk search didn't find sufficient related files, run additional Grep on individual directories
+3. Organize collection results for inclusion in Phase 2's `_workspace.md`
+
+### Phase 2: Workspace Construction
+
+1. Create directory:
+   - `workspace/{YYYY-MM-DD}-{topic-name}/` (today's date + kebab-case topic name)
+2. Generate `_workspace.md` via `rill mkfile` (LLMs must never write `created` by hand — ADR-060):
+   ```bash
+   rill mkfile workspace --slug {YYYY-MM-DD}-{topic-name} --type workspace
+   ```
+   This creates `workspace/{YYYY-MM-DD}-{topic-name}/_workspace.md` with `created` (ISO 8601, auto-assigned), `type: workspace`, `id`, and `status: active` already populated. Then Edit the file to fill in the remaining frontmatter fields (`name`, `icon`, `origin`, `tags`) and the body:
+
+```markdown
+---
+created: {auto-assigned by rill mkfile — do not edit}
+type: workspace
+id: {YYYY-MM-DD}-{topic-name}
+name: {Topic title}
+status: active
+icon: "{one emoji}"
+origin: (path of origin journal. Omit for theme-specified starts)
+tags: [related-tags]
+---
+
+# {Topic Title}
+
+(Theme overview. Why think about this, context)
+
+## Issues to Consider
+- [ ] Issue 1
+- [ ] Issue 2
+- [ ] Issue 3
+
+## Related Files (MOC)
+- [Filename](path) — Brief description
+- [Filename](path) — Brief description
+
+## Session History
+- {YYYY-MM-DD}: Session started. (overview)
+
+## Next Steps
+- [ ] First action
+```
+
+**`icon` (required for new workspaces)**: one emoji that identifies the workspace at a glance in the GUI (workspace cards, the thread header, the sidebar's Today roster). Pick it from the topic itself (e.g. a telescope for a vision piece, a receipt for bookkeeping, a bed for a mattress purchase), not a generic mark. Avoid emojis already used by active workspaces so they stay distinguishable — list them first:
+
+```bash
+grep -l '^status: active' workspace/*/_workspace.md | xargs grep -h '^icon:'
+```
+
+Write it quoted (`icon: "🔭"`); a single emoji only (no text, no spaces).
+
+3. The first deliverable file (`001-{description}.md`) is generated naturally during the conversation (not auto-created at session start)
+
+### Phase 3: Interactive Phase
+
+After session start (or resume), interact with the following flow:
+
+1. Display the metadata file (`_workspace.md` / `_session.md` / `_project.md`) contents to user (overview, issues, next steps)
+2. On resume, collect additional context:
+   - Read deliverables within the workspace — `.md` files only; skip derived HTML (regenerable from MD sources) and `_distill.md` (the machine-written distill record; `rill workspace distill show {id}` summarizes it). Read an HTML file only when it is the canonical artifact the resumed work targets, or the user explicitly points at it (`rill-html-output.md` principle 3)
+   - Related information from knowledge/notes/ based on tags
+   - Recent relevant entries from inbox/journal/
+   - Related reports from reports/ (newsletters, dailies, etc.) (ADR-061)
+3. Proceed with interactive deep-dive with user
+4. **File-first principle** for deliverables:
+   - **Use `rill mkfile` for file creation** (ensures timestamp accuracy):
+     ```bash
+     rill mkfile workspace/{workspace-id} --slug {description} --type {type}
+     ```
+     Then use Edit to append body to the output path (frontmatter is pre-generated)
+   - type: `progress` | `research` | `analysis` | `decision` | `review`
+   - **Write to file** (if any of the following apply):
+     - Analysis, research, investigation results
+     - Reports, surveys, comparison tables
+     - Decisions and their rationale
+     - Frameworks, design proposals, recommendations
+     - Structured output of 3+ paragraphs
+   - **Keep as text output** (don't create a file):
+     - Confirmations, questions, short suggestions (1-2 paragraph conversational exchanges)
+     - Direction discussions or brainstorming in progress
+     - Summary previews before file save (when getting user confirmation)
+   - When in doubt, write to file. The workspace's purpose is to leave traces of thinking for knowledge reuse
+5. Update `_workspace.md` (or `_session.md`) at each conversation milestone:
+   - Add new deliverables to "Related Files (MOC)"
+   - Update checkboxes for completed issues
+   - Append progress to "Session History"
+   - Update "Next Steps"
+   - **Do NOT change `status`** — never transition the workspace to `completed` or `distill-pending` from /focus. See the Rules section below for the completion protocol. If the user decides to wait on something with a date, record it with `rill workspace snooze {id} --until YYYY-MM-DD --reason "..."`
+
+### Decision digest at judgment points (read-moment HTML)
+
+/focus is the producer of the "decision point during a live session" read moment (`rill-html-output.md`, "When HTML Is Generated"). The trigger is qualitative: **the moment you ask the user to read one or more artifacts and make a judgment** — typically when you would otherwise list several `.md` paths for the user to open and integrate mentally before deciding. Routine confirmations and short single questions are not judgment points.
+
+At a judgment point, generating a decision digest is the default behavior:
+
+1. **Author a one-page decision digest** that re-expresses the relevant artifacts for this one decision, following the shared design language (`.claude/commands/_view/design-language.md`). Structure: what you are asking the user to decide → the argument supporting it → links to the full source artifacts. Layer, not delete, digest-scoped: the page carries the decision-relevant argument; **completeness is satisfied by linking** — the MD sources are the retained full-detail layer, so do not replicate whole artifacts into the page (design language, Authoring Procedure step 2). The digest must not carry substantive information absent from its sources (`rill-html-output.md` principle 4); if a load-bearing explanation is missing from them, write it into an MD artifact first, then generate.
+2. **Write it as a dated snapshot** to `workspace/{id}/.view/decision-{YYYY-MM-DD}.html` (append `-2`, `-3`, ... for further judgment points the same day). The file carries no frontmatter, is written directly (not via `rill mkfile`), is self-contained (inline styles, no external network dependencies), and opens with a provenance comment `<!-- generated from {md_paths} @ {timestamp} by /focus -->`. **Never regenerate or overwrite an existing snapshot** — a later read moment gets a new file; each snapshot stays correct as the decision material of its moment. `.view/` is gitignored, so snapshots are disposable: the judged content and the decision record live in MD.
+3. **Present the digest path as the primary reading surface** instead of enumerating raw `.md` paths; keep the source paths available beneath it (inside the digest, and after it in the conversation).
+4. **Skip line**: if the user says Markdown is fine (or asks to skip), present the `.md` paths directly and stop generating digests for the rest of the session unless asked again.
+5. **Failure is non-fatal** (`rill-html-output.md` principle 8): if generation fails, fall back to presenting the `.md` paths — never block the session on the digest.
+
+## Deliverable File Frontmatter
+
+```yaml
+---
+created: 2026-02-16T17:30+09:00
+topic: {topic-name}
+type: research
+---
+```
+
+## Rules
+
+- **Never edit `status` in /focus**. Workspace status changes only through `rill workspace` subcommands, and only `rill workspace complete` writes `completed` — after the distill record verifies (ADR-073 distillation runs in `/close` Stage 2). If the user signals that the session is done, or you judge the workspace has reached its completion conditions, **propose running `/close`** (e.g., "This workspace looks ready to close. Shall I hand off to /close? Distillation follows in the night job.") rather than touching the status. The only transitions /focus performs are the Phase 0 reopen paths (`rill workspace reopen`) and `rill workspace snooze` / `unsnooze` on request
+- **File-first principle**: Save analytical/report-type output to files. Leave them as workspace files, not assistant text output. The workspace's value lies in accumulated deliverables
+- **Never modify inbox/journal/ and inbox/*/ original files** (read-only)
+- Workspace files use numbered `NNN-description.md` naming
+- `_workspace.md` (or `_session.md`) is continuously updated as the session progresses
+- Once created, deliverable files are generally not modified (additions/corrections go in new files)
+- When active workspaces exist, prioritize proposing resume
+- Include frontmatter in all files (exception: generated HTML files carry no frontmatter and are written directly, not via `rill mkfile` — see `rill-html-output.md`)
+- Prefer `_organized/` version when same-named file exists
+- **Note metadata correction (ADR-046 D46-7)**: When reading knowledge/notes/ files, handle in two modes:
+  **Mode A — Direct fix** (no AI judgment needed, 1-2 Edits per fix, < 100ms):
+  1. If frontmatter `tags` contain deprecated tags (tags in taxonomy.md's "Deprecated Tags" table), remove via Edit
+  2. If frontmatter `tags` contain entity IDs (values matching filenames in knowledge/{people,orgs,projects}/), remove from `tags` and add to `mentions` in typed format (`{type}/{id}`) (skip if already in mentions. ADR-053)
+  **Mode B — Append to .refresh-queue** (no AI judgment, detection only. < 10ms):
+  Append file paths matching any of the following to `knowledge/.refresh-queue` (only if not already present):
+  - `tags` is empty array `[]`
+  - `tags` has only 1 tag and that tag is a current mega-tag (usage exceeds the /inspect split threshold `max(60, 2.5 x median tag usage)`; reuse the latest `eval/metrics/` tag_balance median when available)
+  - `mentions` field does not exist
+  - `related` field does not exist
+  - `type` is not one of `record` / `insight` / `reference`
+  ※ Mode A + Mode B combined have virtually no impact on main task accuracy/speed. Mode B targets are refreshed in the next /distill Phase 0.5
+- **Backward compatibility**: Properly read workspaces that only have `_session.md` or `_project.md`. Do not rename during Phase 3 interaction
+- **Body link rule**: When referencing files in workspace deliverables or _workspace.md, use `[display name](relative-path)` Markdown links. Backtick-only ID references are prohibited
+
+## Compaction Resilience
+
+Long /focus sessions may trigger automatic context compression (compaction). Handle with:
+
+- **Immediate persistence**: Don't leave analytical output in conversation text — immediately write to workspace files (File-first principle reinforcement)
+- **Regular _workspace.md updates**: Update session history and "Next Steps" every 2-3 conversation exchanges
+- **Context loss recovery**: If previous conversation content feels vague, re-read `_workspace.md` and latest deliverables before continuing

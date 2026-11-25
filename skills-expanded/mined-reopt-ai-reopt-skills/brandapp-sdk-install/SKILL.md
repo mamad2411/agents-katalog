@@ -1,0 +1,104 @@
+---
+name: brandapp-sdk-install
+description: Install @reopt-ai/brandapp-sdk in a consumer project. Sets up Auth, OAuth, EAV (incl. 4.2 optimistic concurrency / atomic increments / TTL and the 4.4 page limit), Plans checkout, Files, analytics bridge, the 4.5 platform/workspace client, API routes, and env config. Triggers on "brandapp-sdk install", "brandapp-sdk init", "brandapp sdk setup", "brandapp sdk bootstrap", "apply SDK", "brandapp integration", "brandapp files setup", "brandapp checkout setup", "platform API client", "workspace client".
+target: "@reopt-ai/brandapp-sdk"
+targetMinVersion: "4.6.0"
+---
+
+# Brandapp SDK Install
+
+> This is NOT the SDK you know. Read `node_modules/@reopt-ai/brandapp-sdk/docs/` before writing code (the package ships docs at top-level `docs/`, not `dist/docs/`). Heed deprecation notices — 2.0 renamed every env var without aliases; 3.0 rewrote the webhook contract and blocks `clientSecret` in the browser; **4.0 moved to Better Auth 1.7** (no client plugin, new callback path). `docs/migration.md` stops at `2.x → 3.0.0`, so read the package `CHANGELOG.md` for 3.1–4.6. Install from `latest` (4.6.0); the `next` tag's `4.7.0-rc.*` (machine credentials, step-up login, `better-auth ^1.7.7`) is not covered here — install it only on an explicit request, and then follow its own `README.md` / `docs/machine.md`.
+
+## When to apply
+
+A consumer project adopting `@reopt-ai/brandapp-sdk` for the first time. Triggers: "install", "init", "setup", "bootstrap", "apply SDK", "brandapp integration" against `@reopt-ai/brandapp-sdk`.
+
+## Step 1 — Pin agent rules into AGENTS.md / CLAUDE.md
+
+Source of truth for the rules block: the module's own agent-rules file, once it ships one. `@reopt-ai/brandapp-sdk` does **not** ship one as of 4.6.0, so use the fallback `agent-rules.md` bundled with this skill.
+
+Append to the consumer's `AGENTS.md` (fall back to `CLAUDE.md` if `AGENTS.md` is absent — never both). Wrap the content between:
+
+```
+<!-- BEGIN:reopt/brandapp-sdk-agent-rules -->
+…content from source above…
+<!-- END:reopt/brandapp-sdk-agent-rules -->
+```
+
+**Idempotent:** if the markers already exist, replace only the content between them. **Never touch text outside the markers** — the consumer's own rules live there.
+
+## Step 2 — Consumer-side setup (this skill owns; docs cannot)
+
+These are properties of the consumer project, not the module. They will not appear in the module's `docs/`.
+
+1. **Public npm registry** — no token or scoped `.npmrc` entry is required. Inspect the project `.npmrc` and `npm config get @reopt-ai:registry`; if the scope still resolves to GitHub Packages, remove only the legacy project entry `@reopt-ai:registry=https://npm.pkg.github.com` before installing. Preserve unrelated registry/auth settings, and ask before changing user/global npm config.
+
+2. **Env namespace (2.0+)** — 3 tiers, no aliases for renamed vars:
+
+   | Prefix | Owner | Purpose |
+   |---|---|---|
+   | `BRANDAPP_*` | Consumer | Credentials (`BRANDAPP_CLIENT_ID/SECRET`, `BRANDAPP_ID`, `BRANDAPP_WEBHOOK_SECRET`) |
+   | `REOPT_*` | Platform | Host overrides only (`REOPT_BASE_URL`, `REOPT_ID_BASE_URL`) |
+   | `BRANDAPP_SDK_*` | Consumer | Behavior toggles (`BRANDAPP_SDK_DEBUG`, `BRANDAPP_SDK_LOG_FORMAT`) |
+   | `NEXT_PUBLIC_BRANDAPP_*` | Browser | Public subset (e.g. `NEXT_PUBLIC_BRANDAPP_EAV_HASH`) |
+
+   Pre-2.0 `REOPT_CLIENT_*` / `REOPT_BRANDAPP_ID` / `REOPT_WEBHOOK_SECRET` / `REOPT_SDK_*` are gone. Migrate `.env` before bumping.
+
+   **3.0 — no `clientSecret` in the browser.** `NEXT_PUBLIC_BRANDAPP_CLIENT_SECRET` is forbidden; `createReoptSDK` / `createBrandappProvider` throw `CONFIG_BROWSER_SECRET` if a `clientSecret` reaches a browser. Client-side SDK: mint a short-lived scoped token server-side (`POST /api/v1/brandapp/{id}/token/mint`) and construct with `{ brandappId, token }` (token-only config — `clientId`/`clientSecret` optional when `token` is set). Server-side `clientId`+`clientSecret` is unchanged.
+
+3. **Peer deps** — every peer is declared optional, so npm will not install one for you. Using Auth means adding **`better-auth@^1.7.4`** yourself (the 4.6 peer range; 4.0–4.5 declared `^1.7.1`): 4.0 is built on 1.7 and does **not** work with 1.6 or below, so bump the SDK and `better-auth` in the same change. Others as needed: `@ai-sdk/provider >=4.0.0`, `@tanstack/react-query >=5.0.0`, `hono >=4.0.0`, `react >=18`, `@reopt-ai/opt-editor >=1.0.0`, and **`zod >=4.0.0`** when the 4.5 `@reopt-ai/brandapp-sdk/workspace` subpath is used (that subpath is its only consumer). The 4.1 `@reopt-ai/brandapp-sdk/analytics` subpath (`startBrandappAnalytics(sdk)`) peers on **`@reopt-ai/data-sdk >=0.1.1`** — that exact package name, even though npm marks it deprecated in favour of `data-sdk-client`; do not substitute the client package, and install it only when that subpath is used.
+
+4. **4.0 auth migration order (do this before bumping)** — Better Auth 1.7 serves the Reopt callback at `${BETTER_AUTH_URL}/api/auth/callback/reopt` (1.6 used `/api/auth/oauth2/callback/reopt`). Reopt's own system brandapp clients have both registered; a **self-registered** redirect URI must add the new path in the studio **first** (exact match), or sign-in breaks on upgrade. Then rewrite call sites: delete `createReoptOAuthClient()` (1.7 has no client plugin), `signIn.oauth2({ providerId })` → `signInWithReopt(authClient, { callbackURL })`, `oauth2.link()` → `linkReoptAccount(authClient)`.
+
+5. **Optional dev-mode bootstrap** — `npx @reopt-ai/cli brandapp init` scaffolds the offline dev server (see `reopt-brandapp` skill). It does **not** create `.env.local`, `lib/sdk.ts`, `lib/auth.ts`, auth route handler, or webhook route — those remain this skill's responsibility.
+
+## Step 3 — Route to module docs
+
+For everything else (code generation, API surface, version-specific behavior, error handling), route to module docs. Do **not** duplicate API surface here — read the file. Module docs are pinned to the installed version; this skill is not.
+
+Paths are relative to `node_modules/@reopt-ai/brandapp-sdk/`. `docs/api-reference.md` is the combined surface (`createReoptSDK`, user-scoped auth, EAV, webhooks, React hooks, AI); the rest are topic files. **Several surfaces have no `docs/` file — route them to the package root instead**, as marked below.
+
+| Task signal | Read |
+|---|---|
+| `createReoptSDK`, user-scoped `sdk.auth` + cross-subdomain session helpers, EAV (`defineSchema`, record-list `select` projection in 3.6; 4.2 `version` + `ifVersion` optimistic concurrency, `increments` atomic number deltas, `expiresAt` TTL, the 10k-row in-memory filter cap → 422 `QUERY_TOO_BROAD`), webhooks (`createWebhookHandler`, timestamp-first `verifySignature`, contact/workflow + subscription lifecycle events), React hooks (`useEavRecords` / `useEavRecord` / `useEavRecordsInfinite`, mutation hooks), AI | `docs/api-reference.md` |
+| `createLazySDK` (`lib/sdk.ts`), typed `sdk.eav.entity()`, auto-pagination, schema sync / drift (`computeEavSchemaHash`, `verifyEavSchema`) | **`README.md`** §§ Lazy SDK Singleton, Type-Safe Entity Client, Auto-Pagination, Schema Sync — `api-reference.md` has none of these; drift env var in `docs/environment.md`. `linkedTo` errors → `docs/errors.md` § EAV-specific; `backfill` → declaration JSDoc of the installed `/eav` export |
+| Token-only client config + server-side token mint (`POST /api/v1/brandapp/{id}/token/mint`), `CONFIG_BROWSER_SECRET` | `docs/migration.md` § `2.x → 3.0.0` — the only doc that covers either |
+| **Better Auth wiring + Reopt OAuth (4.0 / better-auth 1.7)** — `createReoptBetterAuth`, `createReoptOAuth` (`tokenEndpointAuthMethod`, `providerLogout`), `createReoptAdapter`, and the browser helpers `signInWithReopt` / `linkReoptAccount` | **`README.md`** + **`CHANGELOG.md` `[4.0.0]`** — no `docs/` file covers this wiring. The Auth section of `api-reference.md` is the user-token API, a different surface; do not infer the sign-in flow from it |
+| Env vars + 3-tier namespace, host split (`brandapp.reopt.ai` / `id.reopt.ai`) | `docs/environment.md` |
+| Error classes / codes (auth/AI, `QUERY_TOO_LARGE`, Files 402/409/413/415; `RequiredTermsError` is an older-server compatibility path) | `docs/errors.md` |
+| Plans catalog + hosted checkout (`createCheckout` / `getCheckout` / `cancel`): hosted page collects required-terms consent; live payments work whichever provider the server picks (Reopt moved new payments from Paddle to Lemon Squeezy on 2026-10-14 — the SDK call is unchanged), priced live Toss returns `LIVE_MODE_UNSUPPORTED`; cancellation result + subscription webhook semantics | `docs/api-reference.md` + declaration JSDoc resolved from the installed `@reopt-ai/brandapp-sdk/plans` export (the 3.6 docs retain a stale pre-hosted-consent catch example) |
+| Marketing site / CMS (`toMetadata`, `toSitemapItems`, `toRssFeed`, `verifySession`, `optimizeUrl`; `cms` is read-only from 1.8+) | `docs/cms.md` |
+| OIDC Single Logout (3.2+): back-channel receive (`createBackchannelLogoutHandler`, `verifyBackchannelLogoutToken`) + RP-initiated (`buildEndSessionUrl`), `dev.mintLogoutToken` for tests — `@reopt-ai/brandapp-sdk/logout` | `docs/logout.md` |
+| Files (folders, upload/list, rename/move, text preview, usage meter, React hooks) | `docs/files.md` |
+| Terms + consent (`sdk.terms`): `list` / `listWithMeta` (Basic Auth, callable signed-out), `listMyConsents` / `consent` / `withdraw` (Bearer). Terms are **brand-owned** — the same set binds Brandapp and brandfront; `currentVersion.contentRich` is an `EditorSpec` renderable by opt-editor's StaticRenderer | `docs/api-reference.md` § Terms Client (`listWithMeta` is only in the installed `/terms` declaration JSDoc) |
+| Feedback two-way thread (`sdk.feedback`, 3.4+): `create` / `list` / `get` | `docs/api-reference.md` § Feedback Client |
+| Push device tokens (`sdk.push`): `registerDeviceToken` / `unregisterDeviceToken` / `listDevices` — Bearer, self-scoped, no raw tokens returned | declaration JSDoc from the installed `@reopt-ai/brandapp-sdk/push` export — `docs/` has only a one-line entry-point row for this surface |
+| Analytics bridge (4.1): `sdk.analytics.getConfig()` + `startBrandappAnalytics(sdk)` from `@reopt-ai/brandapp-sdk/analytics` — initialises reopt-data collection with the brand's `baseUrl` / `writeKey`, returns `null` when the brand has no Data project | `CHANGELOG.md` `[4.1.0]` + declaration JSDoc from the installed `@reopt-ai/brandapp-sdk/analytics` export — neither `README.md` nor `docs/` mentions it |
+| AI SDK provider (`createBrandappProvider`, `@reopt-ai/brandapp-sdk/ai-provider`) | `docs/api-reference.md` § AI SDK Provider |
+| Platform / workspace API (4.5), **operator-only** — credentials are issued in Reopt superadmin, never self-serve, so do not propose adopting this in a consumer project: `createPlatformClient` from `@reopt-ai/brandapp-sdk/workspace` — **server-only**, `client_credentials` against `platform.reopt.ai`; work tasks + pipelines, webhooks, and the declarative `resources.list()` / `brands` / `brandapps` / `oauthClients` / `eav.applySchema` / `lock.*` surface under scope `workspace:admin`, plus the exported zod schemas | `docs/workspace.md` (new in 4.5) |
+| Dev server (`createDevServer`, `instrumentation.ts`, offline development) | `docs/dev-server.md` |
+| Version migration / breaking changes | `docs/migration.md` for `≤ 3.0.0` — **it has no section past `2.x → 3.0.0`**, so read `CHANGELOG.md` for 3.1–4.6 (hosted checkout, Files, EAV `select`, Better Auth 1.7, analytics bridge, EAV concurrency/TTL, the 4.4 record page limit, the 4.5 platform client, the 4.6 better-auth 1.7.4 bump) |
+| Testing the integration | `docs/testing.md` |
+
+## Safety
+
+- Do not add GitHub Packages auth for `@reopt-ai/*`; the packages are public on npm. Remove only the legacy project-level scope override and preserve unrelated registry settings.
+- Never put `NODE_TLS_REJECT_UNAUTHORIZED=0` in `.env` — script-scope only.
+- `BRANDAPP_ID` is the **brandappId** (app), not the brandId (brand).
+- `BETTER_AUTH_URL` must match the browser-facing origin exactly.
+- `createReoptAdapter` / `createReoptOAuth` / `createReoptBetterAuth` throw in browser runtimes — keep behind `import "server-only"`.
+- Check the resolved `better-auth` before touching `REOPT_ID_BASE_URL`: 1.7.0–1.7.2 namespace accounts by the discovered `issuer`, so a lockfile pinned there must keep it stable across deploys; 1.7.3+ (required by 4.6) keys accounts by `providerId` / `accountId`. On a self-hosted Better Auth database whose schema came from 1.7.0–1.7.2, make `account.issuer` nullable (drop its unique index) before upgrading — 1.7.3+ stops writing it. `createReoptAdapter()` projects need nothing.
+- Do not enable `providerLogout` to "fix" a logout: most Reopt clients may not initiate OP logout and the redirect fails. It needs `enableEndSession` + a registered post-logout URI on the client; otherwise use `@reopt-ai/brandapp-sdk/logout`.
+- Never pass `clientSecret` (or the webhook secret) into client bundles — 3.0 throws `CONFIG_BROWSER_SECRET`; use a server-minted `{ token }` client-side.
+- `expiresAt` (4.2) is an absolute ISO timestamp the **client** computes — clock skew shifts the TTL; an expired record vanishes from reads, `count`, and unique checks before the hourly physical delete, so do not rely on it for audit history.
+- `records.list({ limit })` is capped at 100 from 4.4 and a larger value is a `BadRequestError` before the request — use `RECORDS_PAGE_LIMIT_MAX` / `records.listAll()`, and do not copy older examples that pass `limit: 200`. `cms.posts.list` has the same cap but no SDK check, so the server answers 400; `listAll()` / `backfill()` clamp their page size to 100 silently.
+- **Up to 4.6.0, a non-production run defaults to `brand.reopt.de:3443` / `id.reopt.de:3443` — a domain Reopt does not own** (the dev hosts moved to `*.local.reopt.io` in 4.7.0-rc). `next dev`, tests and scripts without `NODE_ENV=production` resolve it unless overridden, carrying the app credential. When developing against real Reopt set `REOPT_BASE_URL=https://brandapp.reopt.ai` and `REOPT_ID_BASE_URL=https://id.reopt.ai` (or use the offline dev server), and do not follow the `brand.reopt.de:3443` tips in the 4.6.0 `docs/environment.md` / `docs/dev-server.md`.
+- `createPlatformClient` (4.5) is operator-only: `workspace:admin` is issued in Reopt superadmin, so a consumer project cannot adopt it. Where it is already in use it is server-only, its `clientSecret` must never reach a browser or a client bundle, its destructive operations need an explicit human decision, and an issued OAuth secret is returned in plaintext exactly once and must never be logged.
+- The in-memory dev server refuses to start under `NODE_ENV=production` (3.0); only override with `REOPT_DEV_SERVER_ALLOW_PRODUCTION=1` for deliberate offline tests, never a real deploy.
+
+## Verify
+
+1. `npx tsc --noEmit` passes.
+2. (Auth) `curl -I http://localhost:3000/api/auth/ok` → 200.
+3. (Any module) `await sdk.eav.entities.list()` succeeds from a server component. 401 → credentials. 404 → `BRANDAPP_ID`.
+4. (Optional) mirror the `reopt-ai/brandapp-playground` repo's `app/api/health/` + `lib/health-checks.ts` (UI in `app/health/`) for a deploy check — the monorepo copy at `apps/brandapp-playground` was removed.

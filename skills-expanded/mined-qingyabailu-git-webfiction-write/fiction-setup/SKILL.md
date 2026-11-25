@@ -1,0 +1,92 @@
+---
+name: fiction-setup
+description: |
+  网络小说项目初始化。创建标准项目目录结构、初始配置文件(state.json)、
+  设定集骨架。在进入构思(fiction-conceive)前运行。
+  触发方式：/fiction-setup、「建项目」「初始化」「准备写书」「搭环境」「帮我建个项目」「从零开始」。
+---
+# fiction-setup：项目初始化
+
+创建标准项目骨架。只建目录和初始配置文件，不做深度构思。
+构思由 fiction-conceive 完成。
+
+## 执行流程
+
+> 脚本约定：下文的 `SCRIPTS_DIR` 由安装宿主指向本仓库或已安装的 `scripts/` 目录。脚本命令中的 `--project-root` 必须放在子命令之前。
+
+### Phase 1：确认项目目录
+
+```bash
+export PROJECT_ROOT="${CODEX_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+```
+
+- 检查是否已存在 `.novel/state.json`
+- 存在则提示"该项目已初始化，可直接 fiction-start 或 fiction-conceive"
+- 不存在则继续
+- 询问用户书名，生成安全化目录名
+
+### Phase 2：创建标准目录结构
+
+```
+{项目根}/
+├─ .novel/
+│   ├─ state.json            # 初始化时创建，可由后续步骤迁移
+│   ├─ idea_bank.json        # 由 fiction-conceive 填充
+│   └─ tmp/                  # 运行时临时文件
+│
+├─ 设定集/                    # 世界观、角色、力量体系等
+├─ 大纲/                      # 总纲、卷纲、章纲
+├─ 正文/                      # 各章正文
+├─ 追踪/                      # 上下文、伏笔、时间线、角色状态
+├─ 审查报告/                   # review-pipeline 产出
+└─ 拆文库/                    # fiction-analyze 的分析产出
+```
+
+### Phase 3：初始化 state.json
+
+```json
+{
+  "schema_version": 1,
+  "project": {
+    "book_name": "",
+    "genre": "",
+    "target_words": 0,
+    "target_platform": "fanqie",
+    "author": ""
+  },
+  "progress": {
+    "current_chapter": 0,
+    "current_volume": 1,
+    "writing_started": false
+  },
+  "versions": {
+    "baseline_version": 0,
+    "last_review_chapter": 0
+  }
+}
+```
+
+### Phase 4：创建 .novel/active-book
+
+写入当前书目录名，作为多书切换指针。
+
+### Phase 5：输出完成信息
+
+- 列出创建的文件和目录
+- 建议下一步：fiction-conceive（构思）或 fiction-start（如果已有想法）
+
+## 参考
+
+项目骨架由 `scripts/fiction.py --project-root {项目根} init` 实际创建；它还会创建 `追踪/`、`审查报告/`、`拆文库/` 和 `.novel/active-book`。本 skill 不生成不存在的封面工具，也不代替 fiction-conceive 写设定内容。
+扫榜工具 fiction-scan 需要浏览器操作，详见该 skill。
+拆文工具 fiction-analyze 需要提供小说文本，详见该 skill。
+---
+
+## 致谢
+
+本 skill 的开发参考了以下开源项目的思路与实现：
+
+- [lingfengQAQ/webnovel-writer](https://github.com/lingfengQAQ/webnovel-writer)
+- [worldwonderer/oh-story-claudecode](https://github.com/worldwonderer/oh-story-claudecode)
+
+感谢原作者的开源贡献。

@@ -1,0 +1,281 @@
+---
+name: openephemeris-api-reference
+description: Complete endpoint reference for the 140+ Open Ephemeris API endpoints. Use when you need to find the exact endpoint, parameter, or path for an astronomical or astrological computation, or when other skills haven't covered the calculation a user is asking for.
+version: 1.0.0
+updated: 2026-05-23
+---
+
+# Open Ephemeris API Reference
+
+Quick reference for all 140+ endpoints, grouped by family (plus the meta/health routes and three internal ones). Every endpoint works via:
+
+- **MCP `dev_read_api` / `dev_write_api`** with `method` + `path` (for allowlisted endpoints — `find_calculation` looks up the path, inputs and cost)
+- **Direct REST** to `https://api.openephemeris.com` with header `X-API-Key: opene-...` (or `Authorization: Bearer opene-...`)
+
+Always pass `format=llm` (query param or body field) unless raw JSON is requested — reduces tokens ~73%.
+
+## Standard Procedure Reminder
+
+For ANY chart endpoint that takes birth data:
+1. `GET /location/autocomplete?query=<city>` → lat/lon
+2. `POST /timezone/lookup` with `{latitude, longitude}` → IANA timezone string
+3. Build `birth_location` with **latitude, longitude, AND timezone** — all three required
+4. Build `birth_datetime` with `iso` field as local civil time (the engine handles UTC conversion)
+5. Call the chart endpoint
+
+## ACG / Astrocartography (16)
+
+| Method | Path | Tier | Description |
+|--------|------|------|-------------|
+| POST | `/acg/power-lines` | Dev | Planet AC/MC/DC/IC lines globally |
+| POST | `/acg/hits` | Dev | Lines near a target city |
+| POST | `/acg/crossings` | Scale | Where two lines intersect |
+| POST | `/acg/parans` | Scale | Latitude bands where two planets are simultaneously angular |
+| POST | `/acg/midpoints` | Scale | Planetary midpoint lines |
+| POST | `/acg/declination-lines` | Scale | Parallels of declination |
+| POST | `/acg/aspects` | Scale | Where natal planets aspect local angles |
+| POST | `/acg/local-space` | Dev | Azimuthal directions from a reference city |
+| POST | `/acg/hermetic-lines` | Scale | Hermetic Lots projected as lines |
+| POST | `/acg/relational-parans` | Scale | Parans for two-person synastry |
+| POST | `/acg/ccg` | Dev | Cyclocartography time-series |
+| POST | `/acg/ccg/parans` | Scale | Transit parans |
+| POST | `/acg/heatmap/composite` | Enterprise | Composite heatmap |
+| POST | `/acg/features` | Service | Combined ACG feature collection |
+| GET | `/acg/datasets` | Free | Available ACG datasets |
+| GET | `/acg/meta` | Free | ACG engine metadata |
+
+## Calendar (3)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/calendar/astrology/cross-quarter` | Wheel of the Year astronomical cross-quarter dates |
+| GET | `/calendar/astrology/lunar-standstill` | 18.6-year nodal cycle status |
+| GET | `/calendar/astrology/moon-phases` | 8-phase lunar classification |
+
+## Catalogs (3)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/catalogs/bodies` | Supported natal bodies |
+| GET | `/catalogs/fixed-stars` | Fixed-star catalog (paginated) |
+| GET | `/catalogs/fixed-stars/groups` | Fixed-star group identifiers |
+
+## Chinese Astrology (9)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/chinese/zodiac` | Year animal + element |
+| POST | `/chinese/bazi` | Four Pillars of Destiny |
+| POST | `/chinese/bazi/element-balance` | Wu Xing balance + Useful God |
+| POST | `/chinese/bazi/ten-gods` | Ten Gods analysis |
+| POST | `/chinese/bazi/luck-pillars` | Da Yun 10-year luck cycles |
+| POST | `/chinese/bazi/annual-pillar` | Current-year Liu Nian |
+| POST | `/chinese/bazi/solar-terms` | 24 solar terms for a year |
+| POST | `/chinese/bazi/compatibility` | BaZi compatibility between two |
+| POST | `/chinese/bazi/chart` | Rendered Four Pillars chart (SVG/PNG) |
+
+## Comparative / Synastry (5)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/comparative/synastry` | Two-person synastry |
+| POST | `/comparative/composite` | Composite chart |
+| POST | `/comparative/composite/midpoint` | Davison-style midpoint composite |
+| POST | `/comparative/natal-transits` | Transits to a natal chart |
+| POST | `/comparative/overlay` | Bi-wheel overlay visualization |
+
+## Eclipse (6)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/eclipse/next` | Next eclipse (global) |
+| GET | `/eclipse/next-visible` | Next eclipse visible from a location |
+| GET | `/eclipse/solar/global` | Global solar eclipse circumstances |
+| GET | `/eclipse/solar/local` | Local solar eclipse circumstances |
+| GET | `/eclipse/lunar/global` | Global lunar eclipse circumstances |
+| GET | `/eclipse/besselian-elements` | Raw Besselian elements |
+
+## Electional (6)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/electional/moment-analysis` | Full snapshot of the sky at a moment |
+| GET | `/electional/aspect-search` | Active aspects at a moment (Pro) |
+| GET | `/electional/find-window` | Best timing windows in a range (Pro; priced by span, ≤30/60/120 d = 5/8/12) |
+| GET | `/electional/angle-crossings` | When bodies cross AC/DC/MC/IC at a place (Pro; priced by span, ≤1 mo 5 … ≤1 y 12) |
+| POST | `/electional/natal-angle-crossings` | Relocated natal angle crossings (Pro; priced like angle-crossings) |
+| GET | `/electional/station-tracker` | Upcoming planetary stations |
+
+## Ephemeris (38)
+
+### Charts
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/ephemeris/natal-chart` | **Primary natal chart endpoint** |
+| POST | `/ephemeris/natal/batch` | Batch natal calculations, up to 100 (Startup) |
+| POST | `/ephemeris/relocation` | Relocate chart to another city |
+| POST | `/ephemeris/progressed` | Secondary, tertiary, solar arc progressions |
+| POST | `/ephemeris/draconic` | Draconic chart (nodal axis as Aries) |
+| POST | `/ephemeris/harmonics` | Harmonic chart analysis |
+| POST | `/ephemeris/prenatal-lunation` | Pre-birth New or Full Moon |
+
+### Granular calculations
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/ephemeris/planet-position` | Single planet position |
+| POST | `/ephemeris/angles-points` | Angles + points granular |
+| POST | `/ephemeris/house-cusps` | House cusps |
+| POST | `/ephemeris/aspect-check` | Aspects between two longitudes |
+| POST | `/ephemeris/midpoints` | Midpoint tree |
+| POST | `/ephemeris/dignities` | Essential dignities |
+| POST | `/ephemeris/hermetic-lots` | Lot of Fortune, Spirit, etc. |
+| POST | `/ephemeris/fixed-stars` | Fixed-star positions |
+| POST | `/ephemeris/declinations` | Out-of-Bounds declination analysis |
+| POST | `/ephemeris/antiscia` | Antiscia and contra-antiscia |
+| POST | `/ephemeris/dispositor-tree` | Dispositor chain from placements |
+| POST | `/ephemeris/retrograde-status` | Is planet retrograde now |
+
+### Moon
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/ephemeris/moon/phase` | Phase, sign, illumination |
+| GET | `/ephemeris/moon/aspects` | Current Moon aspects |
+| GET | `/ephemeris/moon/ingresses` | Moon sign changes over a range |
+| GET | `/ephemeris/moon/void-of-course` | VoC status |
+| POST | `/ephemeris/lunar-phase` | Phase for a specific datetime |
+
+### Venus star cycle
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/ephemeris/venus-star-points` | Venus star points |
+| POST | `/ephemeris/venus-star-points/phase` | Phase + visibility |
+| POST | `/ephemeris/venus-star-points/stations` | Venus stations |
+| POST | `/ephemeris/venus-star-points/elongations` | Greatest elongations |
+| POST | `/ephemeris/venus-star-points/eight-year-star` | 8-year star pattern |
+| POST | `/ephemeris/venus-star-points/conjunctions` | Range-based conjunctions |
+
+### Biodynamic (Agro)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/ephemeris/agro/daily` | Today's biodynamic profile |
+| GET | `/ephemeris/agro/calendar` | Monthly biodynamic calendar |
+| GET | `/ephemeris/agro/void-of-course` | Agricultural VoC |
+
+### Metadata
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/ephemeris/house-systems` | Supported house systems |
+| GET | `/ephemeris/supported-objects` | Supported celestial objects |
+| GET | `/ephemeris/supported-metadata` | Supported metadata levels |
+| GET | `/ephemeris/schemas/natal-request` | Natal request schema |
+| GET | `/ephemeris/schemas/natal-response` | Natal response schema |
+
+## Human Design (9)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/human-design/chart` | Bodygraph (type, strategy, authority, profile) |
+| POST | `/human-design/transit` | Today's design weather |
+| POST | `/human-design/transit-chart` | Transit overlay on a natal bodygraph |
+| POST | `/human-design/transit-timeline` | Gates entered/left and channels completed over a date range |
+| POST | `/human-design/composite` | Two-person HD |
+| POST | `/human-design/penta` | 3–5 person group |
+| POST | `/human-design/extended` | Gate and line for asteroids, angles, lots and fixed stars, both epochs (longitude/color/tone/base on Pro+) |
+| POST | `/human-design/cycles/return` | Planetary return chart |
+| POST | `/human-design/cycles/solar-return` | Solar return chart |
+| POST | `/human-design/cycles/opposition` | Opposition chart |
+
+## Location & Timezone (5)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/location/autocomplete` | City → lat/lon |
+| GET | `/location/reverse` | lat/lon → city (NOTE: param is `lng`, not `lon`) |
+| POST | `/timezone/lookup` | lat/lon → IANA timezone |
+| POST | `/timezone/offset` | UTC offset at a datetime+coord |
+| GET | `/timezone/coverage` | Historical timezone overlay coverage |
+
+## Predictive (11)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/predictive/transits/search` | Search transit events; `orb_deg` adds enter/exact/leave windows |
+| POST | `/predictive/transit-chart` | Transit chart snapshot |
+| POST | `/predictive/transits/planet-to-degree` | Transit to a specific degree |
+| POST | `/predictive/transits/sign-ingresses` | Sign-change ingresses |
+| POST | `/predictive/returns` | Generic planetary return |
+| POST | `/predictive/returns/solar` | Solar return |
+| POST | `/predictive/returns/lunar` | Lunar return |
+| POST | `/predictive/primary-directions` | Primary directions |
+| POST | `/predictive/time-lords/profections` | Annual profections |
+| POST | `/predictive/time-lords/firdaria` | Firdaria periods |
+| POST | `/predictive/time-lords/zodiacal-releasing` | Zodiacal releasing |
+
+## Sky (5)
+
+Any body, catalog star or galactic point over one place. Topocentric, with a `method` block on every response.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/sky/rise-set` | Rise, set (with azimuth) and culmination per civil day; optional stretches above `min_altitude` |
+| GET | `/sky/track` | Altitude/azimuth at regular steps (geometric and refracted), disc size, lit fraction, phase, bright-limb angle, planet magnitude; flat price per call |
+| GET | `/sky/light` | Twilights, golden/blue hour, day length, Moon, and the Moon-free dark window, per day |
+| GET | `/sky/light-at` | The light at one instant: day/twilight/night, Sun and Moon, nearest boundaries |
+| GET | `/sky/circles` | Ecliptic, equator and galactic plane as alt/az paths; house cusps and division curves on the sky |
+
+## Time (6)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/time/sidereal` | Local Apparent Sidereal Time + GMST |
+| GET | `/time/delta-t` | Delta T (TT-UT1) |
+| GET | `/time/equation-of-time` | Equation of time |
+| GET | `/time/solar-event` | Sunrise / sunset / transit |
+| POST | `/time/julian-day` | Calendar → Julian Day |
+| POST | `/time/scales` | Time-scale conversions |
+
+## Tidal (1)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/tidal/forcing` | Astronomical tidal forcing |
+
+## Vedic (1)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/vedic/chart` | Sidereal natal chart (ayanamsa configurable) |
+
+## Visualization (3)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/visualization/chart-wheel` | Chart wheel SVG/PNG |
+| POST | `/visualization/bi-wheel` | Bi-wheel SVG/PNG |
+| POST | `/visualization/bodygraph` | Human Design bodygraph SVG/PNG |
+
+## Meta / Health (4)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/health/detailed` | Detailed health check |
+| GET | `/meta/openapi.json` | Full OpenAPI spec |
+| GET | `/meta/version` | API version |
+
+## Pricing Note
+
+Most endpoints cost 1–5 credits (`x-meridian-units` in the OpenAPI spec is the base price). ACG is 10. Range searches are priced by the span requested, before compute: transit search and HD transit timeline ≤1y 5, ≤3y 10, ≤5y 15, ≤10y 25, ≤20y 40, ≤40y 70 (plan caps: Explorer/PAYG 1y, Pro 5y, Startup 10y, Scale 40y); electional find-window ≤30d 5, ≤60d 8, ≤120d 12; angle crossings ≤1mo 5, ≤3mo 8, ≤6mo 10, ≤1y 12. A span over the cap is a 400 `search_span_limit`. Every 4xx/5xx is refunded. Tell the user before running anything expensive.
+
+## Tier Gating Reminder
+
+| Tier | Access |
+|------|--------|
+| **Explorer** (free, 150 one-time credits — no reset) | Core ephemeris, moon, transits, geocoding, synastry, composite, bi-wheel, returns, progressions, relocation, Human Design (incl. transit and connection overlays), BaZi, electional moment analysis and station tracker — credits only |
+| **Pro** ($29, 75,000 credits/mo) | Astrocartography (power-lines, CCG, hits, local-space), electional searches (find-window, aspect-search, angle-crossings) |
+| **Startup** ($79, 500,000 credits/mo) | Batch computation |
+| **Scale** ($199, 2,000,000 credits/mo) | ACG aspects/midpoints/crossings/declinations/parans/hermetic lines, relational ACG |
+| **Enterprise** | Custom |
+| **Service** (internal) | Heatmaps, combined `/acg/features` |
+
+A `403 Forbidden` from any endpoint means it's tier-gated — suggest the user upgrade at openephemeris.com/pay.

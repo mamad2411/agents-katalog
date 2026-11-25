@@ -1,0 +1,55 @@
+---
+name: essay-grading
+description: Apply essay grading in an AI workflow with explicit scope, domain constraints, validation, and documented failure handling.
+metadata:
+  source: skills/16-domain-specific/essay-grading.md
+  category: 16-domain-specific
+---
+
+![Dependency Status](https://img.shields.io/endpoint?url=https://samotech.github.io/skills-tree/badges/skills-16-domain-specific-essay-grading.json)
+
+**Category:** Domain-Specific
+**Skill Level:** `advanced`
+**Stability:** stable
+**Added:** 2026-04
+
+### Description
+Scores student essays against a multi-criteria rubric covering thesis strength, evidence quality, argument coherence, structure, and mechanics. Returns numeric scores per dimension plus actionable feedback comments and an overall grade.
+
+### Example
+```python
+import anthropic, json
+
+client = anthropic.Anthropic()
+
+RUBRIC = {"thesis": 5, "evidence": 5, "coherence": 5, "structure": 5, "mechanics": 5}
+
+def grade_essay(essay: str) -> dict:
+    prompt = (
+        "Grade this essay on the rubric: thesis (0-5), evidence (0-5), coherence (0-5), "
+        "structure (0-5), mechanics (0-5). Return JSON: {scores, total, feedback}.\n\n" + essay
+    )
+    resp = client.messages.create(
+        model="claude-opus-4-5", max_tokens=600,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return json.loads(resp.content[0].text)
+
+print(grade_essay("Renewable energy is crucial because fossil fuels are depleting..."))
+```
+
+## Failure Modes
+
+- **Rubric drift:** scores anchored to an implicit standard instead of the stated rubric dimensions and weights.
+- **Length and fluency bias:** longer or better-written prose scoring higher on substance dimensions the content does not support; score each dimension on evidence, not polish.
+- **Feedback vagueness:** generic comments a student cannot act on; feedback must reference specific passages.
+- **Score compression:** clustering all essays in a narrow band, losing discrimination at the top and bottom.
+- **Single-rater certainty:** one pass presented as a final grade without calibration against sample essays; state the grading basis and limits.
+
+## Evidence
+The canonical skill file is the authoritative repository implementation. Repository schema, validation workflows, and the Agent Skills projection contract define structural conformance. Domain-specific factual claims must remain traceable to supplied or independently verified authoritative sources.
+
+### Related
+- 16-domain-specific
+- input-guardrails
+- output-guardrails

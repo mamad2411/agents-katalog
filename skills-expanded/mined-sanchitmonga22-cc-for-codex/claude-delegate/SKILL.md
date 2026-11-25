@@ -1,0 +1,55 @@
+---
+name: claude-delegate
+description: "Delegate a bounded task from Codex to the local Claude Code CLI. Use when the user explicitly asks Claude to investigate, implement, rescue, or continue work. Defaults to read-only; write delegation is confined to a generated git worktree."
+---
+
+# Claude Delegate
+
+Full execution requests ultracode dynamic workflows with high model effort by
+default. Only full-write delegation enables Workflow; `--no-ultracode` opts
+out. Confirm an actual Workflow tool call before reporting orchestration as
+successful. Workflow workers have full host access, not an OS sandbox.
+
+Use the executable bridge launcher at the sibling skill path `../claude-code/scripts/cc-for-codex`, resolved to an absolute path. Invoke it directly, never through a bare `node` lookup.
+
+## Modes
+
+Ordinary Claude calls default to Claude Opus 5.5 (`claude-opus-5-5`) at
+`high` effort. Explicit `--model claude-sonnet-5-5` selects Sonnet at
+`high` effort. Full execution requests dynamic workflows by default; use `--no-ultracode` to opt out.
+Do not route to Fable 5.1 unless the user specifically requests it.
+
+- Foreground read-only: `delegate <prompt>`.
+- Background read-only: after screening the prompt for secrets, disclose that background sessions have no supported max-budget guard and that the full prompt is temporarily visible to same-account local process inspection. After the user accepts both, add `--background --confirm-background unbounded-usage --confirm-background-data process-visible-prompt`.
+- Foreground isolated write: the bridge defaults to `dangerous` zero-prompt permissions. Explain that a worktree is not a host sandbox and Claude file tools may reach host paths when permission checks are bypassed. After explicit authorization of both the edit and that risk, add `--write --confirm-write isolated-worktree --confirm-dangerous-permissions bypass-host-safety`.
+- Foreground full-execution write: only when the user explicitly asks Claude to
+  execute the task, add `--write --execution full --model claude-opus-5-5
+  --effort high --confirm-write isolated-worktree
+  --confirm-dangerous-permissions bypass-host-safety
+  --confirm-execution full-host-access`. This adds Bash to the file tools and
+  bypasses Claude prompts. It remains worktree-scoped by convention, not by OS
+  sandbox; inspect all commands and the diff afterward.
+- Foreground guarded write: when the user does not authorize bypass or requests the safer profile, add `--write --write-permissions guarded --confirm-write isolated-worktree`. This remains zero-prompt through `dontAsk` plus explicit `Edit,Write` preapproval, but protected Git/Claude/config paths are denied.
+- Background isolated write: combine the chosen write-mode confirmation(s) with
+  both background confirmations. File-only writes cannot run commands; full
+  execution can run Bash after the additional `full-host-access` confirmation.
+  Monitor the job with `$claude-sessions`, then inspect the worktree and have
+  Codex validate afterward.
+
+## One-writer rule
+
+Never let Claude and Codex edit the same checkout concurrently. Write mode always generates a Claude worktree based on current local `HEAD`; it never reuses the Codex checkout, merges, pushes, cleans up, or deletes the worktree.
+
+Before write delegation:
+
+1. Confirm the current directory is a git repository.
+2. For background/non-`-p` worktree delegation only, confirm the user has opened Claude Code interactively in this repository and accepted its workspace-trust prompt. Foreground `-p --worktree` skips that prompt. The bridge cannot accept trust for the user.
+3. Inspect `.worktreeinclude` if present. It can copy ignored files and secrets. Pass `--confirm-worktree-include copy-ignored-files` only after the user accepts the exact contents.
+4. Confirm the repository is a self-contained, full, non-sparse checkout and does not depend on Git alternates/`git clone --shared`, Git LFS, or another selected content filter. The bridge refuses alternate/partial/promisor repos, sparse checkout, and filtered tracked files rather than reading a sibling object store, fetching, running repository-controlled drivers, or checking out encoded/pointer content.
+5. For dangerous mode, obtain explicit host-safety-bypass authorization before adding its exact confirmation token. Do not infer this from ordinary permission to edit files. The user's standing instruction in the current task may supply this authorization; do not ask repeatedly within the same delegated run.
+6. Put the narrow task, acceptance criteria, excluded files, and required handoff in the prompt.
+7. Stop editing the overlapping area until Claude finishes.
+
+Afterward, use the wrapper-verified worktree path and branch printed by the command, inspect the diff yourself, run repository validation from an appropriate safe checkout, and keep implemented/tested/merged status separate.
+
+Read [references/isolation.md](references/isolation.md) before any write or background delegation.

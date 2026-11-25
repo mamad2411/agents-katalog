@@ -1,0 +1,58 @@
+---
+name: validate
+description: Confirm we have actually completed and validated what we planned to accomplish. TRIGGER whenever the user asks you to confirm a task is complete, if any implementation or validation was missed, etc.
+argument-hint: '[task number or description]'
+effort: high
+model: opus
+---
+
+## Context
+
+- The task (or issue, problem, ticket, etc) the user wants to discuss is what they mentioned here: $ARGUMENTS
+- If they didn't provide a reference, assume they mean the changes on the current branch relative
+  to the original plan you made
+
+## Your task
+
+### Phase 1: Understand the Problem
+
+1. If the user did not specify what they want to discuss and you can't deduce it, ask them for
+   that information
+2. If you are unclear what the user is asking you to validate, clarify until you're quite sure
+3. Read `~/.claude/references/README.md` and the reference files relevant to the change scope.
+   Use these invariants as your evaluation criteria throughout.
+4. Once you understand the discussion topic, use as many subagents as you need to explore the
+   problem definition and all relevant code paths and documentation and the changes you made
+5. Proactively answer every question and follow-up question that occurs to you by exploring the
+   codebase and anything else that would help you
+
+### Phase 2: Assess the Solution for Gaps or Mistakes
+
+1. After thoroughly understanding the problem and current solution, compare what you see to the
+   ideal way to achieve the intended goal
+2. Was the complete intention of the original task achieved? What evidence proves that?
+3. Have all edge cases been handled? What evidence proves that?
+4. Is the chosen approach as declarative and straightforward as it could be?
+5. Have domain concepts and their evolutions been optimally modelled using custom types?
+6. Do all branches have well-designed automated tests? Do the tests we have prove this change
+   introduces no regressions vs what choices the codebase makes and what side effects it emits
+   on the default branch down every relevant logical branch?
+7. Can the expected behaviour of every branch be confirmed from the outside — by running the real
+   system and observing its output — without relying on automated tests?
+8. If my team says "prove this does not break anything", what can we show them?
+
+### Phase 3: Instrumentation Check
+
+For user-facing or behavior-changing changes, verify that observability shipped with the feature:
+
+- [ ] **North-star metric** — the one number expected to move; is it defined?
+- [ ] **Baseline** — current value captured before the change?
+- [ ] **Expected direction & size** — e.g. +5% conversion, –20% latency
+- [ ] **Time horizon** — when will we check? (7 days? 30?)
+- [ ] **Guardrail metrics** — what must _not_ get worse (error rate, adjacent funnels)?
+- [ ] **How we'll read it** — A/B, before/after, cohort, or qualitative signal defined?
+
+If instrumentation was not shipped in the same change, flag it explicitly. "We'll add analytics
+later" is a gap — call it out and recommend adding it before or immediately after this ships.
+
+Skip this phase if the change is purely internal (refactor, dev tooling, CI, etc.).

@@ -1,0 +1,117 @@
+---
+argument-hint: "[repo[@version]...]"
+description: Cuts the releases that are ready across the philoserf repos, one background agent per repo, after one up-front confirmation of the list. Use when asked to cut, ship or release what is ready, or once release-gate leaves repos ready to release. Tags and GitHub releases are public, so the list is confirmed once before anything ships.
+allowed-tools:
+  - Agent
+  - Bash
+  - Read
+  - Edit
+  - AskUserQuestion
+---
+
+# Release sweep
+
+A release is a public step the user takes on purpose, so this skill confirms the list once
+before anything ships.
+
+One `repo-releaser` agent per repo cuts its release with `release-ship`. You find what is
+ready, get the list confirmed once, launch the agents, and clean up afterwards.
+
+**Run it on `almanac`, from a session started in `~/source/philoserf`.** `almanac` is the
+always-on host, and the agents report back over an hour or more. Starting anywhere else,
+such as `~/notes`, roots the language server outside the repos, and it then sends false
+"module not in workspace" and `undefined:` errors about files that compile.
+
+## 1. Find what is ready
+
+**First, confirm the session is a workspace session.** The session's primary working
+directory, as your environment states it, must be `~/source/philoserf`. Run this block
+before any other command, so the shell is still where the session started:
+
+```bash
+[[ $PWD == "$HOME/source/philoserf" ]] || { echo "release-sweep: this session started in $PWD, not ~/source/philoserf"; exit 1; }
+cd ~/source/philoserf && task sync
+```
+
+When the check fails, stop. Ask with `AskUserQuestion` whether the sweep was meant for
+this session at all, and run nothing further until the answer comes. A sweep invoked
+from inside one repo is usually a slip, and it reaches every repo in the workspace.
+
+Stop if `sync` reports a repo as diverged or errored. With arguments, consider only those
+repos; `repo@version` fixes the version.
+
+Otherwise, a repo is a candidate when:
+
+- `release-check.sh` ends with `candidate=1` (defined in its header), and
+- it is not one of the unversioned sites named in `~/source/philoserf/CLAUDE.md`, which release by
+  deploying, not tagging.
+
+Skip `obsidian-vault-changelog`, which `CLAUDE.md` excludes from all workspace work.
+
+**Propose a version for each candidate.**
+
+- **An open milestone named for a version:** use that.
+- **No such milestone:** use the next semver step for what changed. A patch for tooling, docs
+  and dependencies. A minor for a behavior change, including one that moves values callers
+  may have pinned; a major for a changed exported signature, a removed field, or an altered
+  output contract. A prerelease line continues its suffix:
+  `-beta.3` becomes `-beta.4`.
+- **A repo versioned only by tags** (obsidian-starter): pass the version explicitly.
+
+Run `release-plan.sh <version>` for each candidate and note `prerelease` and `deploy_cmd`.
+
+## 2. Confirm once
+
+Present the list as a table: repo, current release, proposed version, prerelease or not,
+deploys or not, and the commits since the last tag in one line. Ask with `AskUserQuestion`
+whether to cut them all, and offer the chance to drop a repo or change a version.
+
+**This is the only question before anything ships, and it is a real one: wait for it.**
+Tags and releases are public and permanent. Everything after this answer is pre-approved,
+and the agents will not ask again.
+
+## 3. Launch
+
+One `Agent` call per confirmed repo, all in one message, with
+`subagent_type: "repo-releaser"`; agents run in the background on their own. The prompt names `REPO` and
+`VERSION`, plus anything repo-specific:
+
+- the tag prefix
+- the version source
+- that it deploys
+- any exception the user granted, such as writing dusk's CHANGELOG
+- evidence the CHANGELOG should record, such as a live check the user ran
+
+## 4. While agents report
+
+Relay each report as it lands, briefly. **Assume the user is not watching.** A relay is a
+heads-up; nothing waits on an answer.
+
+**Act on a fleet-wide hazard.** When one agent finds a gap the others are about to hit (a
+beta about to be published as "Latest", say), warn the running agents with `SendMessage`.
+Then fix the skill that caused it, so the next run doesn't need the warning.
+
+**Never run a command an agent was blocked from running.** A blocked step goes to the user
+as the exact commands that remain.
+
+## 5. Close out
+
+When every agent has reported:
+
+- **List what didn't finish,** with each one's remaining commands, ready to paste. A release
+  the user then finishes by hand still needs the cleanup below.
+- **Verify each release,** whoever finished it:
+  - **Release:** `gh release view <tag>` shows the right prerelease flag.
+  - **Milestone:** deleted, if all of its issues are closed.
+  - **Prep PR:** merged.
+  - **Local branch:** none left behind.
+  - **Checkout:** clean and level with origin.
+- **Report** one line per repo: tag, release link, and deployed or not. Then offer a co-log
+  line for today's daily note.
+
+## Do not use when
+
+- A repo has not passed `release-gate` — run that first. This skill only ships what the
+  gate already left ready.
+- You are cutting one release and want to drive it yourself — run `/release-ship` in that
+  repo.

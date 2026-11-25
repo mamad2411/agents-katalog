@@ -1,0 +1,494 @@
+---
+name: setup-developer-skills
+description: Configure this repo for the /developer unattended spec-delivery pipeline — patches the issue tracker doc with the pipeline's Delivery operations, writes docs/agents/code-host.md and its phase annexes (GitHub, GitLab or local first-class; anything else as freeform), checks the code-author/diff-reviewer agents are loaded, ensures the triage labels exist, asks for the run defaults written to docs/agents/developer-defaults.md, and recommends the Claude Code settings (project or global) for the user to edit, obsolete entries included. Requires /setup-matt-pocock-skills to have run first (refuses otherwise). Run once before first use of /developer.
+disable-model-invocation: true
+---
+
+# Setup Developer Skills
+
+Scaffold the per-repo configuration that the `/developer` pipeline assumes.
+This builds **on top of** Matt Pocock's engineering skills setup — it does not
+replace it.
+
+Two independent axes get configured, mirroring how the delivery skills read
+the repo:
+
+- **Issue tracker** — where issues live (`docs/agents/issue-tracker.md`,
+  created by Matt's setup; this skill appends the pipeline's
+  `## Delivery operations` section) plus its authoring annex
+  (`docs/agents/issue-authoring.md`).
+- **Code host** — where changes (PRs/MRs/branches) live
+  (`docs/agents/code-host.md`, created here) plus its CI annex
+  (`docs/agents/code-host-ci.md`).
+
+They may differ (issues in Linear, code on GitHub). **GitHub, GitLab and
+local are first-class** — templates ship with this skill. Anything else
+(Jira, Linear, Gitea…) is configured as freeform prose, exactly like Matt's
+setup handles "other" trackers.
+
+**This skill is the only writer of these docs.** `/developer` and its workers
+read `AGENTS.md`, `CLAUDE.md` and everything under `docs/agents/` as
+instructions and never edit them. So a doc that has drifted out of date is fixed here
+or by the human, and never as a side effect of a delivery run. Three things
+follow for this skill:
+
+- **Update against the templates; leave the repo's own prose alone.** These
+  docs accumulate repo-specific text that no template contains — why a knob
+  was set the way it was, a build trap, a test lane. Bring the *template*
+  parts up to date and carry that text through untouched, even when a
+  sentence in it looks stale. If something in it is now wrong, say so in the
+  chat summary and let the user decide; correcting it is not what an update
+  was asked to do. The one exception is material a **plugin feature that no
+  longer exists** put there: step 8 retires it, from a fixed list.
+- **A core file and its annexes, never one long file.** Every worker reads
+  `code-host.md` and `issue-tracker.md` **whole, in its first turn**, before
+  looking at a line of code — so those two pay for their length once per
+  worker per sub-issue. Mechanics used in only one phase of a job go in an
+  annex, and the core links it with the phase that opens it spelled out:
+  `code-host-ci.md` is opened only to wait for, read or classify a change's
+  CI; `issue-authoring.md` only when issues are being created. Keep each core
+  file **under ~100 lines**; when one grows past that, the fix is another
+  annex, not a smaller font. This applies to the prose the repo adds later
+  just as much as to the templates: a build trap or a test lane that belongs
+  to one phase belongs in that phase's annex, or in the repo's own testing
+  docs — not in the file every worker opens first. And a note about how the
+  **harness** behaves — what the worktree sandbox does to a piped `gh`, which
+  command shapes it refuses — is not a fact about this repo's code host at
+  all: it is the same everywhere, it ships with the worker agents, and it
+  does not belong in `code-host.md`. If you find one there, say so; the fix
+  is an issue against the plugin, not a longer contract doc.
+- **Prefer facts that do not rot.** When you write prose of your own into
+  these docs, describe how the repo works, not what some issue's state is
+  today. A claim with a date on it goes out of date silently and invites the
+  next session to "fix" it.
+
+This is a prompt-driven skill, not a deterministic script. Explore, present
+what you found, confirm with the user, then write.
+
+## Process
+
+### 1. Preconditions
+
+- **Matt Pocock's setup must have run first**: check whether
+  `docs/agents/issue-tracker.md` exists. If it does not, **stop — scaffold
+  nothing**. Matt's `setup-matt-pocock-skills` declares
+  `disable-model-invocation: true`, so you cannot run it on the user's
+  behalf; only the user can, as a slash command. Tell them:
+
+  > This repo isn't configured yet. Run `/setup-matt-pocock-skills` first
+  > (namespaced as `/mattpocock-skills:setup-matt-pocock-skills` when
+  > installed as a plugin), then re-run `/setup-developer-skills`.
+
+  If that skill isn't installed at all, point them at this repo's README
+  for the install command instead.
+- Read `docs/agents/issue-tracker.md` and note which tracker it describes
+  (GitHub / GitLab / local markdown / other) — step 3 patches it
+  accordingly.
+
+### 2. Determine the code host
+
+Explore first: `git remote -v`.
+
+- **No remote → Local, without asking.** A remote host is impossible
+  without a remote, so there is no decision to put to the user — announce
+  the inference in one line ("No git remote — code host: local branches
+  with a committed change file; reviews live in that file; `merge: auto`
+  is unavailable, the pipeline always stops at ready-to-merge and you
+  merge by hand") and continue. Only if the user objects to that
+  announcement, fall through to **Other**.
+- **Remote present → propose, and let the user confirm or override** (they
+  may track changes somewhere unexpected, e.g. Jira-driven review):
+  - Remote on `github.com` → **GitHub** — verify `gh auth status` succeeds.
+  - Remote on `gitlab.com` or a self-hosted GitLab → **GitLab** — verify
+    `glab auth status` succeeds.
+  - Anything else (or the user overrides) → **Other**: ask the user to
+    describe, in a paragraph, how changes are published, reviewed, and
+    merged there; you will record it as freeform prose.
+
+Then ask **one more question, whatever the host: is there CI on changes, and
+how is its status read?** The answer gates two behaviours — the orchestrator
+refuses to merge on red checks, and the reviewer skips its own install and
+test run when CI already reports green — so a wrong answer costs either a
+merged red build or a duplicated suite. Explore before asking (a
+`.github/workflows/` or `.gitlab-ci.yml` in the repo is the answer most of the
+time) and confirm; where there is genuinely no CI on changes, record
+**`CI: none`** and the pipeline behaves exactly as it did before this question
+existed.
+
+Write `docs/agents/code-host.md` from the matching template bundled in this
+skill folder (drop the HTML comment on the first line, and fill or delete the
+`CI` bullet per the answer above):
+
+- [code-host-github.md](./code-host-github.md)
+- [code-host-gitlab.md](./code-host-gitlab.md)
+- [code-host-local.md](./code-host-local.md)
+
+Then, **only if the repo has CI on changes**, write the CI annex
+`docs/agents/code-host-ci.md` from the matching template:
+
+- [code-host-ci-github.md](./code-host-ci-github.md)
+- [code-host-ci-gitlab.md](./code-host-ci-gitlab.md)
+- local has no CI and gets no annex.
+
+If the answer above was "no CI", write no annex and delete any existing one —
+the core's `CI` bullet says `none` and the pipeline skips those operations
+entirely. The annex is the file the workers do **not** open until they are
+about to wait for, read or classify a change's CI; keeping the core free of
+it is the whole point of the split, so never fold the annex back in.
+
+**Skip CI on integration-branch changes** (GitHub and GitLab with CI only).
+`/developer` builds a spec's sub-issues as changes into its integration
+branch, `agent/developer/spec-<N>`, and merges them without waiting on CI — the spec
+PR into `main` runs the CI once on all of them. The repo's CI still fires on
+each of those changes unless its triggers say otherwise: runner time nobody
+reads. Read the CI config and find what runs on changes:
+
+- **GitHub** — every workflow under `.github/workflows/` with a
+  `pull_request` (or `pull_request_target`) trigger. One whose trigger already
+  has `branches: [main]` (or any filter that excludes `agent/developer/spec-*`)
+  needs nothing. The others get
+  ```yaml
+  pull_request:
+    branches-ignore: ['agent/developer/spec-*']
+  ```
+  merged into their existing `pull_request` block (keep its `types:` and
+  `paths:`). A trigger with `branches:` can't also take `branches-ignore:` —
+  leave such a workflow alone and say so.
+- **GitLab** — a top-level `workflow: rules:` entry (or the first rule of
+  the existing ones):
+  ```yaml
+  - if: $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^agent\/developer\/spec-/
+    when: never
+  ```
+
+Show the user each file's exact edit and ask (AskUserQuestion) whether to
+apply it; it is their CI, so a no is a fine answer and changes nothing in the
+pipeline. Apply only what they accept, leave it uncommitted, and list the
+edited files in the report so they review and commit them. Nothing to change
+→ say so in one line and do not ask.
+
+For **Other**, write the doc from scratch based on the user's description.
+It must answer, operation by operation, what the delivery skills will ask of
+it: change ref format · publish a change (draft) · change metadata (branch,
+head sha, state) · check out a change in a linked worktree (read-only
+review, and fix-that-pushes) · read the diff · read feedback / unresolved
+threads · post a review (inline + summary, the CLEAN convention) · mark
+ready · reply to a thread · comment on a change · read the last reviewed
+revision (the sha the previous review was written against, which is how
+`review-pr` scopes a re-review to the fix pass — if the host records no such
+thing, say so and the reviewer falls back to the full diff every time) ·
+merge (and whether unattended merge is supported at all) · issue auto-close
+on merge (yes/no) · CI on changes (none, or whether one exists at all).
+Anything the user's workflow cannot express (e.g. inline comments), record
+the degraded form the skills should use instead. The CI **mechanics** — how
+to wait for the checks, how to read the ones recorded for a head sha, how to
+tell a job that ran from one that never started — go in
+`docs/agents/code-host-ci.md`, not here; the core just names the annex and
+the phase that opens it.
+
+**Idempotence**: if `docs/agents/code-host.md` already exists, show its
+current host and content summary, and ask before rewriting. If it is an
+**unsplit** doc from an older version of this skill — CI mechanics still
+inline, or well past ~100 lines — offer the split as its own change: move
+the CI operations, and any repo prose that only a CI reader needs, into
+`docs/agents/code-host-ci.md` **verbatim**, leave the core with the pointer
+line, and say in the summary what moved. Nothing may be lost in the move;
+this is a relocation, not a rewrite.
+
+### 3. Patch the issue tracker doc with Delivery operations
+
+The `/developer` orchestrator and its workers drive the tracker through a
+fixed set of operations (read issue, enumerate children, check blocker,
+comment, label, close). Append the section that matches the tracker found in
+step 1 (drop the HTML comment on the first line):
+
+- [delivery-ops-github.md](./delivery-ops-github.md) — native GitHub
+  sub-issues
+- [delivery-ops-gitlab.md](./delivery-ops-gitlab.md) — `glab` mechanics +
+  `Part of #<parent>` markers
+- [delivery-ops-local.md](./delivery-ops-local.md) — `.scratch/` file
+  conventions
+
+Then write the authoring annex `docs/agents/issue-authoring.md` from the
+matching template — the rules whatever splits a spec must follow when it
+**creates** children:
+
+- [issue-authoring-github.md](./issue-authoring-github.md)
+- [issue-authoring-gitlab.md](./issue-authoring-gitlab.md)
+- [issue-authoring-local.md](./issue-authoring-local.md)
+
+Unlike the tracker doc, this one is a whole file, not a section: `/to-tickets`
+reads it when creating issues and the delivery pipeline never opens it. Do not
+fold it back into `issue-tracker.md` — that file is read whole by every worker
+in its first turn, and by then the children already exist.
+
+For **other** trackers, write the `## Delivery operations` section from
+scratch with the user: same operation list as above, in their tracker's
+terms (issue ref format included). Carry over the three requirements the
+bundled templates place on whatever splits a spec into tickets — children must
+be **discoverable from the parent** by a mechanic the pipeline can query; each
+child must carry a **`## Spec extract`** section with the parent's
+Implementation and Testing Decisions that apply to it, copied verbatim (that
+section is what lets a builder work from the ticket alone); and each child must
+carry a **`## Complexity`** section rating it `standard` or `complex` with one
+line of why, also shown in the breakdown the splitter proposes for approval
+(the pipeline builds `complex` at `opus` and everything else at `sonnet`) —
+copy that rule from the bundled templates as written. Write them
+into `docs/agents/issue-authoring.md`, not into the tracker doc itself, and
+leave the tracker doc pointing at it the way the bundled templates do.
+
+**Idempotence**: if a `## Delivery operations` heading already exists in
+`docs/agents/issue-tracker.md`, replace that section instead of appending a
+duplicate. Same for the legacy heading
+`## Parent/child issues MUST be native sub-issues` (written by older
+versions of this skill) — replace it with the new section. If the authoring
+rules are still **inline** in the tracker doc (any older version wrote them
+there), move them into `docs/agents/issue-authoring.md` verbatim and leave
+the `### Creating child issues` pointer behind.
+
+### 4. Check the agents are available
+
+The two worker agents ship with the plugin and are already loaded,
+namespaced as `developer-skills:code-author` and
+`developer-skills:diff-reviewer`:
+
+- `code-author` — implements / fixes (model from the sub-issue's
+  `## Complexity` section)
+- `diff-reviewer` — review gate before auto-merge (pinned `opus`, `effort: high`)
+
+If this skill's own name is not namespaced (it appears as
+`/setup-developer-skills`, not `/developer-skills:setup-developer-skills`),
+the plugin is not loaded and `/developer` will not find its workers. **Stop
+and tell the user to install the plugin**, then re-run this skill:
+
+```
+/plugin marketplace add sgomez/developer-skills
+/plugin install developer-skills@sgomez
+```
+
+(Plugins load at session start — the user must restart the session after
+installing.)
+
+### 5. Ensure the triage labels exist
+
+`/developer` applies `ready-for-human` on escalation, and `implement-issue`
+lists work by `ready-for-agent`. Respect any label mapping in
+`docs/agents/triage-labels.md`. Mechanics per tracker:
+
+- **GitHub**:
+
+  ```bash
+  gh label list --json name --jq '.[].name'
+  gh label create ready-for-agent --description "Fully specified, an agent can pick it up" --color 0E8A16 2>/dev/null || true
+  gh label create ready-for-human --description "Needs human attention" --color D93F0B 2>/dev/null || true
+  ```
+
+- **GitLab**: same pair via
+  `glab label create --name ready-for-agent --description "..." --color "#0E8A16"`
+  (and `ready-for-human` with `#D93F0B`); `glab label list` first.
+- **Local markdown**: nothing to create — the roles are `Status:` line
+  values, defined by convention in the tracker doc.
+- **Other**: whatever the tracker doc's Delivery operations say "apply a
+  triage label" means; if labels must pre-exist there, remind the user to
+  create the two above.
+
+### 6. Choose the run defaults
+
+Ask the user two questions (AskUserQuestion, one call, both):
+
+1. **Execution** — should `/developer` build independent sub-issues in
+   parallel (recommended: faster; sibling-PR conflicts are resolved by
+   merge-fix workers) or sequentially (one sub-issue fully delivered before
+   the next)?
+2. **Merge** — when the review verdict is CLEAN, should `/developer` merge
+   to `main` automatically, or mark the PR ready and leave the merge to a
+   human (recommended)? Explain what reaches `main`: for a spec, one spec PR
+   from its integration branch, reviewed whole; for a single issue, its own
+   PR. Be explicit that `auto` means unattended merges to `main` with the
+   opus diff-reviewer as the only gate, and that **under either answer** a
+   spec's sub-issues are merged unattended into the integration branch
+   (`agent/developer/spec-<N>`) without a CI wait or a review of their own — the
+   spec PR's CI and review cover them — `main` is untouched until the spec PR merges.
+
+   **Skip this question when the code host is local** — `merge: auto` is
+   unsupported there (the code-host doc says why); record `merge: manual`
+   and tell the user.
+
+Write the answers to `docs/agents/developer-defaults.md` from the template
+[developer-defaults.md](./developer-defaults.md) (drop the HTML comment on
+the first line, set the two answered values in the fenced block).
+
+**Idempotence**: if the file already exists, show the current values, ask
+the two questions with the current values as the recommended options, and
+rewrite the file.
+
+### 7. Recommend the Claude Code settings
+
+**Regardless of the merge choice**, the pipeline's code-host writes will
+hit permission prompts — and with nobody at the keyboard a single denial
+escalates the sub-issue instead of delivering it. Recommend the settings
+below; **never write a settings file yourself**. `~/.claude/settings.json`,
+`.claude/settings.json` and `.claude/settings.local.json` are the user's:
+print the blocks, say which file each one goes in, and let the user edit.
+
+Explain the three scopes and let the user pick (merge with what is already
+there — never replace a file):
+
+- **Project, shared — `.claude/settings.json`** (committed): the host CLI
+  rules and `Workflow`. The whole team gets them.
+- **Project, personal — `.claude/settings.local.json`** (gitignored): the
+  same rules for a user who does not want to commit them, and the bundled
+  scripts' rules, which embed this machine's plugin path.
+- **Global — `~/.claude/settings.json`**: every project on this machine.
+  The scripts' rules, the `gh pr` subcommand rules and `Workflow` are safe
+  here and need configuring only once. The reviews-API rule names one repo:
+  keep it in the project, or widen it to `repos/*/pulls/*/reviews*` globally.
+
+Why each rule exists, so the user can judge it:
+
+- Narrow allow rules (fixed subcommands) resolve **before** the auto-mode
+  classifier and keep the review / mark-ready / comment writes from being
+  classified.
+- The **merge** and the fixer's **push onto a PR's head branch** need no
+  rule in auto mode: the classifier would deny them even when allow-listed,
+  so this plugin's PreToolUse hooks (`hooks/approve-merge.sh`,
+  `hooks/approve-push.sh`) approve exactly the pipeline's own forms. The
+  `gh pr merge` rule still spares a prompt outside auto mode; keep it even
+  with `merge: manual`, since sub-issues merge into the integration branch
+  unattended either way.
+- `Workflow` lets `/developer` launch its orchestration workflow without a
+  prompt; it is required in `-p` (headless) runs.
+- The `git push` rule creates a spec's integration branch from `main` — the
+  exact command, nothing wider.
+
+**GitHub** (replace OWNER/REPO from `git remote -v`):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr ready:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh api repos/OWNER/REPO/pulls/*/reviews*)",
+      "Bash(git push origin refs/remotes/origin/main:refs/heads/agent/developer/spec-*)",
+      "Workflow"
+    ]
+  }
+}
+```
+
+The bundled scripts, with `<plugin-root>` resolved to this plugin's
+installed location (the directory two levels above this SKILL.md). An
+installed plugin lives under a directory named after its version
+(`…/plugins/cache/sgomez/developer-skills/0.25.0/`), so **replace that
+segment with `*`**: a rule pinned to one version stops matching at the next
+update.
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash <plugin-root>/skills/developer/scripts/cleanup-worktrees.sh:*)",
+      "Bash(bash <plugin-root>/skills/developer/scripts/checks-gate.sh:*)",
+      "Bash(bash <plugin-root>/skills/developer/scripts/spec-plan.sh:*)"
+    ]
+  }
+}
+```
+
+**GitLab**: the analogous rules —
+`"Bash(glab mr update:*)"`, `"Bash(glab mr note:*)"`,
+`"Bash(glab mr merge:*)"`,
+`"Bash(glab api projects/*/merge_requests/*)"`, plus `"Workflow"` and the
+integration-branch push — and the same scripts' rules.
+
+**Local / Other**: `"Workflow"`; no merge or review-posting rules apply
+(local never auto-merges and its review is a committed file; for other
+hosts derive the allowlist from the commands recorded in
+`docs/agents/code-host.md`) — but **still recommend the cleanup-worktrees.sh
+rule**: the wrap-up's `--sweep` is a pattern-matched worktree removal,
+exactly the shape the auto-mode classifier denies.
+
+Never recommend an `autoMode` block.
+
+**Obsolete entries.** Read the three files (those that exist) and list what
+an earlier version of this plugin had users add and nothing uses any more —
+for each one, the file, the entry, and why it goes. The user deletes them;
+you do not:
+
+- An **`autoMode` block** whose `allow` sentence authorizes merging pull
+  requests for `/developer` (recommended in 0.4 and 0.9–0.10). The
+  `approve-merge.sh` hook replaced it, and free-text authorizations widen
+  what the classifier lets through.
+- **`Bash(git push origin refs/remotes/origin/main:refs/heads/developer/spec-*)`**
+  (pre-release builds): integration branches now live under
+  `agent/developer/`.
+- **Script rules pinned to one plugin version** (a version number where the
+  `*` should be), or pointing at a path that no longer exists: they match
+  nothing. Replace them with the `*` form above.
+- **Copies of the old agents in `.claude/agents/`** — `dispatcher.md`,
+  `code-author.md`, `diff-reviewer.md` — installed by versions up to 0.15,
+  before the plugin shipped its own. The pipeline uses the plugin's
+  namespaced agents; the copies are stale, and `dispatcher` no longer
+  exists.
+
+Say nothing about entries you do not recognise as this plugin's.
+
+### 8. Retire what the plugin no longer uses
+
+An update brings the template parts up to date, but a feature the plugin has
+dropped leaves its artifacts behind in the repo — sections, knobs and index
+rows no template writes any more, which nothing reads and which still tell
+the next reader they matter. Look for each item below; for every one found,
+show it, say which version dropped it and why, and remove it once the user
+confirms. This list is the whole of what this step may delete: anything else
+that looks stale is the repo's own prose, reported in the summary, not
+removed.
+
+- **Triage calibration** (dropped when triage was — tickets now carry their
+  own `## Complexity`): an `oversized:` line in
+  `docs/agents/developer-defaults.md` (and any prose around it explaining the
+  knob).
+- **Delivery ledger and discoveries harvest** (dropped in 0.26.0 — nothing
+  read the ledger once triage calibration went, and the proposed doc changes
+  were rarely applied):
+  - `docs/agents/delivery-ledger.md`, the whole file. **Before deleting**, if
+    it still has a `## Local calibration` section, offer to distil its
+    tier-deciding heuristics — which kinds of ticket proved `complex`, which
+    `standard`, and why — into a few lines under `## Complexity` in
+    `docs/agents/issue-authoring.md`: the splitter now makes that call, and
+    the calibration is the repo's record of where it went wrong. Keep them
+    free of dates and PR numbers.
+  - rows or pointers in the repo's agent docs index (`docs/AGENTS.md`,
+    `AGENTS.md`, `CLAUDE.md`) that route to the ledger, its run log, triage
+    or calibration, or that describe the harvest or a PR's `## Discoveries`
+    section.
+  - any other cross-reference in `docs/agents/` to any of these — repoint it
+    at what now explains the same thing, or drop it.
+
+When a future release drops a feature that wrote into the repo, it adds its
+entry here.
+
+### 9. Report
+
+Summarise what was set up — tracker, code host, chosen defaults, the CI
+files edited to skip integration-branch changes (uncommitted, for them to
+review and commit), the settings recommended in step 7 with the scope the
+user picked, the obsolete settings entries listed for them to delete, and
+what step 8 retired — and remind the user of the flow:
+
+1. Grill/discuss a feature → `/to-spec` publishes the spec (PRD) issue.
+2. `/to-tickets <spec>` breaks it into child issues discoverable by the
+   pipeline (native sub-issues on GitHub; the tracker doc's equivalent
+   elsewhere) with `Blocked by` ordering.
+3. `/developer <spec>` delivers them all unattended — builds onto the
+   spec's integration branch, one whole-spec review → fix cycles → merge
+   per the chosen policy — and sends a push notification when done.
+
+If they chose `merge: auto`, warn them explicitly: **`/developer` will merge
+PRs to `main` unattended when the review verdict is CLEAN.** If they chose
+`manual` (or the host forces it), remind them that a spec ends in one spec
+PR for them to merge — sub-issues reach the integration branch on their own
+— and that per-run flags (`--auto-merge`, `--sequential`, …) override the
+defaults.

@@ -1,0 +1,78 @@
+---
+name: apply-session
+description: Use to work through the user's accepted Maestro CS application queue with a browser — fill each already-tailored application, and submit once the user says yes. Autonomous apart from that yes.
+metadata:
+  title: Apply session
+  summary: Works your queued jobs in a browser and fills each application.
+  kind: attended
+  needs: [maestro, browser]
+  toolset: apply
+  never: Never submits without your yes.
+  include: [agent-apply-execution]
+---
+
+# Apply session
+
+Work the accepted queue end to end without stopping for routine questions. You
+need Maestro CS over MCP and a browser tool (Playwright MCP with headed Chrome,
+or Claude in Chrome).
+
+**Ask the user for only two things:** information that isn't anywhere in the
+app, and one explicit yes per application before the final submit. Decide
+everything else yourself.
+
+Call `sync_now` at the start and end of a run when the brief's `sync.enabled` is true.
+Only work jobs whose `ownership.owned_here` is true.
+
+1. **Queue.** `list_proposals(status="accepted")` and work it in order, one
+   application at a time, in this session. Results are paged: compare `items`
+   to `total` and page with `offset`. Say which one you are starting.
+2. **Prepare.** Work only jobs that are already tailored, and send the tailored
+   resume as it is. A job not tailored yet stays in the queue for a Tailor run or
+   a tailor chat: never tailor it here, and tell the user which jobs wait for
+   tailoring. Stage the PDF with `prepare_application_pdf_upload` and upload the
+   path it returns.
+3. **Fill.** Answer from the user's profile, Career KB and saved Q&A
+   (`get_autofill_profile`, `list_qa_entries`). Read back what each field saved.
+   Signatures, logins, CAPTCHAs and legal attestations are the user's to do in
+   the browser. Before Next on each page, `record_filled_answers` with every
+   field, its answer and where it came from. Pass the page's URL path
+   (`location.pathname`) as `step`, never a page number, and the proposal's
+   `application_id` when it has one. Source `you` means only what the USER
+   typed in the browser, never your own choice (that is `inferred`).
+4. **Blocked?** Don't stall the run: `report_failure` with the reason (or decline
+   the posting if it is gone) and move on to the next one.
+5. **Submit.** Record the last page with `record_filled_answers`, then call
+   `get_final_review`, attach a screenshot of the filled form
+   as `final_review` evidence, and show the user one short summary (company,
+   role, PDF, key answers, every flag in `flags` with its reason, and any
+   duplicate warning).
+   When `get_final_review`'s `base_country.eligible` is false, name the resume and the job's country in the Submit-now question.
+   Ask in this chat and wait for the answer. Only when nobody is at this chat
+   (the run started on its own, or the user said they'd be away), ask through a
+   channel the user set up for these runs instead. If nobody can answer now,
+   don't submit: `report_failure` with the reason `waiting for your yes` and move
+   on to the next one; it waits in Needs you. A yes for a job you parked can
+   still come while the run goes on and its filled form is still intact:
+   `record_consent` then moves it straight from Needs you to approved, with no
+   `resume_proposal` first. A yes that comes after the run has ended is not acted
+   on; the job waits in Needs you.
+   Only after their yes for *this* application:
+   `record_consent` with the channel the yes came through (`chat` for this chat,
+   `slack` for Slack, `mcp` for any other channel, named in the note), click
+   submit once, attach the confirmation as `submission_receipt`, and
+   `mark_submitted`. If you can't tell whether it went through, say so and never
+   click again.
+6. **Digest.** End with submitted / needs the user / declined / waiting for tailoring / still queued.
+7. **Record the run.** Call `record_run` with automation `apply-session`, the outcome
+    (`ok`; `partial` if some work failed; `failed` if none could be done), and
+    `report` with `counts` (`updated`: applications submitted; `needs_you`: jobs stopped
+    for the user via `report_failure` or left `needs_human`; `skipped`: declined or
+    left for tailoring),
+    `digest`, and `job_ids` for the jobs worked. Count each job once, by where it
+    ended.
+
+The Maestro CS tools' own descriptions carry the rest (states, evidence,
+duplicates) — follow them rather than working around a refusal. If the
+`agent-apply-execution` skill is installed, use it for detailed browser
+technique.

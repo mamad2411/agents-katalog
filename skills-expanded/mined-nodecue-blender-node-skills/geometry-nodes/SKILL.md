@@ -1,0 +1,212 @@
+---
+name: geometry-nodes
+description: Build, edit, and explain Blender Geometry Nodes trees, modifiers, and Geometry Node Tools using live node/socket introspection, readback, and result verification.
+---
+
+# Geometry Nodes
+
+The skill guides judgment; the running Blender is the identity authority.
+Never write an identity you did not read from it.
+
+## Scope and modes
+
+- **Build / Edit** — may create, connect, delete, and write values. Decide from the
+  request and a read of the current state whether to start a tree or extend the one that
+  exists.
+- **Explain** — strictly read-only. No node, link, value, property, frame, label or
+  repair, and no change to any project file. When a change would
+  improve the graph, describe it. If the user explicitly asks for a screenshot, that
+  writes an image at the path they approve and changes nothing else; say where it went.
+- **Tool** — a Geometry Node Tool group is an execution context, not a different skill.
+  It runs on demand over the user's Edit Mode selection instead of re-evaluating as a
+  modifier, so geometry arrives through the tool context and there is no modifier result
+  to measure — verify against the edited mesh. The role is declared on the group, not
+  inferred, and the context gates which nodes work in both directions.
+
+## Mental model
+
+**Two lanes.** Geometry sockets carry data flow: mesh, curve, points, volume, instances,
+from source to sink. Field-compatible sockets carry per-element computations. The two are
+coupled but not the same lane.
+
+**A field does nothing until something consumes it.** It evaluates lazily per element
+in its consumer's geometry and domain. Without a consuming socket, it has no effect.
+
+**Named attributes belong to geometry.** Check that the consumer's geometry passed
+through the attribute write and still carries it on the required domain. Matching names
+do not share data between branches. For sampling, distinguish source geometry from the
+context evaluating the index.
+
+**Domains carry meaning.** Point, Edge, Face, Face Corner, Spline, Instance. Crossing a
+domain interpolates or reinterprets; confirm the consumer's domain before wiring a
+selection, a mask, or a captured attribute.
+
+**Control geometry is not evaluated geometry.** Bézier and NURBS control-point counts
+differ from the evaluated curve's counts. Fields over control points follow that smaller
+domain; resampling to a poly spline makes the two coincide.
+
+**One Geometry socket may hold several components at once** — mesh, curve, point cloud,
+volume, instances together. Conversion nodes are semantic boundaries: after one, re-check
+which domains and attributes still exist.
+
+**Instances are references with transforms, not copies.** Operations usually apply to the
+unique source geometry, not per copy, and instanced results are not in the base mesh at
+all. Realize only when a downstream operation needs unique real geometry, and as late as
+practical.
+
+**A valid link can still be semantically wrong.** Implicit conversion between numeric,
+vector and colour types succeeds silently and can change what a value means. When you
+rely on one, say why the interpretation is intended.
+
+**Socket capability comes from live facts, not display shapes.** Introspect with
+`scripts/probe_node.py` / `scripts/read_graph.py` to observe `type`, `display_shape`,
+`hide_value`, `has_default_value`, and defaults. These are raw runtime facts: display
+shape or presence of a default value alone does not prove complete Field capability.
+When a task depends on that capability, verify the specific node mode, connections,
+and evaluated outcome in the running Blender. Never guess from static tables.
+
+**Every graph needs one reachable geometry trunk** from the chosen source to
+`Group Output.Geometry`. The source may be the group input, a generated primitive, a
+reused group, or a branch assembled from several — a generated graph normally leaves the
+group input disconnected.
+
+## The loop
+
+1. Read the Blender version and the current graph. Report the version.
+2. Settle the input policy: **Process** (operate on incoming geometry — connect the group
+   input into the trunk), **Generate** (build from scratch — leave it disconnected unless
+   needed), or **Tool** (geometry arrives through the tool context).
+3. Translate the request into representation transitions and the node roles they need:
+   what kind of geometry comes in, what it has to become, what drives the change.
+4. When unsure which node does a job, ask `scripts/find_nodes.py` with one short intent
+   per entry in `queries`; `references/nodes.tsv` is the reviewed source and fallback.
+   Nodes you already know need no query.
+5. Introspect the candidates in the running Blender before wiring anything, in one
+   batched probe.
+6. Build the smallest slice you can verify on its own, then verify it. Size the slice by
+   what you can check, not by a count.
+7. Read the graph back and assert an outcome **derived from the request** — a coordinate,
+   a size, a count the user asked for. Measure values with `scripts/verify_result.py`:
+   an attribute that should vary but is constant or all zero is a failure. "Four instances exist" is a graph fact; "the cones
+   span Z 1.0 to 1.2" is the request, and only the second catches a wrong assumption
+   about where geometry sits.
+8. Repair from what you observed, then continue.
+
+When the request names an outcome rather than a graph — "a treehouse" — the first
+deliverable is a named parts list the user can correct, not nodes. Choosing one minimal
+interpretation is right for an ambiguous request and wrong for an unspecified one.
+
+When wording is ambiguous, enumerate the competing interpretations, choose one minimal
+reading, and record the assumption. Ask only when one unresolved choice materially
+changes topology.
+
+Expose only the parameters the user named. "Scatter rocks with density control" exposes
+Density — not Seed, Rotation, Scale, or overlap. Words like "complete" or
+"production-ready" do not mean "expose everything".
+
+## Reliability
+
+1. **Never invent an identity.** Node types, node names, socket names, socket
+   identifiers, property identifiers and legal enum values come from the running Blender.
+2. **Set a mode or data-type property before reading the sockets it governs.** It can
+   change which sockets exist or are live. Include the mode when explaining the graph.
+3. **Resolve duplicate socket labels by identifier.** Name lookup silently returns the
+   first match, and a node can carry several sockets with one visible name.
+4. **Write one kind of target at a time** — a socket default or a node property, never a
+   silent fallback between them — and read back to confirm the value changed. If it did
+   not, the write failed.
+5. **Blender renames.** A created node may come back with a `.001` suffix; use the name it
+   returned for every later reference.
+6. **Keep field producers connected to concrete consumers.** An unconsumed field chain is
+   either unfinished or dead weight.
+7. **Keep the output trunk reachable** after every slice.
+8. **Preserve instances** until a downstream operation genuinely needs unique real
+   geometry, then realize as late as possible.
+9. **Read existing interface sockets before adding one**; do not duplicate a same-name,
+   same-direction socket.
+10. **Clean up narrowly.** Remove exactly the temporary data you created and confirm the
+    counts returned; never purge broadly.
+11. **Separate what you observed from what you inferred.** A failed call or a lost
+    connection is an environment event — you cannot see the user's screen. Report the
+    failure and your last action separately, and never record an untested cause as a
+    finding.
+12. **Verify the result, not only the graph.** A correct-looking graph is not a correct
+    result.
+13. **A group with no user is not saved.** Removing the last modifier that uses it drops
+    it on save. Keep a user or set `use_fake_user` before saving, and confirm
+    `persistence.survives_save`. Remove test hosts you added unless the request needs one.
+
+**When the node does not exist.** Modifier/editor features may have no equivalent node.
+Establish absence by enumeration, then explain the gap and a suitable substitute.
+
+## Delivery
+
+- **Keep Blender's node names and leave labels empty.** Labels replace displayed names,
+  breaking the connection to Blender's UI and tutorials. Explanations go on frames.
+- **One frame per slice or functional group**, not one per node.
+- **Write in the language the user is working in**, and keep node, socket and identifier
+  names exactly as Blender shows them. When that language is not English, pair the concept
+  with its English Blender term. A named annotation language wins and persists.
+- **Annotating a graph you did not build is a mutation.** Say what you are about to add
+  and why before writing it, and annotate what the graph does — improvements belong in
+  the report, not on the canvas.
+
+## Where to look
+
+Everything below is conditional. An ordinary single-version build reads this file,
+probes, builds, and verifies the result — nothing else.
+
+| Open | When |
+|---|---|
+| `references/nodes.tsv` | Reviewed source and fallback for candidate routing; never wire from it |
+| `references/versions.md` | The user names a target version, the plan must hold on more than one, a candidate is unavailable, or a migration is requested |
+| `references/reuse.md` | An existing node group or asset might already answer the request |
+| `references/diagnostics.md` | The graph and readback look right and the evaluated result is still wrong |
+| `scripts/read_graph.py` | Read-only tree summary: names, users, interface, trunk and issues. Pass `detail: "full"` only when socket identifiers, properties, links or layout facts are needed |
+| `scripts/find_nodes.py` | Deterministic intent-to-candidate query over `nodes.tsv`; filter by target version, then probe returned identifiers live before wiring |
+| `scripts/probe_node.py` | Asking what a node's live sockets, properties and legal values are; compact by default, `detail: "full"` for raw socket flags. Temporary data; Build/Edit only |
+| `scripts/verify_result.py` | Measuring what the group outputs: attribute ranges, constants, zeros, missing names, and whether the group survives a save. `samples` creates temporary hosts; Build/Edit only |
+| `scripts/layout_graph.py` | Deterministic scoped layout, and `check` for node and frame overlap before delivery. `check` is read-only; `apply` moves only caller-authorized nodes |
+| `scripts/capture.py` | Screenshot of the node editor. Reframing needs the user's permission first — see below |
+| `scripts/inspect_assets.py` | Enumerating asset libraries or inspecting one candidate group |
+
+Each script takes one JSON object and returns JSON; paths are relative to this skill.
+Unknown parameters are rejected, never ignored. Read the error and retry.
+
+`find_nodes.py` is the exception: it reads the packaged routing index beside it and runs
+in ordinary host Python, without Blender. Its candidates still need a live probe:
+
+```bash
+python3 <skill>/scripts/find_nodes.py '{"queries": ["raycast", "weld vertices"], "version": "5.2"}'
+```
+
+**Run the other scripts inside Blender through the host's existing Python execution channel.**
+Resolve the installed skill path first. If Blender can read that filesystem path:
+
+```python
+import runpy
+result = runpy.run_path(
+    script_path, init_globals={"NODECUE_PARAMS": params}
+)["result"]
+```
+
+Typical `params`: probe `{"nodes": [{"bl_idname": ..., "properties": {...}}]}`; read
+`{"tree": "<group>"}`; verify `{"tree": "<group>", "samples": ["cube", "uv_sphere"],
+"attributes": [...]}`. Read a script's opening documentation only for anything else. Without a shared filesystem,
+send its unmodified source through the channel, execute with `NODECUE_PARAMS` in the
+namespace, and retrieve `result`. Include imports each time: namespaces may not persist.
+Host Python alone cannot inspect the running Blender. Connection discovery and result
+wrapping belong to the host/plugin.
+
+**Capturing must not rearrange the user's editor behind their back.** Which tree is
+shown, whether the area is maximized, whether the editor is pinned — those are temporary
+and the script puts every one of them back. The framing is not: Blender exposes no way to
+restore a pan and zoom, so a capture that reframes has changed something it cannot undo.
+
+So framing is off by default, and turning it on is a decision the user makes, not you:
+
+- By default the capture takes the view as the user left it. If the graph does not fit,
+  say so and offer to reframe.
+- Before passing `fit: true`, **tell the user that the node view will be reframed and
+  that their current pan and zoom cannot be restored, and wait for them to agree.**
+- Having reframed, say so in the report, next to where the image went.

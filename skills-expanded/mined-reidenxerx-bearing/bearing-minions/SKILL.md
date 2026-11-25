@@ -1,0 +1,171 @@
+---
+name: bearing-minions
+description: "Fan work out to a swarm of cheap, anchored subagents that GATHER, when the USER asks to — \"use minions to find every place we do X\", \"fan this out\", \"split this across subagents\", \"which files still use the old API — fan out\". Each returns citations, never a verdict; you conclude. Do not fan out on your own initiative. If the work fails the gates (bounded, verifiable, independent, 3+), say so instead of fanning out."
+---
+
+# Minions — fan out to gather, keep the thinking
+
+You can already spawn subagents. What you do not do is notice **when you should** — so you grind
+through forty files serially, or worse, sample five and generalise. This skill is that judgment.
+
+**Minions gather. You conclude.** They do **minimal or zero reasoning**.
+
+## 1. Should you fan out at all?
+
+The user asked — that settles WHEN, not WHETHER. If the work fails the gates below, say which one and do it serially instead; fanning out only to comply is the expensive way to get a worse answer.
+
+All four must hold:
+
+| | |
+|---|---|
+| **Bounded** | Each unit has a definite end. "Find every caller of `X`" ends. "Improve the architecture" does not. |
+| **Verifiable** | You can check the answer against the repo — a path, a line, a command's output. If you cannot check it, you are trusting testimony. |
+| **Independent** | Unit N does not need unit N−1's answer. Sequential work becomes a queue of agents waiting on each other, which is slower than doing it yourself. |
+| **Wide** | **3 or more units.** Below that, spawning and reporting cost more than doing it yourself. At three they already run concurrently, so the round-trip is paid once rather than three times. |
+
+**Do NOT fan out when:**
+
+- **The judgment is the work.** *Deciding* whether a fee should be net or gross is yours. *Finding*
+  every place the fee is computed is a minion's.
+- **The answer must survive verbatim.** Anything that only survives as a summary is corrupted by the
+  round-trip. Have the minion return raw text, or read it yourself.
+- **The unit needs context the minion was not in.** It will answer confidently and wrongly.
+- **Two units.** That is not a fan-out — do it yourself.
+- **You are about to delegate the conclusion.** That is the failure mode this whole skill is shaped
+  around — see §4.
+
+## 2. Split the work
+
+One minion per **independent unit**, not per arbitrary chunk. A good split is one where two minions
+cannot disagree — they are looking at different things, not the same thing from different angles
+(that is microscope's job, and it is a different tool).
+
+Say out loud what the units are and how many, before spawning. If you cannot enumerate them, the
+work is not bounded and you should not be here.
+
+## 3. What every minion gets
+
+<!-- BEGIN GENERATED: anchored-spawn — bearing regenerates this block; edits here are replaced on update -->
+### Anchored spawn — how to send work out
+
+A subagent starts with **none of your context**. That is what makes it cheap and what makes it
+drift, so everything below exists to give it back exactly enough and no more.
+
+**1. Persona.** Read `.bearing/domain.json` and give every subagent the SAME pinned persona bearing
+resolved at install. Same in wave 2 as in wave 1, same in every unit of a fan-out — an expert that
+changes between agents produces findings you cannot compare.
+
+**2. Anchor.** Include the north-stars this task could actually violate — the relevant subset, not
+the whole file. A subagent that never sees them will confidently contradict a settled decision, and
+one that sees all of them pays that token cost once per agent.
+
+**3. Bounds.** State the unit, what to return, and **what NOT to decide**. Whatever you leave
+unstated, a subagent will decide anyway, using context it does not have.
+
+**4. The same tools you would use.** Grep and Read are the defaults. Hand a subagent the GitNexus
+graph only when the user asked for the graph in this task, and say so in its brief: a subagent
+never saw that request, so it cannot know the graph was wanted. When it does use the graph, its
+zeros and counts carry the same caveats yours do.
+
+**5. Parallel where the runtime allows it**, sequential where it does not. Claude Code can run them
+concurrently; treat that as an optimisation, never as a requirement — the routine must produce the
+same answer either way.
+
+**6. Coverage is a claim, so keep it honest.** A subagent that died, timed out, or came back
+empty-but-confused has REDUCED YOUR COVERAGE, and silence reads as "I checked everything". Re-run
+it, or say plainly what went unchecked. Never let the count of agents you spawned stand in for the
+count that actually reported.
+
+**7. Every minion runs on the MIDDLE tier** of your model family — `sonnet` for Anthropic, or the
+`minionModel` set in `.bearing/hooks.json` / `hooks.local.json`. That holds for minions that
+gather and minions that apply, because neither decides anything (NS-24). The tier follows the return
+contract, never how important the task feels: if a minion seems to need a smarter model, you handed
+it a decision — take that part back. The one subagent that runs on your main model is one whose
+return IS the reasoning, a microscope lens, and that is not a minion.
+
+**8. Spot-check before you trust.** Open at least one cited `file:line` per subagent and confirm it
+says what the report claims. A fabricated citation is the one failure the return shape cannot catch
+on its own.
+<!-- END GENERATED: anchored-spawn -->
+
+Plus, verbatim:
+
+> Return what you SAW, not what you concluded. Do not judge, rank, recommend, or summarise. If you
+> find yourself writing "this looks like", stop and return the line instead.
+
+## 3b. Which model
+
+**Spawn minions on a MIDDLE tier — `sonnet` by default.** Not merely to save money: it is correct
+*because* minions do no reasoning. Gathering citations does not need a flagship, and a whole fan-out
+on the top tier costs more than doing the work yourself would have.
+
+Pin a different middle-tier model with `minionModel` in `.bearing/hooks.json` (team) or `.bearing/hooks.local.json` (this machine) — `"minionModel": "..."` — if your account has
+different models available. If the tier you ask for is unavailable, **run anyway on whatever you
+get** — a costlier minion is a nuisance; a skipped unit is a hole in the answer.
+
+**The diagnostic that matters:** if you find yourself wanting a *smarter* minion, stop. That is the
+signal that you delegated judgment rather than gathering, and the fix is the split, not the model.
+Take that part back.
+
+Same rule when a unit keeps returning `MISSED`: **do that unit yourself.** Do not re-run it on a
+bigger model. If it needs reasoning to answer, it was never a minion's by NS-24.
+
+### Enumerate the SHAPES, not just the rule
+
+Whatever reference shapes your units contain, list them. A rule that says "check every `.mjs` path"
+meets a `.cjs` path and the minion has no instruction for it — the honest ones return `MISSED`, the
+literal ones return nothing, and you cannot tell those apart from a clean result.
+
+**If two minions handle the same evidence differently, your bounds were ambiguous, not their work.**
+That divergence is a bug report about your prompt; re-run the unit with the shape named.
+
+## 4. The return contract
+
+Every minion returns exactly this shape:
+
+```
+FOUND    <file:line> — <the actual line or output, verbatim>
+CHECKED  <what it searched, and how — the exact query, command or glob>
+MISSED   <what it could not determine, and why>
+```
+
+Why this shape and not prose:
+
+- **You can spot-check it.** Open a cited line and confirm. Testimony becomes evidence.
+- **A silent nothing is distinguishable from a failure.** `CHECKED` filled with `FOUND` empty means
+  it looked and there was nothing there. **Both empty means it never understood the task** — a
+  completely different fact, and one that looks identical in prose. Collapsing them is the same
+  error as reading a graph zero as absence.
+- **It merges mechanically.** N lists of citations dedupe. N paragraphs of prose do not.
+
+Reject a report that reasons. If a minion returns "this is probably fine", you have no evidence —
+re-run that unit, or check it yourself.
+
+## 5. Then YOU do the thinking
+
+Merge the citations. Look for what nobody found — a `MISSED` from three minions in the same area is
+itself a finding.
+
+**Verify the citations mechanically** rather than eyeballing one:
+
+```bash
+node .bearing/lib/verify-citations.mjs src/a.ts:88 src/b.ts:12   # or pipe the FOUND lines in
+```
+
+It prints what is actually on each line, and exits non-zero if any do not resolve. A fabricated
+`file:line` is the one failure the return shape cannot catch by itself — and "3/12 did not resolve"
+is a verdict about the REPORT, not about your code. Treat that report as unverified and re-run it.
+
+Only now form the conclusion. It is yours, drawn from evidence you can point at, not inherited from
+a cheaper model's summary.
+
+## 6. Coverage must be honest
+
+If a minion died, timed out, or came back empty-but-confused, **say so in your answer**. Silent
+under-coverage reads as "I checked everything" when you did not — the same failure as a silent cap.
+Re-run it, or state plainly what went unchecked.
+
+**Read every `MISSED` as being about YOUR split, first.** The first real use of this skill handed a
+minion a file that did not exist; it returned `MISSED — no such file` instead of a confident
+all-clear, and that is how the bad unit was discovered. A `MISSED` is usually the delegator's
+mistake, not the minion's.

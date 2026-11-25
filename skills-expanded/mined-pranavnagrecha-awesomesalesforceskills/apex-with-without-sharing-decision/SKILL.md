@@ -1,0 +1,289 @@
+---
+name: apex-with-without-sharing-decision
+description: "Choosing the sharing keyword on an Apex class: with sharing vs without sharing vs inherited sharing, how it flows through called methods, and when WITH USER_MODE overrides it. NOT for enforcing CRUD/FLS on the records themselves — use apex/apex-stripinaccessible-and-fls-enforcement. NOT for granting row access via __Share records — use apex/apex-managed-sharing."
+category: apex
+salesforce-version: "Spring '25+"
+well-architected-pillars:
+  - Security
+triggers:
+  - "should this apex class be with sharing or without sharing"
+  - "auraenabled controller running as system context unexpectedly"
+  - "inherited sharing keyword apex when to use"
+  - "without sharing utility called from with sharing controller"
+  - "managed package class ignoring caller sharing rules"
+  - "with user_mode vs with sharing class keyword difference"
+  - "trigger handler default sharing behavior surprising users"
+tags:
+  - apex
+  - sharing
+  - security
+  - record-access
+  - user-mode
+  - controller
+  - service-layer
+inputs:
+  - Apex class purpose (controller, service, batch, trigger handler, utility)
+  - Caller context (LWC / Aura / REST / Batch / Trigger / Schedulable)
+  - Whether the class needs to read or write records the running user cannot see
+  - Presence of @AuraEnabled, @InvocableMethod, @RestResource annotations
+  - Whether calls use SOQL/DML in WITH USER_MODE / WITH SYSTEM_MODE
+outputs:
+  - Recommended sharing keyword (with / without / inherited) with justification
+  - Required `// reason:` comment text when without sharing is chosen
+  - Per-query override plan using WITH USER_MODE where appropriate
+  - Reviewer checklist confirming inherited-method risks are handled
+dependencies: []
+version: 1.1.1
+author: Pranav Nagrecha
+updated: 2026-10-03
+---
+
+# Apex With / Without / Inherited Sharing Decision
+
+Activate when an author is creating a new Apex class, refactoring one, or
+reviewing a PR and the question is the narrow one: **what sharing keyword
+goes on this class right now?** This is a code-author decision, distinct
+from the org-level sharing-mechanism choice in
+`standards/decision-trees/sharing-selection.md`.
+
+---
+
+## Before Starting
+
+Gather this context before deciding:
+
+- **Entry point.** Is the class invoked from an LWC `@AuraEnabled` method,
+  a REST `@HttpGet`, a batch `Database.executeBatch`, a trigger handler,
+  a Flow `@InvocableMethod`, or chained from another Apex class?
+- **Record visibility intent.** Should the user see only what their
+  sharing rules permit, or does the operation legitimately need to read
+  and write records they cannot normally see (e.g., audit aggregation,
+  approval routing, compliance scrubbing)?
+- **Caller context.** If this class will be called from other Apex,
+  remember that `with`/`without sharing` is **inherited from the calling
+  class** — your keyword may be irrelevant if a `without sharing` caller
+  invokes you, unless you explicitly declare `with sharing`.
+- **Annotations on the class.** `@AuraEnabled`, `@RemoteAction`, and
+  `@RestResource` classes are user-facing entry points and **must default
+  to `with sharing`** unless you have a documented elevation reason.
+
+---
+
+## Core Concepts
+
+### The three keyword choices
+
+`with sharing` / `without sharing` / `inherited sharing` differ on **whose** sharing rules apply to direct SOQL queries. Field-Level Security and CRUD are a separate enforcement concern (`WITH USER_MODE`, `Security.stripInaccessible`; `WITH SECURITY_ENFORCED` only on classes at API ≤ 66.0 — it is removed in 67.0 and does not compile there) and are **not** controlled by these keywords.
+
+| Keyword | Sharing applied to direct SOQL | Default for what entry points | When to use |
+|---|---|---|---|
+| `with sharing` | Running user's sharing rules enforced; invisible records filtered out | `@AuraEnabled`, `@RemoteAction`, `@RestResource` (must default here) | Any user-facing entry point unless you have a documented elevation reason |
+| `without sharing` | Running user's sharing rules ignored for this class's own queries | None — never a safe default | Audit aggregation, approval routing, compliance scrubbing — deliberate elevation only |
+| `inherited sharing` | Adopts the **caller's** mode; **defaults to `with sharing`** when called directly from Lightning/REST/Aura | Reusable utilities, selectors, base service classes | Shared service/selector code that should respect whatever the entry point demanded |
+
+`without sharing` is a record-visibility keyword, not a blanket system context. It does not turn off FLS or CRUD — and at API 67.0+ database operations enforce the running user's FLS and object permissions by default with no keyword at all, so an elevation that genuinely needs them off states it per statement (`WITH SYSTEM_MODE`, `AccessLevel.SYSTEM_MODE`).
+
+### Sharing is inherited through method calls
+
+A class that explicitly declares `with sharing` keeps its own mode no
+matter who calls it. What a **bare** callee does depends on its own
+`apiVersion` (see "Bare class behavior" below): at **API ≤ 66.0** the
+outermost class on the call stack governs it, so a `with sharing`
+controller makes the bare service run `with sharing` while a `without
+sharing` controller makes the same service run `without sharing`. At
+**API 67.0+** the bare callee no longer follows the caller down — it runs
+`with sharing` on its own. Either way the callee's behavior is decided
+somewhere other than its source, so always declare an explicit keyword on
+shared service / selector layers.
+
+### Where `inherited sharing` fits
+
+Reusable utilities, selectors, and base service classes that should
+respect whatever the entry point demanded. `inherited sharing` is the
+explicit way to say "I do not want to override the caller's choice, but I
+also do not want to be ambiguous about it." It also produces a safe
+default (with sharing) when called from Lightning / REST entry points —
+unlike a bare class with no keyword.
+
+### Bare class (no keyword) behavior — version-gated
+
+The bare-class default inverted in Summer '26. The gate is the
+**`apiVersion` in the class's own `.cls-meta.xml`**, not the org's
+release — a Summer '26 org runs a class pinned to 58.0 with the old
+behavior.
+
+- **API 67.0+** — a class with no keyword runs `with sharing`,
+  regardless of who called it. The rule reaches across a call chain: once
+  any class in the chain is saved at 67.0+, the chain from there runs
+  `with sharing` — a bare 67.0 callee is not pulled down to `without
+  sharing` by a `without sharing` caller.
+- **API ≤ 66.0** — a bare class is **not** equivalent to `with sharing`;
+  it ran effectively as `without sharing`, except when called from a
+  Lightning context (`@AuraEnabled`, `@RemoteAction`), which has run it
+  `with sharing` since API v34.
+
+**Never ship a bare class at either version** — pick one of the three
+keywords explicitly so reviewers can audit intent, and so an `apiVersion`
+bump cannot silently flip a class that needs elevation into enforcing
+sharing. Canonical version table:
+[`agents/_shared/AGENT_CONTRACT.md`](../../../agents/_shared/AGENT_CONTRACT.md)
+§ *Apex security idiom by API version*.
+
+### Interaction with `WITH USER_MODE`
+
+`WITH USER_MODE` on a SOQL query (and `Database.queryWithBinds(...,
+AccessLevel.USER_MODE)`, plus DML overloads with `AccessLevel.USER_MODE`)
+enforces **both sharing rules and FLS/CRUD** for that single statement,
+regardless of the class-level keyword. This means a `without sharing`
+class can run a single query in user mode without changing the rest of
+its behavior — useful when 95% of a system-context job needs one
+user-scoped lookup. Conversely, `WITH SYSTEM_MODE` on a query inside a
+`with sharing` class elevates only that statement. Class keyword sets the
+default; `WITH USER_MODE` / `WITH SYSTEM_MODE` is the per-statement
+override.
+
+### Always justify `without sharing`
+
+Repo convention: any `without sharing` class must be preceded by a
+`// reason:` comment explaining what user-invisible data is being
+accessed and why the elevation is required. The checker enforces this.
+
+---
+
+## Common Patterns
+
+### Pattern: AuraEnabled controller
+
+**When to use:** any `@AuraEnabled` Apex class invoked from LWC / Aura.
+
+**How it works:** declare `with sharing`. Let the user's record
+visibility govern. If a single operation legitimately needs elevation
+(e.g., loading a configuration record outside the user's perimeter),
+factor it into a separate `without sharing` helper with a `// reason:`
+comment, or use `WITH SYSTEM_MODE` on that one query.
+
+**Why not the alternative:** `without sharing` on an `@AuraEnabled` class
+is a frequent insecure-direct-object-reference vector — the LWC may pass
+arbitrary IDs and the controller will return them all.
+
+### Pattern: Domain / service / selector layer
+
+**When to use:** classes called from other Apex, never directly by a
+user-facing entry point.
+
+**How it works:** declare `inherited sharing` so the entry point's
+choice flows through. Document the assumption at the top of the class:
+"caller-governed; ensure entry point declares with sharing for
+user-scoped operations."
+
+**Why not the alternative:** a bare class is ambiguous; an explicit
+`with sharing` overrides legitimate batch / system contexts that need
+elevation.
+
+### Pattern: Batchable / Schedulable / Queueable system jobs
+
+**When to use:** asynchronous jobs that operate across all records
+regardless of user perimeter (data scrubs, aggregation, retention sweeps).
+
+**How it works:** `without sharing` with a `// reason:` comment
+explaining why system context is required. Add a unit test that asserts
+the job processes records the running user cannot see.
+
+**Why not the alternative:** `with sharing` on a batch run by an
+integration user can silently miss records and cause incomplete jobs.
+
+---
+
+## Decision Guidance
+
+| Scenario | Keyword | Reason |
+|---|---|---|
+| `@AuraEnabled` controller for LWC | `with sharing` | User invoked it; respect their visibility |
+| `@RestResource` exposed to a community / partner | `with sharing` | External caller authenticates as a user |
+| Reusable selector / service / domain class | `inherited sharing` | Caller chooses; you remain neutral |
+| Batch / Schedulable system job | `without sharing` + `// reason:` | Cross-perimeter aggregation |
+| Trigger handler | `without sharing` (typical) | A trigger always carries an implicit `without sharing` context, but its own SOQL and DML are version-split: user mode (running user's sharing, FLS, object permissions applied) at API 67.0+, system mode before 67.0. The handler's keyword governs only the handler's own queries |
+| Site / guest user controller | `with sharing` (mandatory for guest) | Guest perimeter must not be elevated |
+| Managed-package internal class | `without sharing` (Salesforce-enforced) | Subscriber's keyword cannot override package |
+| One-off elevated query inside a `with sharing` class | keep class `with sharing`, use `WITH SYSTEM_MODE` per-query | Minimum-blast-radius elevation |
+
+---
+
+## Recommended Workflow
+
+When this skill activates, the agent runs these steps in order:
+
+1. **Identify entry-point category** for every class in scope (controller, REST, batch, trigger handler, service, selector, utility, guest-user controller).
+2. **Match category to the Decision Guidance table** above and propose the default keyword for each class.
+3. **Trace inherited-sharing risk** — for any class without an explicit keyword, list every caller and confirm none of them are `without sharing` in a way that would silently elevate this code.
+4. **Justify every `without sharing`** with a single-line `// reason:` comment immediately above the class declaration; reject the change if the reason is generic ("performance", "convenience").
+5. **Plan per-query overrides** — if 90%+ of the class is one mode but one query needs the other, do not flip the class keyword; use `WITH USER_MODE` / `WITH SYSTEM_MODE` on that statement.
+6. **Run** `python3 skills/apex/apex-with-without-sharing-decision/scripts/check_apex_with_without_sharing_decision.py --manifest-dir <path>` to flag missing keywords on `@AuraEnabled` classes and unjustified `without sharing`.
+7. **Add a Review Checklist citation** to the PR confirming the keyword choice was deliberate and the `// reason:` comment exists where required.
+
+---
+
+## Review Checklist
+
+- [ ] Every class in scope has an explicit sharing keyword (no bare classes) — at API 67.0+ the bare default is `with sharing`, which is safe but hides intent and flips on an `apiVersion` change
+- [ ] All `@AuraEnabled` and `@RestResource` classes are `with sharing`
+- [ ] Every `without sharing` class has a `// reason:` comment above it
+- [ ] Reusable service / selector classes use `inherited sharing`
+- [ ] No `with sharing` class silently calls a `without sharing` helper that exposes user-invisible data back to the UI
+- [ ] Per-query `WITH USER_MODE` / `WITH SYSTEM_MODE` used where the class default is wrong for one statement
+- [ ] Trigger handlers explicitly declare `without sharing` (or `with sharing` if user-mode behavior is intended) — never bare
+- [ ] Test class exists that proves the chosen keyword by running as a low-privilege user
+
+---
+
+## Salesforce-Specific Gotchas
+
+1. **Sharing is inherited through method calls.** A `with sharing`
+   controller that calls a `without sharing` helper runs that helper's
+   own queries with the running user's sharing rules ignored — the
+   explicit keyword wins over the caller at every API version. Reviewers
+   must trace the call tree, not just the entry point.
+2. **Managed-package classes always run `without sharing` regardless of
+   subscriber.** When a subscriber org calls a managed-package
+   `@AuraEnabled` class, the package's declared keyword is enforced; the
+   subscriber cannot tighten it.
+3. **A trigger's own queries and DML are version-split.** A `.trigger`
+   file cannot carry a sharing keyword and always runs in an implicit
+   `without sharing` context. At trigger API **67.0 and later**, SOQL,
+   SOSL, DML and `Database` methods in the trigger body run in **user
+   mode** unless system mode is stated; user mode overrides the implicit
+   `without sharing`, so the running user's sharing, FLS and object
+   permissions all apply. Before 67.0 they run in **system mode**. State
+   the mode on every operation in a trigger (`WITH SYSTEM_MODE` only
+   where the trigger genuinely needs all records) and delegate to a
+   handler class that declares an explicit keyword.
+   Source: Apex Developer Guide v67.0, *Using the with sharing, without
+   sharing, and inherited sharing Keywords* (Implementation in Apex
+   Triggers) — recorded in `skills/apex/soql-security/references/gotchas.md`
+   Gotcha 6.
+4. **Aggregate queries (`SUM`, `COUNT`, `AVG`) respect class sharing.**
+   A `with sharing` class running `SELECT COUNT() FROM Opportunity` only
+   counts opportunities the user can see — surprising for dashboards.
+5. **`WITH USER_MODE` enforces FLS/CRUD too**, not just sharing. Adding
+   it to a query inside a `without sharing` class can suddenly start
+   throwing `QueryException` if the user lacks field-level read on a
+   selected field.
+
+---
+
+## Output Artifacts
+
+| Artifact | Description |
+|---|---|
+| Keyword recommendation per class | Explicit `with` / `without` / `inherited sharing` choice with rationale |
+| `// reason:` comment text | One-line justification for every `without sharing` class |
+| Per-query override list | Statements that need `WITH USER_MODE` / `WITH SYSTEM_MODE` |
+| Test class scaffold | Runs the code as a minimum-permission user to prove keyword behavior |
+
+---
+
+## Related Skills
+
+- `apex/apex-fls-crud-enforcement` — sharing is record-level; FLS/CRUD is field/object-level. Both must be considered.
+- `apex/apex-aura-enabled-security` — controller-specific security review including sharing keyword
+- `standards/decision-trees/sharing-selection.md` — org-level sharing mechanisms (OWD, role hierarchy, sharing rules) — read this when the question is broader than "what keyword goes on this class"

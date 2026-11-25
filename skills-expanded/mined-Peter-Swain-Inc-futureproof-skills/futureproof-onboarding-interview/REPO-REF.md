@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Peter-Swain-Inc/futureproof-skills (path: families/onboarding/futureproof-onboarding-interview/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: HyperTuned Memory — <client name>

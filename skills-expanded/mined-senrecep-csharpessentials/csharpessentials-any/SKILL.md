@@ -1,0 +1,108 @@
+---
+name: csharpessentials-any
+description: Use when a method can return one of several distinct types. Covers Any<T0,T1> through Any<T0,…,T7> as a type-safe discriminated union, implicit assignment from any branch type, Match()/Switch() with one handler per branch, IsFirst/GetFirst, Is/As/TryAs, and Partition/Traverse for sequences.
+---
+
+# CSharpEssentials.Any
+
+`Any<T0,T1,...>` is a discriminated union: a value that is exactly one of 2 to 8 types at run time. Use it instead of `object`-typed returns and casts.
+
+```bash
+dotnet add package CSharpEssentials.Any
+```
+
+```csharp
+using CSharpEssentials.Any;
+```
+
+## Creating Any
+
+```csharp
+// Implicit assignment from any branch type
+Any<User, NotFoundError> found = user;
+Any<User, NotFoundError> missing = new NotFoundError("User not found");
+
+// Explicit factories: First, Second, ... (unions of 2 to 8 types)
+Any<Order, ValidationFailure, NotFoundError> outcome = Any<Order, ValidationFailure, NotFoundError>.First(order);
+
+// Or spell the type arguments on Any.Create
+Any<User, NotFoundError> viaCreate = Any.Create<User, NotFoundError>(user);
+```
+
+Two type arguments of the same type (`Any<int, int>`) make the implicit conversion ambiguous (CS0457). `Index` is the active branch (0 for the first type) and `Value` its `object?` value, so a value-type branch is boxed.
+
+## Match and Switch
+
+```csharp
+// Match returns AnyActionResult<TResult>: Status says whether a handler ran, Result holds its value.
+// Handlers are optional parameters, so a missing handler returns Status = NotExecuted.
+AnyActionResult<IResult> response = found.Match(
+    first: u => Results.Ok(u),
+    second: err => Results.NotFound(err.Message));
+IResult http = response.Result!;
+// Match and Switch throw InvalidOperationException on default(Any<...>) or a union holding null
+
+// Switch runs side effects and returns AnyActionStatus
+AnyActionStatus status = found.Switch(
+    first: u => Console.WriteLine(u.Name),
+    second: err => Console.WriteLine(err.Message));
+```
+
+## Type inspection
+
+```csharp
+if (found.IsFirst)
+{
+    User u = found.GetFirst(); // throws InvalidOperationException for the wrong branch
+}
+
+// Generic helpers take the target type followed by the union's type arguments.
+// They test the runtime type of the value; for a value-type target As returns default (0 for int), not null, on a mismatch
+bool isUser = found.Is<User, User, NotFoundError>();
+User? asUser = found.As<User, User, NotFoundError>();
+bool ok = found.TryAs<NotFoundError, User, NotFoundError>(out NotFoundError? error);
+
+// Deconstruct / ToTuple: the inactive branches are default
+var (maybeUser, maybeError) = found;
+```
+
+## Collections
+
+```csharp
+// Split a sequence of unions into one typed array per branch
+(User[] users, NotFoundError[] notFound) = lookups.Partition();
+
+// Or project and split in one pass
+(User[] loaded, NotFoundError[] failed) = ids.Traverse(id => FindUser(id));
+```
+
+## Typical usage: service return type
+
+```csharp
+public Any<Order, ValidationFailure, NotFoundError> PlaceOrder(PlaceOrderRequest request)
+{
+    if (request.Quantity <= 0)
+        return new ValidationFailure("Quantity must be positive");
+
+    Cart? cart = _repo.FindCart(request.UserId);
+    if (cart is null)
+        return new NotFoundError("Cart not found");
+
+    return new Order { Id = Guid.NewGuid() };
+}
+
+// At the API boundary
+public IResult PlaceOrderEndpoint(PlaceOrderRequest request) =>
+    PlaceOrder(request).Match(
+        first: order => Results.Created($"/orders/{order.Id}", order),
+        second: failure => Results.BadRequest(failure.Message),
+        third: err => Results.NotFound(err.Message)).Result!;
+```
+
+## Guidance
+
+- Use `Any<T0,T1>` over `Result<T>` when the error branches carry distinct, typed data.
+- Pass a handler for every branch to `Match()`/`Switch()`; a missing handler is not a compile error, it returns `NotExecuted`.
+- Use `IsFirst`/`GetFirst()` or `TryAs<...>()` where `Match()` is too verbose.
+- Avoid `object`-typed branches.
+- A union serializes to JSON as `{"Index":n,"Value":...}` and deserializes back to the same branch, reading the value with the caller's `JsonSerializerOptions`. `ToString()` returns the value's own `ToString()` (empty for null).

@@ -1,0 +1,71 @@
+---
+name: inspect-app
+description: "구현된 앱의 기능, UX, 디자인을 종합 검수하는 스킬. PRD 대비 기능 완성도, 화면 흐름, 디자인 가이드라인 준수, 접근성, 엣지 케이스를 점검한다. '앱 검수', '기능 점검', 'UX 검토', '디자인 QA', '출시 전 점검' 요청 시 반드시 이 스킬을 사용할 것."
+---
+
+# Inspect App — 앱 종합 검수 스킬
+
+구현된 앱을 PRD, 디자인 시스템 기준으로 종합 검수하는 스킬.
+
+## Trigger
+- "앱 검수", "기능 점검", "QA 해줘"
+- "UX 검토", "디자인 QA"
+- "출시 전 점검", "앱 리뷰해줘"
+
+## Input
+- PRD: `_workspace/plan/prd.md`
+- 디자인 시스템: `_workspace/design/design-system.md`
+- 구현 코드: `src/`, `app/`
+
+## Steps
+
+### Step 1: 기능 완성도 검수
+- PRD의 유저 스토리를 체크리스트로 변환
+- 각 유저 스토리에 해당하는 코드 파일 매핑
+- 구현 여부 확인 (PASS/FAIL/PARTIAL)
+- API 타입과 UI 타입의 경계면 교차 비교
+
+### Step 2: UX 흐름 검증
+- `app/` 디렉토리의 라우트 구조 분석
+- 화면 간 네비게이션 연결 확인
+- 에러 상태, 로딩 상태, 빈 상태 처리 확인
+- 키보드 회피(KeyboardAvoidingView) 확인
+
+### Step 2.5: 런타임 검증 (sim-use)
+- 시작 전 sim-use CLI 설치 확인 → 없으면 설치 (`command -v sim-use >/dev/null || brew install lycorp-jp/tap/sim-use`). 스킬은 레포에 들어 있으니 `sim-use init` 은 하지 않는다 (`docs/rules/runtime-testing.md` "부트스트랩")
+- 시뮬레이터에서 앱 실행 후 `sim-use ui` → `tap @N`/`type`/`swipe` → `sim-use ui`로 observe-act-verify
+- PRD happy path를 실제 조작으로 밟아 화면 전환/상태 처리 검증 (정본: CLAUDE.md "시뮬레이터 런타임 테스트")
+- 필수 흐름: PRD happy path · 뒤로가기 · 키보드가 입력창을 가리지 않는지 · 에러/빈 상태
+- 각 흐름의 플랫폼·기기·커밋(`git rev-parse --short HEAD`)·행동/기대/결과·스크린샷(`sim-use screenshot` → `_workspace/qa/runtime/`)을 보고서 "런타임 검증" 표에 남긴다
+- 설치·실행 불가 시 판정을 `BLOCKED`(사유)로 기록하고 정적 검수만 진행한다. `BLOCKED` 는 PASS 가 아니며 배포 게이트(orchestrate Step 7.0)에서 다시 걸린다
+
+### Step 3: 디자인 일관성 검수
+- 디자인 시스템의 토큰 값과 실제 className 비교
+- 하드코딩된 색상, 폰트 크기, 스페이싱 탐지
+- 컴포넌트 variant 사용 일관성 확인
+
+### Step 4: 접근성 점검
+- 터치 타겟 크기 (최소 44x44)
+- accessibilityLabel 설정 여부
+- 색상 대비(contrast ratio) 확인
+
+### Step 5: 엣지 케이스 탐지
+- 긴 텍스트 / 빈 데이터 / 대량 데이터
+- 이미지 로드 실패 대응
+- 네트워크 오프라인 대응
+- 빠른 연속 입력 방어
+
+### Step 6: 보고서 생성
+- 종합 점수 (0~100)
+- HIGH / MEDIUM / LOW 분류 (HIGH = Hard Threshold 위반·기능 차단·크래시, orchestrate Fix Loop 와 같은 체계)
+- 각 이슈에 파일:라인, 설명, 수정 방법 포함
+- `_workspace/qa/inspection-report.md`에 저장
+
+## Agent Delegation
+| Step | Agent |
+|------|-------|
+| 1-6 | app-inspector |
+
+## QA Reviewer와의 역할 분담
+- **qa-reviewer**: 코드 품질, TypeScript 타입 안전성, FSD 규칙, lint/format
+- **app-inspector**: 기능 완성도, UX 흐름, 디자인 일관성, 접근성

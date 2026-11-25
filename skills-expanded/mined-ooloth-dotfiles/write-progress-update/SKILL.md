@@ -1,0 +1,207 @@
+---
+name: write-progress-update
+description: Draft a short Slack message summarizing progress on a work project over a period of time, gathered from Jira, GitHub and Slack. Use when the user asks for a progress update, status update or "what we did and what's next" message. Shows the update for approval, then posts it only to the user's own channel, where they finalize it before posting it where it belongs.
+---
+
+# Write a progress update
+
+A busy manager should get through the update in under a minute and come away knowing what is now
+possible, what is coming next, and roughly what follows. Everything below serves that.
+
+Before step 1, read the `use-slack` skill and run its "Work only" check. When it fails, say so and
+stop, because every step after this one depends on Slack.
+
+## 1. Read the request
+
+The user names, in one line, as much of this as they know:
+
+- **Series title**, such as "Deployment updates". It is the first line of every update in the
+  series.
+- **Topic**: what the update covers, such as the whole project or one part of it. Do not assume it.
+  Take it from the request, or from the previous update's content, and ask when neither settles it.
+- **Scope**: Jira epics, a JQL query or project, GitHub repos, and Slack channels to read.
+- **Destination**: the Slack channel the update will be posted in.
+
+Ask in one message for anything missing that you cannot find. A scope can often be filled in from
+the previous updates' links (step 2).
+
+## 2. Find the previous updates
+
+Read the `use-slack` skill again before each Slack call. Its rule on the user's two scratchpads
+applies to every search here, so nothing in either is a previous update.
+
+Search Slack for messages from the user `in:` the destination channel only, newest first, using the
+title's main words without quotes. Titles drift between posts ("update" or "updates", a colon), so
+confirm a match by its shape: a title line followed by one or more numbered lists. Use the title as
+the user gives it now, even if earlier posts worded it differently.
+
+Read the last two updates in full, with their thread replies. What they or their replies reported
+is already reported; match items to them by ticket key, not by title, because tickets get renamed.
+The latest one's forward-looking lists (whatever they are called) are the first thing to check
+progress against. The window runs from the latest update until now. If there is no previous
+update, cover the last two weeks and say so.
+
+## 3. Gather, one subagent per source
+
+Spawn one subagent per source (Jira, GitHub, Slack) in parallel, and tell each to read the sources
+itself and spawn no subagents. Tell each:
+
+- the window, and to convert it to that source's time handling. JQL bounds are in the user's Jira
+  timezone, which can differ from their local one: read the offset on the returned dates that fall
+  inside the window (daylight saving changes it), and re-run with corrected bounds if the first
+  query used the wrong ones. GitHub's `merged:` dates are UTC. Slack takes dates or Unix
+  timestamps.
+- to check when something actually finished (Jira `resolutiondate`, PR `mergedAt`), not its
+  current status, which may have changed since. Work open at the window's end has no resolution
+  or one dated after the end. A Jira ticket closed as Won't Do, Duplicate or similar did not
+  finish, whichever of `status` or `resolution` says so (some projects record it only in the
+  status); it is left out, or listed as a decision when closing it was one.
+- that a decision counts from when it was made (the Slack message, or the merged PR that records
+  it), not from when its ticket closed
+- for Jira, to request only the fields it needs (summary, status, resolution, resolutiondate,
+  assignee). Even then a large result is saved to a file instead of returned; read that file
+  rather than re-querying in smaller pieces
+- to look back as far as the update before the latest one, for finished work neither update
+  mentioned
+- for Slack: read the named channels, and also search all channels and DMs for the topic's key
+  words and the names of systems in scope, since decisions and plans are often discussed in DMs
+- for Slack: to read the `use-slack` skill before its first Slack call
+
+Each returns findings, each with:
+
+- a link
+- the date it finished (merged, closed or decided), or "open"
+- the people involved, with their Slack user ID where known. An ID taken from an existing `<@U…>`
+  mention counts, and so does matching a PR or ticket author to a Slack user by name with
+  `slack_search_users`
+- where it came from: for Slack, the channel name, or who the DM is with
+
+A source that fails to load is reported as failed, never as an empty list. A source that loads but
+has nothing in the window is reported as empty.
+
+## 4. Review candidates with the user
+
+Group findings into a few candidate items before writing any prose. An item is something a reader
+cares about, which usually spans several tickets and PRs: "the new dev deployment is ready for most
+app work" rather than one line per ticket. Aim for the handful of items that matter most, not for
+completeness. Order each list by how much it matters to the reader, most first, and suggest which
+items to cut.
+
+Show:
+
+- any source that failed
+- the latest update's link (or the two-week fallback)
+- a numbered **Done** list: work finished and not yet reported, and decisions made
+- a numbered **Next up** list: open work, and decisions still to make
+- for each item: one line, its links, its finish date and who did it
+- a short **Left out** list: what you found but judged off-topic or minor, so the user can add it
+  back
+
+A DM or private channel is a source like any other, and an item that came only from one is kept
+or cut on how much it matters, like every other item. Leave out DMs that matched a search but have
+nothing to do with the update.
+
+The Done and Next up lists stand alone. No item refers to an earlier update's items by number or
+says which of them it finishes; the previous update's lists are only for finding progress.
+
+Ask the user to cut, merge, add, reword, and mark detail for a thread reply. Items the user adds
+need no link.
+
+## 5. Write the draft
+
+This is the default shape, not a form to fill. Drop a section with nothing in it, and drop the
+closing line when it adds nothing. Two items is fine when that is all that matters.
+
+```
+:emoji: **<Series title>**
+
+:emoji: **Done**
+1. **<What is now true or possible, opening words>** <rest of the line> <link on the key words, or ([KEY](url)) at the end> _(<optional aside>)_
+
+:emoji: **Next up**
+1. <What will be true> <rest of the line> ([KEY](url))
+
+_<One sentence on the roadmap after Next up, pointing to the thread reply if there is one>_
+```
+
+- Reuse the header emojis and formatting, such as bold, from earlier updates in the series. Match
+  sections by meaning (a "What remains" list is Next up), prefer the most recent, and look further
+  back when the latest ones lack a section.
+- One line per item, and at most one link per item: the ticket or doc that best explains it.
+- Bold and italics go wherever they make the update quicker to scan: an item's opening words, a
+  label such as "This week:", or one key phrase mid-line. No item needs them. Bold is never a
+  separate title that the rest of the line repeats. A decision's bold is "Decided with <@U…>:" and
+  stops at the colon.
+- Every item makes sense to someone who does not click its link.
+- Lead with what a reader can now do or will be able to do, not with the work done.
+- When the work adds up to something bigger than any one item, such as a milestone the previous
+  update was working towards, make that the first Done item.
+- An aside holds one short fact the reader needs, or is left out.
+- Say it the way you would say it to a colleague. Write to inform a junior teammate, not to impress
+  a leader: the test is whether a reader got through it quickly and understood the facts. Ticket
+  titles are often written as formal claims ("The importer rejects any row whose total does not
+  match its line items"); never copy one, and say what it means plainly.
+- Use the words the readers use for the system, such as "backend" rather than "API" or "image",
+  and name the old state when that is what makes the change clear ("at `/` instead of `/app`").
+- Claim no more than the source does. An answer that was verbal, partial or still pending keeps
+  that hedge ("it still sounds like…", "should make it less likely…"), and its follow-up goes in
+  an aside.
+- Anything not yet true is written in the future tense and goes in Next up, even when it follows
+  from a decision already listed in Done.
+- When a ticket names a mechanism (a table, a token claim, a Terraform plan), say what it changes
+  for the team instead ("tests will run against the same kind of db as production", not "the CI
+  test job gets a database service container").
+- A hedge reports who said it and how, in the source's own terms ("Legal told <@U…> it still
+  sounds like…", "<@U…> said on a call…"). It never adds a role or a conclusion the source did not
+  state.
+- Credit for work in progress goes in an aside: "_(<@U…> is working on this)_".
+- The team's everyday shorthand is fine and reads like a colleague: "db", "staging + prod",
+  "e.g.", and short parentheses such as "(by hand is fine)".
+- A decision reads "Decided with <@U…>: <what was decided>", naming who decided it.
+- A PR is a fine link when no ticket covers the item.
+- Every update is written in the same plain voice, whoever is in the channel. Name a system when
+  its name is the clearest way to say what changed, and let the outcome lead.
+- Format links, emphasis and mentions as `use-slack` describes.
+- Next up covers about the next week. The closing line below it then sums up, in one sentence,
+  the rest of the roadmap after that week, from the user's plan when there is one and otherwise as
+  your guess, which you tell the user. When a thread reply holds the full plan, the closing
+  sentence also points to it ("_After that, the beta opens to customers by about mid-March; the
+  full plan is in the :thread:_").
+- A thread reply follows the same formatting: bold headings, numbered lists rather than bullets,
+  and a link on every ticket key it names. Its items have the main message's shape: the sentence
+  first, links at the end. The one-link limit applies only to the main message.
+
+These pairs show the user's voice: a draft line, then what the user changed it to. They show how
+to phrase, not what to say.
+
+- Draft: "A merge to `main` now reaches staging with no manual step. Each new build runs its
+  database migration first, and if the migration fails, the API keeps serving the version before
+  it"
+  User: "A merge to `main` now reaches staging with no manual steps. New migrations are
+  automatically run before the backend is updated to a version that depends on them, and if the
+  migration fails, the backend stays on the older version"
+- Draft: "Legal said the signup form meets the privacy rules, as long as consent is stored in the
+  CRM and exported monthly _(a written review will follow)_"
+  User: "Legal told <@U…> it still sounds like the signup form meets the privacy rules, as long as
+  consent is stored in an approved system (e.g. the CRM) and exported monthly (by hand is fine)
+  _(Legal's full written review will follow)_"
+- Draft: "Password reset emails will come from a company address, not the email provider's default
+  sender, so they stop landing in spam (<@U…>)"
+  User: "Customers' password reset emails will be sent from a company address, not the email
+  provider's default sender, which should make it less likely for them to land in spam _(<@U…> is
+  working on this)_"
+
+## 6. Post it to the user's own channel
+
+The update goes to the channel whose ID is in `$PRIVATE_SLACK_REPORT_CHANNEL`, the user's own
+channel, where they finalize each message before posting it where it belongs. Never post to the
+destination channel or anywhere else, and never schedule a message.
+
+Write the update, and any thread reply, to files and check their mentions as `use-slack`
+describes. Then show them exactly as they will be posted, and say they will go to the user's own
+channel. Post only once the user approves that text, as `use-slack`'s "Posting"
+describes. Post the thread reply as a reply to that message, with its `thread_ts`.
+
+Then give the user the message's permalink and the destination channel it is meant for. When there
+is a thread reply, tell them it stays in their own channel, so once the message is in its
+destination they post the reply again under it there.

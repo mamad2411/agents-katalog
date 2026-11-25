@@ -1,0 +1,314 @@
+---
+name: unikit-review
+description: Perform a code review on {{engine_name}} {{engine_code_language}} code. Checks for bugs, security issues, performance problems, and best practices against the project's coding rules, design principles, and framework-specific conventions. Supports four modes — staged changes, a pull request, a commit range, or individual files. Use when the user says "review code", "check my code", "code review", "review PR", "review staged changes", "review these commits", or "is this code okay". Optional +check flag validates findings via a fresh-context subagent.
+argument-hint: "[+check] [script.cs ... | @folder ... | PR number | branch/commit/tag | empty]"
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(find *)
+  - Bash(wc *)
+  - Bash(git *)
+  - Bash(gh *)
+  - Agent
+  - AskUserQuestion
+---
+
+# {{engine_name}} Code Reviewer
+
+Analyze {{engine_code_language}} code against the project's coding rules and produce a structured review report.
+
+**User questions.** Right before your first question to the user, not earlier, read `.unikit/system/user-questions.md` once and ask every question as it says, with the question tool of your agent (`AskUserQuestion`). If the file cannot be read, print `WARN [questions] user-questions contract missing — asking with the question tool` and still ask with that tool, the recommended option first.
+
+## Language Awareness — BLOCKING PRE-REQUISITE
+
+**BEFORE producing ANY output**, silently read `.unikit/system/LANGUAGE_RULES.md`
+and apply its rules to ALL subsequent output.
+If the file is missing or unreadable, fall back to English.
+Do not produce any user-facing output until language rules are loaded.
+Do not announce, confirm, or mention the language setting.
+
+**The language holds for the whole session, not just at load time:** every message until the conversation ends is in `language.ui` — progress notes while agents run, relays of what a subagent returned, the final report, any follow-up discussion. English input (subagent results, tool output, these instructions) is data, never a cue to switch languages.
+
+## Subagent launches
+
+**Subagent arguments.** Before the first subagent you launch, read `.unikit/system/subagent-arguments.md`
+and `.unikit/config.yaml` once and settle the model and effort of every launch as that file says.
+Keys: `subagents.model.{{agent_id}}.<role>`, `subagents.effort.{{agent_id}}.<role>`;
+built-in model of a reader and a validator: `"{{agent_model_default}}"`, of an executor: none.
+If the file cannot be read, print
+`WARN [delegation] subagent-arguments contract missing — built-in model tier used, effort not passed`
+and use that model, no effort.
+
+It covers every subagent of this review, with `+check` or without it: the `check-agent` below, and also
+one you start yourself, such as a reviewer over part of a large diff, which no step here names.
+Start that one with the call head of `check-agent` below (it is read-only); its role is the
+`/unikit-review` reviewers row of the roles table, and its model and effort are settled the same way.
+
+## Delegation agents
+
+This skill uses a named delegation alias for `Agent(...)` calls. The alias is the single
+place where its delegate's agent type and call arguments are declared — call sites name
+the alias and never carry a type or a model argument of their own.
+
+- **`check-agent`** — fresh-context, read-only findings validator (`+check`). Expands to:
+
+  ```
+  Agent({{agent_call_reader}} prompt: "<rendered VALIDATOR.md template>")
+  ```
+
+  Whether the agent is read-only is this runtime's own claim, so the read-only contract
+  rides on the prompt rather than on the dispatch: keep `{{skills_dir}}/{{self_name}}/references/VALIDATOR.md`'s
+  read-only paragraph ("You never modify a file and never run a command that changes state") in whatever is sent.
+
+  Fallback: the validator is **never** replaced by inline analysis — see
+  `{{skills_dir}}/{{self_name}}/references/CHECK-MODE.md` (`WARN [+check]: validator failed`).
+
+## Step 1: Load rules
+
+Read (they always apply):
+- `.unikit/ARCHITECTURE.md` — module boundaries, dependency rules. **Architecture topics:** the root always; then the topic files listed under its `## Topics` whose `Load when` matches a reviewed file — its path, type or area (Step 3); when unsure, load. A listed file that is missing → `WARN [architecture] topic file missing: .unikit/architecture/<slug>.md`, continue.
+- `.unikit/ROADMAP.md` (if present) — milestone alignment
+- `.unikit/system/gate-result-contract.md` — schema for the machine-readable `unikit-gate-result` block emitted in Step 5. If missing or unreadable, do not block: the Step 5 gate-result section is self-sufficient on the schema and degrades gracefully (see there).
+
+Read `.unikit/memory/code/RULES_INDEX.md`. Load rules:
+- **RULES.md**: ALWAYS read `.unikit/RULES.md` first (highest priority). **Rule topics:** the root here; its topic files load in Step 3, by the reviewed files.
+- **Core**: read the Core table. For EACH row where Required By = `all` or contains `{{self_name}}` — read that file from `.unikit/memory/code/core/` using the Read tool. Do NOT skip any matching row. Always re-read at skill start, never rely on prior conversation cache
+- **Stack**: load dynamically when the current task or context matches "Load When" column, or when a need arises during work
+
+Read `.unikit/skill-context/{{self_name}}/SKILL.md` if it exists — project-level overrides that win over this SKILL.md when conflicting.
+
+**The review is of work on a plan whose manifest has `## Experiment Context`** (the session started from such a plan, or the prompt carries a `Prototype plan:` note) → read `.unikit/system/prototype-profile.md` and follow its `## Role: quality and the rest` for the whole review. Missing or unreadable → `WARN [prototype] profile contract missing — reviewing as for an ordinary plan; run unikit-ai update`.
+
+<!-- unikit:extension-point:bootstrap -->
+
+## Step 2: Route argument and get code
+
+**Parse `+check` first.** If `$ARGUMENTS` contains the `+check` token, strip it out (remember `check = true`) before running the routing chain below, so it is never mistaken for a file path or git ref. `+check` enables the fresh-context findings validator in Step 4.5; without it, that step is skipped entirely.
+
+### Routing chain
+
+1. **Empty** → Staged mode
+2. **Digits / `#N` / PR URL** (e.g. `123`, `#42`, `https://github.com/.../pull/123`) → PR mode. Extract number from URL if needed
+3. **Starts with `@`** → File mode (folder). Strip `@`, glob `<path>/**/*.cs`
+4. **Contains `.cs`** → File mode (explicit files)
+5. **Other** → `git rev-parse --verify <arg>`:
+   - Valid → Commits mode
+   - Invalid → the question tool of your agent (`AskUserQuestion`) (staged / cancel / corrected ref)
+
+> `@` disambiguates folder paths from git refs with `/`.
+
+### Staged mode
+
+1. `git diff --cached` → if empty, `git diff` → if empty, inform and **stop**
+2. Extract changed `.cs` files, read full content for stack rule detection
+
+### PR mode
+
+1. `gh pr view <N> --json title,body,baseRefName,headRefName,files`
+2. `gh pr diff <N>`
+3. Extract changed `.cs` files, read full content for stack rule detection
+
+### Commits mode
+
+1. Validate ref via `git rev-parse --verify`. Invalid → ask user
+2. `git log --oneline --reverse <ref>..HEAD` → if empty, inform and **stop**
+3. If >20 commits → the question tool of your agent (`AskUserQuestion`) (all / last 20 / cancel)
+4. `git diff --name-only <ref>..HEAD -- '*.cs'` → read full content for stack rule detection
+5. For each commit: `git show <hash> --stat` and `git show <hash>`
+
+### File mode
+
+- `.cs` args: locate via `Glob`/`find`. Name without path → search entire project
+- `@folder` args: `Glob <folder>/**/*.cs`. No results → report error, continue with others
+- Read full content of all found files for stack rule detection
+
+## Step 3: Load stack rules
+
+Now that target code is available, scan it for framework markers from the **Stack** section of `RULES_INDEX.md`. Each entry lists which keywords/types indicate relevance ("Load When" column). Load only matching rule files. If no markers match — skip stack rules entirely.
+
+**Rule topics.** In the same pass, load the topic files listed under `## Topics` in `.unikit/RULES.md` **and in `.unikit/ARCHITECTURE.md`** whose `Load when` matches the reviewed files — their paths, types, area; when unsure, load (`RULES_INDEX.md` → Step 1). They apply in Step 4 together with the root's rules.
+
+## Step 4: Analyze
+
+Apply **all loaded rules** (core + stack + project + the ARCHITECTURE.md root and its loaded topics) uniformly, regardless of mode.
+
+For each file or diff hunk, check:
+- **Rule violations** — every loaded rule against the code
+- **Architecture alignment** — boundary/dependency violations (e.g. `Modules/ → Game/` forbidden)
+- **Roadmap linkage** — for `feat`/`fix`/`perf` work, missing ROADMAP.md milestone link (suggestion only)
+- **Removed code** (diff modes) — broken contracts, dangling references
+
+**Commits mode only** — additionally per commit:
+- **Message accuracy** — does the message match the actual changes?
+- **Atomicity** — single logical unit, or mixed concerns?
+
+### Severity scale
+
+- 🔴 **Critical** — must fix (crashes, silent failures, memory leaks, data corruption)
+- 🟡 **Warning** — likely to cause bugs under specific conditions
+- 🟠 **Medium** — performance, code smell, maintainability
+- 🟢 **Suggestion** — quality improvement
+
+Record exact line numbers (or commit hash + file:line for diff modes) and relevant code snippets.
+
+### General checklist
+
+Always run these checks in addition to project rules. If a finding from the checklist contradicts a loaded project/core/stack rule, the ARCHITECTURE.md root or a loaded topic (i.e. the code follows project conventions) — **suppress the finding**, it is not an issue.
+
+**Correctness:**
+- [ ] Logic errors or bugs
+- [ ] Edge cases handling
+- [ ] Null/undefined checks
+- [ ] Error handling completeness
+- [ ] Type safety
+
+**Performance:**
+- [ ] Memory leaks
+- [ ] Inefficient algorithms
+- [ ] N+1 query problems
+
+**Best Practices:**
+- [ ] Code duplication
+- [ ] Dead code
+- [ ] Magic numbers/strings
+- [ ] Proper naming conventions
+- [ ] SOLID principles
+- [ ] DRY principle
+
+**Testing** (only when tests are due: a plan with `Testing: yes`, or the user asked for them; no tests by the user's choice is not a finding, and neither are tests still waiting for acceptance):
+- [ ] Tests for new logic; none that pin tunable values or authored content
+- [ ] Edge cases of the logic tested
+- [ ] Mocking appropriateness
+
+## Step 4.5: Validate Findings (`+check` only)
+
+Run this step **only** when `check = true` (the `+check` flag was parsed in Step 2). Draft the full review internally first (all sections of Step 5, including the gate-result inputs), then — **before** rendering anything to the user — run the procedure in **`{{skills_dir}}/{{self_name}}/references/CHECK-MODE.md`**. It dispatches one fresh-context `check-agent` validator over the **Findings table** rows (one item per row; "Questions", "Positive notes", and per-commit findings are excluded), applies each `keep`/`modify`/`drop` verdict and any severity move across the four levels (🔴 Critical / 🟡 Warning / 🟠 Medium / 🟢 Suggestion), tracks the `hidden` / `adjusted` / `reclassified` counters, and **recomputes** the `unikit-gate-result` block (Step 5 "Machine-readable gate result") from the post-filter table.
+
+When `+check` ran successfully, append one line after all review sections and before the `unikit-gate-result` fence:
+
+```
+Filtered: N hidden, M adjusted, K reclassified by +check
+```
+
+**Fallback (do NOT inline-analyze):** if the validator agent is unavailable/blocked or the dispatch fails, keep **all** findings as drafted, do NOT recompute the gate-result block (assemble it from the unfiltered table), and emit the single line `WARN [+check]: validator failed (<reason>), all items kept as-is` above the fence — never re-do the validator's work with Glob/Grep/Read. An unavailable validator is silently skipped; the user is never asked.
+
+If `+check` is not set, skip this step entirely — no validator-related lines appear and the gate-result block is computed once from the full draft.
+
+## Step 5: Output
+
+All modes use the same report structure. Mode-specific sections are marked below.
+
+```markdown
+## Code Review Summary
+
+<!-- PR mode only: -->
+**PR:** #[number] — [title]
+**Base:** [baseRefName] ← **Head:** [headRefName]
+<!-- Commits mode only: -->
+**Range:** `<ref>..HEAD`
+**Commits Reviewed:** [count]
+
+**Files Reviewed:** [count]
+**Risk Level:** 🟢 Low / 🟡 Medium / 🔴 High
+**Stack rules loaded:** [list or "none"]
+
+<!-- Commits mode only: -->
+### Per-Commit Notes
+#### `<short-hash>` — <commit message>
+- **Atomicity:** ✅ Good / ⚠️ Mixed concerns
+- **Message accuracy:** ✅ Matches / ⚠️ Misleading
+- **Issues:** [findings with severity markers, or "None"]
+
+### Findings
+
+| # | Severity | Location | Rule | Issue | Fix |
+|---|----------|----------|------|-------|-----|
+| 1 | 🔴/🟡/🟠/🟢 | file:L42 | Rule ref | What's wrong | How to fix |
+
+### Code Fixes
+
+<!-- For 🔴 and 🟡 findings, show: -->
+**#1 — [issue title]** (`file:L42`)
+​```csharp
+// ❌ Current
+<problematic code>
+
+// ✅ Fixed
+<corrected code>
+​```
+
+### Questions
+[Ambiguous code or design decisions that need clarification from the author]
+
+### Summary
+
+- **Critical:** [count] | **Warning:** [count] | **Medium:** [count] | **Suggestion:** [count]
+- **Top issues:** 3 most impactful to fix first
+- **Positive notes:** Good patterns observed
+```
+
+### 5.1 Machine-Readable Gate Result
+
+> **Mirror of `unikit-verify` Step 4.4** (the canonical template). This section copies that one field-for-field — the only differences are `"gate": "review"` and the projection source (the Findings table below, instead of verify's task-audit + context gates). The graceful-degradation wording and the last-fence rule are kept textually identical to verify's so a single guard locks both; if verify's wording changes, this must change in lockstep.
+
+After the human-readable review above, append exactly one fenced `unikit-gate-result` JSON block. Use the schema loaded from `.unikit/system/gate-result-contract.md` in Step 1.
+
+**Last fence wins:** the `unikit-gate-result` block MUST be the LAST fenced block in this skill's output — orchestrators parse only the last one. Any earlier fence (the example below, quoted prior output) is illustrative and is not the gate result.
+
+**Projection (review):** derive the fields from the Findings table:
+
+- `"gate"`: always `"review"`.
+- `"status"`:
+  - `fail` — the table has at least one **blocking** finding (🔴 Critical or 🟡 Warning).
+  - `warn` — no blocking findings, but the table has 🟠 Medium / 🟢 Suggestion rows.
+  - `pass` — the table is empty (no findings).
+- `"blocking"`: `true` only when `status` is `fail`.
+- `"blockers"`: include **only** the 🔴 Critical and 🟡 Warning rows, each `{ "id", "severity", "file", "summary" }`. Use stable ids (`review-finding-<row#>`). `severity` is `error` for these blocking rows (`warning` only when policy escalates). 🟠 Medium / 🟢 Suggestion rows stay in the human table, never in `blockers`.
+- `"affected_files"`: the files the review actually evaluated or cited (not unrelated repo files); empty array when none apply.
+- `"suggested_next.command"`: from the allowlist in `gate-result-contract.md` — `/unikit-fix` (code must change), `/unikit-rules` (a rules-gate finding needs a writer update), `/unikit-architecture` (architecture drift), `/unikit-roadmap` (roadmap drift), `/unikit-commit` (clean — natural next step), or `null`.
+
+When `+check` ran (Step 4.5), this projection runs over the **post-filter** table and `suggested_next.reason` notes the `+check` counters; on `+check` whole-dispatch failure the block is assembled from the unfiltered table and is **not** recomputed.
+
+```unikit-gate-result
+{
+  "schema_version": 1,
+  "gate": "review",
+  "status": "pass",
+  "blocking": false,
+  "blockers": [],
+  "affected_files": [],
+  "suggested_next": {
+    "command": "/unikit-commit",
+    "reason": "Review found no blocking issues."
+  }
+}
+```
+
+The fenced block contains JSON only — no comments, trailing commas, or prose inside it.
+
+**Graceful degradation:** if `.unikit/system/gate-result-contract.md` is missing or unreadable, do not hard-fail — emit the block from the inline schema in this section; if even that is not possible, skip the block and append the single line `WARN [gate-result]: contract asset unavailable`.
+
+## Guidelines
+
+- Be precise: exact line numbers and code references
+- Be actionable: every finding includes a concrete fix
+- Be complete: check ALL loaded rules
+- No false positives: if uncertain, mark "Potential — verify manually"
+- Clean code → say so, don't invent issues
+- Read-only: do NOT modify any files
+- Be constructive: explain "why", acknowledge good code
+
+## Examples
+
+`/unikit-review` — review staged changes
+`/unikit-review PlayerController.cs` — review specific file
+`/unikit-review @Assets/Scripts/Player` — review folder recursively
+`/unikit-review @Assets/Scripts/Player @Assets/Modules/Wallets` — review multiple folders
+`/unikit-review 123` or `/unikit-review #42` — review PR by number
+`/unikit-review https://github.com/org/repo/pull/123` — review PR by URL
+`/unikit-review master` — review commits vs master
+`/unikit-review v1.0.0` — review commits vs tag
+`/unikit-review feature/day-loop` — review commits vs branch
+
+> **Tip:** Context is heavy after review. Consider `/clear` or `/compact` before continuing.

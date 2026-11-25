@@ -1,0 +1,400 @@
+---
+disable-model-invocation: true
+description: "Executes the release workflow for a repository after release-gate passes. Use when tagging, cutting, or shipping a release. Follows the prep-PR pattern: version bump, CHANGELOG, and walkthrough ship in one PR before tagging."
+allowed-tools:
+  - Bash
+  - Read
+  - Edit
+  - Skill
+---
+
+# Release
+
+Final step in the release pipeline. Assumes `release-gate` has already passed and the target version has been decided.
+
+This skill follows the **prep-PR pattern**: version bump + CHANGELOG + walkthrough ship as one atomic PR. The tag is applied **after merge**, pointing at the merged commit. Never use a tool that bumps and tags in one step (`npm version`, `bun version`, `hatch version --tag`) — they tag immediately and skip the CHANGELOG and walkthrough entirely.
+
+The workflow is a single linear pass — run the phases in order:
+
+0. Read the plan → 1. Prep branch → 2. Version bump → 3. CHANGELOG → 4. Walkthrough → 5. Build, commit & open PR → **(merge)** → 6. Gate, then tag → 7. Push tag → 8. Release notes → 9. Deploy → 10. Verify
+
+## Checkpoints
+
+The workflow hands a step to the user at these named checkpoints, and each phase marks its
+own in place as (checkpoint `name`). A **confirm** checkpoint asks for a go-ahead on a planned
+step. A **decide** checkpoint stops the workflow on a call only the user can make.
+
+| Checkpoint          | Kind    | Phase   | The user                                                                 |
+| ------------------- | ------- | ------- | ------------------------------------------------------------------------ |
+| `prerequisite`      | decide  | Prereqs | settles a prerequisite that is unclear                                   |
+| `plan`              | confirm | 0       | sees the plan before work starts                                         |
+| `tag-taken`         | decide  | 1       | says what happens when the target tag already exists                     |
+| `changelog`         | confirm | 3       | reviews the CHANGELOG entry before it is committed                       |
+| `plan-issue-gaps`   | confirm | 4       | hears which plan-issue items the prep leaves undone                      |
+| `unexpected-change` | decide  | 5       | decides about a staged path outside `expected_changes`, or untracked one |
+| `push-prep`         | confirm | 5       | approves pushing the prep branch and opening the PR                      |
+| `merge-prep`        | confirm | 5       | reviews and merges the prep PR                                           |
+| `gate-blocked`      | decide  | 6       | decides what to do when the gate blocks the tag                          |
+| `tag-commit`        | decide  | 6       | names the commit to tag when the prep merge is missing or not `HEAD`     |
+| `push-tag`          | confirm | 6       | approves pushing the tag                                                 |
+| `release-failed`    | decide  | 8       | decides what to do when the release workflow does not succeed            |
+| `deploy`            | confirm | 9       | approves running `deploy_cmd`                                            |
+| `deploy-failed`     | decide  | 9       | decides between redeploying the tag and shipping a patch                 |
+
+## Prerequisites
+
+Before starting, confirm:
+
+- `release-gate` passed with no FAIL status, **or** exited `3` (NOT STARTED),
+  which is the normal state before a release: it means the current version is already
+  tagged and phases 1-5 below are exactly what it is asking for. Phase 6 re-runs the gate
+  itself and requires exit `0` — that check is a step in the workflow, not a precondition
+  to remember.
+- Working tree is clean and on the default branch
+- Target version decided
+- `jq` is on `PATH`, and so is `gh` when the plan says `is_github=1` or a `release_mode`
+  other than `tag`
+
+If any prerequisite is unclear, ask rather than proceeding (checkpoint `prerequisite`).
+
+## Phase 0: Read the Plan
+
+Every phase below is driven by one command. Run it first with the **target** version — `prep_branch` and `tag` are derived from it:
+
+```bash
+~/.claude/skills/release-ship/scripts/release-plan.sh <version>
+```
+
+It prints `key=value` lines resolved from the same profile the gate uses, so the two skills cannot disagree about the repo:
+
+```text
+profile=Obsidian plugin            profile=Taskfile (.release-gate)
+version=2.1.0                      version=2.1.0
+tag=2.1.0                          tag=v2.1.0
+last_tag=2.0.5                     last_tag=v2.0.0
+prep_branch=release/2.1.0          prep_branch=release/2.1.0
+primary_version_file=package.json  primary_version_file=cx.js
+primary_version_spec=jq:.version   primary_version_spec=grep
+derived_version_files=manifest.json versions.json
+version_sync_cmd=npm_package_version="2.1.0" bun run version
+build_cmd=bun run build            build_cmd=
+gate_cmd=bun install … && bun test  gate_cmd=task check
+changelog=CHANGELOG.md             changelog=absent
+walkthrough=WALKTHROUGH.md         walkthrough=WALKTHROUGH.md
+expected_changes=…                 expected_changes=cx.js WALKTHROUGH.md
+release_mode=gh                    release_mode=gh
+release_assets=main.js manifest.json release_assets=
+deploy_cmd=                        deploy_cmd=task deploy
+is_github=1                        is_github=1
+prerelease=0                       prerelease=0
+```
+
+Show the plan to the user before starting (checkpoint `plan`). An empty value means that step does not apply here — `build_cmd=` is no build, not a missing key.
+
+**`release_mode` is the one fork that changes the shape of the work**, and getting it wrong is visible in both directions: `workflow` means pushing the tag triggers a workflow that creates the GitHub release itself, so Phase 8 waits for it and edits the notes onto the release it made; `gh` means nothing is watching the tag, so Phase 8 creates the release. Wait in `gh` mode and you poll for a run that will never appear. Create in `workflow` mode and you race the workflow for the same release. `tag` means the annotated tag and the CHANGELOG are the whole release, so Phase 8 creates nothing. It is the default off GitHub.
+
+**`is_github` is the other fork.** At `0` the origin is not GitHub: there is no PR to open or look up, and Phases 5 and 6 work from git alone.
+
+## Phase 1: Prep Branch
+
+Confirm the tag is free, then branch off the default branch:
+
+```bash
+git tag -l "<tag>"        # expect empty
+git checkout -b <prep_branch>
+```
+
+If `git tag -l` prints the tag, stop: the version is already released, or a tag was created out of band. Do not proceed (checkpoint `tag-taken`).
+
+## Phase 2: Version Bump
+
+**Edit `primary_version_file` by hand** — with `Edit`, not a scripted substitution. The plan names the file; it does not name the line, and for `primary_version_spec=grep` the version string may appear in the file more than once (a comment, a compatibility note, a test literal). A blanket `sed s/<old>/<new>/g` rewrites all of them.
+
+- `primary_version_spec=jq:.version` — the `version` field of that JSON file.
+- `primary_version_spec=grep` — the version literal in that source file, usually a constant.
+
+Then regenerate the derived files, if the plan names a sync command:
+
+```bash
+bash -c '<version_sync_cmd>'
+```
+
+The plan prints that command with the target version already substituted, so it can be run
+verbatim. Do not hand-edit anything in `derived_version_files`; that command owns them.
+
+Verification is Phase 6's gate check 10, which compares every declared file against the target. There is no need to re-implement it here — but if you want to see it now, run the gate with the target version and read row 10 alone; the other rows are meaningless until the prep is finished.
+
+## Phase 3: CHANGELOG
+
+Draft the entry from `git log <last_tag>..HEAD` and present it to the user for review before committing (checkpoint `changelog`). Where the repo collects entries as it goes, they are the draft's source: an `## Unreleased` section becomes `## <version>`, and fragments (one file per change, such as `docs/changes/*.md`) are gathered into it and deleted in the same commit. Read the repo's own standards for its convention; the log then fills only what they miss.
+
+The plan's `changelog=` is the file's path, `docs/CHANGELOG.md` or `CHANGELOG.md`; every `CHANGELOG.md` below means that path. **If `changelog=absent`, create `CHANGELOG.md` in this phase**, in `docs/` when the repo has that directory and at the root otherwise. The gate merely skips a missing changelog; ship requires one, because in `gh` mode it is the only source for the release notes and `extract-changelog.sh` exits 1 without it. A first changelog starts with this release's section — do not reconstruct the project's history.
+
+Add the `## <version>` section **above** the previous entry:
+
+```markdown
+## 1.4.0
+
+### Added
+
+- Support for nested callouts in preview mode
+
+### Fixed
+
+- Frontmatter properties no longer duplicate on save
+```
+
+Headings are bare `## <version>`, newest first. A trailing date (`## 1.4.0 - 2026-03-08`) is accepted, since the gate and the extractor read headings through one parser, `~/.claude/lib/changelog.sh`, but write the bare form.
+
+Verify: `grep -n "^## " CHANGELOG.md | head -3` shows the new section above the previous release's.
+
+## Phase 4: Walkthrough
+
+If the plan names a walkthrough, regenerate it via the `code-walkthrough` skill so its snippets reflect the release state.
+
+**Regenerating the snippets is not enough.** Gate check 8 confirms every quoted snippet is
+still in the file its label names; nothing checks the prose around them. A release that
+renames or deletes an identifier leaves the commentary describing something that no longer
+exists, and check 8 still goes green. After regenerating, grep the prose for what this
+release changed:
+
+```bash
+git diff <last_tag>..HEAD --name-only | xargs -n1 basename | sort -u
+grep -n '<renamed-or-deleted-identifier>' <walkthrough>
+```
+
+Fix the prose in the same commit. Stale commentary is the failure mode the walkthrough
+exists to prevent.
+
+**Verify every quoted snippet after the formatter runs, not before.** Prose reflows and
+fenced blocks may be rewritten; a snippet checked pre-format is a snippet unchecked. Gate
+check 8 is that check, so run the gate on the prep branch before opening the PR.
+
+**Read the release's plan issue, when one tracks it** (`gh issue list --search "<version> in:title"`).
+Its checklist names documentation work decided earlier, which no sweep of the diff finds.
+Tick each item the prep covers, and name any it does not to the user before opening the PR (checkpoint `plan-issue-gaps`).
+
+This is also the phase where `THEORY.md`, `README.md` and `CLAUDE.md` come current, if the
+repo has them. They are release-time work by design: documents that cross-reference
+each other can only be made consistent from a settled state, all at once.
+
+## Phase 5: Build, Commit and Open PR
+
+If the plan names a build command, run it **before** committing:
+
+```bash
+<build_cmd>
+```
+
+Where a repo tracks its build output, gate check 15 fails when the committed artifact does not match a fresh build, which is the normal state after any dependency PR that merged without a rebuild. No other phase stages it, so the prep PR is the release's only chance to carry a current one.
+
+Stage what actually changed rather than a fixed list:
+
+```bash
+git add -u
+git status --porcelain
+```
+
+`git add -u` stages every tracked modification and no untracked file. Compare the result against the plan's `expected_changes`:
+
+- A path in `expected_changes` — expected.
+- A path the build rewrote — expected, and the reason the build ran before staging.
+- **Anything else, or any untracked file** — stop and show the user (checkpoint `unexpected-change`). An untracked file after a build is a new build output nothing tracks (a source map, a second stylesheet, typically after a bundler bump); it either belongs in `.gitignore` or belongs in the release, and that is the user's call. A fixed file list is how such a file gets silently left out.
+
+Then one atomic commit for the whole prep:
+
+```bash
+git commit -m "chore: prepare release <version>"
+```
+
+Run the repo's local gate on the committed prep branch. It is the check; no CI is waited on:
+
+```bash
+~/.claude/bin/pr-cycle gate
+```
+
+With no argument it runs the plan's `gate_cmd`, the command gate check 12 will run after the
+merge. An empty `gate_cmd` makes it refuse; set `GATE_CMD` in `.release-gate`.
+
+Exit `4` means the gate failed or rewrote files; fix, commit, and run it again. Push only on `0`.
+
+Confirm with the user before pushing (checkpoint `push-prep`), then:
+
+```bash
+git push -u origin <prep_branch>
+gh pr create --title "chore: prepare release <version>" --body "..."   # is_github=1 only
+```
+
+Draft the PR body from the CHANGELOG entry. At `is_github=0` there is no PR: the pushed
+branch is the review copy, and the user merges it locally or on their forge.
+
+Verify: `git show --stat HEAD` lists exactly the files staged above. At `is_github=1`, also
+check that `gh pr view --json state,url` reports the PR as `OPEN`.
+
+Stop here and wait for the prep branch to merge. The user reviews and merges it (checkpoint
+`merge-prep`).
+
+## Phase 6: Gate, Then Tag After Merge
+
+Once the PR is merged, sync the default branch:
+
+```bash
+git checkout <default-branch>
+git pull --ff-only origin <default-branch>
+```
+
+Then gate and tag in one step, with the plan's target version:
+
+```bash
+~/.claude/skills/release-ship/scripts/release-tag.sh <version>
+```
+
+It tags only if all three of these hold, and on exit `0` the annotated tag exists locally
+(it is not pushed):
+
+1. The gate (`release-check.sh <version>`) exits `0` on `HEAD`. Its table is printed either way.
+2. The prep merge for the plan's `prep_branch` is found. At `is_github=1` it is the merged
+   PR's merge commit, looked up by branch name, which survives a subject reworded in the
+   squash dialog. At `is_github=0` it is `HEAD` when `HEAD` carries the prep commit's
+   subject or is a merge whose second parent is the pushed prep branch.
+3. That merge is `HEAD`, the commit the gate checked.
+
+On exit `1`, nothing was tagged. Show the output and stop. If the gate blocked, name the rows
+that block it (checkpoint `gate-blocked`). If the script found no prep merge, ask the user which commit it is. If later
+commits landed after the prep merge, the script lists them, and the user must say which
+commit to tag (checkpoint `tag-commit`). Do not choose one: tagging the prep merge publishes a tree no gate checked,
+and tagging `HEAD` tags a commit that is not the `release/<version>` prep merge. Landing those
+commits _before_ the prep PR, or re-cutting the prep branch on top of them, keeps the
+question from coming up.
+
+Confirm with the user before pushing the tag (checkpoint `push-tag`).
+
+## Phase 7: Push Tag
+
+```bash
+git push origin refs/tags/<tag>
+```
+
+Spell it `refs/tags/<tag>`. That form can only push a tag, never a branch that happens to
+share its name, and it is the form the user's permission rules allow.
+
+In `release_mode=workflow` this is what starts the release: the push triggers `release.yml`, which builds the project and creates a GitHub release whose assets are whatever that workflow's `files:` block lists. Extract the actual list before producing the final output:
+
+```bash
+yq '.jobs.build.steps[] | select(.uses == "softprops/action-gh-release*") | .with.files' .github/workflows/release.yml
+```
+
+If `yq` is unavailable, grep for the `files:` block and read the lines that follow.
+
+In `release_mode=gh` the push does nothing on its own, and Phase 8 creates the release.
+
+In `release_mode=tag` the pushed tag is the release.
+
+## Phase 8: Release Notes
+
+**In `release_mode=tag`, skip this phase.** No release object exists to carry notes: the
+CHANGELOG at the tag is the release notes, and Phase 3 already wrote and reviewed them.
+
+Otherwise, extract this version's CHANGELOG section first. Both GitHub modes need it, and it fails the same way in both if Phase 3 went wrong:
+
+```bash
+NOTES="$(mktemp -t notes)"
+~/.claude/skills/release-ship/scripts/extract-changelog.sh <version> <changelog> > "$NOTES"
+```
+
+It prints everything between `## <version>` and the next `## ` heading, trimmed, and
+exits 1 if that section does not exist. Avoid `sed -n '/^## X/,/^## /p'` — it prints the
+next release's heading, and the version's dots act as regex wildcards.
+
+**In `release_mode=workflow`**, wait for the workflow to finish, then edit the notes onto the release it created. The poll is bounded by a script that ships with this skill (no `timeout`(1) dependency — macOS BSD userland doesn't ship it):
+
+```bash
+~/.claude/skills/release-ship/scripts/wait-for-release.sh <tag>
+gh release edit <tag> --notes-file "$NOTES"
+```
+
+- It prints the run's conclusion (e.g. `success`, `failure`) and exits 0 when the run finishes; exits 1 on timeout or if no run is found.
+- Optional args override the defaults: `wait-for-release.sh <TAG> [MAX_SECONDS] [INTERVAL_SECONDS]` (default `600 15`).
+- **The tag argument is required.** There is a gap between pushing the tag and the run
+  appearing in the API; without the tag filter the script polls whichever release run
+  is newest, which during that gap is the _previous_ release — already
+  `completed/success`. It would print `success` for a release that never started.
+
+If the printed conclusion is not `success`, report the failure and stop (checkpoint
+`release-failed`).
+
+**In `release_mode=gh`**, create the release directly, attaching the plan's `release_assets` (none means a notes-only release):
+
+```bash
+git checkout --detach <tag> && <build_cmd>
+gh release create <tag> --title "<version>" --notes-file "$NOTES" <release_assets>
+git checkout <default branch>
+```
+
+Build at the tag first when the plan names a `build_cmd`. A gitignored build output, such as an Obsidian plugin's `main.js`, is whatever the working tree last built, and that can be a different branch.
+
+Add `--prerelease` when the plan says `prerelease=1` (the version carries a `-alpha`,
+`-beta` or `-rc` suffix). Without it gh marks the release "Latest", above the last stable
+one. In `workflow` mode, check the release the workflow made, and `gh release edit <tag>
+--prerelease` if it is not marked.
+
+The assets come from the tagged checkout, so run this from the default branch at the tag — the same tree Phase 6 gated. For an Obsidian plugin they are what users install; a release without them is broken, not merely bare.
+
+Write the notes from the CHANGELOG, never from memory of the session. Improvised
+release notes are how a public artifact acquires a sentence nobody checked.
+
+## Phase 9: Deploy
+
+If the plan's `deploy_cmd` is empty, skip this phase.
+
+Otherwise, deploy runs from the tagged commit, the tree Phase 6 gated. Confirm with the
+user (checkpoint `deploy`), then:
+
+```bash
+git checkout --detach <tag>
+bash -c '<deploy_cmd>'; echo "exit=$?"
+git checkout <default-branch>
+```
+
+A nonzero exit is reported with its output and not retried. The tag and release already
+exist, so a failed deploy is a release that has not reached the site yet, not one to undo.
+Whether to fix and redeploy the same tag or ship a patch is the user's call (checkpoint
+`deploy-failed`).
+
+## Phase 10: Verify
+
+Confirm the release is live and report. In `release_mode=tag`:
+
+```bash
+git ls-remote --tags origin <tag>
+```
+
+Otherwise:
+
+```bash
+gh release view <tag> --json tagName,name,body,assets
+```
+
+## Output
+
+```text
+Release: <version>
+====================
+Profile:        <profile>
+Prep PR:        #<num> (merged <sha>)   (or: <prep_branch> merged <sha>, off GitHub)
+Files bumped:   <primary + derived>
+Gate:           exit 0 on <sha>
+CHANGELOG:      ## <version> added
+Walkthrough:    regenerated
+Tag:            <tag> → <sha>
+Release:        <url> created by release.yml | <url> created by gh | tag only
+Assets:         <release_assets, the workflow's files: list, or "none">
+Release notes:  from <changelog>
+Deploy:         <deploy_cmd> exit 0 on <tag> | not deployed
+```
+
+## Do not use when
+
+- Pre-tag validation hasn't run — use `release-gate` first
+- The repo has no version source — `release-plan.sh` refuses, and the fix is a
+  `.release-gate` file, not a guessed version

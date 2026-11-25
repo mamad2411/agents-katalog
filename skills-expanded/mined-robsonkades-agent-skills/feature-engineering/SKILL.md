@@ -1,0 +1,215 @@
+---
+name: feature-engineering
+description: >
+  Owning a Product Feature or Tech Feature from definition intake to completion review: selecting
+  proportionate depth, routing iterative analysis and explicit returns, holding readiness gates,
+  and keeping versioned evidence another engineer can resume. Use when feature implementation is
+  being prepared, resumed, or validated and its scope, contracts, decisions, or completion need a
+  trustworthy lifecycle. Does not co-author the initial feature brief
+  (collaborative-feature-definition), own any specialist phase in depth, orchestrate an arbitrary
+  change (clean-delivery-workflow), or define the ADR record format
+  (architecture-decision-making).
+---
+
+# Feature Engineering
+
+## Purpose
+
+Prevent two opposite failures: implementation beginning before intent, contracts, and authority are
+settled; and every small feature receiving the same ceremony as a migration or public contract.
+
+The lifecycle has a stable forward spine and explicit return paths. How much analysis a feature earns,
+and what a new finding invalidates, are the judgements. A phase is never repeated for ceremony; it is
+reopened when evidence makes a downstream artefact stale.
+
+## Workflow
+
+1. **Run definition intake from the current state.** Follow a supplied feature record or the
+   repository's existing feature index before creating another dossier. On resumption, start with
+   its progress entry and the authoritative inputs for the next work. Establish the endpoint and
+   existing authorization from the request and session: analysis, a plan, implementation, or a review.
+   A planning-only or findings-only task ends with that deliverable; the lifecycle does not
+   authorize subsequent implementation. Reuse authorization already supplied for full delivery.
+   Identify the accepted Product intent and available
+   Engineering Analysis, or an engineering-owned Tech Feature; concise session input can establish
+   a Light baseline. Missing analysis is work to route, not a reason analysis cannot start.
+   If the input is still an idea, route
+   co-authoring to collaborative-feature-definition; do not make lifecycle analysis impersonate
+   Product. Validate revision, stage, accountable owners, accepted gaps, and authority using
+   [the artefact contract](references/artefact-contract.md).
+2. **Classify depth and persistence separately** — Light, Standard or Deep; Inline or Dossier
+   ([depth and phases](references/depth-and-phases.md)). State every driver; the highest evidenced
+   driver wins.
+3. **Select the next necessary phase, not the first unfinished heading.** Use the entry routes in
+   [depth and phases](references/depth-and-phases.md) to find the missing result needed for the
+   authorized endpoint. Reuse applicable outputs; omission requires an applicability reason, not
+   a fabricated result. When evidence changes an accepted baseline,
+   apply the artefact contract's
+   invalidation rules and return to the owner of the affected stage. On resumption, check that the
+   evidence and gate results still apply before continuing dependent work.
+4. **Hold the gates.** A BLOCKING question prevents dependent implementation. Continue independent
+   analysis or resources only when their own readiness is satisfied and they do not prejudge the
+   unresolved choice. Readiness covers only the stated scope; completion requires observed passing
+   evidence for its Required criteria. An accepted gap cannot make an unverified resource DONE.
+5. **Write decisions when made**, not at the end. A decision recalled at review time is a
+   justification, and those differ from reasoning exactly where it matters.
+6. **Report state, not intention:** reviewed revisions, current phase, decisions, stale artefacts,
+   accepted gaps, blockers, and the next valid transition.
+
+## Depth and persistence
+
+| Depth        | Fits when                                                                                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Light**    | One local outcome, known behavior, one authority domain, reversible, no new dependency or boundary/schema change and no material choice                                                                                                  |
+| **Standard** | Several components, compatible shared/internal contract change, meaningful choice, or established and contained regulatory obligations                                                                                                   |
+| **Deep**     | New runtime technology, infrastructure component or external integration, public or breaking contract, migration, decision-relevant PoC, material security/privacy/compliance consequence, costly reversal, or several authority domains |
+
+An unknown material driver prevents Light until resolved. Use the detailed driver list in
+[depth and phases](references/depth-and-phases.md); a small diff does not imply low consequence.
+Persistence is **Dossier** when work crosses sessions or owners, or depth is Standard/Deep; otherwise
+it is **Inline**. Crossing a session changes persistence, not technical risk. Reclassify on evidence;
+never lower past an active material driver merely to shorten the process.
+
+## Phase graph
+
+The forward spine is:
+
+```text
+Definition intake
+  -> discovery
+  -> targeted repository context
+  -> adaptive clarification
+  -> scope
+  -> architecture impact
+  -> solution [-> feasibility experiment] -> decision -> contract
+  -> decomposition -> risk -> implementation plan
+  -> readiness -> execution/progress -> completion review
+```
+
+| Responsibility                                        | Skill                             |
+| ----------------------------------------------------- | --------------------------------- |
+| Co-author the initial definition                      | collaborative-feature-definition  |
+| Separate known, assumed, and unknown                  | feature-discovery                 |
+| Establish what the repository answers                 | feature-context-analysis          |
+| Ask adaptive rounds and identify blockers             | feature-requirement-clarification |
+| Fix what is in and out                                | feature-scope-analysis            |
+| Map touched elements and boundary crossings           | feature-architecture-analysis     |
+| Generate and evaluate options                         | feature-solution-analysis         |
+| Resolve one decision-relevant feasibility uncertainty | feature-feasibility-experiment    |
+| Record provenance, authority, and outcome             | feature-decision-analysis         |
+| Define changed contracts and compatibility            | feature-contract-definition       |
+| Preserve observable business and technical criteria   | requirements-and-acceptance       |
+| Split into valuable features and executable resources | feature-decomposition             |
+| Derive risks, detection, mitigation, and fallback     | feature-risk-analysis             |
+| Produce the executable plan                           | feature-implementation-plan       |
+| Gate before implementation and review completion      | feature-readiness-review          |
+| Implement resource by resource                        | feature-execution                 |
+| Persist truthful status and chronology                | feature-progress-tracking         |
+
+The spine is not a one-way checklist. Use these returns:
+
+| Finding                                             | Return to                                       |
+| --------------------------------------------------- | ----------------------------------------------- |
+| Product value, rule, scope, or BAC is disputed      | Product Definition                              |
+| Repository evidence closes or contradicts an answer | Discovery/clarification, then affected outputs  |
+| Feasibility refutes an option or premise            | Solution and decision                           |
+| Contract exposes a product trade-off                | Product owner for the affected rule/BAC         |
+| Contract changes compatibility or rollout           | Architecture, risk, decomposition, and plan     |
+| Implementation departs from an accepted decision    | Impact, decision, contract/plan, then readiness |
+
+Invalidate affected downstream artefacts, following and repairing trace links. Missing links do not
+prove independence; inspect the potentially affected boundary before continuing that scope. A return
+is focused, not a restart.
+
+Use the responsibility table to select the phase that can produce the missing result. Load its
+instructions and applicable references when needed, using the available client mechanism. A dependency
+being installed or named does not establish that its procedure was loaded or performed.
+
+Route a phase with its bounded question, accepted revisions, canonical input locations, relevant
+evidence and expected output. Inspect the return against those inputs before using it downstream:
+does it answer the question, preserve the decisive constraints, and leave unsupported conclusions
+unresolved? For Dossier work, integrate the result into the existing authoritative record using
+[the handoff procedure](references/dossier-layout.md); a chat summary or a file's existence does not
+close the phase. Record the next valid phase and why its inputs suffice. Combine applicable Light
+checks inline rather than making every phase a separate gate.
+
+Naming another skill does not mean a different reviewer performed the work. Unless the request or
+local policy requires a distinct reviewer, the current agent can perform a separate readiness pass;
+state its actual provenance.
+If a specialist is unavailable, use the available criteria only where the phase can still be
+performed responsibly. A missing mandatory review blocks
+its dependent transition; report what is needed and continue independently ready work. Do not invent
+a PASS or require another person merely because the phase has a different skill name.
+
+## Decision rules
+
+```text
+IF the repository can answer a question
+THEN establish and cite the fact before asking the user.
+
+IF a question changes behavior, contract, data semantics, security, or failure handling
+THEN use evidenced authority/delegation from the session and project; identify a missing accountable
+     role only where the consequence requires one. Do not demand approval already supplied.
+
+IF feasibility is unknown and pass/fail changes a decision
+THEN use feature-feasibility-experiment to resolve it; record proposals and missing evidence
+     meanwhile. A planned or inconclusive experiment does not establish feasibility;
+     accepting uncertainty still requires the GAP-* authority and readiness rules.
+
+IF a boundary crossing has no accepted contract and owner
+THEN return to engineering; a DTO or file shape in the plan is not a contract.
+
+IF a plan needs a BAC-* or TC-* that the accepted definition does not contain
+THEN return to the accountable role; planning does not author acceptance criteria.
+
+IF a Product Definition changes after Engineering Analysis starts
+THEN create a new revision, invalidate traced downstream artefacts, and reapprove only what changed.
+
+IF implementation contradicts a recorded decision
+THEN determine whether the implementation is wrong or the decision has been invalidated.
+     Restore intended behavior, or revise the affected decision/plan with appropriate authority;
+     do not automatically rewrite the decision to justify a deviation.
+
+IF work will cross a session or owner
+THEN persistence is Dossier and the resumption artefact is current before handoff.
+```
+
+## Non-negotiable rules
+
+- Never invent business requirements, corporate standards, compliance obligations, or approval.
+- Never select a major technology silently.
+- Never treat repository practice as organisational authority.
+- Never reuse an identifier for a different artefact type.
+- Never expand or shrink accepted scope without a revision and impact entry.
+- Never mark RES-* DONE without observed EV-*.
+- Never waive a gap without the role authorised to accept its consequence.
+
+## Dossier
+
+When persistence is Dossier, use [the dossier layout](references/dossier-layout.md), adapted to the
+repository's existing convention. The dossier is a working resumption and audit artefact, not a
+ceremonial deliverable assembled at the end. At completion or a material return, use its bounded
+lesson guidance only when an observed outcome could change a future decision.
+
+When reviewing or evolving the lifecycle itself, use
+[the worked lifecycle cases](references/validation-cases.md) to check consequential transitions.
+They teach the intended behavior and provide known regression scenarios, not extra runtime ceremony
+or evidence of measured improvement.
+
+## Output
+
+Open with the requested endpoint, input revisions, depth, persistence, and their drivers. Then report
+current phase, decisions, stale artefacts, accepted gaps, blockers, and next transition. Normalize readiness to:
+
+- PASS;
+- PASS WITH ACCEPTED GAPS;
+- RETURN TO PRODUCT;
+- RETURN TO ENGINEERING;
+- DECOMPOSE BEFORE PROCEEDING.
+
+Only the first two can advance the stated scope within existing authorization. Readiness does not
+establish completion, turn a planning request into permission to implement, or authorize
+deployment/publication. At completion, report **Complete: yes/no** against the accepted baseline,
+with the Required criteria's observed evidence and any missing or failed checks, using
+feature-readiness-review. Accepted gaps remain gaps; an authorized scope amendment changes the
+baseline explicitly. A Light/Inline report may still be three lines.

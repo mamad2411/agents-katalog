@@ -1,0 +1,190 @@
+---
+name: guide
+description: >
+  Show review-loop usage guide: how it works, commands, configuration,
+  and key features. Use when the user asks for help with review-loop.
+---
+
+First, read `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` to get the current version number.
+
+Then display the following guide to the user, replacing `{VERSION}` with the version from plugin.json:
+
+---
+
+# review-loop {VERSION} — Quick Reference
+
+## How it works
+
+```
+/review-loop <work item description> [--handsfree]
+
+review-loop entry (resolves `entry`, runs the stage A checks)
+│
+└── paired-session coordinator (run directory under <repo>/.review-loop/runs/)
+    ├── PLAN   author drafts the plan → independent reviewer → iterate
+    ├── EXEC   author implements → reviewer + shadow review → iterate
+    ├── GATE   adversarial gate
+    ├── with lifecycle on: FINISH → POLISH-Q specialists → docs → security
+    └── DONE (or HOLD) → you accept or reject; nothing ships without your decision
+```
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `/review-loop <work item>` | The default entry: fresh work → paired-session; existing code → paired-session `run --review-only`; an existing plan → paired-session with the plan as the work item (Entry below) |
+| `/review-loop:paired-session <work item> [--plan-only]` | Runs the paired-session coordinator directly: independent PLAN review, EXEC implementation and review, adversarial gate, then finish, quality polish, docs and security with lifecycle on. Lifecycle off stops after the gate; acceptance returns the uncommitted tree. It ends at DONE (or HOLD); the agent accepts or rejects a DONE run only on your explicit decision. `--plan-only` stops after the approved plan |
+| `/review-loop:review-pr [PR number\|PR URL\|ref] [aspects]` | Paired-session report mode (below) |
+| `/review-loop:code-quality-loop [max-rounds]` | A review-only paired-session run on the uncommitted change (with lifecycle on, one fix round for the non-blocking findings, quality writers on; `accept` normally commits locally unless `auto_commit: false`; lifecycle off stops after the gate and acceptance returns the uncommitted tree); `--legacy`, `--reorganize` and `entry: legacy` are refused (legacy removed in v2.13.0) |
+| `/review-loop:reorganize` | Reorganizes code file structure without changing behaviour (standalone) |
+| `/review-loop:guide` | This guide |
+
+The legacy workflow was removed in v2.13.0 (routing) and v2.13.1 (`/review-loop:legacy`,
+`/review-loop:plan`, `/review-loop:execute` and its protocol files). Their replacements:
+plan-only work → `/review-loop:paired-session <work item> --plan-only`; an existing plan or a review of
+existing code → `/review-loop`. Legacy session files under `.review-loop/sessions/` are left on disk and
+never read; resuming one is refused. See `docs/paired-session-migration.md`.
+
+## Entry
+
+The `entry` key in `.review-loop/config.md` takes `legacy` or `paired-session`, written unquoted (exact values only; since v2.13.0 `legacy` is refused, and anything else is warned about and treated as absent).
+With the key absent or `paired-session`, fresh work, an existing plan (used as the
+work item; PLAN drafts and reviews it again) and a review-only request on
+existing code (`run --review-only`, plus `--base <ref>` when you name a base) are
+handed to paired-session; resuming a legacy session is refused. Unrelated dirty
+work is not existing code: a review-only run reviews and, with `auto_commit`,
+delivers every change against its base. A failed check before the
+coordinator starts (a host other than macOS or native Windows, required CLIs, background or outside-sandbox
+execution, Codex home, on Codex an installed plugin older than v2.10.0, or a
+declined or unanswered worktree or test-command question; under handsfree any
+such question counts as unanswered) refuses with the reason, whether the key is set or not
+(unavailable background or outside-sandbox execution is reported as HOLD); nothing falls back.
+Once the coordinator has started, a refusal or HOLD is reported. Roles come from the
+operator profile you name or `~/.config/review-loop/paired-session.json`;
+without one, Codex is the author and gate and Claude the reviewer.
+Gemini (Antigravity CLI `agy`) is an optional third vendor for any role on macOS (README.md, Configuration).
+Every run uses one mode: every sandbox applies and no permission probe exists (`permission-probe` and strict mode
+were removed in v3.7.0; `--strict` only prints a NOTE). A reviewer turn that changes the
+workspace is voided and restored, and an author commit is a HOLD.
+Platforms: macOS and native Windows (Linux and WSL are refused). On Windows `--detach` is refused, Claude roles run without the Claude Code Bash sandbox, Git for
+Windows (Git Bash) is required, and run directories and workspaces stay out of OneDrive-synced folders.
+On Codex, ask "use paired-session for this task".
+Details: `docs/paired-session-migration.md`.
+
+`/review-loop:review-pr [PR number|PR URL|ref] [aspects]` runs the paired-session report mode
+(`entry: legacy` and `--legacy` are refused since v2.13.0).
+A PR or ref is reviewed in a temporary clone (the operator's checkout is never
+touched); no tests run unless you confirm a test command; the EXEC reviewer,
+shadow, gate, the selected specialists (`code errors comments types tests`) and
+the security stage report into `review-report.md` in the run directory, and
+nothing is fixed, committed or posted. Posting is a separate request with a
+secret scan and a second confirmation of the full body (`gh pr review
+--comment` only). `simplify` is a writer and is refused on this route
+(`run /review-loop:code-quality-loop on the change (its POLISH-Q simplifier)`).
+
+## Usage
+
+```bash
+# Basic — starts the paired-session plan→review→implement→CR run
+/review-loop add rate limiting to the /api/upload endpoint
+
+# If code is already written, it hands off as a review-only run
+/review-loop review the changes I just made to the parser
+
+# I already have a plan: /review-loop (the plan becomes the work item)
+/review-loop implement this plan: <plan text>
+
+# Plan only
+/review-loop:paired-session design an adaptive rate limiter for /api/upload --plan-only
+
+# Show this guide — slash command or natural language
+/review-loop:guide
+show me the review-loop guide
+```
+
+> **After updating the plugin**: exit with Ctrl-C twice, then `claude --resume`
+> to reload plugins while keeping your conversation. Old sessions keep using
+> the version loaded at startup.
+
+## Configuration
+
+Create `.review-loop/config.md` in your project to customize:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `entry` | absent (paired-session) | `paired-session` (`legacy` is refused since v2.13.0); routes every `/review-loop` (Claude) or review-loop skill (Codex) request, review-pr and code-quality-loop (see Entry above) |
+| `soft_limit_plan` | 3 | Becomes `--max-plan-rounds` (a hard cap that HOLDs blocking reviews) |
+| `soft_limit_exec` | unset → 3 | Becomes `--max-exec-rounds` (the pre-gate EXEC cap) |
+| `docs_file` | `CHANGELOG.md` | Becomes `--docs-file`; `""` to skip |
+| `skip_quality_polish` | false | Becomes `--skip-quality-polish` |
+| `review_focus` | "" | Project-specific review priorities (free text), given to the reviewer, shadow and gate |
+| `review_style` | "" | Tone and rules for the review roles and the POLISH-Q specialists |
+| `quality_focus` | "" | Quality priorities for the POLISH-Q specialists |
+| `auto_commit` | — | A review-only run (`/review-loop` on existing code, code-quality-loop) with lifecycle on normally makes one local commit at `accept`; `false` here keeps it uncommitted. Lifecycle off returns the uncommitted tree. Not applied on the main pipeline (`true` prints a warning; set it in the operator profile) |
+| `handsfree` | false | Blocks stage A questions (any such question fails); `accept`, `reject` and `withdraw-findings` are never run |
+
+Unset paired-session caps are plan 3 / exec 4 rounds. `reviewer_model` and `executor_model` only warn
+(models come from the operator profile); the other legacy keys are ignored. See
+`docs/paired-session-migration.md` (Config mapping).
+
+Under quota pressure, keep the fresh shadow and use the one-way `resume --skip-quality-polish true` to skip new
+specialist passes and any POLISH-Q quality writer batch still awaiting scheduling. Existing blockers still need
+the author fix and one or two recheck calls per owner, or eligible withdrawal at the POLISH-Q fix HOLD.
+See the [resume details](../../paired_session/README.md#skipping-quality-polish-on-resume).
+
+### review_focus examples
+
+```yaml
+# Backend
+review_focus: |
+  - Concurrency: race conditions, deadlocks, mutex usage
+  - Test coverage: error paths, not just happy paths
+
+# Frontend
+review_focus: |
+  - Security: XSS, CSRF, input sanitization
+  - Accessibility: WCAG, keyboard nav, screen reader
+
+# Web API
+review_focus: |
+  - Security: auth checks, rate limiting, input validation
+  - API contract: backward compatibility, proper status codes
+```
+
+## Key features
+
+- **Independent review** — the reviewer, shadow and gate never share the author's session
+- **Round caps** — PLAN and pre-gate EXEC default to 3 rounds each. The gate gives one PASS/FAIL
+  verdict. FAIL allows one repair review and at most one more within the automatic 5-round EXEC hard cap.
+  At a round-limit HOLD, `resume --add-rounds N` (1–10) extends the run on the operator's decision.
+  Advisory-only reviews can pass, with open findings recorded in the run backlog and carried to acceptance.
+  An advisory fix round is available only through code-quality-loop. EXEC needs a passed configured test,
+  own run evidence and the current tree. See [round rules and gate repair](../../paired_session/README.md#acceptance-rejection-and-round-limits)
+  and the [delivery scenario matrix](../../docs/protocol/scenario-matrix.md).
+  See [the advisory rules](../../paired_session/README.md#minor-only-review-revisions) for open ledger rows.
+- **Acceptance stays yours** — a DONE run is accepted or rejected only on your explicit decision
+- **Resume settings** — on a continuing `resume`, use `--author-model`, `--reviewer-model`, `--gate-model` or the
+  corresponding `--*-effort` flags. Omitted flags keep their saved values. Vendors and model policy stay fixed.
+  A persistent model change starts a new session for that role. Effort changes keep the session.
+  A moved install can continue with matching frozen inputs and the same custom gate prompt path.
+  See [resume settings and relocation](../../paired_session/README.md#changing-role-settings-or-moving-an-install).
+- **Project-specific config** — tailor review priorities per project
+
+## More info
+
+GitHub: https://github.com/NYTC69/review-loop
+
+## Troubleshooting
+
+- **A plugin update does not take effect.** Claude Code loads plugins at session start, and `/reload-plugins`
+  does not switch versions. After `/plugin update`, start a new session (or exit with Ctrl-C twice and
+  `claude --resume` to keep the conversation).
+- **A headless (`claude -p`) run stops when the turn ends.** `-p` exits at the end of its turn and kills the
+  background coordinator. Use an interactive session; on macOS a headless session can start the run with
+  `--detach` (it returns at once with its pid and log; `stop` ends it).
+- **`--detach` is refused on Windows.** A headless session is not supported there. Drop the flag and use an
+  interactive session.
+- **An entry refuses with `paired-session needs macOS or native Windows`.** Linux (WSL included) is not supported.
+  Run from macOS or native Windows.
+- **A slash command does nothing in Codex (`Unrecognized command`).** Codex matches skills by their description,
+  in natural language only. Ask in plain words, for example "run review-loop on this branch" or "review PR 123".

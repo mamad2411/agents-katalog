@@ -1,0 +1,114 @@
+---
+name: molview-spec
+description: Build or replace custom molecular views and guided molecular stories from provider-supplied structure sources with MolViewSpec, or explore PDBe-reported ligand interactions in the Molecular Workspace. Use for explicit visualization, representation, coloring, highlighting, ligand-contact, or story requests.
+metadata:
+  version: "7"
+---
+
+# Molecular views and stories
+
+Prefer the advertised `ebi-pdbe-build_structure_scene` tool for custom single
+scenes and `ebi-pdbe-build_structure_story` for a guided story. The
+`ebi-pdbe-build_mvs` and `ebi-pdbe-build_mvs_story` names are compatibility
+aliases. Ordinary experimental PDB entry exploration uses
+`ebi-pdbe-open_structure`; open a provider-supplied coordinate URL with
+`ebi-pdbe-open_structure_url`. Aligned comparison uses
+`ebi-pdbe-compare_structures`.
+For any initial request to open, view, inspect, or show a PDBe entry—including
+a request that only supplies an entry ID—call `ebi-pdbe-open_structure`. For
+another provider, use that provider's guidance and pass its exact returned
+coordinate URL and format to `ebi-pdbe-open_structure_url` or the generic scene/story
+builder. Never call
+`ebi-pdbe-load_structure_annotations` for a user request: it is an App-only helper for
+loading optional annotations into a workspace that is already open and does not create a scene.
+A successful `prepared` or `compiled` result completes that viewing/build
+request. Stop calling visualization tools; do not repeatedly reopen a structure
+or switch tools to wait for browser rendering.
+
+Ordinary structure opening shows the deposited asymmetric unit unless a valid
+`assembly_id` is supplied; do not describe it as an assembly view by default.
+When an assembly-focused view is requested, use a known deposited assembly ID
+with `ebi-pdbe-open_structure`. For a custom MVS scene, set the structure type
+to `assembly`; use a known ID or omit it so Mol* selects the first available
+assembly—never invent an ID. The ordinary open tool does not expose a
+chain-instance coloring option. If chain-instance colors are requested, use a
+custom MVS scene and distinguish copies only with supported, evidence-backed
+`instance_id` selectors; do not claim ordinary opens are colored by instance.
+
+The App displays supplied scientific data. Preserve PDBe/SIFTS residue
+correspondence and supplied alignment transforms. Do not calculate RMSD,
+per-residue displacement, distance-cutoff ligand neighbourhoods or inferred
+binding sites. Highlight binding-site residues only from explicit source
+annotations with provenance; if absent, report the annotation as unavailable.
+Coordinate loading and camera navigation do not establish new scientific results.
+
+Ground biological claims, residue mappings, ligand instances and scene choices
+in evidence from the relevant provider. Read [scene guidance](references/scenes.md) when building or
+modifying a scene, and [story guidance](references/stories.md) for a tour or story.
+For every custom view or story, apply the default molecular styling and label
+readability rules in those references unless the user explicitly requests a
+conflicting style. These defaults do not change ordinary structure opening or
+aligned comparison.
+The tool schemas are authoritative; full schema resources are available at
+[scene schema](references/scene.schema.json) and [story schema](references/story.schema.json)
+when exact field details are needed. Read the [builder API reference](references/builder-api.md)
+for transforms, instances, additional structures, primitives, annotation tables
+and serialized MolQL. The same operations work inside each story scene.
+
+Visualization follow-ups arrive through main chat with normal user/assistant
+history and only the latest available visualization context. Use that context
+to build a complete new view; each chat visualization request opens a separate
+viewer and leaves existing viewers unchanged. Workspace IDs and revisions are
+internal App/server state and are omitted from model-facing context and tool results.
+`ebi-pdbe-update_workspace` is App-only for in-view controls, not for chat
+responses. Do not claim to mutate an existing viewer or
+route a result by workspace ID.
+
+## Ligand interaction workflow
+
+Use `ebi-pdbe-ligand-interactions` for the Ligand & Binding Site Explorer workflow
+inside the Molecular Workspace. Start with a PDB ID to list modeled ligand instances;
+select an exact instance by CCD, author chain, author residue number, and insertion
+code. Retain its label-chain and label-residue mapping for the viewer. Interaction
+requests use the endpoint's demonstrated author chain and author residue identifiers;
+never substitute label identifiers for these request fields.
+
+Display one table row for each returned PDBe interaction record. Preserve atom lists,
+multi-atom groups, every supplied classification (including clashes and overlaps),
+source labels, and supplied distances. Filters only hide returned rows; a maximum
+distance filter does not detect contacts or define a binding site. Keep each source
+interaction record type visible. Apply a maximum-distance filter only when the current
+records share one interaction geometry type; when types are mixed, leave all rows
+visible until the user narrows the type. Do not recalculate distances, infer contacts,
+reclassify records, or score interaction importance.
+Distinguish distributed computational interaction classifications from curated
+functional annotations. Treat conservation, validation, binding-site and functional
+annotations as supporting evidence, with source and retrieval provenance; report
+missing values as unavailable.
+
+Contact lines require unambiguous atom identifiers plus coordinate model and assembly
+context. If source records do not resolve those identifiers to exactly one coordinate
+copy, leave the table available and do not draw a line. Preserve the selected ligand,
+filters, and source records as restorable workflow state. CSV export must retain
+original identifiers, atom groups, interaction type, all classifications, source
+distance and provenance.
+
+Only report that a replacement or story was created after a successful tool
+result in the current turn. A prose description or a skill-reference read does
+not create a visualization. On a validation failure, correct the reported fields and retry once with a
+changed specification. Never repeat identical failed input. If that retry fails,
+stop and state that the view was not created. Network/runtime failures do not
+justify speculative specification changes. The App reports coordinate loading
+separately, so compilation alone does not establish successful rendering.
+
+A result with `status: "compiled"` completes construction: **stop calling builders**
+and summarize the result. The full MVSJ is intentionally delivered in the App
+artifact; model-facing text/structuredContent contains the normalized replacement
+specification. That specification is not a placeholder. Pending browser loading
+or the absence of the full MVSJ in the model-visible text is not a build failure.
+Do not rebuild to wait for the viewer or obtain raw MVSJ unless the user requests
+the exported data.
+
+Return concise prose with the structural point and any material limitation.
+The host renders the App; do not paste MVS JSON, executable builder code, or App
+HTML into chat unless the user specifically requests the data or an example.

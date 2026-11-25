@@ -1,0 +1,234 @@
+---
+name: commit
+description: Commit the changes in the working tree. On a repo's default branch, or on any branch in a repo that commits straight to its default branch, invoke only when the user explicitly signals to commit ("commit", "/commit", etc.), because implementation approval is not a commit signal there. On a feature branch in a repo that ships through PRs, invoke it on your own once a slice's checks and proof pass.
+allowed-tools: Bash
+---
+
+## Context
+
+- Status: !`git status --short`
+- All changes: !`git diff HEAD`
+
+This context comes from the session's working directory. When the changes to commit live in another
+repository or worktree, named in the arguments or earlier in the conversation, run
+`git -C <path> status --short` and `git -C <path> diff HEAD` there and work from that output,
+running every later step in that repository. There is nothing to commit only when both are empty in
+the repository that holds the changes; then say so and stop.
+
+## Your task
+
+**Before running checks and tests:** you may skip steps 1 and 2 below ONLY if you can answer yes to
+ALL of the following: (a) you ran the project's full check suite — not a subset — earlier in this
+conversation and it passed; (b) you ran the project's full test suite — the same command CI would
+run, with no path filters or -k flags — and it passed; not the subset of tests you think are
+relevant to the changed files — all the tests (c) `git diff HEAD` is byte-for-byte identical to the
+diff you saw when those runs completed. If any condition is false, run them now.
+
+When those runs were the worktree runs described under step 2, which held only `HEAD` plus what
+this commit will contain, condition (c) is met instead when `HEAD` is still that commit and
+`git diff HEAD -- <path>...` for the commit's paths is identical to what the worktree held. Changes
+to other files since then do not matter, because the worktree did not contain them.
+
+**A commit no test can see skips step 2, and the script alone decides that.** Before step 2, run
+`uv run <skill-base-dir>/scripts/check_unread.py <path>...` from the repository that holds the
+changes, with the paths the commit will contain. It exits 0 only when every path is a Markdown file
+and no file outside Markdown names it or a directory above it in a string, or reads Markdown files
+by extension. Then skip step 2, and quote the script's output in the report so the reader can see
+why. Step 1 still runs, because linters and formatters can read Markdown. Exit 1 or 2 means step 2
+runs as usual. Nothing else skips step 2: a change that looks small, safe or documentation-only
+still runs the full suite unless the script says otherwise.
+
+1. Run all relevant checks. Fix any errors that are mechanical and contained to files this commit
+   will contain (e.g. formatting, unused imports, trivial lint), never to another session's files.
+   If fixing an error would require touching new files, making design decisions, or adding
+   non-trivial logic — stop, report what failed and why, and wait for approval before proceeding.
+   Discover what checks apply by consulting the project's CONTRIBUTING.md, Justfile and CLAUDE.md.
+2. Unless `check_unread.py` exited 0 above, run the full test suite — the same command CI runs,
+   with no path filters. Not just the tests you think are relevant to the changed files — all the
+   tests. Do not run only the tests for changed files. Apply the same fix rule: mechanical failures
+   in files this commit will contain only; escalate anything else.
+
+   When a check from step 1 or a test from step 2 fails only in files this commit leaves out, such
+   as another session's uncommitted work in the same checkout, that failure is not a reason to stop
+   yet. Find out whether the commit itself passes. Run the full checks and tests again in a
+   temporary worktree that holds `HEAD` plus exactly what the commit will contain:
+
+   ```sh
+   wt="$(mktemp -d)/wt" && git worktree add -q --detach "$wt" HEAD && echo "$wt"
+   ```
+
+   Copy each whole file the commit takes into the same path under the printed directory, or apply
+   the commit's patch there with `git -C <dir> apply <patch>` when it takes only part of a file. Run
+   the suite with `cd <dir> &&` at the start of the same command, because a working directory set in
+   an earlier command may not carry over. Then remove the worktree with
+   `git worktree remove --force <dir>`. If everything passes there, the failures belong to the files
+   left out: commit, and tell the user which checks fail in the shared checkout and in which files.
+   If anything fails there, stop and report it as above. Before blaming the commit, check whether
+   the failure comes from an untracked or ignored file the worktree lacks, such as a local config
+   or a built dependency, and say so if it does.
+3. Try to divide the changes into themes. For example, pair one test case with its implementation
+   and corresponding documentation updates. Or one new lint rule and all its fixes. Changes in one
+   file or layer don't necessarily all belong in the same commit. Don't spend much time on this -
+   just do your best to separate unrelated changes. Do NOT design commits that would require
+   reverting and replaying changes; that's slow and risky and not worth it. A single commit is
+   preferable in that case.
+
+   Before committing, run `uv run <skill-base-dir>/scripts/check_branch.py <branch>` from the
+   repository that holds the changes, naming the branch this session created or switched to, as its
+   own earlier command shows rather than as `git branch` shows now. On exit 1 commit nothing:
+   another session has switched the checkout, so say so and wait for the user.
+4. Write each commit following the "Writing Commit Messages" style guide below. Commit only the
+   paths this session changed, because another session may share this checkout, and a plain
+   `git commit` also commits whatever that session has staged. Commit whole files with
+   `git commit -F <message file> -- <path>...`, which commits those paths and leaves everything
+   else in the index alone. List those paths with `--no-renames`, such as
+   `git diff --cached --name-only --no-renames HEAD`, because a rename-detecting list names only a
+   rename's target and the commit then leaves the source's deletion staged. A path-limited commit
+   refuses an untracked file, so add each new file by name first with `git add -- <path>...`, which
+   stages only those paths. Write the message file into a new `mktemp -d` directory, so a session
+   committing at the same time can't overwrite it. To commit part of a file, see "Workflows >
+   Committing part of a file". Never run `git commit` without paths, `git commit -a`, or
+   `git add -A`, except to conclude a merge, as "Workflows > Concluding a merge" describes.
+5. After each commit, run `git show --stat --format=%h HEAD` and confirm it lists only the paths you
+   meant to commit. When the checks ran on a staged tree, compare `git rev-parse HEAD^{tree}` with
+   that tree; a different tree means the commit is not what was checked. Note the hash. If it lists
+   another path, or a later check shows `HEAD` is not the commit you made, stop and tell the user
+   rather than fixing it, because another session may already have committed on top.
+6. Never reset or amend relative to `HEAD` (`HEAD~1`, `--amend`). Between two commands another
+   session can commit, and the command then rewrites its commit instead of yours. If the user
+   approves undoing your commit, first check that `git rev-parse HEAD` is the hash you noted, then
+   reset to that hash's parent by its full hash.
+7. Push when the user asked you to, or when the commit is on a feature branch in a repo that ships
+   through PRs and the work is ready for its draft PR or already has one. Inside "Working Through
+   to a Draft PR", the work is ready only once every pre-push step it lists has run, the last being
+   `wrap-up-codebase`, so the push waits for them. Never push the default branch without the user
+   asking. To push:
+   1. On a feature branch, first confirm from this session that `prove-it-works` has reported on
+      the claim of the commit being pushed, and that no commit since has changed what it proved.
+      If it hasn't, run it now and push only after it reports. Its report can say that part of the
+      claim shows only after the push, such as a CI plan; that report is enough to push.
+   2. Then read CI's result for the commit the remote branch already holds, so a red build is
+      caught before more commits land on it. Invoke the `use-gh` skill, then run:
+
+      ```sh
+      gh run list -R <owner/repo> --commit "$(git rev-parse origin/<branch>)" --json workflowName,status,conclusion
+      ```
+
+      This reads what has already finished and never waits: a run still in progress, a branch with
+      no remote yet, or a repo with no GitHub Actions runs is not a reason to wait or stop.
+   3. If any of those runs concluded `failure`, do not push. Tell the user which workflow failed on
+      which commit, and ask whether to push anyway or fix it first.
+   4. Run `git push origin <branch>`. It pushes every commit on the branch, including any another
+      session made, and the user wants that whole batch pushed, so it needs no check or question.
+   5. In the report, list what the push sent, from the `old..new` range it printed
+      (`git log --oneline <old>..<new>`), and name the commits this session did not make.
+8. If a precommit hook fails and addressing the failure requires a design decision the user has not
+   made, stop and present options and wait for approval.
+9. When finished making all commits, continue implementing your next approved task. On the default
+   branch, or on any branch in a repo that commits straight to it, do not ever commit again unless
+   explicitly asked to again. Each commit there requires a
+   new, explicit user approval signal ("commit", "/commit", etc.). The invocation of /commit you
+   just acted on authorized only the changes you just finished committing. It does not carry
+   forward. On a feature branch in a repo that ships through PRs, commit each later slice the same
+   way once its checks and proof pass.
+
+## Writing Commit Messages
+
+Write commit messages that follow the following style guidelines (if not superseded by guidance in
+the project).
+
+### Format
+
+```
+<subsystem>: <summary>
+
+<reference issues/PRs/etc.>
+
+<long form description>
+```
+
+### Rules
+
+#### Subject line
+
+- **Subsystem prefix:** Use a short, lowercase identifier for the area of code changed (e.g., ui,
+  api, lib, ci, config, font). Determine this from the file paths in the diff. Use nested subsystems
+  with / when helpful and exclusive (e.g. ui/sidebar, api/health).
+- **Summary:** Lowercase start (not capitalized), imperative mood, no trailing period. Keep it
+  concise — ideally under 60 characters total for the whole subject line.
+
+#### References
+
+- Before writing this section, decide: **does this commit fully resolve a linked GitHub issue?**
+  - Yes → write `Fixes #X` (or `Closes #X`). This both references the issue and auto-closes it
+    when the commit lands on the default branch — including a direct push, not just a merged PR.
+    On a feature branch the keyword usually does nothing: a squash merge drops the branch's
+    commit messages, so what closes the issue, or keeps it open until `merge-and-verify` has
+    proof, is the PR description, as `write-pr-description` says.
+  - No, but it relates to one → write the bare number instead, e.g. `#1234`.
+- List each reference on its own line after the subject, separated by a blank line.
+- If there are no references, omit this section entirely (no blank line).
+- Don't stop at the first matching pattern — a commit can be both "relates to #1234" and
+  "resolves #5678" if it touches more than one ticket; check each linked issue against the
+  resolves-or-relates question individually rather than defaulting to bare numbers for all of them.
+
+#### Long form description
+
+- Describe **what changed**, **what the previous behavior was**, and **how the new behavior works**
+  at a high level
+- Use plain prose, not bullet points. Wrap lines at ~72 characters.
+- Focus on the why and how rather than restating the diff
+- Keep the tone direct and technical without filler phrases
+- Don't exceed a handful of paragraphs; less is more
+
+## Workflows
+
+### Committing part of a file
+
+When a file has multiple unrelated changes destined for different commits, build each commit in a
+private index. `git add -p` needs a TTY and will not work in this environment, and
+`git commit -- <path>` commits the whole file. A private index also keeps out whatever another
+session has staged in the shared one.
+
+Steps:
+
+1.  `d="$(mktemp -d)" && git diff <file> > "$d/changes.patch" && echo "$d"`. The directory is new
+    on every run, so another session doing the same can't overwrite the patch or the index. A shell
+    variable doesn't survive to the next command, so copy the printed path into the steps below.
+2.  Edit `<dir>/changes.patch` to keep only the hunk(s) you want — delete unwanted `@@` blocks and
+    their lines, keeping the file headers (`--- a/...` / `+++ b/...`)
+3.  Once the checks have passed, build the index and commit in one command:
+
+    ```sh
+    old=$(git rev-parse HEAD) && GIT_INDEX_FILE=<dir>/index git read-tree "$old" \
+      && GIT_INDEX_FILE=<dir>/index git apply --cached <dir>/changes.patch \
+      && new=$(git commit-tree "$(GIT_INDEX_FILE=<dir>/index git write-tree)" -p "$old" \
+        -F <message file>) && git update-ref HEAD "$new" "$old"
+    ```
+
+    Another session can commit between building the index and committing, and a plain
+    `git commit` would then record the older tree on top of its commit, silently undoing its
+    change. `update-ref` given `$old` refuses when the branch has moved, so nothing is committed:
+    run the command again. If the patch no longer applies, the other session's commit touched the
+    same lines, so stop and tell the user. `commit-tree` runs no commit hooks, so the checks in step
+    1 of "Your task" are what stand in for them.
+4.  `git reset -q -- <file>`, so the shared index's entry for that file matches the new commit. It
+    names the file, so it changes nothing else in the index. The remaining hunks stay in the working
+    tree for the next commit
+
+### Concluding a merge
+
+Git refuses a path-limited commit while a merge is in progress
+(`fatal: cannot do a partial commit during a merge.`), so a merge left open by a conflict or by
+`git merge --no-commit` is concluded with `git commit -F <message file>` and no paths. That commits
+the whole index, including anything another session staged, so first list each staged path the
+merged branch did not change:
+
+```sh
+comm -23 <(git diff --cached --name-only | sort) <(git diff --name-only HEAD...MERGE_HEAD | sort)
+```
+
+Empty output means the index holds only the merge: commit. Each path it prints is either one you
+edited by hand to make the merge work, which you name in the commit message and the report, or
+another session's staged work. For the second, stop and tell the user rather than unstaging it,
+because unstaging changes that session's index.

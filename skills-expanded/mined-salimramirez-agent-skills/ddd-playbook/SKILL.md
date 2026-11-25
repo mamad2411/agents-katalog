@@ -1,0 +1,93 @@
+---
+name: ddd-playbook
+description: Model a business domain with Domain-Driven Design — bounded contexts, ubiquitous language, aggregates and their invariants, value objects, domain events, and context mapping. Use when designing or refactoring a domain model, deciding aggregate boundaries, splitting a system into bounded contexts, running or interpreting an EventStorming session, or when business rules are leaking into controllers, services, or UI components — even if the user never says "DDD". It covers the modeling and the design rules, not framework idioms; for writing the code, use the companion ddd-spring-boot or ddd-angular skills. Not for plain CRUD with no business rules, database tuning, or framework how-to questions.
+license: MIT
+metadata:
+  version: "2.0.1"
+  author: Copyright 2026 Salim Ramirez
+---
+
+# Domain-Driven Design (DDD)
+
+Domain-Driven Design tackles complex software by putting the **business domain** — its language, rules, and invariants — at the center of the design, instead of letting the database schema, the framework, or the UI drive the model.
+
+Apply this whenever you model a domain or write code around business logic. Follow the decision rules in this file; open a reference file when you need depth on a specific area. The rules matter more than any single example — understand *why* each exists so you can apply it to cases the examples don't spell out.
+
+<!-- ddd:core:start -->
+
+## Prime directive: model the domain, and protect it
+
+- Put business rules and invariants **inside the domain model itself**, not scattered across controllers, services, or SQL. A model that only holds data while the logic lives elsewhere is an *anemic domain model* — the most common DDD failure, and the main thing DDD exists to prevent.
+- Speak the **ubiquitous language**: use the exact terms domain experts use, in the code (class, method, variable names) and in conversation. If the business says "policy", the class is `Policy`, not `InsuranceRecord`. A gap between code and language is a defect waiting to happen.
+- Keep the **domain pure**: the domain layer expresses business concepts and must not depend on frameworks, persistence, web, or messaging concerns. Those belong at the edges.
+
+## Layered architecture (4 layers)
+
+Organize code into four layers. Dependencies point **inward**, toward the domain; the domain depends on nothing outside itself.
+
+1. **Interfaces** — the **inbound adaptors**: entry points where the outside world drives the context (REST/GraphQL controllers, CLI, message/event listeners, schedulers). Translate external input into application calls and the result back out. No business logic.
+2. **Application** — orchestrates use cases (application services, often split into **command services** and **query services**): loads aggregates, invokes domain behavior, manages transactions and security. Coordinates, but holds **no business rules** itself.
+3. **Domain** — the heart: entities, value objects, aggregates, domain events, domain services, and the repository and service *interfaces* (**ports**). All business rules and invariants live here. Depends on nothing but itself.
+4. **Infrastructure** — the **outbound adaptors**: the technical implementations the context uses to reach the outside (persistence/ORM and repository implementations, messaging, external API clients). Implements the ports the inner layers declare.
+
+The inner layers declare **ports** (interfaces) and the adaptors implement them — an *inbound* adaptor brings a request into the context, an *outbound* adaptor lets it reach out. This is the classic DDD layered model; it does **not** require hexagonal, onion, or "clean" architecture — those are compatible refinements, but the non-negotiables are domain purity and the inward dependency rule.
+
+## Bounded contexts
+
+A **bounded context** is an explicit boundary within which a model and its ubiquitous language stay consistent. The same word can mean different things in different contexts (a "Customer" in Sales ≠ in Support); don't force one model across the whole system.
+
+## Tactical building blocks — how to decide
+
+When modeling, choose the right block deliberately:
+
+- **Value Object** — no identity; defined entirely by its attributes; immutable. Use liberally: money, date ranges, addresses, quantities, identifiers. Prefer a value object over a primitive whenever a concept carries rules (e.g., `Money` bundles amount + currency and forbids mixing currencies). They make invalid states unrepresentable.
+- **Entity** — has a distinct identity that persists through changes to its attributes (a `Customer` stays the same customer even if their name changes). Use when identity and a lifecycle matter.
+- **Aggregate** — a cluster of entities and value objects treated as one consistency unit, accessed only through its **aggregate root**. Key rules, each with a reason:
+  - Keep aggregates **small** — large ones cause contention and load too much data.
+  - One aggregate = **one transaction**. Don't modify two aggregates in the same transaction; it couples their consistency.
+  - Reference **other aggregates by identity (ID)**, never by holding their object — this keeps boundaries and transactions clean.
+  - Enforce the aggregate's invariants inside the root, so it is always internally consistent.
+- **Domain Event** — a statement that something meaningful happened in the domain (e.g., `OrderPlaced`). Use it to achieve **eventual consistency across aggregates** and to decouple side effects from the action that caused them.
+- **Domain Service** — stateless domain logic that doesn't naturally belong to a single entity or value object (e.g., a transfer between two accounts). Keep it in the domain layer; don't confuse it with an application service.
+- **Repository** — collection-like access to aggregates by their root. Define **one repository per aggregate root**, with the interface in the domain layer and the implementation in infrastructure.
+- **Factory** — encapsulates complex creation of an aggregate or value object when a plain constructor would be unclear or would leak rules.
+
+## CQRS
+
+Command Query Responsibility Segregation separates the model that **changes** state (commands) from the model that **reads** it (queries). It comes in two strengths, and conflating them is a common source of over-engineering:
+
+- **The light form** — split the application layer along the command/query line (command services and query services). One model, one store, no eventual consistency. It is cheap, it keeps write orchestration from tangling with read orchestration, and it is a reasonable default.
+- **The full form** — give each side its own *model*: a write model (the aggregates, enforcing invariants) and a separate read model shaped for how the data is queried, kept up to date from domain events. It buys queries that span aggregates and independent scaling; it costs projection machinery and eventual consistency. Treat it as a deliberate choice per bounded context, not a default.
+
+## How to approach a DDD task
+
+1. **Establish the language** — clarify the domain terms with the user; use them verbatim in the model.
+2. **Locate the bounded context** — which context are we in, and what is its model?
+3. **Find the aggregates and their invariants** — what must always be true, and what is the consistency boundary?
+4. **Model tactically** — choose value objects, entities, and aggregate roots; push rules into them; keep the domain pure.
+5. **Place each piece in the right layer** — rules in domain, orchestration in application, I/O in interfaces, technical detail in infrastructure.
+6. **Implement for the stack** — follow the stack's implementation idioms; see the routing below.
+
+<!-- ddd:core:end -->
+
+## Strategic design — essentials
+
+Two more strategic decisions shape where the effort goes:
+
+- **Subdomains** — distinguish the **core** (your competitive advantage — invest most here), **supporting**, and **generic** (buy/reuse) subdomains, so effort goes where it matters.
+- **Context Mapping** — define the relationships between bounded contexts (e.g., an **Anti-Corruption Layer** to protect your model from an external one).
+
+## References
+
+- **Tactical patterns in depth** — the full catalog with detailed rules, trade-offs, and worked examples, including CQRS depth (read models, eventual consistency, relationship to event sourcing). Read `references/tactical-patterns.md`.
+- **Strategic concepts in depth** — read `references/strategic-design.md`.
+- **The modeling process and tools** — EventStorming, Domain Message Flow, the Bounded Context Canvas, the context-map pattern catalog, and the modeling recipe. Read `references/modeling-process.md`.
+
+## Implementing the model
+
+The rules above are stack-agnostic, but the idioms that express them — keeping persistence out of the domain, publishing domain events, shaping the inbound adaptor — differ. When writing code, use the companion skill for the project's stack:
+
+- **Spring Boot / Java** → the `ddd-spring-boot` skill
+- **Angular (frontend, DDD-adapted)** → the `ddd-angular` skill
+
+Each of them carries the same core design rules as this file, so it stands on its own; reach for this skill alongside them when the work is modeling rather than coding. If no companion skill matches the project's stack, apply the rules above idiomatically for that technology.

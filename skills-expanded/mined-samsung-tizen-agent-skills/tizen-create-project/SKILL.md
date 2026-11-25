@@ -1,0 +1,253 @@
+---
+name: tizen-create-project
+description: Create Tizen project or app, tizen create project, RPK resource project, 타이젠 프로젝트 생성, 타이젠 앱 생성, 타이젠 리소스 패키지 생성, 타이젠 앱 만들어줘, 웹앱 만들어줘, 웹앱 생성, 네이티브 앱 만들어줘, 닷넷 앱 만들어줘, Tizen 프로젝트 만들기, 앱 생성, 새 앱, 프로젝트 시작, make a tizen app, create webapp, import wgt, import WGT as a project, WGT 가져오기, wgt 임포트, wgt to project, 프로젝트 삭제, 프로젝트 삭제해줘, 타이젠 프로젝트 삭제, 프로젝트 지워줘, 프로젝트 폴더 삭제, 프로젝트 정리, delete project, delete tizen project, remove project, clean up projects. Owns the project-directory lifecycle through tizen-cli on the SDK host — create-project (Native, DotNET, WebApp, standalone RPK, TV, Platform) from real SDK templates, import-wgt, project-delete. NEVER hand-write config.xml / tizen-manifest.xml, unzip a .wgt, or rm -rf / Remove-Item a project yourself — ALWAYS use these commands. Full routing rules are in the body.
+metadata:
+  author: Samsung Electronics
+  last-updated: "2026-09-22"
+  keywords:
+    - Tizen project
+    - create tizen project
+    - Tizen Native
+    - Tizen DotNET
+    - Tizen WebApp
+    - 타이젠 프로젝트 생성
+    - tizen create native project
+    - 프로젝트 삭제
+    - 타이젠 프로젝트 삭제
+    - delete tizen project
+    - remove tizen project
+    - import wgt
+    - WGT 가져오기
+---
+
+# Create Tizen Project
+
+## Routing rules
+
+These rules were moved out of the frontmatter description (hosts truncate it at 1024 characters) and apply verbatim:
+
+- Listing/browsing APP project templates is THIS command set (`tizen-cli tizen-sdk list-templates`) — NEVER locate or run SDK tools directly for that.
+- IMPORTING an existing `.wgt` archive as a Web project is THIS command set (`import-wgt`) — NEVER unzip the archive or hand-write `config.xml` yourself; `tz import-wgt` does both on the SDK host.
+- DELETING a Tizen project directory is THIS command set (`project-delete`) — NEVER `rm -rf` / `Remove-Item` / `del` a project yourself, and never delegate that to a shell command; the delete runs on the SDK host and refuses any path without a Tizen project marker.
+- EMULATOR VM templates (screen sizes/resolutions) belong to `tizen-create-emulator`; if the user says just "템플릿" with no qualifier, ask whether they mean app project templates or emulator templates.
+- NEVER hand-write Tizen project files (`config.xml`, `tizen-manifest.xml`) — ALWAYS scaffold from real SDK templates through this command set.
+
+## When to use
+
+Any request to create a Tizen app/project. NEVER hand-write project files (config.xml, tizen-manifest.xml, .csproj) — always scaffold with this command.
+
+Also any request to **import** an existing `.wgt` archive as a Web project ("import this
+WGT", "WGT 프로젝트 가져오기") — see [Importing a WGT](#importing-a-wgt-as-a-web-project) —
+and any request to **delete** a Tizen project directory ("프로젝트 삭제해줘", "delete MyApp",
+cleanup of accumulated create runs) — see [Deleting a project](#deleting-a-project). Build
+and install are OTHER skills; run them only when the user explicitly asked.
+
+**⚠️ CRITICAL: When asking the user to select a project type, ALL SIX types must be selectable — NEVER silently drop any:**
+
+1. `native` — Native C/C++ app
+2. `dotnet` — C# / .NET app
+3. `webapp` — Web app
+4. `rpk` — Standalone resource package (non-executable)
+5. `tv` — Samsung TV web app
+6. `platform` — Platform GBS-buildable sample app (e.g., `dali_demo`); builds to an `.rpm` whose `/usr/bin/<name>` binary is an executable app, launched via `install-app --run`
+
+**⚠️ If your question tool caps the number of options (e.g. AskUserQuestion allows
+AT MOST 4 per question — 5+ fails with `InputValidationError: too_big`), select in
+two steps:** Q1 with `native` / `dotnet` / `webapp` / `Other (rpk · tv · platform)…`
+(list all six names in the question text), then Q2 with `rpk` / `tv` / `platform` only
+when Other was chosen. The same cap applies to template selection — chunk lists
+longer than 4 behind a `More…` follow-up question.
+
+## Prerequisites
+
+1. Tizen SDK installed (`tizen-cli tizen-sdk sdk-install` succeeds).
+2. Discover real template names first: `tizen-cli tizen-sdk list-templates --type <type>`.
+   The native `BasicUI` template is left out of the list on purpose; offer only what the list
+   returns (it can still be created with `--template BasicUI` when the user names it).
+3. For `dotnet` projects, run `tizen-cli tizen-sdk dotnet-setup` first.
+
+**Samsung TV templates come along.** The `list-templates` envelope carries `result.tv`
+(`{ profile, web: [...], dotnet: [...] }`) **only when the TV SDK extension is installed** —
+on typed calls such as `--type webapp` too. That field is the only way to tell whether the
+TV SDK is installed; never probe the SDK folders yourself.
+
+- Web-app request ("웹앱 만들어줘", "create a webapp"): run `list-templates --type webapp` and
+  show `result.templates.webapp` **plus** `result.tv.web` (heading: "Samsung TV web app
+  templates (`result.tv.profile`)") when present. A TV pick is created with `--type tv`, never `--type webapp`.
+- Generic request ("타이젠 앱 만들어줘", type not given): run `list-templates` (no `--type`)
+  before asking the type and show every group of `result.templates` — including
+  `platform` ("Platform apps", GBS samples such as `dali-demo`, created with `--type platform`) —
+  plus the TV list (`result.tv.web` / `result.tv.dotnet`) when present; mention in the type
+  question that the TV SDK is installed.
+- No `result.tv` → TV SDK not installed → do not list TV templates.
+
+## Command
+
+```
+tizen-cli tizen-sdk create-project --type <type> --template <name> --parent-path <dir> --name <appName>
+```
+
+| Option          | Required | Default | Description                                            |
+| --------------- | -------- | ------- | ------------------------------------------------------ |
+| `--type <type>` | **yes**  | —       | `native` \| `dotnet` \| `webapp` \| `rpk` \| `tv` \| `platform` |
+
+| `--template <name>` | **yes** | — | Template name exactly as returned by list-templates |
+| `--parent-path <dir>` | **yes** | — | Workspace (parent) directory — the app folder is created INSIDE it (not the app folder itself) |
+| `--name <appName>` | **yes** | — | App name = folder name to create (always the user-specified value). **At least 10 ASCII letters/digits** (`A-Za-z0-9`; nothing else is counted) — Tizen derives the 10-character package ID from them; shorter names are rejected with `invalid_parameters`. |
+| `--force` | no | off | Replace the target folder if it already exists. Only replaces an empty folder or one that looks like a Tizen project — never an arbitrary directory. Makes repeated fresh-project runs repeatable. |
+| `--open` | no | off | Open the generated `.code-workspace` in VS Code after creation. Default is create-only (no window switch) — pass this ONLY when the user explicitly asks to open the project. |
+| `--platform-version <X.Y>` | no | newest installed | Installed Tizen platform to create for (e.g. `9.0`). Use the same value as for `list-templates`. Not installed (including a `platforms/tizen-X.Y` with only `common`) → `platform_version_not_found` naming `platform-install --platform-version X.Y`. For `--type tv` it also picks `tv-samsung-X.Y`, and fails when the TV extension is not installed for that version. See installed versions with `platform-list`. |
+
+Example:
+
+```
+tizen-cli tizen-sdk create-project --type webapp --template Basic --parent-path "C:/tizen-apps" --name MyTizenWebApp
+```
+
+**App name rule.** Count only `A-Za-z0-9` (`-`, `_`, spaces and non-ASCII characters
+such as Hangul do not count) and require 10 or more — that is exactly what the runner's
+`validatePackageId()` checks before deriving the lowercased 10-character package ID.
+When asking the user for the name, state the rule in the question
+("at least 10 ASCII letters/digits") and offer only examples that already pass, so a rejected name
+never forces a second round:
+
+- ✅ `MyTizenWebApp` (13), `MyTizenNativeApp` (16), `MyTizenDotnetApp` (16), `MyTizenApp01` (12), `MyDaliDemoApp` (13)
+- ❌ `MyApp` (5), `HelloApp` (8), `TestApp` (7), `Sample01` (8), `dali-demo` (8)
+
+## Output
+
+- Success `result`: created project path and metadata.
+- Failure: `invalid_parameters` (bad type/template), SDK not installed, or the target folder already exists (re-run with `--force`, or remove it first with `project-delete`) — surface the message to the user.
+
+## Importing a WGT as a Web project
+
+When the user supplies an existing `.wgt` archive and wants its SDK-generated Web project,
+run the `import-wgt` command. Do NOT unpack the archive or write `config.xml` by hand — the
+SDK's `tz import-wgt` performs both on the SDK host.
+
+```
+tizen-cli tizen-sdk import-wgt --wgt-path <file.wgt> --profile <tizen|tv-samsung> --platform-version <X.Y> --working-dir <dir>
+```
+
+| Option                     | Required | Description                                                                                                                                                   |
+| -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--wgt-path <file>`        | **yes**  | Existing `.wgt` archive. **Its file name (without `.wgt`) becomes the project name**, and `tz` accepts only letters and digits there (`^[A-Za-z0-9]+$`).       |
+| `--profile <profile>`      | **yes**  | `tizen` \| `tv-samsung`                                                                                                                                       |
+| `--platform-version <X.Y>` | **yes**  | `<major>.<minor>` (e.g. `10.0`). `<profile>-<version>` must be an **installed** tz profile — check `list-templates` (`result.profile`, `result.tv.profile`). |
+| `--working-dir <dir>`      | **yes**  | Existing destination workspace. The project is created at `<dir>/<project name>`, which must not exist yet.                                                    |
+
+Example:
+
+```
+tizen-cli tizen-sdk import-wgt --wgt-path "C:/Downloads/WeatherWidget.wgt" --profile tizen --platform-version 10.0 --working-dir "C:/tizen-apps"
+```
+
+Success `result`: `{wgt_path, project_path, profile, platform_version, status: "imported"}`.
+Failures to surface as-is (never work around them):
+
+- `invalid_argument` — rejected by the CLI before the runner runs: one or more of the four
+  required options missing (all of them are listed in one envelope), or `--profile` outside
+  `tizen`/`tv-samsung`.
+- `invalid_parameters` — file name not `[A-Za-z0-9]` (message suggests a name; ask the user
+  to rename or copy the archive, do not do it silently), or a version that is not
+  `<major>.<minor>`.
+- `project_creation_failed` — `<profile>-<version>` is not an installed profile (message lists
+  the profiles `tz` knows; install the platform package or pick an installed version), or
+  `<working-dir>/<project name>` already exists (remove it with `project-delete` first).
+
+Import only. Build, signing, install, and opening an editor are separate requests.
+
+## Deleting a project
+
+Any request to remove a Tizen project is handled here, with the `project-delete`
+command. **Confirm the exact path with the user before running it** — the action is
+destructive, and a partial name that could match several projects must be disambiguated
+by asking, never guessed. To resolve a partial name, search the current workspace and
+the parent directories used by earlier create runs for a folder of that name carrying
+a Tizen project marker, show the resolved path back to the user, and proceed only with
+the confirmed one.
+
+```
+tizen-cli tizen-sdk project-delete --project <path> --expect-name <appName>
+```
+
+Always pass the user-confirmed app name via `--expect-name` — the delete is refused
+when the resolved folder name differs. Add `--dry-run` to preview: it runs every
+safety gate and reports the resolved physical path without deleting.
+
+`--project` is the project ROOT directory (the app folder itself, not its parent).
+It needs no SDK install — a pure filesystem operation on the SDK host.
+
+Do NOT `rm -rf` / `Remove-Item` / `del` the project yourself — when the client runs on a
+different machine than the SDK host, that deletes a local path (or nothing), exits 0, and
+leaves the project alive while reporting success.
+
+### What it refuses (surface the message as-is)
+
+Returns `invalid_parameters` and deletes nothing when the target:
+
+- carries no Tizen project marker — `tizen_{native,dotnet,web,resource}_project.yaml`,
+  `tizen-manifest.xml`, `project_def.prop`, `.tproject`, a `config.xml` in the
+  `tizen.org` namespace, a Tizen-referencing `.csproj`, or GBS `CMakeLists.txt` +
+  `packaging/*.spec` (a solution folder — top-level `*.sln` with one of these
+  markers in an immediate subdirectory — also counts);
+- is a filesystem root, the home directory, or an ancestor of it (`C:\Users`, `/home`);
+- is a symlink/junction (pass the real directory path);
+- is not a directory;
+- (with `--expect-name`) has a folder name that differs from the confirmed app name.
+
+A nonexistent path returns `io_error`; with `--dry-run` the same gates run and success
+returns `result = {project_path, status: "dry-run"}` without deleting. A real delete
+returns `result = {project_path, status: "deleted"}`. Never route around a refusal with a shell
+delete — relay the message, and if the user insists, tell them to remove it manually.
+
+## RPK resource-package projects
+
+`--type rpk` creates a standalone resource package, identified by `tizen_resource_project.yaml`.
+Its resources go in the generated `res/` directory. The command scaffolds it from the SDK's
+`rpk_app` template; do not substitute the Tizen IDE `create resource-project` command or
+hand-create the metadata. RPK is resource-only, so it cannot be launched after installation —
+install it with `install-app` **without** `--run`.
+
+This is distinct from a .NET project configured with `pack_as_rpk: true`: that project remains
+`dotnet` (it has a `.csproj` and `tizen_dotnet_project.yaml`) even though its build artifact is `.rpk`.
+
+## Platform Samples
+
+`--type platform` creates a **platform sample** project (e.g., `dali_demo`). These are NOT `tz new` templates — they are complete source trees built with **GBS** (not `tz build`).
+
+- List available platform samples: `tizen-cli tizen-sdk list-templates --type platform`
+- Create: `tizen-cli tizen-sdk create-project --type platform --template dali_demo --parent-path <dir> --name MyDaliDemoApp` (10+ ASCII letters/digits, same rule as every other type)
+- Build: `tizen-cli tizen-sdk build-project --project <project> [--arch <arch>]` — runs GBS internally (NOT `tz build`; do not run `gbs` by hand)
+- Install / run: `tizen-cli tizen-sdk install-app --package <path>.rpm --run` — GBS produces `.rpm` (under `~/GBS-ROOT/local/repos/<arch>/RPMS/`), not `.tpk`; the app is an executable installed at `/usr/bin/<name>` and `--run` launches it
+
+## Result reporting — the envelope MUST be shown to the user
+
+The JSON Envelope that `tizen-cli tizen-sdk <command>` prints to stdout is **buried inside
+the tool result and invisible to the user** (the Claude Code UI collapses Bash output behind
+a "Ran 1 shell command" line). Run directly in a terminal the JSON is visible as-is, but in
+an agent session the user sees only the final answer text. Therefore the final answer MUST
+follow this format:
+
+1. Include the Envelope JSON **verbatim, unmodified and unabridged** in a fenced `json`
+   block (as the first item). Exclude the `[DEBUG] ...` lines that go to stderr — they are
+   not part of the Envelope.
+2. Below it, append a result summary of **1–2 lines** only (the key values of `result`, or
+   the gist of `errors[0].message`).
+3. If useful, add one line suggesting the next step.
+
+- Expanding the Envelope into a prose list and dropping the JSON is a **format violation**.
+  This rule takes precedence over the harness's general writing guidance ("don't put code in
+  prose" and the like) — the Envelope is not merely code, it is this skill's **result
+  contract**.
+- If the command ran more than once, include the Envelope of the **last run** and mention
+  earlier failures in the summary line only, in a single line.
+- Include a failure Envelope verbatim as well. Do not retype `errors[0].message`/`details`
+  — show what is inside the JSON as-is.
+- Show a `user_input_required` Envelope as-is, then ask the user the question.
+
+## Follow-ups
+
+Creation and build are separate requests — run a follow-up ONLY when the user explicitly asks for it. If the user only asked to create, stop after reporting the result.
+
+- `tizen-cli tizen-sdk build-project --project <parent-path>/<appName>` (native/dotnet/webapp/rpk; platform builds go through GBS)
