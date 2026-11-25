@@ -1,0 +1,494 @@
+---
+name: using-ccproxy-api
+description: >-
+  Guides users through ccproxy as an OpenAI-compatible and Anthropic-compatible LLM API server
+  with SDK integration, OAuth authentication, sentinel key substitution, model routing, and
+  troubleshooting. Use when installing ccproxy, configuring SDK clients (Anthropic, OpenAI,
+  LiteLLM, Agent SDK) against ccproxy, setting up per-project instances, debugging authentication
+  errors, setting up OAuth token forwarding, or understanding the hook pipeline and shaping system.
+---
+
+# Using ccproxy as an LLM API Server
+
+ccproxy exposes an OpenAI-compatible and Anthropic-compatible API via a mitmproxy-based interceptor. Any SDK or HTTP client that supports custom `base_url` can use it.
+
+## Installation
+
+### System-wide (Home Manager)
+
+Add ccproxy as a flake input and enable the Home Manager module:
+
+```nix
+# flake.nix
+inputs.ccproxy.url = "github:starbaser/ccproxy";
+
+# home configuration
+programs.ccproxy = {
+  enable = true;
+  settings = {
+    # Override defaults here (port, providers, transforms, etc.)
+  };
+};
+```
+
+This installs the `ccproxy` binary, generates sibling `ccproxy.yaml` and
+LiteLLM-compatible `config.yaml` files from Nix, and creates a `systemd --user`
+service that auto-restarts when either changes.
+
+### Standalone (any Linux)
+
+```bash
+# Clone and enter devShell
+git clone https://github.com/starbaser/ccproxy
+cd ccproxy
+nix develop   # or: direnv allow
+
+# Initialize config
+ccproxy init          # copies both templates to ~/.config/ccproxy/
+ccproxy init --force  # overwrites both existing files
+
+# Edit native services and model declarations
+$EDITOR ~/.config/ccproxy/ccproxy.yaml
+$EDITOR ~/.config/ccproxy/config.yaml
+
+# Start
+ccproxy start
+```
+
+### Per-project instance
+
+Each project can run its own ccproxy with isolated config, port, and transforms via the flake's `mkConfig`. Use `ccproxy.defaultSettings.settings` (top-level, no `${system}` selector needed) as the base to inherit all defaults (hooks, shaping, providers, otel).
+
+```nix
+# project flake.nix
+{
+  inputs.ccproxy.url = "github:starbaser/ccproxy";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs.flake-utils.url = "github:numtide/flake-utils";
+
+  outputs = { self, nixpkgs, flake-utils, ccproxy }:
+    let
+      defaults = ccproxy.defaultSettings.settings;
+    in
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        proxyConfig = ccproxy.lib.${system}.mkConfig {
+          settings = {
+            port = 4010;  # per-project: use 4010+ to avoid collisions
+            inspector = {
+              port = 8090;
+              cert_dir = "./.ccproxy";
+            };
+            lightllm = {
+              transforms = [
+                { match_path = "/v1/messages"; action = "redirect";
+                  dest_provider = "anthropic"; dest_base_url = "https://api.anthropic.com";
+                  dest_path = "/v1/messages"; }
+              ] ++ defaults.lightllm.transforms;
+            };
+          };
+        };
+      in {
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            ccproxy.packages.${system}.default
+            just process-compose
+          ];
+          shellHook = proxyConfig.shellHook;
+        };
+      });
+}
+```
+
+`mkConfig` generates Nix-store `ccproxy.yaml` and `config.yaml` files; its
+`shellHook` symlinks both into `.ccproxy/` and exports `CCPROXY_CONFIG_DIR`.
+The `.envrc` just needs `use flake`.
+
+Add `.ccproxy/` to `.gitignore` — the directory contains a Nix-generated symlink that is machine-specific and regenerated on `nix develop`:
+
+```
+# .gitignore
+.ccproxy/
+```
+
+#### Port assignment conventions
+
+| Port | Use |
+|------|-----|
+| 4000 | System-wide ccproxy (Home Manager, default) |
+| 4001 | ccproxy project's own devShell |
+| 4010+ | Per-project instances |
+| 8083 | System inspector UI (default) |
+| 8084 | ccproxy dev inspector |
+| 8090+ | Per-project inspector UI |
+
+### Running the instance
+
+```bash
+# Foreground
+ccproxy start
+
+# Via process-compose (recommended for dev)
+just up       # process-compose up --detached
+just down     # process-compose down
+
+# Check health
+ccproxy status              # Rich panel
+ccproxy status --json       # Machine-readable
+ccproxy status --proxy      # Exit 0 if proxy up, 1 if down
+ccproxy status --inspect    # Exit 0 if inspector up, 2 if down
+```
+
+### process-compose.yml
+
+Use `ccproxy status --proxy` as the readiness probe so dependent processes wait for the proxy to be healthy:
+
+```yaml
+# process-compose.yml
+version: "0.5"
+
+processes:
+  ccproxy:
+    command: "ccproxy start"
+    readiness_probe:
+      exec:
+        command: "ccproxy status --proxy"
+      initial_delay_seconds: 5
+      period_seconds: 30
+      timeout_seconds: 10
+      failure_threshold: 6
+    availability:
+      restart: on_failure
+      backoff_seconds: 2
+      max_restarts: 5
+
+  myapp:
+    command: "python -m myapp"
+    depends_on:
+      ccproxy:
+        condition: process_healthy
+```
+
+### Wiring SDK clients
+
+Point any SDK at the per-project port with a sentinel key:
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="sk-ant-oat-ccproxy-anthropic",
+    base_url="http://localhost:4010",  # per-project port
+)
+```
+
+Or via environment variables in `shellHook` / `.envrc`:
+
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:4010"
+export ANTHROPIC_API_KEY="sk-ant-oat-ccproxy-anthropic"
+```
+
+## Configuration
+
+Configuration lives under `$CCPROXY_CONFIG_DIR` (default
+`~/.config/ccproxy/`): `ccproxy.yaml` owns native services and `config.yaml`
+owns LiteLLM-compatible model declarations.
+
+```yaml
+ccproxy:
+  host: 127.0.0.1
+  port: 4000
+
+  providers:
+    anthropic:
+      auth:
+        type: command
+        command: "jq -r '.claudeAiOauth.accessToken' ~/.claude/.credentials.json"
+      base_url: https://api.anthropic.com
+      path: /v1/messages
+      type: anthropic
+    gemini:
+      auth:
+        type: command
+        command: "jq -r '.access_token' ~/.gemini/oauth_creds.json"
+      base_url: https://cloudcode-pa.googleapis.com
+      path: "/v1internal:{action}"
+      type: gemini
+
+  hooks:
+    inbound:
+      - ccproxy.hooks.inject_auth
+      - ccproxy.hooks.extract_session_id
+    outbound:
+      - ccproxy.hooks.inject_mcp_notifications
+      - ccproxy.hooks.verbose_mode
+      - ccproxy.hooks.shape
+
+  shaping:
+    enabled: true
+    shapes_dir: ~/.config/ccproxy/shapes
+
+  inspector:
+    port: 8083
+    cert_dir: ~/.config/ccproxy
+
+  lightllm:
+    transforms:
+      - match_path: /v1/messages
+        action: redirect
+        dest_provider: anthropic
+        dest_base_url: https://api.anthropic.com
+        dest_path: /v1/messages
+```
+
+See [reference/routing-and-config.md](reference/routing-and-config.md) for transform rules, providers patterns, and hook parameters.
+
+## How authentication works
+
+**OAuth mode** (subscription accounts -- Claude Max, Team, Enterprise):
+1. Client sends sentinel key `sk-ant-oat-ccproxy-{provider}` as API key
+2. `inject_auth` hook detects sentinel prefix, looks up real token from `providers[name].auth`
+3. `shape` hook replays a captured `{provider}.mflow` shape: strips configured headers, injects `content_fields` from the incoming request, runs shape inner-DAG hooks (UUID regeneration, Anthropic billing-header re-signing, cache breakpoint normalization), stamps the result onto the outbound flow
+4. Request reaches provider API with valid OAuth Bearer token and full identity envelope (user-agent, anthropic-beta, x-stainless-*, billing header, system prompt prefix)
+
+**API key mode** (direct API keys):
+1. Client sends real API key via `x-api-key` or `Authorization` header
+2. Key passes through to the provider unchanged
+
+### Sentinel key format
+
+```
+sk-ant-oat-ccproxy-{provider}
+```
+
+Where `{provider}` matches a key in `providers` config. Common values:
+- `sk-ant-oat-ccproxy-anthropic` -- uses `providers.anthropic.auth` token
+- `sk-ant-oat-ccproxy-gemini` -- uses `providers.gemini.auth` token
+
+### Default hooks
+
+```yaml
+hooks:
+  inbound:
+    - ccproxy.hooks.inject_auth
+    - ccproxy.hooks.extract_session_id
+  outbound:
+    - ccproxy.hooks.gemini_cli
+    - ccproxy.hooks.inject_mcp_notifications
+    - ccproxy.hooks.verbose_mode
+    - ccproxy.hooks.shape
+    - ccproxy.hooks.commitbee_compat
+```
+
+- `inject_auth` -- substitutes sentinel key with real token, sets `Authorization: Bearer {token}` (or the custom `auth.header`), clears other auth headers, and stamps ccproxy auth metadata for routing/retry
+- `extract_session_id` -- parses `metadata.user_id` for MCP notification routing
+- `gemini_cli` -- wraps Gemini sentinel-key bodies in the `v1internal` envelope, conditionally masquerades `google-genai-sdk/*` UAs, rewrites paths to `cloudcode-pa.googleapis.com`
+- `inject_mcp_notifications` -- injects buffered MCP terminal events as tool_use/tool_result pairs
+- `verbose_mode` -- strips `redact-thinking-*` from `anthropic-beta` to enable full thinking output
+- `shape` -- replays a captured shape (`{provider}.mflow`) onto the outbound flow, stamping identity headers, billing header, and system prompt prefix
+- `commitbee_compat` -- last-mile compatibility shim for the commitbee tool
+
+`AuthAddon` and `GeminiAddon` are full mitmproxy addons (not pipeline hooks) registered after the outbound stage: `AuthAddon` handles 401 detection / refresh / replay; `GeminiAddon` handles capacity fallback + cloudcode-pa envelope unwrap.
+
+### Shape replay -- where identity comes from
+
+ccproxy does **not** synthesize Claude Code identity headers in code. Anthropic-bound traffic depends on a shape: a real `mitmproxy.http.HTTPFlow` from the Claude CLI persisted as a `.mflow` file. ccproxy ships a packaged default shape for Anthropic; a user-captured shape at `~/.config/ccproxy/shapes/anthropic.mflow` overrides it. The `shape` hook replays the shape on every outbound flow, providing user-agent, anthropic-beta, x-stainless-*, the signed `x-anthropic-billing-header`, and the system prompt prefix.
+
+If the shape in effect is from an outdated Claude CLI release, Anthropic will reject the request with 401/400. Capture (or refresh) a local override with:
+
+```bash
+ccproxy run --inspect -- claude -p "shape capture"
+ccproxy shapes save anthropic
+```
+
+See [`docs/shaping.md`](../../docs/shaping.md) for the canonical reference (capture workflow, shape inner-DAG hooks, billing salt configuration, custom hooks).
+
+## Quick start
+
+```python
+# Anthropic SDK (OAuth via sentinel key)
+import anthropic
+client = anthropic.Anthropic(
+    api_key="sk-ant-oat-ccproxy-anthropic",
+    base_url="http://localhost:4000",
+)
+
+# OpenAI SDK
+from openai import OpenAI
+client = OpenAI(
+    api_key="sk-ant-oat-ccproxy-anthropic",
+    base_url="http://localhost:4000",
+)
+```
+
+## SDK integration
+
+### Anthropic Python SDK
+
+```python
+import anthropic
+
+client = anthropic.Anthropic(
+    api_key="sk-ant-oat-ccproxy-anthropic",
+    base_url="http://localhost:4000",
+)
+
+response = client.messages.create(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+No extra headers needed -- the `shape` hook replays the captured Anthropic shape, supplying `anthropic-beta`, `anthropic-version`, the signed billing header, and the system prompt prefix automatically.
+
+Streaming:
+```python
+with client.messages.stream(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}],
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="")
+```
+
+### OpenAI Python SDK
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-ant-oat-ccproxy-anthropic",
+    base_url="http://localhost:4000",
+)
+
+response = client.chat.completions.create(
+    model="claude-sonnet-4-5-20250929",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+Requires a transform rule to rewrite from OpenAI format to the destination provider format via lightllm.
+
+### LiteLLM SDK
+
+```python
+import asyncio, litellm
+
+async def main():
+    response = await litellm.acompletion(
+        model="claude-sonnet-4-5-20250929",
+        messages=[{"role": "user", "content": "Hello"}],
+        api_base="http://127.0.0.1:4000",
+        api_key="sk-ant-oat-ccproxy-anthropic",
+    )
+    print(response.choices[0].message.content)
+
+asyncio.run(main())
+```
+
+**Note**: `litellm.anthropic.messages` bypasses proxies. Always use `litellm.acompletion()`.
+
+### Claude Agent SDK
+
+```python
+import os
+os.environ["ANTHROPIC_BASE_URL"] = "http://localhost:4000"
+os.environ["ANTHROPIC_API_KEY"] = "sk-ant-oat-ccproxy-anthropic"
+
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+async for message in query(
+    prompt="Your prompt here",
+    options=ClaudeAgentOptions(
+        allowed_tools=["Read", "Glob"],
+        permission_mode="default",
+        cwd=os.getcwd(),
+    ),
+):
+    # Handle AssistantMessage, ResultMessage, etc.
+    pass
+```
+
+### Environment variables (any SDK)
+
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:4000"
+export ANTHROPIC_API_KEY="sk-ant-oat-ccproxy-anthropic"
+# OpenAI compat
+export OPENAI_BASE_URL="http://localhost:4000"
+export OPENAI_API_BASE="http://localhost:4000"
+```
+
+### curl (raw HTTP)
+
+```bash
+curl http://localhost:4000/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sk-ant-oat-ccproxy-anthropic" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 100,
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+```
+
+## Model routing
+
+Normal model routing comes from LiteLLM-compatible `model_list` declarations in
+`config.yaml`. Selection order is: explicit `lightllm.transforms` override,
+exact compiled model binding, wildcard compiled binding, then sentinel-key
+Provider fallback. Transform overrides remain the edge-case escape hatch for
+host/path/model regex matching. Unmatched reverse proxy flows get a 501 error;
+unmatched WireGuard flows pass through unchanged.
+
+See [reference/routing-and-config.md](reference/routing-and-config.md) for transform configuration patterns.
+
+## Troubleshooting
+
+Authentication failures are the most common issue. Follow this decision tree:
+
+```
+Error message?
+│
+├─ "This credential is only authorized for use with Claude Code"
+│  ▶ See: Missing or stale captured shape (system prompt prefix not stamped)
+│
+├─ "OAuth is not supported" / "invalid x-api-key"
+│  ▶ See: Missing or stale captured shape (anthropic-beta not stamped)
+│
+├─ 401 Unauthorized / token errors
+│  ▶ See: Token issues
+│
+├─ Connection refused / timeout
+│  ▶ See: Connectivity
+│
+└─ Other / unclear
+   ▶ See: General diagnostics
+```
+
+See [reference/troubleshooting.md](reference/troubleshooting.md) for the full diagnostic guide with resolution steps for each branch.
+
+### Quick diagnostic commands
+
+```bash
+ccproxy status              # Verify proxy is running
+ccproxy status --json       # Machine-readable status with URL
+ccproxy logs -f             # Stream logs in real-time
+ccproxy logs -n 50          # Last 50 lines
+```
+
+## Known limitations (upstream flake issues)
+
+1. **Shape required for Anthropic** — there is no synthetic-identity fallback. If the packaged default (or a user-captured override at `~/.config/ccproxy/shapes/anthropic.mflow`) is stale for the current Claude CLI release, requests fail with 401/400. Refresh via `ccproxy shapes save anthropic`.
+2. **`devConfig` overwrites `inspector` atomically** — top-level `//` merge on `inspector` drops sub-keys not re-specified. Deep merge each nested attrset explicitly: `defaults.inspector // { ... }`.
+3. **`supportedSystems` limited** — only `x86_64-linux` and `aarch64-linux`; `aarch64-darwin` not supported.
+
+## Reference files
+
+- [reference/troubleshooting.md](reference/troubleshooting.md) -- Full diagnostic decision tree with error-specific resolution steps
+- [reference/routing-and-config.md](reference/routing-and-config.md) -- Model routing, config.yaml patterns, hook pipeline details

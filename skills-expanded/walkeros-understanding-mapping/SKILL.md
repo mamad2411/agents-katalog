@@ -1,0 +1,608 @@
+---
+name: walkeros-understanding-mapping
+description: Use when transforming walkerOS events in the flow (source→collector or collector→destination), configuring data/map/loop/set/condition/policy, or using $code: syntax in JSON configs.
+---
+
+# Understanding walkerOS Mapping
+
+## Overview
+
+Mapping transforms data at multiple points in the walkerOS flow:
+
+1. **Source → Collector**: Transform raw input (HTTP requests, dataLayer pushes)
+   into walkerOS events
+2. **Collector → Destination**: Transform walkerOS events into vendor-specific
+   formats
+
+**Core principle:** Mapping is the universal transformation layer. Same
+strategies work everywhere in the flow.
+
+## Core Functions
+
+See [packages/core/src/mapping.ts](../../packages/core/src/mapping.ts) for
+implementation.
+
+| Function                                        | Purpose                                     |
+| ----------------------------------------------- | ------------------------------------------- |
+| `getMappingEvent(event, rules)`                 | Find mapping rule for an event              |
+| `getMappingValue(value, data, { collector })`   | Transform a value using mapping config      |
+| `processEventMapping(event, config, collector)` | Unified processing for sources/destinations |
+
+### processEventMapping Flow
+
+```text
+1. Apply config.policy (modifies event)
+2. Find matching rule via getMappingEvent()
+3. Apply rule.policy (modifies event)
+4. Transform config.data (global)
+5. Check rule.ignore (short-circuits if true)
+5b. Read rule.silent (informational - destination honors it)
+6. Override event.name if rule.name
+7. Transform rule.data (event-specific)
+8. Add the include sections (rule.include ?? config.include; data wins)
+9. Strip rule.remove paths from the produced data
+```
+
+---
+
+## Configuration Hierarchy
+
+### Mapping.Config (Top Level)
+
+```typescript
+interface Config {
+  consent?: Consent; // Required consent for ALL events
+  data?: Value; // Global data transformation
+  include?: string[]; // Event sections to flatten into context.data
+  policy?: Policy; // Pre-processing for ALL events
+  mapping?: Rules; // Event-specific rules
+}
+```
+
+#### Mapping.Config.include
+
+`include` lists event sections whose fields are **added** to the data the
+destination receives (`PushContext.data`), after the rule's own `data` ran. Each
+field becomes a flat key named `<section>_<key>`: nested objects are joined with
+`_`, arrays stay whole, a `context` entry contributes its label. Sections:
+`data`, `globals`, `context`, `user`, `source`, `event` (`entity`, `action`,
+`id`, `timestamp`, `name`, `trigger`, `timing`), or `all` for every one of them.
+On a key conflict the produced `data` (the config-level `data` merged with the
+rule's) wins; `remove` runs after it. The runtime helper is
+`flattenIncludeSections` (in `packages/core/src/include.ts`).
+
+Use this to forward whole sections without mapping each field. `include` is also
+available on `Mapping.Rule` (rule-level replaces config-level). `user` includes
+every user field, `email` among them, unhashed.
+
+```typescript
+{
+  include: ['globals'],
+  mapping: {
+    page: {
+      view: {
+        // data: { page_title, globals_language, globals_currency, ... }
+        data: { map: { page_title: 'data.title' } },
+      },
+    },
+  },
+}
+```
+
+### Mapping.Rule (Per Event)
+
+```typescript
+interface Rule {
+  name?: string; // Override event name
+  data?: Value; // Event-specific data transformation
+  include?: string[]; // Event sections to flatten into context.data (rule-level)
+  ignore?: boolean; // Skip this event entirely (no processing, no push)
+  silent?: boolean; // Process settings side effects, skip destination default push
+  policy?: Policy; // Event-specific pre-processing
+  condition?: Function; // Match condition (for arrays)
+  consent?: Consent; // Required in addition to config.consent for events this rule matches
+  settings?: unknown; // Custom event configuration
+  batch?: number | BatchOptions; // Own batch buffer (a number is the wait in ms)
+  extend?: RulePatch; // Config-layer merge onto a package-shipped default rule
+  remove?: string[]; // Output-layer: dotted paths stripped from the final payload
+}
+```
+
+#### `extend` and `remove` (patching package-shipped rules)
+
+`@walkeros/transformer-ga4` ships its own default mapping rules. A user rule at
+the same key normally replaces the default in full. Two keywords change that:
+
+- **`extend`** (config layer): a partial rule deep-merged onto the
+  package-shipped default at init, before any event is evaluated. A `null` value
+  clears an inherited field. Lets you add or override one field while keeping
+  the rest. It has an effect only in `@walkeros/transformer-ga4`'s
+  `settings.mapping`; in any other rule `walkeros validate` and the bundle
+  reject it (`MAPPING_NO_OP`).
+- **`remove`** (output layer): dotted paths stripped from the produced payload
+  after evaluation, applied last. Useful for dropping PII or vendor-reserved
+  fields without rewriting the full rule. Works in a destination's rules and in
+  `@walkeros/transformer-ga4`'s `settings.mapping`.
+
+A rule with **neither** keyword keeps the standard replace behavior.
+
+See the
+[website mapping docs](../../website/docs/mapping/rule.mdx#patching-package-shipped-rules)
+for the authoritative reference and the GA4 example.
+
+```json
+{
+  "settings": {
+    "mapping": {
+      "purchase": {
+        "extend": {
+          "data": { "map": { "affiliation": "params.ep.affiliation" } }
+        },
+        "remove": ["currency"]
+      }
+    }
+  }
+}
+```
+
+### Silent vs Ignore
+
+Both flags control rule behavior but have different semantics:
+
+- `ignore: true`: the rule matched but **nothing happens**. No data transform,
+  no destination call, no side effects. Use for suppression.
+- `silent: true`: the rule matched and the destination `push()` **is** called.
+  `settings.identify`, `settings.revenue`, `settings.group`, etc. still run.
+  Only the destination's default forwarding call (e.g. `track()`, `capture()`,
+  `event()`) is suppressed. Use for "identify without an event" style flows.
+
+If both flags are set on the same rule, `ignore` wins.
+
+Common use case: a `user login` event that should call `amplitude.identify()`
+but should not create a separate `track("user login")` event in Amplitude.
+
+### Mapping.ValueConfig (Value Extraction)
+
+```typescript
+interface ValueConfig {
+  key?: string; // Extract from path
+  value?: Primitive; // Static fallback value
+  fn?: Function; // Compute the value from the source
+  map?: Record; // Object transformation
+  loop?: [path, config]; // Array transformation
+  set?: Value[]; // Create array from values
+  condition?: Function; // Conditional extraction
+  consent?: Consent; // Consent-gated extraction
+  validate?: Function; // Value validation
+}
+```
+
+Exactly one producer runs per value, in this order: `loop`, `map`, `set`, `key`,
+`fn`. The rest never run, so a `fn` next to a `key` is ignored. `value` is the
+fallback when the producer yields nothing, including a `loop` over something
+that is not a list. To transform a field, use `fn` alone (it receives the
+source), or rewrite it with `policy` and read it with `key`.
+
+---
+
+## Event Matching
+
+Match events to transformation rules by entity and action.
+
+```typescript
+const mapping = {
+  // Exact match: "product view" → view_item
+  product: {
+    view: { name: 'view_item' },
+    add: { name: 'add_to_cart' },
+  },
+
+  // Wildcard action: "foo *" → foo_interaction
+  foo: {
+    '*': { name: 'foo_interaction' },
+  },
+
+  // Wildcard entity: "* click" → generic_click
+  '*': {
+    click: { name: 'generic_click' },
+  },
+};
+```
+
+### Conditional Mapping (Array)
+
+In an array of rules, the first matching condition wins:
+
+```typescript
+order: {
+  complete: [
+    {
+      condition: (event) => event.data?.value > 100,
+      name: 'high_value_purchase',
+    },
+    { name: 'purchase' }, // Fallback (no condition)
+  ],
+}
+```
+
+**JSON with $code:**
+
+```json
+{
+  "order": {
+    "complete": [
+      {
+        "condition": "$code:(event) => event.data?.value > 100",
+        "name": "high_value_purchase"
+      },
+      { "name": "purchase" }
+    ]
+  }
+}
+```
+
+---
+
+## Value Mapping Strategies
+
+Common patterns shown below. For detailed examples of all 12 strategies, see
+[value-strategies.md](value-strategies.md).
+
+### Essential Patterns
+
+```typescript
+// Key extraction (string shorthand)
+'data.price'                              // → event.data.price
+
+// Key with fallback
+{ key: 'data.currency', value: 'USD' }    // Use USD if missing
+
+// Static value
+{ value: 'USD' }
+
+// Function transform
+{ fn: (event) => event.data.price * 100 } // Convert to cents
+
+// Object map
+{ map: { item_id: 'data.id', item_name: 'data.name' } }
+
+// Array loop
+{ loop: ['nested', { map: { item_id: 'data.id' } }] }
+
+// Loop with "this" (single item as array)
+{ loop: ['this', { map: { item_id: 'data.id' } }] }
+
+// Set (create array)
+{ set: ['data.id'] }                      // → ["SKU-123"]
+
+// Fallback chain: Value[] at any value position (first defined value wins)
+[{ key: 'data.sku' }, { key: 'data.id' }, { value: 'unknown' }]
+
+// Consent-gated (the event's consent decides, in a loop too: a `consent`
+// key on a loop item is plain data)
+{ key: 'user.email', consent: { marketing: true } }
+
+// Validate
+{ key: 'data.email', validate: (v) => v.includes('@') }
+```
+
+---
+
+## Policy (Pre-Processing)
+
+Policy shapes the event before its data is mapped. At a destination the rule was
+already selected when the event entered it; at a source or transformer, policy
+runs before matching. Use for:
+
+- Adding computed fields
+- Normalizing data structure
+- Consent-gated field injection
+
+### Config-Level Policy
+
+Applied to all events:
+
+```typescript
+config: {
+  policy: {
+    'user_data.external_id': 'user.id',
+    'custom_data.server_processed': { value: true },
+  },
+  mapping: { /* ... */ }
+}
+```
+
+### Event-Level Policy
+
+Applied after config policy, only for specific event:
+
+```typescript
+mapping: {
+  order: {
+    complete: {
+      policy: {
+        'enriched.total_cents': {
+          fn: (event) => Math.round(event.data.value * 100)
+        }
+      },
+      name: 'purchase',
+      data: { /* ... */ }
+    }
+  }
+}
+```
+
+### Policy with Consent
+
+A policy entry that resolves to nothing removes the field, so a denied consent
+gate redacts it:
+
+```json
+{
+  "policy": {
+    "user_data.em": {
+      "key": "user.email",
+      "consent": { "marketing": true }
+    }
+  }
+}
+```
+
+---
+
+## Rule Features
+
+### Ignore Events
+
+```typescript
+mapping: {
+  test: { '*': { ignore: true } },  // Ignore all test events
+}
+```
+
+### Batch Processing
+
+To batch **all** of a destination's events, set `config.batch` (no mapping rule
+needed):
+
+```typescript
+config: {
+  batch: { size: 5 },  // Flush after every 5 events (a bare number is the wait window in ms)
+}
+```
+
+A rule-level `batch` batches only that entity-action into its own buffer and
+overrides `config.batch` per field:
+
+```typescript
+mapping: {
+  order: {
+    complete: {
+      batch: { wait: 1000 },  // Only order complete batches, with a 1s debounce
+    }
+  }
+}
+```
+
+### Custom Settings
+
+```typescript
+mapping: {
+  order: {
+    complete: {
+      name: 'purchase',
+      settings: { priority: 'high', retryCount: 3 }
+    }
+  }
+}
+```
+
+---
+
+## $code: Prefix (JSON Configs)
+
+The `$code:` prefix enables JavaScript functions in JSON configurations:
+
+```json
+{
+  "fn": "$code:(event) => event.data.price * 100",
+  "condition": "$code:(event) => event.data?.value > 100",
+  "validate": "$code:(value) => value > 0"
+}
+```
+
+**Important:** The `$code:` prefix is processed by the CLI bundler. It converts
+JSON strings to actual JavaScript functions during build.
+
+### Function Signatures
+
+All mapping callbacks share `(value, context)`. The second argument is a
+`Mapping.Context` object (see "Context object" below).
+
+| Context             | Signature                     |
+| ------------------- | ----------------------------- |
+| `fn`                | `(value, context) => result`  |
+| `condition` (value) | `(value, context) => boolean` |
+| `condition` (rule)  | `(event, context) => boolean` |
+| `validate`          | `(value, context) => boolean` |
+| `loop` condition    | `(value, context) => boolean` |
+
+One-arg signatures like `(value) => value.toUpperCase()` continue to work,
+TypeScript ignores the unused second arg.
+
+### Context object
+
+| Field       | Type                            | Required | Description                                |
+| ----------- | ------------------------------- | -------- | ------------------------------------------ |
+| `event`     | `WalkerOS.DeepPartialEvent`     | yes      | The root event being mapped                |
+| `mapping`   | `Mapping.Value \| Mapping.Rule` | yes      | The surrounding mapping config (or rule)   |
+| `collector` | `Collector.Instance`            | yes      | Active collector, use for `push` and queue |
+| `logger`    | `Logger.Instance`               | yes      | Use for `info`/`warn`/`error`/`debug`      |
+| `consent`   | `WalkerOS.Consent` (optional)   | no       | Resolved consent at this evaluation point  |
+
+---
+
+## Quick Reference
+
+### Value Extraction Cheatsheet
+
+| Pattern                       | Result                         |
+| ----------------------------- | ------------------------------ |
+| `"data.id"`                   | Extract `event.data.id`        |
+| `{ value: "USD" }`            | Static `"USD"`                 |
+| `{ key: "x", value: "y" }`    | Extract `x`, fallback to `"y"` |
+| `{ fn: (e) => ... }`          | Custom function                |
+| `{ map: {...} }`              | Object transformation          |
+| `{ loop: ["nested", {...}] }` | Array transformation           |
+| `{ loop: ["this", {...}] }`   | Single-item as array           |
+| `{ set: ["a", "b"] }`         | Create array `[valA, valB]`    |
+| `[m1, m2, m3]`                | Fallback chain                 |
+| `{ consent: {...} }`          | Consent-gated                  |
+| `{ condition: fn }`           | Conditional                    |
+| `{ validate: fn }`            | Validated                      |
+
+### Rule Features Cheatsheet
+
+| Feature     | Purpose                                                                 |
+| ----------- | ----------------------------------------------------------------------- |
+| `name`      | Override event name                                                     |
+| `data`      | Transform event data                                                    |
+| `ignore`    | Skip event entirely (no processing, no push)                            |
+| `silent`    | Run settings side effects, skip default forwarding                      |
+| `policy`    | Pre-process event                                                       |
+| `condition` | Match condition (arrays)                                                |
+| `consent`   | Required in addition to `config.consent` for the events it matches      |
+| `settings`  | Custom configuration                                                    |
+| `batch`     | Own batch buffer for this event (destination needs `pushBatch`)         |
+| `extend`    | Config-layer merge onto a package-shipped default (null clears a field) |
+| `remove`    | Output-layer: dotted paths stripped from the final payload              |
+
+### Config Features Cheatsheet
+
+| Feature   | Purpose                       |
+| --------- | ----------------------------- |
+| `consent` | Required consent (all events) |
+| `data`    | Global data transformation    |
+| `include` | Event sections added to data  |
+| `policy`  | Global pre-processing         |
+| `mapping` | Event-specific rules          |
+
+---
+
+## Complete Examples
+
+For full destination configuration examples (TypeScript + JSON), see
+[complete-examples.md](complete-examples.md).
+
+---
+
+## Mapping at the Transformer Position
+
+`Mapping.Config` accepts the same shape at three positions in the flow, but the
+semantic differs by position:
+
+| Position    | What the mapping produces                                 |
+| ----------- | --------------------------------------------------------- |
+| Source      | A walkerOS event from raw input                           |
+| Transformer | A mutated walkerOS event that continues through the chain |
+| Destination | A vendor-shaped payload that the destination consumes     |
+
+When a transformer step declares only a `mapping` (no `code`, no `package`), the
+collector synthesizes a push that runs `processEventMapping` against each event.
+A `config.mapping` wins over the step-level `mapping`. Next to `code` or
+`package`, a mapping never runs. `walkeros validate` and the bundle reject both
+cases (`MAPPING_NO_OP`), and the collector logs one ERROR line for them when the
+transformer registers. It is the same keyword as the destination field, with a
+different semantic at this step position. See
+[walkeros-understanding-transformers](../walkeros-understanding-transformers/SKILL.md)
+for the pass-through-step model.
+
+### Which fields apply at the transformer position
+
+Only **event-mutating** fields run; every other field is a no-op that
+`walkeros validate` and the bundle reject (`MAPPING_NO_OP`) and the collector
+names in one ERROR line at registration (rules in array form included):
+
+| Field                                                                                     | Transformer position                                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy`                                                                                  | Applies, pre-processes the event before rule matching                                                                                                                                                         |
+| `mapping[].condition`                                                                     | Applies, picks the rule (awaited in order, first match wins)                                                                                                                                                  |
+| `mapping[].policy`                                                                        | Applies, per-event policy                                                                                                                                                                                     |
+| `mapping[].name`                                                                          | Applies, **renames** the event (mutation is observable downstream); in a destination's own `before` chain it does not change that destination's rule (ERROR `rule-not-applied` when it lands on another rule) |
+| `mapping[].ignore`                                                                        | Applies, drops the event **from the chain entirely** (no downstream step sees it)                                                                                                                             |
+| `consent`, `include`, `data`                                                              | No-op (no vendor payload, no destination to gate)                                                                                                                                                             |
+| `mapping[].consent`, `include`, `remove`, `batch`, `settings`, `extend`, `data`, `silent` | No-op (destination concepts; a rule's `consent` also applies at a source)                                                                                                                                     |
+
+Note the `ignore: true` semantic shift: at a **destination** it skips delivery
+to that destination only; at a **transformer step** it drops the event from the
+chain so no downstream step (transformer or destination) sees it.
+
+```json
+{
+  "transformers": {
+    "redactPII": {
+      "mapping": {
+        "policy": {
+          "user.email": { "value": "[redacted]" }
+        },
+        "mapping": {
+          "test": {
+            "*": { "ignore": true }
+          },
+          "order": {
+            "complete": { "name": "purchase" }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+## Where Mapping Lives
+
+| Location                                   | Purpose                                                        |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| Source config                              | Transform raw input → walkerOS events                          |
+| Transformer step config                    | Mutate walkerOS events in-flight                               |
+| Destination config                         | Transform walkerOS events → vendor format                      |
+| `state.mapping`                            | Shape a store read or write (paths relative to the value read) |
+| `packages/core/src/mapping.ts`             | Core mapping functions                                         |
+| `packages/core/src/types/mapping.ts`       | Type definitions                                               |
+| `packages/cli/examples/flow-complete.json` | Tested example, features by id                                 |
+
+---
+
+## Related Skills
+
+- [walkeros-understanding-events](../walkeros-understanding-events/SKILL.md) -
+  Event structure
+- [walkeros-understanding-destinations](../walkeros-understanding-destinations/SKILL.md) -
+  Destination-side mapping
+- [walkeros-understanding-transformers](../walkeros-understanding-transformers/SKILL.md) -
+  Transformer-position mapping and pass-through-step variants
+- [walkeros-mapping-configuration](../walkeros-mapping-configuration/SKILL.md) -
+  Recipes and patterns
+
+**Source Files:**
+
+- [packages/core/src/mapping.ts](../../packages/core/src/mapping.ts) -
+  Implementation
+- [packages/core/src/types/mapping.ts](../../packages/core/src/types/mapping.ts) -
+  Types
+
+**Detailed References:**
+
+- [value-strategies.md](value-strategies.md) - All 12 value extraction
+  strategies with examples
+- [complete-examples.md](complete-examples.md) - Full destination config
+  examples
+
+**Examples:**
+
+- [packages/cli/examples/flow-complete.json](../../packages/cli/examples/flow-complete.json) -
+  Tested example; mapping features by id (for example `ga4-purchase`,
+  `value-loop`, `rule-policy`) are listed in
+  [complete-examples.md](complete-examples.md#live-reference)
+- [packages/cli/examples/flow-complete.md](../../packages/cli/examples/flow-complete.md) -
+  Guide, chapters `mapping` and `consent-privacy`

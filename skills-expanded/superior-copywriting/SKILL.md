@@ -1,0 +1,85 @@
+---
+name: superior-copywriting
+description: Write or revise user-facing product and marketing copy with a specific voice, verifiable claims, natural rhythm, and useful actions. Use for interface labels, onboarding, landing pages, help text, and product messaging. Do not use for code comments or neutral technical documentation unless tone editing is requested.
+---
+
+# Superior Copywriting
+
+Write for a known reader doing a real task. Preserve the user's voice and facts; remove patterns that make prose interchangeable without sanding away personality.
+
+## Set the voice from evidence
+
+Use supplied examples, existing product copy, audience, channel, and purpose. Identify a few observable traits—such as directness, sentence length, technical depth, humor, or formality—and reproduce them consistently.
+
+Do not “improve” deliberate slang, fragments, punctuation habits, or cultural phrasing merely because they are unconventional. When no voice evidence exists, default to clear, concrete, calm language.
+
+## Draft from meaning
+
+Read [references/copy-by-context.md](references/copy-by-context.md) when writing or substantially revising landing-page messaging, calls to action, onboarding, interface states, or other product copy whose purpose and available actions must be established. For focused edits, apply the existing product voice and facts directly.
+
+Read [references/language-and-interface-fit.md](references/language-and-interface-fit.md) when adapting copy across languages or locales, resolving inconsistent terminology, or fitting text into constrained interfaces. Preserve meaning and the product's established language rather than translating or shortening mechanically.
+
+- Lead with the fact, action, or user outcome that matters now.
+- Name the product object and action instead of relying on abstract nouns.
+- Make button labels describe the result: “Send invoice,” not “Continue.”
+- Give errors a cause and recoverable next step when known.
+- Make empty states explain why the state exists and the one useful way forward.
+- Vary rhythm according to meaning; do not force every idea into triplets, slogans, or short dramatic fragments.
+
+## Guard factual integrity
+
+- Never invent customers, quotes, numbers, research, awards, compliance, or consensus.
+- Attribute claims to a real source or write a narrower factual statement.
+- Mark examples as examples. Do not make placeholder identities look like real users.
+- Preserve uncertainty where evidence is incomplete; do not fill gaps with plausible detail.
+- Avoid guarantees unless the product contract actually guarantees the result.
+
+## Keep authoring notes out of product copy
+
+Product-facing copy must describe the section's present purpose, available value, or useful next action, not the author's plan to complete it later. Do not ship filler such as "content will be added here," "replace this later," or a generic "coming soon" unless an announced future state is itself verified and useful to the audience.
+
+When specific facts are unavailable, choose the smallest honest result:
+
+- describe the category-level purpose in language that remains true;
+- offer a real action, such as contacting the team or starting the relevant task;
+- show an unavailable state only when knowing that state helps the user; or
+- omit the section when it has no present value.
+
+For an explicitly requested design recreation, preserve the requested section and visual hierarchy where possible using truthful product content or clearly identified sample content. Match the reference's approximate text footprint and line count without inventing claims; disclose any necessary omission or material change.
+
+Do not turn the missing fact into a broader unsupported claim. A section without confirmed partners, customers, metrics, or features must not imply that they already exist.
+
+## Keep references out of the product identity
+
+Treat examples, templates, screenshots, and competitor copy as evidence of structure or tone, not as product content. Do not carry source names, slogans, fictional companies, people, URLs, or demo labels into the result unless the user explicitly requests them. Prefer verified project language; when it is unavailable, use neutral, visibly replaceable placeholders that describe their role.
+
+When a user asks to recreate a reference, separating source identity from product copy does not authorize redesigning its visible layout. Choose replacement copy that fits the reference's content hierarchy and approximate text length while remaining honest and readable.
+
+Do not add attribution merely because a source was consulted. When text or another protected work is copied or substantially adapted, preserve the attribution or license notice required by its terms and place it in the project's established legal or third-party notice location rather than presenting it as ordinary product copy.
+
+## Remove interchangeable language
+
+Revise phrases that add mood but no information, including vague superlatives, inflated significance, anonymous authority, and generic optimism. Replace them with the concrete capability, constraint, or consequence.
+
+Watch for repeated scaffolds:
+
+- announcing the structure before stating the point;
+- “not just X, but Y” used as automatic emphasis;
+- synonym cycling to avoid repeating the correct term;
+- false ranges such as “from ideas to impact”;
+- canned candidness or chatbot sign-offs;
+- excessive hedging that hides the actual confidence level.
+
+These are signals, not forbidden strings. Keep a construction when it matches the voice and carries meaning.
+
+## Format with restraint
+
+- Use headings and lists only when they improve navigation or comparison.
+- Do not bold fragments throughout ordinary prose or decorate headings with unrelated emoji.
+- Use quotation marks for actual quotations, terms, or deliberate irony—not synthetic emphasis.
+- Keep punctuation natural to the writer. Do not enforce a universal ban on em dashes, parentheses, or fragments.
+- Prefer parallel structure when items are genuinely parallel; do not regularize everything into one cadence.
+
+## Final pass
+
+Read the copy aloud. Check that every claim is supportable, each CTA predicts its action, repeated phrases are intentional, and the ending contributes information. Compare against the voice evidence, then remove only the patterns that weaken specificity or trust.

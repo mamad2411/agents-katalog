@@ -1,0 +1,146 @@
+---
+name: update-agent-infra
+description: >
+  更新项目 AI 协作配置。
+  当需要把项目 AI 协作配置更新到最新模板时使用。
+---
+
+# 更新项目
+
+## 执行约束
+
+1. **确定性步骤脚本化**：managed / ejected 文件处理、注册表同步、配置更新
+   全部由 `sync-templates.js` 脚本执行，不得逐文件手工处理。
+   脚本保证原子性和幂等性。
+
+2. **禁止委托子代理**：阶段 B（merged 文件智能合并）必须在主会话中直接执行，
+   不得委托给子代理。子代理上下文有限，容易误判文件内容。
+
+## 阶段 A：运行同步脚本（确定性）
+
+执行以下命令，一次性处理所有确定性步骤：
+
+```bash
+node .agents/skills/update-agent-infra/scripts/sync-templates.js
+```
+
+脚本读取 `.agents/.airc.json`，并通过 npm 自动定位已安装的 `@fitlab-ai/agent-infra/templates/` 目录。同步前会合并 `templates.sources` 中配置的外部模板源；相同文件以内置模板为准，多个外部源之间后者覆盖前者，冲突会写入报告。然后自动完成：
+- 检测模板源版本
+- 同步文件注册表（`defaults.json` → `.agents/.airc.json`）
+- 处理所有 managed 文件（语言选择 → 排除 merged/ejected → 占位符渲染 → 写入；内建 guarded managed 文件使用来源基线三方比较）
+- 处理 ejected 文件（仅首次安装时创建）
+- 更新 `.agents/.airc.json`（`templateVersion`、文件列表）
+
+脚本输出 JSON 到 stdout，解析并记录报告内容。
+
+**关键字段**：
+- `error`：错误信息（如非空，先检查诊断并修复任务范围内可恢复的问题；未解决时保留阻塞状态并报告具体原因）
+- `templateVersion`：模板源包的精确 `v` 前缀 SemVer（可包含 prerelease 或 build metadata）
+- `templateRoot`：模板文件根目录绝对路径
+- `templateSources.conflicts`：外部模板源冲突列表；报告中必须显式展示，说明哪些文件因内置模板或后续外部源获胜而被忽略
+- `managed.written` / `managed.created`：已更新/新建的 managed 文件
+- `managed.protected`：检测到用户单边修改或删除、因此保留本地状态的 guarded managed 文件
+- `managed.conflicts`：来源未知、双边修改或平台切换时无法证明官方所有权的 guarded managed 冲突；必须逐项展示 target、reason 与三方哈希
+- `managed.removed`：被删除的 managed 文件（包括模板迁移时移除的旧路径）
+- `managed.skippedPlatform`：因归属其他平台而被跳过的 managed / merged 条目
+- `managed.skippedTUI`：因对应内建 Agent Client 的 `agentClients[].enabled` 为 `false` 而被跳过的 managed / merged 条目
+- `merged.pending`：需要 AI 处理的 merged 文件列表
+  - 每项包含 `target`（项目中的目标路径）和 `template`（模板根目录下的相对路径）
+- `registryAdded`：新增的文件注册条目
+- `configUpdated`：`.agents/.airc.json` 是否已更新
+
+`managed.conflicts` 是逐文件冲突，不是整轮同步的中止条件。同步脚本会跳过冲突目标，并保留该目标的当前文件和 `files.managedBaselines`；其它无冲突的 managed / ejected 文件及配置照常处理。即使冲突列表非空，也继续阶段 B 处理全部 `merged.pending`，最后在阶段 C 汇总报告所有冲突。任何阶段都不得覆盖冲突文件或推进该文件的基线。
+
+## 阶段 B：处理 merged 文件（AI 智能合并）
+
+根据报告中 `merged.pending` 列表，逐个文件处理。对于每个条目：
+
+1. 从 `<templateRoot>/<template>` 读取模板文件
+2. 渲染占位符：将双花括号包裹的 `project` 和 `org` 占位符替换为 .agents/.airc.json 中的实际值
+3. 读取本地当前文件（`<项目根>/<target>`）
+
+**如果本地文件不存在**（首次安装），直接写入渲染后的模板，跳过合并。
+
+如果本地文件存在，执行以下合并算法：
+
+### B.1 以模板为基底
+
+使用渲染后的新模板作为输出的基底。模板代表最佳实践，其结构和内容具有权威性。
+
+### B.2 从本地文件萃取增量
+
+扫描本地文件，找出比模板内容"多"的部分（用户增量）：
+- **已填充的 TODO**：模板中的 TODO 占位符在本地文件中被替换为实际内容
+- **新增段落/章节**：本地文件中存在但模板中不存在的内容
+- **扩展内容**：对模板现有内容的补充说明
+
+### B.3 合入新模板
+
+将萃取的增量合入新模板的适当位置：
+- 已填充的 TODO → 替换对应的 TODO 占位符
+- 新增段落 → 插入最相关的位置
+- 扩展内容 → 合入对应章节
+
+### B.4 通读验证
+
+整体检查合并后文件的逻辑完整性，确保：
+- 增量合入位置正确
+- 无重复内容
+- 文档结构连贯
+
+### B.5 冲突处理
+
+当本地文件修改过的内容与模板新内容冲突时：
+- 保留模板版本（模板权威性原则）
+- 在报告中提示用户该冲突，以便用户确认
+
+### B.6 残余 TODO 提示
+
+合并完成后，如果仍有模板 TODO 未被本地文件的内容填充，在报告中提示用户。
+
+## 阶段 C：验证与输出报告
+
+**方向检查**：用 `git diff` 抽查变更方向是否正确。
+正确方向：模板新内容 → 本地；错误方向：将已渲染内容退化回占位符。
+如果发现错误方向的变更，暂停并排查原因。
+
+### 自身更新检测
+
+检查 `git diff` 中是否包含 `.agents/skills/update-agent-infra/SKILL.md` 的变更。
+如果该文件在本次更新中被修改，在报告末尾输出以下警告：
+
+```
+⚠ update-agent-infra 技能自身已更新。
+  建议再次执行 /update-agent-infra 以确保所有新逻辑生效。
+```
+
+> **原因**：本次执行使用的是旧版技能逻辑，新版技能可能包含额外的处理步骤。
+> 再次执行可确保新逻辑完整应用。
+> 用户也可以在执行前先运行 `ai sync` 来预先更新技能文件，避免需要两次执行。
+
+### 输出报告
+
+基于脚本报告和 merged 合并结果，输出完整的更新报告，包括：
+- 模板版本变更
+- 文件注册表新增条目
+- 外部模板源冲突（如 `templateSources.conflicts` 非空，必须逐项列出）
+- managed 文件变更明细（已更新、新建、跳过的 merged 文件）
+- merged 文件合并结果（冲突、残余 TODO）
+- ejected 文件处理
+- 自身更新检测结果
+
+如有变更需要提交，追加：
+
+> 渲染下一步前先读取 `.agents/rules/next-step-output.md`，仅为已选场景调用统一 helper，并将 stdout 填入 `{next-step-commands}`。
+
+使用 `agent-infra-internal agent-client next-steps --skill commit` 生成本场景的 `{next-step-commands}`。
+
+```
+下一步 - 提交代码：
+{next-step-commands}
+```
+
+输出报告后**停止**，不要对项目做其他更改。
+
+
+遇到任务范围内且可诊断的失败，先读取错误证据、定位根因、修复并按同一验证器重试；不要仅因一次普通失败就停止或提问。若涉及用户数据/模板冲突、超出批准范围的设计选择、必要人工验证/授权或无法安全恢复，则保留阻塞事实并继续独立工作。

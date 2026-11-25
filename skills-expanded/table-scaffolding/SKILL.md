@@ -1,0 +1,288 @@
+---
+name: table-scaffolding
+description: Create AxTable XML in D365 Finance & Operations using business-role pattern presets (Main / Transaction / Parameter / Group / Reference / WorksheetHeader / WorksheetLine), or add fields / indexes / relations to existing tables. Use whenever the user asks to "create a table", "scaffold a master/transaction/parameter table", "add a field", or "set TableGroup / TableType".
+applies_when: User intent mentions creating a table, choosing TableGroup / TableType, adding fields / indexes / relations, or temporary (TempDB / InMemory) tables.
+---
+> ⛔ **NEVER write X++ AOT XML files directly** via PowerShell, terminal file commands (`Set-Content`, `Out-File`, `New-Item`), editor write tools, or any raw text approach. The XML schema (`<AxClass>`, `<AxTable>`, `<AxForm>`, `<Methods>`, `<SourceCode>`) is proprietary — LLMs have not been trained on it reliably. **ALWAYS use `d365fo generate …` commands** to produce correct AOT XML. If `d365fo` is unavailable in PATH, stop and ask the user to install it.
+
+# Creating & modifying AxTable definitions
+
+> The CLI's `d365fo generate table` mirrors `d365fo-mcp-server`'s
+> `generate_object` (`objectType=table`). Pattern presets pre-populate the table with the
+> canonical `TableGroup`, a sensible default field skeleton, and an
+> alternate-key index — so the scaffold passes BP `BPCheckAlternateKeyAbsent`
+> out of the box.
+
+## Pre-flight (always — ONE call)
+
+```sh
+d365fo prepare create <Name> --type table --field <F1> --field <F2> --goal "<why>" --output json
+```
+
+This single call returns the name-collision check, naming validation, similar
+existing tables to copy patterns from, EDT suggestions per planned field,
+reusable labels, mined property defaults (what % of STANDARD tables set
+Label/TableGroup/ClusteredIndex and the most common TableGroup values), and a
+**grounding token** — pass it to `d365fo generate table … --grounding-token <token>`.
+
+Fallback (prepare unavailable):
+
+```sh
+d365fo search table <namePart> --output json     # name collision check
+d365fo get edt <Edt>           --output json     # confirm any EDT you intend to use
+d365fo labels search "<text>"   --output json     # reuse label first; only create on miss
+```
+
+## Pattern-driven scaffolding (P1)
+
+```sh
+# Master table (CustTable-style)
+d365fo generate table FmCustomer \
+    --pattern master \
+    --label "@Fleet:Customer" \
+    --install-to FleetManagement
+
+# Transaction table (CustTrans-style)
+d365fo generate table FmTrans \
+    --pattern transaction \
+    --label "@Fleet:Transaction" \
+    --install-to FleetManagement
+
+# Parameter table (CustParameters-style; one record per company)
+# Check the name is free first — `FMParameters` already exists in the FleetManagement demo model.
+d365fo generate table FmVehicleParameters \
+    --pattern parameter \
+    --label "@Fleet:Parameters" \
+    --install-to FleetManagement
+
+# Worksheet header + lines pair (SalesTable / SalesLine-style)
+d365fo generate table FmOrderHeader --pattern worksheet-header --install-to FleetManagement
+d365fo generate table FmOrderLine   --pattern worksheet-line   --install-to FleetManagement
+
+# Temp table — TempDB is a TableType, NOT a TableGroup. Combine:
+d365fo generate table FmTmpStaging \
+    --pattern main \
+    --table-type TempDB \
+    --install-to FleetManagement
+```
+
+Aliases recognised: `master` → Main, `setup`/`config` → Parameter,
+`transactional` → Transaction, `lookup` → Reference, `header`/`line` for
+worksheets, `misc` → Miscellaneous. Full list:
+`main|transaction|parameter|group|worksheetheader|worksheetline|reference|framework|miscellaneous`.
+
+When `--field` is supplied, **caller fields win** — pattern defaults are
+skipped entirely:
+
+```sh
+d365fo generate table FmVehicle \
+    --pattern master \
+    --field VIN:VinEdt:mandatory \
+    --field Make:Name             \
+    --field Year:Yr               \
+    --primary-key VIN             \
+    --label "@Fleet:Vehicle"      \
+    --install-to FleetManagement
+```
+
+`--primary-key <Field>` is repeatable. Falls back to "all mandatory fields",
+then "first field" so `BPCheckAlternateKeyAbsent` never trips.
+
+Each field's concrete type (`AxTableFieldReal`, `AxTableFieldInt64`, …) comes from
+the indexed base type of its EDT, so `--field Amt:AmountCur` is a Real field. A
+`<type>` that is a base enum rather than an EDT (`--field Status:SalesStatus`)
+becomes `AxTableFieldEnum` with `<EnumType>` and no `<ExtendedDataType>`. A type
+the index knows neither way is guessed from its name (String by default) and the
+result carries an `EDT_BASETYPE_UNRESOLVED` warning — check the field, or run
+`d365fo index refresh` if the index predates schema v21. `generate map` and
+`modify add-field` type fields the same way.
+
+The CLI returns a JSON summary `{path, bytes, backup, pattern, tableType,
+usedPatternDefaults, fieldCount}` — never request the full XML back.
+
+## ❗ `TableGroup` vs `TableType`
+
+| Property | Meaning | Allowed values |
+|---|---|---|
+| `TableGroup` | **Business role** | `Main`, `Transaction`, `Parameter`, `Group`, `WorksheetHeader`, `WorksheetLine`, `Reference`, `Framework`, `Miscellaneous` |
+| `TableType` | **Storage** kind | `--table-type` accepts `RegularTable`, `TempDB`, `InMemory` (the AOT `<TableType>` element itself is emitted as `Regular`, `TempDB`, or `InMemory` — `RegularTable` is the CLI's flag name, not the literal XML value, and is omitted from the XML entirely when it's the default) |
+
+❌ Passing `--pattern TempDB` is **rejected** — the CLI returns
+`BAD_INPUT` with a hint to use `--table-type TempDB --pattern main` instead.
+
+## Label-on-field exception
+
+When a field's EDT already carries a `Label`, do **NOT** pass a label on the
+field — it inherits from the EDT. Override only when the table genuinely
+needs a different caption.
+
+## Pattern defaults (when no `--field` is supplied)
+
+| Pattern | Default fields |
+|---|---|
+| `main`            | `AccountNum`(mandatory), `Name`, `Description` |
+| `transaction`     | `AccountNum`(mandatory), `TransDate`(mandatory), `Voucher`, `Amount` |
+| `parameter`       | `Key`(mandatory), `Enabled` |
+| `group`           | `GroupId`(mandatory), `Description` |
+| `worksheetheader` | `HeaderId`(mandatory), `DocDate`(mandatory), `AccountNum` |
+| `worksheetline`   | `HeaderId`(mandatory), `LineNum`(mandatory), `Quantity`, `Amount` |
+| `reference`       | `Code`(mandatory), `Description` |
+
+Treat the defaults as a *starting point* — always replace placeholder fields
+(e.g. `Key`, `Code`) with names that fit the domain.
+
+## Augmenting an existing table
+
+- **Explicit relations from EDT references** — a field whose EDT declares a
+  reference table needs an explicit `<AxTableRelation>` (`BPErrorEDTNotMigrated`;
+  the implicit EDT relation is not enough any more):
+  `d365fo generate table-relation <Table> [--field F] --apply-to <table-xml>`
+  derives them from the indexed EDT metadata and merges them into the table's
+  `<Relations>` block (atomic; existing relations never duplicated; no `.bak`
+  is left in the model folder — the previous file is journaled, `d365fo undo`
+  restores it). Omit `--apply-to` to print the fragments.
+- **Standard find methods** — `d365fo generate find-methods <Table> --apply-to
+  <table-xml>` emits `find()`/`exist()`/`findRecId()` keyed on the table's
+  alternate-key (or first unique) index, in Microsoft's shipped shape
+  (selectForUpdate guard, `firstonly`, key null-guard, and `exist` — the name
+  the standard tables use), and merges them into `<SourceCode>` without ever
+  overwriting a method the table already declares. `--exist-name exists` keeps
+  the other spelling; `--var <name>` names the local buffer (default: camelCase
+  with a leading prefix lowered, `XYZPilotTable` → `xyzPilotTable`).
+- **Field properties** — `d365fo modify field-property <Table> <Field> AllowEdit
+  --value No` sets one property of an existing field (AllowEdit,
+  AllowEditOnCreate, Mandatory, Visible, HelpText, IgnoreEDTRelation,
+  StringSize, …), checked against the field type's AOT contract. A key field is
+  typically `Mandatory=Yes`, `AllowEdit=No`; `modify add-field … --mandatory
+  --no-edit` writes both when the field is added.
+
+## Related AOT objects
+
+### AOT Query for joining related tables
+
+After scaffolding a table, you often need an AOT Query to drive forms, reports, or data entities:
+
+```sh
+# Inner join — SalesTable driving, SalesLine joined
+d365fo generate query SalesTableWithLines \
+  --ds SalesTable --join "SalesLine:InnerJoin:SalesTable" \
+  --out c:/AOT/MyModel/AxQuery/SalesTableWithLines.xml
+
+# Check for existing queries on the same table first
+d365fo search query <NamePart> --output json
+```
+
+`--join target:joinKind:parentDs` (repeatable). JoinKind: `InnerJoin`, `OuterJoin`, `ExistsJoin`, `NoExistsJoin` (no "t" — this is the real `AxQuerySimpleEmbeddedDataSource.JoinMode` spelling, confirmed against shipped platform `AxQuery` XML; `NotExistsJoin` is rejected). The join is emitted as `<UseRelations>Yes</UseRelations>`, which tells the platform to auto-derive the join key from the target table's existing AOT relation — this only works when such a relation actually exists between the two tables.
+
+### AxView — a query projected as a read-only table
+
+A view is a query with a field list: the AOS turns it into a database view, and
+X++ selects from it like a table. It is the right answer whenever the reporting
+or entity shape is a fixed join that nothing writes to.
+
+```sh
+# A view over an existing query — the query is required, a view projects one
+d365fo generate view FmVehicleView   --query FmVehicleQuery --field VIN:FmVehicle --field Make:FmVehicle   --out c:/AOT/MyModel/AxView/FmVehicleView.xml
+```
+
+`--field <name>:<dataSource>[:<dataField>]` is repeatable and names the query
+data source the column comes from; `--computed <name>:<method>:<type>` adds a
+computed column backed by a static method on the view. The root element and AOT
+folder are `AxView`. Generate the backing `AxQuery` first — a view whose query
+does not exist compiles to nothing usable.
+
+### AxMap — one field template mapped onto several tables
+
+A map declares fields once and maps them onto tables that already have those
+columns under different names, so a single X++ routine can run over all of them
+(`SalesPurchLine` is the platform's own example).
+
+```sh
+# Field declared once, mapped onto two tables
+d365fo generate map FmVehicleSharedMap   --field VIN:VinEdt --map-to FmVehicle --map-to FmVehicleLine   --out c:/AOT/MyModel/AxMap/FmVehicleSharedMap.xml
+
+# Column names that differ per table: <table>:<mapField>=<tableField>
+d365fo generate map FmVehicleMap   --field Make:Name --map-to FmVehicle:Make=Make   --out c:/AOT/MyModel/AxMap/FmVehicleMap.xml
+```
+
+`--field <name>:<edt>[:<label>]` — the EDT decides the concrete field type, so
+the map field and the mapped columns have to agree on it. `--map-to <table>`
+alone maps every field by identical name; the `<table>:<mapField>=<tableField>`
+form is for the ones that differ. The root element and AOT folder are `AxMap`.
+There is no map extension: to change a map's reach, extend the tables it maps
+onto.
+
+### Number sequence integration
+
+If the table needs an auto-generated document number:
+
+```sh
+# Generate the module extension class, the EDT, and the form handler
+d365fo generate number-sequence <ModuleName> \
+  --edt <NumEdtName> --scope Company --table <YourTable> \
+  --out         c:/AOT/MyModel/AxClass/NumberSeqModuleExtension_<ModuleName>.xml \
+  --out-edt     c:/AOT/MyModel/AxEdt/<NumEdtName>.xml \
+  --out-handler c:/AOT/MyModel/AxClass/<YourTable>_NumberSeqFormHandler.xml
+```
+
+This emits:
+- A CoC extension of the per-module `NumberSeqApplicationModule_<ModuleName>` class (e.g. `NumberSeqApplicationModule_FleetManagement`) that registers the new sequence.
+- An EDT with `NumberSequence=Yes` and `NumberSequenceModule` set.
+- A `NumberSeqFormHandler` extension class for the target form's `init()`.
+
+Manual consumption in X++ — the `numRef<EdtName>()` accessor lives as a `static
+NumberSequenceReference` method on the module's **own parameter table** (e.g.
+`FmVehicleParameters`, mirroring how `CustParameters::numRefCustAccount()` returns
+`NumberSeqReference::findReference(extendedTypeNum(CustAccount))` in the real
+platform) — **not** on `CompanyInfo` (that class does exist and is the
+standard way to read the current legal entity via `CompanyInfo::find()`,
+but it isn't where a module's own number-sequence accessor belongs).
+`MyModuleParameters` below stands in for your module's parameter table:
+```xpp
+NumberSeq numSeq = NumberSeq::newGetNum(MyModuleParameters::numRefMyNumberId());
+str nextNum = numSeq.num();
+numSeq.used();   // or numSeq.abort() to roll back
+```
+
+## Table inheritance
+
+Table inheritance gives a base table shared fields and each row a concrete type —
+class inheritance for data. It is a **design-time** feature of the base table, not
+a runtime cast.
+
+- Base table: `SupportInheritance = Yes` plus an `InstanceRelationType` field, the
+  discriminator holding the tableId of the concrete (leaf) table for each row.
+  Mark it `Abstract = Yes` when it should never hold rows of its own type.
+- Derived table: `Extends = <BaseTable>`. It inherits every base field and adds its
+  own. **Do not duplicate the common fields.**
+- A `select` on the base returns rows of **all** derived types; narrow with an
+  `is` check or by selecting the specific derived buffer.
+- **`SupportInheritance` and `Extends` cannot be changed on a shipped table via an
+  extension** — inheritance is fixed at base-table design time. Choosing it later
+  means a new hierarchy and a data migration.
+- Use it only for a genuine is-a hierarchy with shared fields and behaviour. For
+  optional add-on data, a related table plus a relation is simpler and extensible.
+
+```xpp
+// Polymorphic select: returns rows of every derived type.
+FmVehicleBase party;
+
+while select party
+{
+    if (party is FmVehicleCar)
+    {
+        FmVehicleCar car = party;   // narrow to the leaf type
+        // …
+    }
+}
+```
+
+## Hard rules
+
+- Never guess EDTs — `d365fo get edt <Name>` first.
+- Never duplicate a field name — `d365fo get table` first.
+- Never pass `tableGroup="TempDB"` (or `--pattern TempDB`).
+- Never override the EDT label on a field unless deliberately captioned.
+- Never ship a table without an alternate-key index (BP).
+- Never inline UI strings — labels only (BP `BPErrorLabelIsText`).
+- After scaffolding, run `d365fo build && d365fo sync` **only on user request**.

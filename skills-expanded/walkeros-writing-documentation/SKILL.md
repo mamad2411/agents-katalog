@@ -1,0 +1,739 @@
+---
+name: walkeros-writing-documentation
+description:
+  Use when writing or updating walkerOS documentation - README, website docs, or
+  skills. Covers quality standards, example validation, and DRY patterns.
+---
+
+# Writing Documentation
+
+## When to Use This Skill
+
+- Creating a new package README
+- Writing website documentation (MDX)
+- Creating or updating skills
+- Reviewing documentation for quality
+- Documenting Phase 7 of create-destination or create-source
+
+## Prerequisites
+
+- [understanding-flow](../walkeros-understanding-flow/SKILL.md) - Architecture
+  context
+- [understanding-events](../walkeros-understanding-events/SKILL.md) - Event
+  naming rules
+
+---
+
+## Documentation Types
+
+### Where Content Belongs
+
+| Type               | Purpose                                       | Audience                    |
+| ------------------ | --------------------------------------------- | --------------------------- |
+| **Package README** | Installation, basic usage, API reference      | Package users               |
+| **Website docs**   | Guides, integration examples, detailed config | Integrators                 |
+| **Skills**         | Process knowledge, workflows                  | AI assistants, contributors |
+
+### Divio Documentation Types
+
+Keep these separate - don't mix tutorials with reference:
+
+| Type             | Purpose            | User State                    |
+| ---------------- | ------------------ | ----------------------------- |
+| **Tutorial**     | Learning           | Studying, beginner            |
+| **How-To Guide** | Problem-solving    | Working, knows what they need |
+| **Reference**    | Information lookup | Working, needs facts          |
+| **Explanation**  | Understanding      | Studying, needs context       |
+
+---
+
+## Example Validation (CRITICAL)
+
+### The Problem
+
+AI-generated examples can be:
+
+- Syntactically correct but use non-existent APIs
+- Plausible-looking but don't match actual exports
+- Outdated, referencing deprecated patterns
+
+### Source of Truth Hierarchy
+
+```text
+TIER 1: apps/quickstart/
+  ✓ Tested  ✓ Compiled  ✓ CI-validated
+  → USE FOR: All code examples
+
+TIER 2: packages/core/src/eventGenerator.ts
+  ✓ Canonical events  ✓ Real data structures
+  → USE FOR: Event examples
+
+TIER 3: packages/*/src/index.ts exports
+  ✓ Actual public API
+  → USE FOR: Verifying API names exist
+
+TIER 4: Package READMEs & Website docs
+  ⚠ May contain errors
+  → VERIFY against Tier 1-3 before trusting
+```
+
+### Pinned onboarding examples
+
+Getting-started and onboarding code examples are sourced from Tier-1
+`apps/quickstart/src/*.ts` (CI-validated) first, then the docs source them. The
+current canonical examples:
+
+- `first-event.ts`, the zero-to-first-event console example used by the
+  quickstart and integrated-mode pages and the README.
+- `ga4-ecommerce.ts`, the `product add` to GA4 `add_to_cart` mapping used by the
+  GA4 reference page and the GA4 ecommerce tutorial.
+
+These are pinned against drift by the doc-lint at
+`apps/scripts/validate-docs.ts` (run `npx tsx apps/scripts/validate-docs.ts`).
+It extracts canonical tokens from the Tier-1 source and asserts the docs
+snippets contain them, tolerating intentional doc simplifications (dropping the
+`seen` capture, arrow `push` instead of a method). `first-event.ts` is pinned on
+the quickstart, integrated-mode, and README pages, plus the GA4 ecommerce page;
+`react.mdx` is pinned shape-only (it pushes no `page view`).
+
+The doc-lint also runs these structural and coherence checks:
+
+- **elb event form** (docs, skills, READMEs): every event is pushed as a partial
+  event, `elb({ name: 'entity action', data })`. A quoted `"entity action"`
+  string as the first `elb` argument is an error; `walker` commands keep their
+  string name (`elb('walker consent', ...)`).
+
+- **Bundled-snippet platform guard**: every JSON flow with `bundle` carries
+  `config.platform` (getting-started, README, flow reference).
+- **Docker env guard**: quickstart Docker snippets use `BUNDLE`, not `FLOW`.
+- **Forbidden CLI verbs**: no `walkeros serve` or standalone `walkeros simulate`
+  in getting-started, guides, or the gtag page.
+- **Same-page simulate-key resolution** (getting-started): every
+  `push --simulate <type>.<key>` must resolve to a step key declared in a
+  flow.json on the SAME page; a simulate command on a page with no flow.json
+  fails. This is what catches an integrated page showing a bundled push loop.
+- **Flow.json schema validation** (all docs): every flow snippet, fragments
+  included, is checked with core's validators (`validateFlowConfig`, then
+  `validateFlowStructure`, from `@walkeros/core/dev`). A fragment that starts at
+  a key gets braces; a flow part (`sources`, `destinations`, ...) is checked
+  inside a v4 flow, with the platform from the fragment or the page path; a root
+  part (`contract`, `variables`) is checked as a v4 file; on a page whose
+  frontmatter `package:` is a step package, a step or step config part is
+  checked as that step. Package settings are not checked against the package's
+  schema, and nothing is fetched. `version: 3` migration "before" snippets and
+  JSON that is no flow part are skipped and counted in the summary line.
+- **Boundary register** (getting-started + MCP page): no prices, tier names, or
+  upgrade language. **No `:::cloud`** (all docs): there is no walkerOS Cloud,
+  and the callout type no longer exists.
+
+The rule: when you edit a pinned example, edit the Tier-1 `.ts` source and
+re-run the doc-lint. If the docs snippet must change too, update both so the
+lint passes.
+
+### Examples must run
+
+A package page shows only setup and examples that a test ran, rendered from the
+package's `walkerOS.json`; never a hand-written copy of them:
+
+- **Install and setup are generated** (destination pages). `## Installation`
+  renders `<Quickstart data={data} />` (with `export="<name>"` for a package
+  with several exports): the install line, the integrated code and the
+  `flow.json`, composed from the package's `examples.minimal`, the settings its
+  conformance test delivers with. For a package with `src/examples/minimal.ts`,
+  the doc-lint fails an `npm install`, `startFlow(` or bundled tab under
+  `## Installation`, and a section that does not render `<Quickstart>`. A
+  destination whose conformance test passes `withoutMinimal` (gtag, sqlite)
+  keeps a hand-written setup, as do source, transformer and store pages.
+- **Frontmatter names the data.** The page's `package:` frontmatter and the
+  `walkerOS.json` it imports name the same package; the doc-lint fails a
+  mismatch.
+- **Failures come from examples.** `<Configuration>` lists every step example
+  with an `outcome` under `## When it fails` (title, `description`, status and
+  code; never its `in`). Add a failure mode as a failure example with a
+  `description` in the package instead of a hand-written list on the page; the
+  docs build fails on a failure example without a `description`.
+
+Hand-written examples (source, transformer, store and guide pages, READMEs)
+follow the same bar:
+
+- **A flow runs.** Every complete JSON flow example (`"version": 4`) passes
+  `walkeros validate --strict` and runs with `walkeros push --simulate`;
+  `validate` alone does not prove a config does what the page says.
+- **Values satisfy the schema.** Placeholders match the setting's pattern (a
+  numeric pixel id where the schema asks for digits), and timestamps are
+  milliseconds wherever the code reads milliseconds.
+- **Output carries no real version.** Example output uses a stand-in such as
+  `release: { web: '3' }`; a real version number goes stale with the next
+  release.
+- **Renamed headings keep their anchor.** A heading's slug is a public URL. When
+  its text changes, pin the old slug (`## New title {#old-slug}`) and update
+  inbound links.
+
+The package side (`minimal`, `withoutMinimal`, failure examples) is in
+[using-step-examples](../walkeros-using-step-examples/SKILL.md).
+
+### Getting-started editorial rules
+
+Three rules govern the getting-started surface (decided 2026-07-06, encoded in
+the doc-lint):
+
+**See your event, per mode.** Integrated-mode pages (quickstart, react, nextjs,
+modes/integrated, ga4-ecommerce) verify via their own console output; they must
+never show `walkeros push --simulate`. Only bundled-mode pages may show it, and
+only targeting a `<type>.<key>` that a flow.json on the SAME page defines.
+
+**Open/paid boundary (Self-Host Sufficiency Rule).** Every getting-started task
+must reach a working result with MIT packages, the CLI, and reader-controlled
+infrastructure only. There is no walkerOS Cloud: never write "Cloud" as a
+walkerOS product, and never add a "What Cloud adds" pointer. Where docs describe
+commands or tools that talk to the hosted app (`auth`, `projects`, `flows`,
+`deploy`), call it "the walkerOS app". Never prices, tier names, or upgrade
+language anywhere in open docs. Self-host is always listed first.
+
+**Examples recipes.** Pages under `getting-started/examples/` are lean proof
+recipes with a fixed shape: exactly one flow.json, one run loop, one
+expected-output block, plus a short intro and next steps. The run loop uses
+`walkeros push … --simulate <type>.<key>` where `<key>` is a step key declared
+in the page's own flow.json; recipes are bundled flows, so the per-mode rule
+applies and the same-page simulate gate enforces resolution. The expected-output
+block shows what actually arrives (the captured destination call or the logged
+event), derived from the package's step examples or the real CLI output; never
+invent config, mappings, or output. Every snippet is derived from validated
+material (package examples, tested sources, existing validated docs snippets).
+The shape is enforced by `checkRecipeProof` in `apps/scripts/validate-docs.ts`.
+
+### Validation Checklist
+
+Before publishing ANY code example:
+
+- [ ] **API exists?** Check `packages/*/src/index.ts` exports
+- [ ] **Pattern validated?** Compare against `apps/quickstart/`
+- [ ] **Events canonical?** Use patterns from `eventGenerator.ts`
+- [ ] **Example compiles?** TypeScript check passes
+- [ ] **Imports correct?** Package names match actual packages
+- [ ] **Env vars, CLI flags, container modes exist?** Each one is grepped in
+      source before it is documented (e.g.
+      `grep -rn "process.env.PORT" packages/runner/src`,
+      `grep -n -- "--port" packages/runner/src/bin.ts`). A name that only
+      appears in other docs is not evidence
+
+### Red Flags
+
+| Red Flag                               | What It Indicates                   |
+| -------------------------------------- | ----------------------------------- |
+| API name not in package exports        | Hallucinated or outdated API        |
+| Import path doesn't match package.json | Wrong package reference             |
+| Event name with underscore             | Wrong format (should be space)      |
+| No imports shown                       | Context missing, harder to validate |
+| Env var or flag with no source grep    | Likely fiction copied from old docs |
+
+---
+
+## DRY Patterns
+
+### Configuration snippet (package pages)
+
+**When to use:** Every package page for destinations, sources, transformers, and
+stores. The `<Configuration>` snippet owns the `## Configuration`,
+`## Settings`, `## Mapping`, `## Examples` and `## When it fails` H2 sections.
+One callsite per page, after `## Installation`.
+
+```mdx
+import data from '@walkeros/web-destination-clarity/walkerOS.json';
+import Configuration from '@site/src/components/snippets/_configuration.mdx';
+import Quickstart from '@site/src/components/snippets/_quickstart.mdx';
+
+## Installation
+
+<Quickstart data={data} />
+
+<Configuration type="destination" data={data} />
+```
+
+A page without a minimal example (sources, transformers, stores, gtag, sqlite)
+shows a `<CodeSnippet>` install line under `## Installation` instead of
+`<Quickstart>`.
+
+`type` must be one of `destination`, `source`, `transformer`, `store`. `data` is
+the full `walkerOS.json` import. The snippet:
+
+- emits `## Configuration` with a short pointer to the shared group-level
+  configuration reference,
+- emits `## Settings` using `<PropertyTable schema={data.schemas.settings} />`
+  when the schema is present, otherwise a "no package-specific settings" note,
+- emits `## Mapping` using `<PropertyTable schema={data.schemas.mapping} />`
+  when present, otherwise a pointer to the standard rule fields,
+- emits `## Examples` only if `data.examples.step` holds a public example
+  (`public` not `false`) and renders each public one through `<StepExample>`,
+- emits `## When it fails` when a step example has an `outcome`, one line per
+  failure example from its `description`.
+
+**Never** hand-roll `## Configuration`, `## Settings`, `## Mapping`,
+`## Examples` or `## When it fails` on a package page. Place package-specific
+content (vendor quirks, advanced usage, platform-specific setup) BELOW the
+`<Configuration>` block with its own sentence-case H2 heading. Fold
+`## Features` bullet lists into the intro paragraph as prose: no `## Features`
+heading on package pages.
+
+### Shared configuration reference (group index pages)
+
+On group index pages (`docs/destinations/index.mdx`, `sources/index.mdx`,
+`transformers/index.mdx`, `stores/index.mdx`), add a `## Configuration` section
+that documents the wrapper fields around `settings`: the fields shared across
+all packages of that type (consent, mapping, env, id, …).
+
+Drive the table from the core Zod schemas, filtering dev-only fields at the
+representation layer. `configJsonSchema` holds the config under `definitions`
+(its root has no `properties`), so unwrap it before omitting fields:
+
+```mdx
+import { schemas } from '@walkeros/core/dev';
+import { omitSchemaProperties } from '@site/src/utils/schema';
+
+export const destinationConfig = (({ definitions }) =>
+  omitSchemaProperties({ ...definitions.DestinationConfig, definitions }, [
+    'settings',
+    'init',
+    'mock',
+  ]))(schemas.DestinationSchemas.configJsonSchema);
+
+## Configuration
+
+<PropertyTable schema={destinationConfig} />
+```
+
+Available schemas:
+
+- `schemas.DestinationSchemas.configJsonSchema`
+- `schemas.SourceSchemas.configJsonSchema`
+- `schemas.TransformerSchemas.configJsonSchema`
+- `schemas.StoreSchemas.configJsonSchema`
+
+Use `omitSchemaProperties` to hide `settings` (documented per-package) and
+dev-only fields such as `init` and `mock` from the user-facing table (the
+definition names are `DestinationConfig`, `SourceConfig`, `TransformerConfig`
+and `StoreConfig`).
+
+### Code display: CodeView vs CodeBox
+
+`@walkeros/explorer` exports two components for code display:
+
+- **`<CodeBox>`** renders Monaco, the full editor. Use when the user can edit
+  the code (playgrounds, interactive demos). Ships the IDE.
+- **`<CodeView>`** renders Shiki, read-only. Use for static code in docs,
+  marketing pages, and anywhere editing is not a requirement. Same `<Box>` frame
+  as `<CodeBox>` (traffic lights, header, copy button, tabs) so visuals match.
+  Zero Monaco runtime cost.
+
+Tokens match because Shiki uses the same TextMate grammars as VS Code / Monaco,
+with the matching `dark-plus` / `light-plus` themes.
+
+`<CodeView>` and `<CodeSnippet>` render their code server-side, so it appears in
+the static HTML and the markdown/`llms.txt` export. Code is shown exactly as
+authored (no automatic reformatting). `npm run validate:snippets` (part of
+`validate:sources`, run in CI) fails on a docs `<CodeSnippet>` that Prettier
+would format differently, and `npm run validate:snippets -- --write` fixes it in
+place. Excerpts Prettier cannot parse (`settings: {...}`, `{ ... }`
+placeholders, a lone opening tag) are only checked for indentation: indent them
+by hand, two spaces per level. JSX belongs in `language="tsx"`, not
+`typescript`.
+
+**Rule:** default to `<CodeView>`. Only reach for `<CodeBox>` when the code must
+be editable.
+
+### PropertyTable component
+
+`<PropertyTable schema={...} />` from `@walkeros/explorer` is the primitive. It
+renders a pure table, with no heading and no captions. Never wrap it in a custom
+heading on package pages; use the `<Configuration>` snippet instead.
+
+**When NOT to use:**
+
+- Pages without package configuration
+- Reference tables (Logger API, CLI commands)
+- Conceptual explanations
+
+### Schema Exports (dev.ts)
+
+Every destination/source should export schemas:
+
+```typescript
+// src/dev.ts
+export * as schemas from './schemas';
+export * as examples from './examples';
+```
+
+### Don't Duplicate
+
+- Link to source files instead of copying type definitions
+- Reference `apps/quickstart/` examples instead of writing from scratch
+- Use PropertyTable instead of hardcoded markdown tables
+
+---
+
+## Writing Hints (`src/hints.ts`)
+
+Hints are the "experienced colleague" layer in `walkerOS.json`: they tell AI
+agents _when_, _why_, and _what to watch out for_ beyond what schemas and
+examples convey. Surfaced via MCP `package_get`. Not human-facing docs.
+
+**Audience:** AI agents configuring packages on behalf of users.
+
+### Core Principle: Expand Awareness, Don't Narrow It
+
+Hints should open up the space of what's possible, not prescribe a single path.
+An LLM reading hints should think "I have more options than I realized", not "I
+must follow these steps exactly."
+
+### Writing Rules
+
+| Rule                              | Do                                                            | Don't                                   |
+| --------------------------------- | ------------------------------------------------------------- | --------------------------------------- |
+| **Describe capabilities**         | "Supports SA key, ADC, and custom client"                     | "Use a SA key file when outside GCP"    |
+| **Reference schemas/examples**    | "See `settings.projectId` in the schema"                      | Repeat what the schema description says |
+| **Explain why behind defaults**   | "Defaults to EU location; override via `location`"            | "Set location to US"                    |
+| **Flag non-obvious interactions** | "When `snakeCase: true`, all data keys transform before send" | Describe obvious behavior               |
+| **Symptoms → causes**             | "Empty table? Check projectId and dataset existence"          | Step-by-step fix instructions           |
+
+### Key Naming
+
+- **kebab-case**, group related hints with prefixes: `auth-*`, `storage-*`,
+  `query-*`, `troubleshoot-*`
+- Keep keys descriptive enough to scan: `auth-methods` not `a1`
+
+### When to Add Hints
+
+Most packages don't need hints: schemas and examples cover the common case. Add
+hints when:
+
+- Multiple auth or config strategies exist and it's non-obvious when to use
+  which
+- Non-obvious default behaviors need explaining
+- Features interact in ways the schema can't express
+- Prerequisites outside walkerOS are required
+- Common troubleshooting patterns exist
+
+### Accuracy Check
+
+Before publishing hints, verify each claim is factually correct. Don't describe
+features that aren't implemented. Don't assume behavior; confirm it.
+
+### Quality Check
+
+- [ ] Each hint expands awareness (describes capabilities, not prescriptions)
+- [ ] Code snippets reference schema fields, not duplicate them
+- [ ] No hint restates what a schema `.describe()` already says
+- [ ] Troubleshooting hints use symptom → cause format
+- [ ] Hints are atomic: one concept per hint
+- [ ] Every claim is factually correct against current implementation
+
+### Export Pattern
+
+```typescript
+// src/hints.ts
+import type { Hint } from '@walkeros/core';
+
+export const hints: Hint.Hints = {
+  'auth-methods': {
+    text: 'Supports three auth methods: ...',
+    code: [{ lang: 'json', code: '{ "settings": { ... } }' }],
+  },
+};
+```
+
+```typescript
+// src/dev.ts
+export * as schemas from './schemas';
+export * as examples from './examples';
+export { hints } from './hints';
+```
+
+Note: `hints` is a direct export (not `* as`), because it's already a
+`Record<string, Hint>`.
+
+---
+
+## Quality Checklist
+
+### Structure
+
+- [ ] Follows appropriate Divio type (Tutorial/How-To/Reference/Explanation)
+- [ ] Code example within first 100 words
+- [ ] First example under 20 lines
+- [ ] Uses `<details>` for advanced content
+- [ ] Has "Next Steps" or "Related" section
+
+### Content
+
+- [ ] All event names use `"entity action"` format with space
+- [ ] Events are pushed as partial events: `elb({ name, data })`
+- [ ] Flow config shown as primary usage pattern
+- [ ] Examples are complete and copy-pasteable
+- [ ] Includes imports in code examples
+
+### AI Readability
+
+- [ ] Clear semantic headers (H2, H3, H4 hierarchy - no skipped levels)
+- [ ] Tables for structured data
+- [ ] Links to source of truth TypeScript files
+- [ ] Static fallback content alongside dynamic components
+
+### Consistency
+
+- [ ] Uses standard table formats
+- [ ] Follows package/skill/website templates
+- [ ] Terminology matches: walkerOS, collector, destination, source
+- [ ] Headings use sentence case (e.g., "Next steps" not "Next Steps")
+- [ ] `walkerOS.json` convention followed (walkerOS field in package.json,
+      buildDev in tsup)
+
+---
+
+## Templates
+
+### Package README Template (thin pointer)
+
+READMEs are **thin pointers** to the website docs, which are the single source
+of truth. A README carries only: logo, title, one-line description, install, ONE
+current `version: 4` Quick Start, and a prominent link to the package's docs
+page. No `## Features`, no `## Configuration Reference`, no inline API
+reference, no `## Examples` block. All reference content lives on the website so
+it can never drift in two places.
+
+The docs link MUST be an absolute `https://www.walkeros.io/docs/...` URL, never
+a relative path: packages publish to npm individually and relative links break
+on npmjs.com. These absolute docs links are validated by
+`npm run validate:links` (it maps the URL to the `website/docs/` source file and
+asserts it exists).
+
+````markdown
+<p align="left">
+  <a href="https://www.walkeros.io">
+    <img alt="walkerOS" title="walkerOS" src="https://www.walkeros.io/img/walkerOS_logo.svg" width="256px"/>
+  </a>
+</p>
+
+# @walkeros/[package-name]
+
+[one-sentence description, adapted from the docs page intro]
+
+[Documentation](https://www.walkeros.io/docs/[path]) &bull;
+[NPM Package](https://www.npmjs.com/package/@walkeros/[package-name]) &bull;
+[Source Code](https://github.com/elbwalker/walkerOS/tree/main/packages/[path])
+
+## Installation
+
+```bash
+npm install @walkeros/[package-name]
+```
+
+## Quick start
+
+```json
+{
+  "version": 4,
+  "flows": {
+    "default": {
+      "config": { "platform": "[web|server]" },
+      "[sources|destinations]": {
+        "[name]": {
+          "package": "@walkeros/[package-name]",
+          "config": { "settings": { "[requiredSetting]": "[value]" } }
+        }
+      }
+    }
+  }
+}
+```
+
+## Documentation
+
+Full configuration, mapping, and examples live in the docs:
+**https://www.walkeros.io/docs/[path]**
+
+## Contribute
+
+Feel free to contribute by submitting an
+[issue](https://github.com/elbwalker/walkerOS/issues), starting a
+[discussion](https://github.com/elbwalker/walkerOS/discussions), or getting in
+[contact](https://calendly.com/elb-alexander/30min).
+
+## License
+
+MIT
+````
+
+Verify the Quick Start against `apps/quickstart/` and the package's real export
+name before publishing, and run it through `walkeros validate --strict`. It
+shows the settings the package requires (a destination's `examples.minimal`):
+`"config": {}` for a package with required settings fails `--strict`.
+Platform-agnostic packages (core, collector) show their most representative
+current usage instead of a `config.platform` flow.
+
+### walkerOS.json
+
+The `walkerOS` field in `package.json` describes the package's role, and the
+build (`buildDev`) writes it with the schemas, examples and hints into
+`dist/walkerOS.json`:
+
+```json
+{
+  "walkerOS": {
+    "type": "destination",
+    "platform": ["web"],
+    "docs": "https://www.walkeros.io/docs/destinations/web/[name]"
+  }
+}
+```
+
+`type` is the step kind, `platform` a platform or a list of them, `docs` the
+docs page URL; a package with several exports adds `exports`, each export name
+mapped to a short description. The README does not repeat it.
+
+### Website Doc Template (MDX)
+
+Website docs fold features into the intro paragraph (no `## Features` heading).
+Thin-pointer READMEs also have no `## Features` heading; key capabilities go
+into the one-line description. This template is website-only.
+
+```mdx
+---
+title: [Title]
+description: [SEO description]
+sidebar_position: [N]
+package: '@walkeros/[package]'
+---
+
+import data from '@walkeros/[package]/walkerOS.json';
+import Configuration from '@site/src/components/snippets/_configuration.mdx';
+import Quickstart from '@site/src/components/snippets/_quickstart.mdx';
+
+# [Title]
+
+<PackageLink package="@walkeros/[package]" />
+
+[1-sentence description that folds in key features as prose; no separate `##
+Features` heading on website docs.]
+
+## Installation
+
+<Quickstart data={data} />
+
+{/* Without a minimal example: <CodeSnippet code={`npm install @walkeros/[package]`} language="bash" /> */}
+
+<Configuration type="destination" data={data} />
+
+## Next steps
+
+- [Related guide 1](/docs/...)
+```
+
+---
+
+## Priority Matrix
+
+### Issue Classification
+
+| Priority        | Criteria                                                  | Action          |
+| --------------- | --------------------------------------------------------- | --------------- |
+| **P0 Critical** | Incorrect examples, wrong APIs, security issues           | Fix immediately |
+| **P1 High**     | Missing PropertyTable, outdated domains, missing sections | Fix soon        |
+| **P2 Medium**   | Inconsistent terminology, skipped headings                | Plan to fix     |
+| **P3 Low**      | Style issues, minor wording                               | Backlog         |
+
+---
+
+## Non-Negotiables
+
+### Punctuation
+
+Never use em dashes (U+2014) or en dashes (U+2013). Use a comma, period, or
+rephrase the sentence instead: write "free and without sampling caps" rather
+than joining "free" and "without sampling caps" with an em dash. Check a file
+with `grep -nP "[\x{2013}\x{2014}]" <file>`.
+
+### Event Naming
+
+Event naming (`"entity action"`, space not underscore): see
+[walkeros-understanding-events](../walkeros-understanding-events/SKILL.md).
+
+### Package References
+
+```text
+CORRECT: `@walkeros/collector` (with backticks)
+WRONG:   @walkeros/collector (no backticks)
+```
+
+### Domain References
+
+```text
+CORRECT: `www.walkeros.io` or relative paths
+WRONG:   the company's old domain (the doc-lint warns on any mention of it)
+```
+
+---
+
+## Process
+
+### For New Package Documentation
+
+1. **Verify examples exist** in `apps/quickstart/` or create them first
+2. **Write README** using template above
+3. **Write website doc** using MDX template
+4. **Run quality checklist**
+5. **Verify all code examples** against Tier 1-3 sources
+
+### For Documentation Updates
+
+1. **Identify issue priority** using matrix above
+2. **Check current state** against source of truth
+3. **Make minimal changes** - don't over-engineer
+4. **Verify examples still compile**
+5. **Run quality checklist**
+
+---
+
+## Schema naming (`.meta({id, title})`)
+
+Every exported schema in `packages/core/src/schemas/*.ts` (and in the `*Schema`
+exports of destination / source / transformer / store packages) **must** carry
+`.meta({ id, title, description })` so the generated JSON Schema links back to
+the canonical TypeScript name. Without meta, the website's PropertyTable falls
+back to `__schema0`, `object`, or `any`.
+
+Convention:
+
+- **id**: PascalCase, namespace-prefixed so it is globally unique across every
+  schema in `packages/core/src/schemas`. Examples: `WalkerOSConsent`,
+  `DestinationConfig`, `CollectorPushContext`, `LoggerConfig`.
+- **title**: dotted form matching the VS Code TS hover: `WalkerOS.Consent`,
+  `Destination.Config`, `Collector.PushContext`, `Logger.Config`.
+- **description**: one short sentence. May repeat an existing `.describe()`
+  where both are present.
+
+Reference implementation (copy this shape for new schemas):
+
+```ts
+export const ConsentSchema = z.record(z.string(), z.boolean()).meta({
+  id: 'WalkerOSConsent',
+  title: 'WalkerOS.Consent',
+  description: 'Consent state mapping (group name to granted state).',
+});
+```
+
+Coverage is enforced by
+`packages/core/src/schemas/__tests__/meta-coverage.test.ts`. When adding a new
+schema, run that test: it fails with the exact schema name if meta is missing.
+
+Destination / source / transformer / store packages that ship their own
+`SettingsSchema` should also call `.meta({ id, title })` on it, as the CMP
+sources do (`id: 'CookiebotSettings'`).
+
+---
+
+## Related Skills
+
+- [walkeros-understanding-flow](../walkeros-understanding-flow/SKILL.md) - Data
+  flow architecture
+- [walkeros-understanding-events](../walkeros-understanding-events/SKILL.md) -
+  Event structure and naming

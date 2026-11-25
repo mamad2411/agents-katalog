@@ -1,0 +1,303 @@
+---
+model_tier: inherit
+name: verify-repair-loop
+description: "Use to iterate a change until tests/quality checks pass — bounded run→revise→re-run gated by a numeric threshold, then a judge confirms. Triggers 'iterate to green', 'keep fixing until tests pass'."
+domain: process
+workspaces:
+  - agent-config-maintainer
+packs:
+  - meta
+---
+
+# verify-repair-loop
+
+> A bounded **generate → run → revise → re-run** cycle whose pass signal is the
+> **executed verdict** — the project's real test/quality output, scored against a
+> numeric threshold — escalated to a **judge** for qualitative confirmation only
+> *after* the numeric gate passes (staged escalation). The loop is the
+> conversation, not a process: this loop introduces no resident process of its
+> own and no persistent cross-session state. Use
+> it to drive a change to green when the verdict source is *runtime execution*,
+> not a judge reading a diff.
+
+## When to use
+
+* A change must converge against the project's **test runner / quality tools**
+  and you want the agent to iterate until checks pass before asking for review.
+* Test/quality coverage is the authoritative signal (high coverage, actionable
+  failures) — not subjective craft.
+* You want bounded auto-repair with a hard stop, not an open-ended fix loop.
+
+Do NOT use when:
+
+* The verdict is **subjective craft** (naming, architecture, style) or coverage
+  is incomplete → use `do-and-judge` in
+  [`subagent-orchestration`](../subagent-orchestration/SKILL.md) (judge reads the
+  diff and is sovereign).
+* You only need a **one-shot** multi-judge review of a finished diff → use
+  [`/review-changes`](../../commands/review/changes.md).
+* The verdict must come from a **live app** (Playwright against running services)
+  → **deferred** (see Scope below); use test/quality verdicts until that trigger
+  fires.
+
+## The Iron Law
+
+```
+THE NUMERIC VERDICT IS NEVER SOVEREIGN.
+TESTS DECIDE WHEN TO ESCALATE — A JUDGE DECIDES WHETHER TO APPLY.
+A REVISION THAT BREAKS A PREVIOUSLY-GREEN CHECK STOPS THE LOOP,
+EVEN IF THE OVERALL SCORE ROSE.
+GENERATOR NEVER APPROVES ITS OWN CHANGE.
+```
+
+A loop that optimizes for `pass_count ≥ N` can game the metric — delete tests,
+skip assertions, weaken checks — and still hit the threshold. The numeric gate
+only decides **when to escalate**; a judge with veto confirms the change is real.
+
+## Procedure
+
+### 1. Freeze the contract (spec fingerprint)
+
+Before the first run, capture what "done" means and snapshot it:
+
+* the task's acceptance criteria / requirement,
+* the set of checks that define the verdict (test files + quality commands),
+* a **spec fingerprint** = a hash of (requirement text + the check set).
+
+Record the **baseline green set** — which checks pass *before* any edit — so
+regressions are detectable. Pick the verdict commands per the project's
+[`toolchain-resolver`](../../contexts/execution/toolchain-resolver.md) (PHP / JS-TS
+/ Python / Go / Rust), not a hardcoded runner.
+
+### 2. Set the gate
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `threshold` | all targeted checks green | numeric pass bar, **absolute** (fraction of total), not "± N tests" |
+| `allow_regressions` | `false` | a revision breaking a baseline-green check stops the loop |
+| `max_attempts` | **3** | hard cap, this loop's own number (test feedback is more actionable than diff critique → one more than `do-and-judge`'s 2); independent of [`autonomous-execution`](../../rules/autonomous-execution.md)'s `execution.fix_loop_max` budget, which now defaults to 10 |
+| `plateau_window` | 3 | stop if the last *window* scores sit within `tolerance` |
+| `tolerance` | small absolute fraction | flake jitter that does **not** count as improvement |
+
+### 3. The loop (multi-turn — the conversation IS the loop)
+
+Each iteration is agent turns, never executing control-flow code:
+
+1. **Read the failure, then revise** — before changing a line, inspect what the
+   previous run actually reported: which checks failed, the assertion text, and
+   whether this failure signature matches the last one. Analyze the existing
+   code path the failing check exercises rather than pattern-matching the error
+   string. A revision written without reading the failure is the blind retry
+   both the plateau rule below and
+   [`autonomous-execution`](../../rules/autonomous-execution.md) exist to stop —
+   and on attempt 1 there is no previous run, so this is the baseline green set
+   from step 1. Then make the smallest change toward the contract.
+2. **Run** — execute the verdict commands; parse the **structured** result
+   (counts green/total, which checks failed). This is one tool call, read in
+   context.
+3. **Score + regression check** — compute the numeric score; compare failures
+   against the baseline green set.
+   * **Regression** (a baseline-green check now fails) → STOP, hand back with the
+     regression named, even if the score rose. No whack-a-mole.
+   * **Plateau** (last `plateau_window` scores within `tolerance`) → STOP; surface
+     suspected flakiness or a stuck point. Do not thrash.
+   * **`attempts == max_attempts`** → STOP, hand back the best envelope.
+4. **Tamper check (deterministic, loop-local)** — before the numeric gate is
+   allowed to say anything, run the detector over the diff this attempt
+   produced and over the recorded verdict:
+
+   ```bash
+   ./scripts-run src/scripts/detect_verification_tampering \
+       --diff <this attempt's diff> --message <this attempt's message> \
+       --verdict <the runner's recorded verdict>
+   ```
+
+   It is **fail-closed inside the loop**: outcome `violations` or
+   `stale_verdict` STOPS the loop and hands back with the finding's
+   `file:line`, whatever the score says. `clean` changes nothing — an
+   ordinary passing attempt is unaffected, because the detector reports only
+   on shapes the diff introduced.
+
+   The check answers exactly the gap the Iron Law names: `assertion-removed`,
+   `assertion-weakened`, `verification-skipped` (warn), `expectation-rewritten`,
+   `early-exit-injected`, `test-file-deleted`, `subject-mocked-away`, and
+   `stale_verdict` for a runner that finished before the last edit. A change
+   that legitimately deletes an obsolete test or relaxes an over-tight
+   assertion declares it in the attempt's message —
+   `tamper-allow: <detector-id> — <reason>` — scoped to one id, never to all.
+
+   It is **not** a CI gate and does not become one here. The tree's measured
+   lesson is that reach, not content, is the scarce thing; a new always-on
+   gate is the opposite of that lesson. Promotion owes a measured
+   false-positive rate first.
+
+5. **Numeric gate** — score `< threshold` and attempts remain → back to step 1
+   (attempts++). Score `≥ threshold`, no regression, tamper check clean →
+   **escalate** (step 4 of the stage).
+
+### 4. Judge escalation (only after the numeric gate passes)
+
+Dispatch the judge as a **subagent with fresh context** (the `judge-*` cluster via
+[`subagent-orchestration`](../subagent-orchestration/SKILL.md)) that sees **only the
+diff + the executed results** — never the generator's reasoning. This is the real
+generator ≠ judge separation; single-agent persona-switching is theater.
+
+* judge `apply` → DONE.
+* judge `revise` → back to step 3.1 (attempts++; still bounded).
+* judge `reject` → STOP, hand back; the approach must change.
+
+### 5. Mid-loop invalidation (user-interrupt-priority)
+
+Re-check the spec fingerprint each iteration. If the user changes the
+requirement mid-loop (a new instruction in the conversation), the fingerprint
+changes → **abort and hand back** per
+[`user-interrupt-priority`](../../rules/user-interrupt-priority.md). Never keep
+iterating against a stale contract.
+
+## Scope — what runs, what is deferred
+
+| Verify context | In scope | Why |
+|---|---|---|
+| Unit / integration tests | ✅ | fast, deterministic, sandboxed — runtime-free |
+| Static quality (lint, type-check, format) | ✅ | fast, deterministic, no side effects (auto-fixable failures may bypass the revise step) |
+| Live-app Playwright / E2E | ⛔ **deferred** | needs running services (DB, API) = a runtime; trigger = a UI-observable mission output + Playwright wired into a consumer CI |
+
+State lives in the conversation, optionally mirrored to a re-read working file —
+**never** a daemon or persistent cross-session store (honors
+[`resident-process-governance`](../../docs/contracts/resident-process-governance.md)).
+
+## Validation
+
+Before finalizing, confirm:
+
+1. The numeric gate **escalated to a judge** — it did not apply on its own.
+2. No baseline-green check regressed (or the loop stopped and said so).
+3. The tamper check ran on the final attempt and returned `clean` — or the loop
+   stopped on its finding. A green verdict recorded over a `violations` or
+   `stale_verdict` outcome is not a green verdict.
+4. The loop stopped at `max_attempts`, a plateau, or a judge `apply` — never
+   ran unbounded.
+5. The judge saw only the diff + results, dispatched in fresh context.
+6. No **unsupervised** resident process introduced — and none of the four
+   governance conditions in `resident-process-governance.md` left unmet if a
+   supervised one is. (Amended 2026-08-27, ADR-249: this read "No daemon /
+   persistent runtime introduced" when a daemon was prohibited outright. The
+   check still fires; what it tests moved from existence to governance.)
+
+## Output format
+
+```
+verify-repair-loop
+Contract:   <one-line requirement> · threshold <X> · allow_regressions false
+Attempts:   <k>/<max>  scores: [s1, s2, …]   stop: threshold|plateau|cap|regression|reject
+Verdict:    DONE | DONE_WITH_CONCERNS | BLOCKED
+run_terminal: success | blocked | exhausted | stagnated
+Judge:      <judge skill> → apply|revise|reject
+Evidence:   <green/total> · regressions: none | <named checks>
+```
+
+Required fields (ordered):
+
+1. **Contract** — the frozen requirement + threshold + `allow_regressions`.
+2. **Attempts** — `k/max`, the score history, and the exact stop reason
+   (`threshold` / `plateau` / `cap` / `regression` / `reject`).
+3. **Verdict** — `DONE`, `DONE_WITH_CONCERNS`, or `BLOCKED`.
+4. **run_terminal** — this loop's stop in the vocabulary every other loop in
+   this tree reports in. The verdict above is local to this skill; this field is
+   the one a reader can aggregate across the continuation hook, the self-fix
+   lanes and this loop without a per-surface translation table.
+
+   | stop reason | `run_terminal` | why |
+   |---|---|---|
+   | `threshold` (judge `apply`) | `success` | the contract is met |
+   | `cap` | `exhausted` | the attempt budget ran out — a bigger budget might help |
+   | `plateau` | `stagnated` | scores stopped moving — a bigger budget will not help |
+   | `regression` | `blocked` | a baseline-green check broke; the loop must not proceed |
+   | `reject` | `blocked` | the judge refused the work |
+
+   The value set is `RunTerminalState`, whose members are `success`,
+   `clean-no-op`, `blocked`, `approval-required`, `exhausted`, `stagnated` and
+   `premise-invalidated`. It is declared once, at
+   `src/scripts/_lib/outcome_vocabularies.ts` (`RUN_TERMINAL_STATES`), and
+   described in [`terminal-states`](../../contexts/execution/terminal-states.md).
+   Never emit a value outside that set: a sixth stop reason maps onto an
+   existing member or it is not a terminal state.
+
+   `exhausted` and `stagnated` are deliberately distinct. Both mean "stopped
+   without a green", and they call for opposite responses — raise the budget
+   against the first, change approach against the second. Collapsing them loses
+   the only part of the stop a reader can act on.
+5. **Judge** — the dispatched judge skill and its `apply` / `revise` /
+   `reject` verdict (omit only when the loop stopped before escalation).
+6. **Evidence** — final `green/total` and any regressed checks by name.
+
+## Examples
+
+Good — staged, bounded, judge confirms:
+```
+iter1 84/100 (<90) → revise
+iter2 93/100 (≥90, no regression) → escalate → judge apply → DONE
+```
+
+Bad — numeric verdict treated as sovereign (rejected by the Iron Law):
+```
+iter1 91/100 ≥ threshold → "PASS, done"   ✗ no judge escalation; metric may be gamed
+iter2 fixes A, breaks B, 92% → "PASS"      ✗ regression ignored
+```
+
+## Gotcha
+
+* **Metric gaming** — the agent "passes" by deleting a failing test or
+  weakening an assertion. The *numeric* gate still cannot catch this, and that
+  is why loop step 3.4 exists: `detect_verification_tampering` decides the
+  mechanical shapes deterministically, and the fresh-context judge remains the
+  safeguard for everything shape cannot decide. If the diff *removes* checks,
+  that is a `reject`, not a `pass`.
+* **Phantom verification** — the loop records a green verdict it never re-ran,
+  so the exit code describes a tree that no longer exists. The verdict carries
+  the runner's own timestamp; one that predates the last edit is
+  `stale_verdict`, its own outcome, never a pass.
+* **Flake mistaken for a plateau** — a single non-deterministic test flips
+  the score and the window-comparison reads it as "no improvement". Re-run
+  the suspected check before declaring a plateau; surface flakiness instead
+  of thrashing.
+* **Score rose, but a regression hid inside it** — fixing 6 checks while
+  breaking 2 still raises the total. Without the regression guard the loop
+  ships a regression. Always diff failures against the baseline green set,
+  not just the aggregate score.
+* **Persona-switch theater** — asking the same agent to "now judge what you
+  wrote" is not separation. Dispatch the judge as a fresh-context subagent
+  that never saw the generator's reasoning.
+* **Stale contract** — iterating against a requirement the user changed
+  mid-loop. Re-check the spec fingerprint each turn; a change aborts.
+
+## Do NOT
+
+* NEVER let the numeric score apply a change without judge confirmation.
+* NEVER record a green verdict over a tamper finding or a stale runner
+  timestamp — inside the loop the detector is fail-closed.
+* NEVER widen a `tamper-allow` declaration past the one id it names.
+* NEVER continue past a regression because the overall score improved.
+* NEVER run the live-app Playwright path here — it is deferred (needs a runtime).
+* NEVER judge with the generator's own context — dispatch a fresh-context judge.
+* NEVER loop past `max_attempts` or a detected plateau.
+
+## See also
+
+* [`subagent-orchestration`](../subagent-orchestration/SKILL.md) — `do-and-judge`
+  (judge-sovereign, diff-read) is the sibling; this skill is test-verdict-gated.
+* [`/review-changes`](../../commands/review/changes.md) — one-shot multi-judge
+  review; wires this loop as an opt-in step.
+* [`playwright-testing`](../playwright-testing/SKILL.md),
+  [`quality-tools`](../quality-tools/SKILL.md) — verdict sources.
+* `src/scripts/detect_verification_tampering.ts` — the loop-local tamper and
+  phantom-verification check bound at step 3.4, with its fixture corpus in
+  `tests/fixtures/tamper-corpus/` and its polarity proven both ways by
+  `--self-test`.
+* [`autonomous-execution`](../../rules/autonomous-execution.md) — the `execution.fix_loop_max` cap (this loop's own `max_attempts` is a separate, smaller number).
+* [`resident-process-governance`](../../docs/contracts/resident-process-governance.md) — the
+  runtime-free constraint this loop honors.
+* Optional impact pre-step (when a code-graph is present, ADR-124): run
+  `agent-config code-graph impact --diff <ref> --regressions <registry>` to pick
+  the regressions a change reaches before choosing verdict sources; on a
+  refusal run them all. Unchanged without a graph.

@@ -1,0 +1,260 @@
+---
+name: tizen-tv-sdk-install-from-zip
+description: Install TV SDK from ZIP, TV SDK ZIP install, TV SDK ZIP 설치, TV SDK ZIP으로 설치, 타이젠 TV SDK ZIP 설치, Samsung TV SDK offline install, TV extension install from ZIP, offline TV SDK, local ZIP TV SDK. Use this skill to install the Tizen TV SDK extension (TV-SAMSUNG-Public) from a local ZIP file (offline, no download). All packages must already be bundled in the ZIP. Requires Tizen SDK to be installed first.
+metadata:
+  author: Samsung Electronics
+  last-updated: "2026-09-08"
+  keywords:
+    - TV SDK
+    - TV SDK install from ZIP
+    - TV-SAMSUNG-Public
+    - 타이젠 TV SDK ZIP 설치
+    - Samsung TV SDK
+    - TV extension
+    - offline install
+    - local ZIP
+---
+
+### Claude Code (서브에이전트 위임)
+
+> Agent tool이 없으면 (예: Cline) 아래 "CLI Runner" 섹션으로 가세요.
+
+1. Agent tool로 `tizen-tv-sdk-install-from-zip` 에이전트 호출
+2. 수집된 입력(zip-path, tv-version, force 옵션)을 프롬프트로 전달
+3. 서브에이전트의 JSON Envelope를 그대로 사용자에게 전달 — 아래 "결과 보고" 규칙을 따른다
+   (fenced `json` 블록으로 원문을 싣고, 그 아래 요약은 1~2줄만)
+
+### Prerequisite: Tizen SDK must be installed
+
+TV SDK는 Tizen SDK의 **확장 패키지**이므로, Tizen SDK가 먼저 설치되어 있어야 합니다.
+
+- **Tizen SDK 설치됨** → TV SDK ZIP 설치 진행
+- **Tizen SDK 미설치** → 설치 중단, 대화형 메시지 반환:
+  - "Tizen SDK가 먼저 설치되어야 합니다. Tizen SDK 설치를 진행하시겠습니까?"
+  - **사용자 승인** → `tizen-sdk-install` 스킬 호출 → 완료 후 TV SDK ZIP 설치 재시도
+  - **사용자 거부** → 중단 종료
+
+### installTvSdkFromZip() Flow
+
+```
+1. zipPath 파라미터 검증 (필수)
+2. Tizen SDK 설치 여부 확인 (sdk.info) ← 미설치 시 대화형 안내와 함께 중단
+3. TV SDK 이미 설치? (`.platform-installed`의 TV 버전 기록) ← 설치 시 success 반환
+4. TV SDK ZIP 설치 스크립트 명령 반환 (suggested_fix) — 에이전트가 Phase 2 background로 실행
+```
+
+### CLI Runner (Cline / Claude Code — Phase 1: Pre-check)
+
+This CLI is a **pre-check**, not the installer. It finishes in seconds. Run in foreground — **NEVER with `run_in_background: true`**.
+
+**Pick the ONE block for the shell your terminal / tool runs — the prompt tells you: `$` is Bash (Linux, macOS, Claude Code's Git Bash on Windows, Codex on Linux / macOS) → Bash block; `PS C:\…>` is PowerShell (Codex on Windows, Cline PowerShell terminal) → PowerShell block; `C:\…>` is cmd.exe (Cline cmd.exe terminal) → cmd.exe block. Run that block as-is: a block pasted into another shell, or wrapped in `powershell -Command "…"`, is a parse error.**
+
+**Run the `node` line exactly as written and read the JSON envelope it prints to stdout. Do NOT redirect or capture the output (`> file`, `2>&1 | tee`, `Out-File`, `| Out-String`), do NOT wrap the line in `cmd /c`, `powershell -Command "…"` or any second shell, and do NOT mix shell dialects: `%TEMP%` and `2>nul` are cmd.exe only, `$env:TEMP` and `Out-File` are PowerShell only — in the other shell they are literal text or a parse error. A tool message that the command's completion or output "could not be observed / captured" means the terminal is still busy with an earlier command or its shell-integration hooks have broken, not that the runner failed: open a NEW terminal and re-run the SAME line unchanged. Runners that drive em-cli, sdb or a JVM can take 10–30 s and print the envelope only when they exit — wait for it rather than retrying with a redirect.**
+
+**Bash — Linux / macOS / Ubuntu, and Windows Git Bash (Claude Code):**
+
+```bash
+BASE="$HOME/.cline"; [ -z "${CODEX_THREAD_ID:-}${CODEX_SANDBOX_NETWORK_DISABLED:-}${CODEX_SANDBOX:-}${CODEX_VERSION:-}" ] || BASE="$HOME/.codex"; [ -z "${GEMINI_CLI:-}" ] || BASE="$HOME/.gemini"; [ -z "${CLAUDECODE:-}" ] || BASE="$HOME/.claude"
+CLI=$(ls "$BASE"/plugins/cache/tizen-platform/tizen-sdk-skills/*/lib/cli/tv-sdk-install-from-zip-cli.js 2>/dev/null | sort -V | tail -1) || true
+[ -n "$CLI" ] || for d in .claude .cline .codex .gemini; do CLI=$(ls "$HOME/$d"/plugins/cache/tizen-platform/tizen-sdk-skills/*/lib/cli/tv-sdk-install-from-zip-cli.js 2>/dev/null | sort -V | tail -1) || true; [ -z "$CLI" ] || break; done
+node "$CLI" --zip-path "/path/to/tv-samsung-sdk.zip"
+```
+
+**PowerShell (Codex CLI on Windows, Cline PowerShell terminal) — prefers this harness's own cache, then the newest version. Run all three lines below, in order, in the SAME PowerShell session: the `node` line needs the `$CLI` the lookup line sets (on its own, `node "$CLI" …` becomes `node <first-arg>` and fails with a misleading `MODULE_NOT_FOUND`), so it carries a guard that stops with a clear message when `$CLI` is empty. Never wrap the lines in `powershell -Command "…"` (PowerShell and Git Bash expand `$h`, `$CLI` and `$env:…` before the inner shell runs, so the lookup arrives empty):**
+
+```powershell
+$h = ".cline"; if ($env:CODEX_THREAD_ID -or $env:CODEX_SANDBOX_NETWORK_DISABLED -or $env:CODEX_SANDBOX -or $env:CODEX_VERSION) { $h = ".codex" }; if ($env:GEMINI_CLI) { $h = ".gemini" }; if ($env:CLAUDECODE) { $h = ".claude" }
+$CLI = $null; foreach ($d in @($h, ".claude", ".cline", ".codex", ".gemini")) { $CLI = Get-ChildItem "$env:USERPROFILE\$d\plugins\cache\tizen-platform\tizen-sdk-skills\*\lib\cli\tv-sdk-install-from-zip-cli.js" -ErrorAction SilentlyContinue | Sort-Object { [version]$_.Directory.Parent.Parent.Name }, FullName | Select-Object -Last 1 -ExpandProperty FullName; if ($CLI) { break } }
+if (-not $CLI) { throw 'tizen-sdk-skills runner not found: $CLI is empty. Run the two lookup lines above in THIS PowerShell session first; if they still find nothing, the tizen-sdk-skills plugin is not installed.' }; node "$CLI" --zip-path "C:\path\to\tv-samsung-sdk.zip"
+```
+
+**Windows — cmd.exe terminal only (Cline with a cmd.exe terminal). `&` and `2>nul` are cmd.exe syntax — in a PowerShell terminal run the PowerShell block above instead; Claude Code on Windows runs Git Bash — use the Bash block above. cmd.exe cannot version-sort, so this only lists every copy: pick your own host's highest version and paste it into the `node "<found-path>"` step below:**
+
+```
+cmd /c dir /s /b "%USERPROFILE%\.claude\plugins\cache\tizen-platform\tizen-sdk-skills\*tv-sdk-install-from-zip-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.cline\plugins\cache\tizen-platform\tizen-sdk-skills\*tv-sdk-install-from-zip-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.codex\plugins\cache\tizen-platform\tizen-sdk-skills\*tv-sdk-install-from-zip-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.gemini\plugins\cache\tizen-platform\tizen-sdk-skills\*tv-sdk-install-from-zip-cli.js" 2>nul & ver >nul
+```
+
+Pick the highest-version path (the PowerShell form above already resolved `$CLI`), then:
+
+```
+node "<found-path>" --zip-path "C:\path\to\tv-samsung-sdk.zip"
+```
+
+> **Runner not found?** If none of the `~/.claude`, `~/.cline`, `~/.codex`, `~/.gemini` caches contains the runner, the tizen-sdk-skills plugin is NOT installed on this machine — install it first; do not improvise with other tools. (Contributors working inside the tizen-sdk-skills source repository can use the in-repo runner instead: `node common/lib/cli/<runner>.js`.)
+
+Optional: `--tv-version <X.Y>` (the TV platform version the ZIP is for, e.g. `9.0` — pass it when the user names one), `--force` (force reinstall of that TV version)
+
+Several TV versions install side by side from their ZIPs (TV 9.0, 10.0, 11.0): the installer skips only a TV version `.platform-installed` already records, so another version needs no `--force`. It reads the version from the inner ZIP names; when `--tv-version` disagrees with them, or neither gives one, it stops **before** extracting anything and says which `--tv-version` to pass. Each install appends a block (`Profile: tv-samsung`, `Source: <zip>`) to `.platform-installed`, so `sdk-install` / `platform-install --list` report that TV version afterwards.
+
+Exit code: `0` = success (TV SDK already installed), `1` = failure (TV SDK not installed — proceed to Phase 2, or Tizen SDK not installed, or zip-path missing).
+
+## Phase 2 — Install (when Phase 1 says "not installed")
+
+When the pre-check returns failure with `suggested_fix.command`, run that installer
+command. The install takes a few minutes. **실행 방법은 하네스에 따라 다릅니다:**
+
+### Codex CLI — `job-cli.js run` + `wait` (one exec call waits ≤ 30 s)
+
+Codex cannot run the installer as a foreground tool call (30 s limit; a partial log would come back
+while the install keeps running — issue #48). Use the Phase 1 envelope's
+`suggested_fix.background_command` (`node "<lib/cli>/job-cli.js" run --script tizen-tv-sdk-install-from-zip -- …`,
+which forwards the same ZIP path / SDK path flags). It returns a job receipt at once; then poll
+`node "<lib/cli>/job-cli.js" wait --id <job_id>` (≤ 25 s per call) until `job.state` is `done`
+(`result.exit_code`, `log_tail`), and re-run the Phase 1 pre-check to verify and report that envelope. Never run
+`suggested_fix.command` in the Codex foreground. Recovery: `job-cli.js list` / `status --id`.
+
+### Claude Code — Background + `<task-notification>`
+
+1. Run the installer command from `suggested_fix` with the Bash tool, `run_in_background: true`
+2. **END YOUR TURN** — wait for `<task-notification>` (do NOT poll/sleep)
+3. After notification, re-run the Phase 1 pre-check CLI (foreground) with the same `--zip-path` (and `--tv-version`) to verify the TV version is recorded in `.platform-installed`
+4. Report the final success/failure envelope to the user
+
+**Do NOT (Claude Code):**
+
+- Run the installer in foreground (may exceed the Bash tool's 10-min cap)
+- Poll/sleep while waiting
+
+### Cline — 분리 실행 + 번호를 붙인 `sleep 25 && --status` 폴링, 한 턴 최대 4회 (30초 타임아웃 · 동일 호출 5회 가드)
+
+Cline은 background 작업이 끝나도 에이전트를 다시 깨우지 않습니다 (`<task-notification>` 없음).
+또한 Cline의 `execute_command`에는 **30초 하드 타임아웃**이 있으므로, `--wait` (내부 60초 sleep)는
+30초 타임아웃에 걸려 백그라운드로 전환됩니다. 대신 **`nohup`으로 프로세스를 분리**하고,
+**`sleep 25 && --status`** 로 25초 간격 폴링하여 완료를 감지합니다.
+
+Cline에는 **같은 도구 호출이 연속 5번 반복되면 무한 루프로 간주해 중단**시키는 가드도 있습니다
+(`Detected 5 consecutive identical calls`; 오류가 6번 연속되면 태스크가 멈춥니다). 설치 동안
+25초 폴링이 수십 번 필요하므로 폴링 명령을 그대로 반복하면 5번째에서 반드시 걸립니다. 따라서
+**폴링 명령마다 시도 번호를 넣어** 호출이 서로 달라지게 하고 (`poll #1`, `poll #2`, …), **한 턴에
+최대 4번**만 폴링한 뒤 여전히 `STATUS=running`이면 설치가 백그라운드에서 계속 진행 중임과 상태 확인
+명령을 사용자에게 알리고 **턴을 종료**합니다. 사용자가 돌아오면 (예: "계속", "끝났어?")
+`--status` / `-Status`를 한 번 실행해 이어갑니다. 분리된 설치 프로세스는 Cline이 멈추거나 턴이
+끝나도 계속 진행됩니다.
+
+**⚠️ `--wait`를 사용하지 마세요.** 60초 sleep이 Cline의 30초 타임아웃에 걸립니다.
+**⚠️ `sleep 30` 이상을 사용하지 마세요.** 30초 + `--status` 실행 시간이 타임아웃을 초과합니다.
+**⚠️ 포그라운드로 직접 실행하지 마세요.** 설치 로그가 컨텍스트 윈도우로 스트리밍됩니다.
+**⚠️ 같은 폴링 명령을 그대로 다시 실행하지 마세요.** 시도 번호 없이 반복하면 5번째 호출에서 Cline이 중단됩니다.
+
+#### Linux / macOS (Bash)
+
+1. `nohup` 으로 Phase 1 envelope의 `suggested_fix.command`
+   (`bash "<installer-script>" --sdk-path=… --zip-path=… [--force]`)를 **인자까지 그대로** 분리 실행
+   (즉시 반환, PID 출력). 인자를 빼면 `--zip-path`·`--force`·`--sdk-path` 요청이 적용되지 않습니다:
+
+   ```bash
+   nohup <suggested_fix.command> > /tmp/tizen-tv-sdk-install-from-zip.log 2>&1 & \
+   jobs -p
+   ```
+
+2. 시도 번호를 붙여 `sleep 25 && --status` 로 폴링 (25초 대기 후 상태 출력, 30초 타임아웃 내 안전;
+   `#N`은 호출마다 1씩 증가):
+
+   ```bash
+   sleep 25 && echo "poll #1" && bash "<installer-script>" --sdk-path="<sdk-path>" --status
+   ```
+
+   - `STATUS=running` → 시도 번호를 올려 다시 실행 (`poll #2`, `#3`, `#4`).
+     **4번째 폴링 후에도 `running`이면** 폴링을 멈추고 아래를 사용자에게 알린 뒤 **턴을 종료**합니다:
+     설치는 백그라운드에서 계속 진행 중입니다. **설치 완료의 자동 알림은 제공되지 않으므로**, 설치 완료
+     확인이 필요하시면 "설치 진행 상태를 알려줘"라고 물어봐 주시면 상태를 확인해 이어갑니다.
+     (직접 확인: `bash "<installer-script>" --sdk-path="<sdk-path>" --status`)
+   - `STATUS=done EXIT=0` → 완료. Phase 1 pre-check 재실행 후 envelope 보고
+   - `STATUS=done EXIT=1` → 실패. Phase 1 pre-check 재실행 후 envelope 보고 +
+     `tail -20 /tmp/tizen-tv-sdk-install-from-zip.log` 원인 요지 1줄
+
+   **`sleep 25`는 Cline의 30초 타임아웃 내에서 안전하게 완료됩니다.**
+   `--status`만 단독으로 연속 실행하지 마세요. 즉시 반환되어 tight-loop 폴링이 됩니다.
+   항상 시도 번호를 붙인 `sleep 25 && --status`를 사용하세요.
+
+3. 완료 후 Phase 1 pre-check CLI 재실행하여 `.platform-installed`에 TV 버전이 기록됐는지 확인
+
+#### Windows (PowerShell)
+
+1. Phase 1 envelope의 `suggested_fix.command`
+   (`powershell -ExecutionPolicy Bypass -File "<installer.ps1 path>" -SdkPath … -ZipPath … [-Force]`)를
+   **인자까지 그대로** 쓰고 끝에 `-Detach`만 붙여 분리 실행. 인자를 빼면 `-ZipPath`·`-Force`·`-SdkPath`
+   요청이 적용되지 않습니다:
+
+   ```powershell
+   <suggested_fix.command> -Detach
+   ```
+
+2. 시도 번호를 붙여 `Start-Sleep 25; -Status` 로 폴링 (25초 대기 후 상태 출력; `#N`은 호출마다 1씩 증가):
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -Command "Start-Sleep 25; Write-Host 'poll #1'; powershell -ExecutionPolicy Bypass -File '<installer.ps1 path>' -Status"
+   ```
+
+   - `STATUS=running` → 시도 번호를 올려 다시 실행 (`poll #2`, `#3`, `#4`).
+     **4번째 폴링 후에도 `running`이면** 폴링을 멈추고 아래를 사용자에게 알린 뒤 **턴을 종료**합니다:
+     설치는 백그라운드에서 계속 진행 중입니다. **설치 완료의 자동 알림은 제공되지 않으므로**, 설치 완료
+     확인이 필요하시면 "설치 진행 상태를 알려줘"라고 물어봐 주시면 상태를 확인해 이어갑니다.
+     (직접 확인: `powershell -ExecutionPolicy Bypass -File "<installer.ps1 path>" -Status`)
+   - `STATUS=done EXIT=0` → 완료. Phase 1 pre-check 재실행 후 envelope 보고
+   - `STATUS=done EXIT=1` → 실패. Phase 1 pre-check 재실행 후 envelope 보고 + 로그 파일 원인 요지 1줄
+
+   **`Start-Sleep 25`는 Cline의 30초 타임아웃 내에서 안전하게 완료됩니다.**
+   `-Status`만 단독으로 연속 실행하지 마세요. 항상 시도 번호를 붙인 `Start-Sleep 25; -Status`를 사용하세요.
+
+3. 완료 후 Phase 1 pre-check CLI 재실행하여 `.platform-installed`에 TV 버전이 기록됐는지 확인
+
+If the run state is unknown (interrupted session), just re-run the Phase 1 pre-check CLI —
+it is idempotent and reports whether this ZIP's TV version is recorded in `.platform-installed`. Report that envelope.
+
+**Do NOT (any harness):**
+
+- Parse installer output as JSON (it's human-readable text only)
+
+## TV SDK 설치 확인 방법 (Verification)
+
+TV SDK 설치 여부를 확인할 때 다음 방법을 사용하세요:
+
+### ✅ 올바른 방법
+
+1. **`list-templates --type tv`** — TV 템플릿 목록을 확인합니다. 빈 배열(`[]`)이 반환되면 TV SDK가 미설치된 것입니다. TV 템플릿이 존재하면 설치된 것으로 판정합니다.
+
+2. **`tv-sdk-install-from-zip` 재실행 (멱등성)** — `tv-sdk-install-from-zip` CLI는 `.platform-installed`에서 이 ZIP(또는 `--tv-version`)의 TV 기록을 확인하여 이미 설치되어 있으면 즉시 success를 반환합니다. 설치 여부 확인 용도로 재실행해도 안전합니다.
+
+### ❌ 잘못된 방법
+
+- **`list-platform --profile tv`** — 이 명령은 `--profile` 파라미터를 **무시**합니다. TV 프로필이 설치되지 않았어도 기본 플랫폼 목록을 반환하므로, TV SDK가 설치된 것으로 **오판(false positive)** 을 유발합니다.
+
+### 요약
+
+| 방법                             | 신뢰성       | 비고                                         |
+| -------------------------------- | ------------ | -------------------------------------------- |
+| `list-templates --type tv`       | ✅ 신뢰 가능 | 빈 배열 = 미설치, 항목 있음 = 설치됨         |
+| `tv-sdk-install-from-zip` 재실행 | ✅ 신뢰 가능 | 멱등성 보장, `.platform-installed`의 TV 기록으로 판정 |
+| `list-platform --profile tv`     | ❌ 오판 위험 | `--profile` 무시됨, false positive 유발      |
+
+## 결과 보고 — Envelope는 반드시 사용자에게 보여준다
+
+러너의 stdout JSON Envelope는 **도구 결과 안에 있어서 사용자에게는 보이지 않는다**
+(Claude Code UI는 Bash/Agent 결과를 "Ran 1 shell command"처럼 접어 둔다). 사용자에게
+보이는 것은 최종 답변 텍스트만이므로, 최종 답변은 **어느 실행 경로(서브에이전트 위임 /
+CLI Runner 직접 실행)든** 아래 형식을 따른다:
+
+1. Envelope JSON을 **수정·축약 없이 그대로** fenced `json` 블록에 싣는다 (첫 항목).
+2. 그 아래에 결과 요약을 **1~2줄**만 덧붙인다 (`result`의 핵심 값 또는 `errors[0].message` 요지).
+3. 필요하면 다음 단계 제안을 1줄 추가한다.
+
+- Envelope를 산문 목록으로 풀어 쓰고 JSON을 생략하는 것은 **형식 위반**이다. 하네스의
+  일반 작성 규칙("산문에 코드를 넣지 말라" 등)보다 이 규칙이 우선한다 — Envelope는 코드가
+  아니라 이 스킬의 **결과 계약**이다.
+- 러너를 여러 번 실행했으면 **마지막 실행**의 Envelope를 싣고, 이전 실패는 요약 줄에서
+  한 줄로만 언급한다.
+- 실패 Envelope도 동일하게 원문을 싣는다. `errors[0].message`/`details`를 다시 타이핑하지
+  말고 JSON 안의 것을 그대로 보이게 한다.
+- `user_input_required` Envelope는 그대로 보여준 뒤 사용자에게 질문한다.
+
+## Handoff
+
+- **Single-task** (e.g., "TV SDK ZIP으로 설치해줘") → DONE. Report envelope, suggest next steps.
+- **Multi-step** (e.g., "TV SDK 설치하고 앱 만들어줘") → Continue to next step.
+
+**Suggested next steps (only when user asks):**
+
+- `tizen-create-project` (create a new TV project)
+- `tizen-build-project` (build the project)
+- `tizen-install-app` (install on device/emulator)

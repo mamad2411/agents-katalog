@@ -1,0 +1,339 @@
+---
+name: work-fabric
+description: Hand a unit of work to another machine over contextdb's work ledger and move the bytes it needs over the blob plane — job lifecycle, claim arbitration, entitlement, and reclaim.
+---
+
+# The work fabric — ledger + blob plane
+
+Two library surfaces that let a set of contextdb nodes distribute work among themselves without a
+queue service: the **work ledger** (who is doing what) and the **media/blob plane** (the bytes that
+work needs). They belong together because a job on the ledger can reference a `blob_ref` input, and
+resolving that reference is the blob plane's job, not the ledger's.
+
+**There is no CLI for either.** These are Rust APIs. If you are looking for a `contextdb`
+command, there isn't one — embed the crates: add `contextdb-engine` and `contextdb-server` to
+your `Cargo.toml` `[dependencies]` (see [`docs/getting-started.md`](../../docs/getting-started.md)
+for the exact lines), or, inside a checkout of this repo, depend on the crates in `crates/` directly.
+
+## Recipe checklist
+
+1. Pick the right `work_ledger` module first (below) — importing the wrong one is the most common
+   mistake here.
+2. Install the ledger schema once at open (`install_work_ledger_schema`).
+3. Submit a job (`contextdb_engine::work_ledger::submit_job`) — inline inputs or a `blob_ref`.
+4. Claim it across machines (`contextdb_server::work_ledger::claim_job`) if more than one node
+   might race for it; skip straight to `WorkExecutor` if not.
+5. If the job references a `blob_ref` input, ingest + serve the bytes on the holder and
+   `resolve_blob_ref` on the worker (§ "Move the bytes") — the ledger tracks that a job depends on
+   a blob, it does not move the bytes itself.
+6. **If `materialize_inputs` returns `Err(Error::InputRequiresBlobResolver)`**, you skipped step 5
+   — the job's input is a `blob_ref`, not inline data; go wire the blob plane instead of retrying
+   `materialize_inputs`.
+7. **If a claim never proves out (stays `Won { synced: false }`)**, the hub was unreachable when
+   you claimed — that is provisional, not arbitrated; do not treat it as a confirmed win. <!-- enforced by: crates/contextdb-server/tests/work_ledger_tests.rs::offline_node_drains_its_own_job_and_reconciles_on_reconnect -->
+
+## Two modules named `work_ledger` — pick the right one
+
+Importing the wrong one is the easy mistake here. They are different layers, owned by different
+crates:
+
+| Module | Layer | Use it for |
+|---|---|---|
+| `contextdb_engine::work_ledger` | Class-blind **bookkeeping**. Seven append-only tables recording lifecycle events. | Submitting jobs, reading state, recording results/failures, the pure claim/lease functions. **This is where job state actually lives.** |
+| `contextdb_server::work_ledger` | **Distributed execution**, built on top over `SyncClient`. | Cross-machine claim arbitration, the worker loop, the `WorkExecutor` seam where your real work runs. |
+
+Rule of thumb: state and tables → engine. Two workers racing for the same job → server.
+
+## Job state is computed, never stored
+
+A job's state — `Pending`, `Leased`, `Done`, `Failed`, `Cancelled` — is **derived from the append-only
+rows** by `job_state(&db, job_id, now_ms)`. There is no status column to update, and therefore no
+way for two machines to disagree about a status column.
+
+The lifecycle events:
+
+- `submit_job` — the work exists
+- `insert_claim` — someone took it under a lease
+- `record_result` — completed, **exactly once**: a second call when a result row already exists is a
+  no-op `Ok`, so duplicate work is caught rather than double-recorded <!-- enforced by: tests/integration/work_ledger_tests.rs::wl_e07_result_is_exactly_once_and_duplicate_writes_are_noops -->
+- `record_failure` — the failure row is what **legalizes the next attempt**
+- `cancel_job` — withdrawn
+
+**Lease expiry is advisory wall-clock time supplied by the caller.** The engine never trusts a clock
+on its own, and an expired lease does **not** by itself mean the job was abandoned — that judgment
+belongs to the caller deciding whether to re-claim.
+
+## Install the ledger schema
+
+The seven tables are not created for you. Call this at open; it is idempotent and safe when the
+schema already arrived via sync:
+
+```rust
+use contextdb_engine::work_ledger::install_work_ledger_schema;
+
+install_work_ledger_schema(&db)?;
+```
+
+Each ledger table carries a deliberate conflict policy, and there is nothing for you to wire up:
+the engine's own sync chokepoints merge those per-table policies over whatever `ConflictPolicies`
+a hub is standing up, so no caller can arbitrate a work table incorrectly. Nor is there anything to
+read them back with — `work_ledger_conflict_policy_entries` exists only under the crate's
+non-default `test-seams` feature, and `apply_work_ledger_policy_overrides` is `pub(crate)` in a
+normal build. To see the shipped arbitration from outside, run `SHOW SYNC_CONFLICT_POLICY` against
+a store with the ledger schema installed.
+
+## Submit a job
+
+`JobSpec` is builder-only. Required identity is the job id, its work class, its mode and the
+submitting node; everything else defaults (no requirement tags, no inputs, priority `0`, no
+deadline, `max_attempts` 2). <!-- enforced by: crates/contextdb-engine/src/work_ledger.rs::jobspec_builder_defaults_are_sensible -->
+
+```rust
+use contextdb_engine::work_ledger::{JobSpec, submit_job};
+
+let spec = JobSpec::builder("job-1", "describe-image", "once", "node-a")
+    .requirement_tags(vec!["gpu".to_string()])
+    .max_attempts(3)
+    .submitted_at_ms(now_ms)
+    .build();
+
+let no_direct_inputs: [&[u8]; 0] = [];
+submit_job(&db, &spec, &no_direct_inputs)?;
+```
+
+Requirement tags are open vocabulary and **every one must be advertised by a node to claim the
+job** — that is how a CPU-only node stays out of the way of GPU work. `claimable_jobs(&db, node_id,
+&advertised_tags, &policy, now_ms)` is the matching read.
+
+Inputs are either carried inline (the `&[I]` argument, small payloads) or referenced:
+`InputRef::local_path(...)` or `InputRef::blob_ref(hash)`.
+
+### Worked example 2 — a job whose input is a blob reference, not inline bytes
+
+The shape for media/large-payload work (from the shipped test suite,
+`crates/contextdb-engine/tests/engine/blob_ref_ledger.rs`) — no `&[u8]` payload travels through the
+ledger at all, only the hash:
+
+```rust
+use contextdb_engine::work_ledger::{BlobHash, InputRef, JobSpec, submit_job};
+
+fn blob_job(job_id: &str, submitter: &str, hash: &BlobHash) -> JobSpec {
+    JobSpec::builder(job_id, "media.demo", "batch", submitter)
+        .input_refs(vec![InputRef::blob_ref(hash.clone())])
+        .submitted_at_ms(now_ms)
+        .build()
+}
+
+let no_direct_inputs: [&[u8]; 0] = [];
+submit_job(&db, &blob_job("job-1", "node-a", &blob_hash), &no_direct_inputs)?;
+```
+
+Contrast with worked example 1 above: that job carries its input THROUGH the ledger
+(`ledger_input`, subject to the 7-day retention window below); this one only carries a
+content-addressed pointer — the bytes travel over the blob plane separately (§ "Move the bytes").
+Pick inline for small payloads you're fine re-fetching from the ledger; pick `blob_ref` for
+anything large enough that you'd rather move it once, node-to-node, hash-verified.
+
+**Inline (`ledger_input`) inputs are NOT kept until the job is terminal.** `work_inputs` declares
+`RETAIN 7 DAYS`, so a job's ledger-carried input copies age out on that window regardless of
+whether the job was ever claimed. <!-- enforced by: tests/integration/work_input_retention_tests.rs::a_never_claimed_jobs_input_copies_age_out_under_the_declared_window --> `materialize_inputs` distinguishes a job that never declared
+ledger input (returns `Ok` with an empty result) <!-- enforced by: tests/integration/work_input_retention_tests.rs::a_job_with_no_ledger_inputs_at_all_is_not_reported_as_expired --> from one whose input aged out (returns
+`Err(Error::WorkInputExpired { job_id })`) <!-- enforced by: tests/integration/work_input_retention_tests.rs::reading_an_expired_jobs_input_returns_a_typed_refusal_not_empty_bytes --> — a worker must handle the typed refusal rather than
+executing on silently-empty input. Submit and claim promptly if the job's inputs are inline.
+
+**The engine reserves NINE table names for this module and its siblings: `work_jobs`,
+`work_claims`, `work_results`, `work_failures`, `work_cancellations`, `work_inputs`,
+`work_capabilities`, `peer_directory`, `work_node_contacts`.** A `CREATE TABLE` of any of these
+nine names refuses unless your columns structurally match the owning installer's own declaration —
+you can't shadow a reserved name with an incompatible shape. <!-- enforced by: crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::create_table_work_capabilities_with_wrong_columns_refuses_locally, crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::create_table_of_each_other_work_ledger_reserved_name_with_wrong_columns_refuses_locally, crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::shape_refusal_does_not_claim_installer_exclusivity -->
+
+**What IS guarded on all nine today: the `SYNC CONFLICT` axis only.** A `SYNC CONFLICT` clause
+that mismatches the engine's own arbitration for that table refuses — on `CREATE`, on `ALTER`, and
+on the identical mutation arriving from a peer over sync (an explicit differing value refuses the
+whole sync batch; silence, or writing back the table's own current policy, is accepted — that is
+what a pre-declaration root looks like before its first reconcile, and what an honest restate looks
+like).
+For the five hub-refereed tables (`work_jobs`, `work_claims`, `work_results`, `work_failures`,
+`work_cancellations`), a mismatching conflict clause refuses on local `CREATE` <!-- enforced by: crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::local_create_of_each_hub_refereed_table_with_wrong_explicit_conflict_refuses -->,
+local `ALTER` <!-- enforced by: crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::hub_refereed_sync_conflict_refusal_names_only_the_conflict_axis -->,
+and received `CREATE` or `ALTER`. <!-- enforced by: crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::arriving_create_table_adopt_wrong_explicit_conflict_on_a_hub_refereed_table_refuses, crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::arriving_alter_table_wrong_explicit_conflict_on_a_hub_refereed_table_refuses -->
+`SHOW SYNC_CONFLICT_POLICY` renders the eight of these nine tables that actually carry a
+policy <!-- enforced by: crates/contextdb-engine/tests/engine/show_sync_conflict_policy_tests.rs::show_marks_every_engine_governed_work_ledger_table_engine_owned_with_its_true_arbitration, crates/contextdb-engine/tests/engine/show_sync_conflict_policy_tests.rs::show_marks_peer_directory_engine_owned_with_its_true_arbitration --> — `peer_directory` plus every work-ledger table except `work_node_contacts`, which declares
+none and so shows no row at all. <!-- enforced by: crates/contextdb-engine/tests/engine/show_sync_conflict_policy_tests.rs::work_node_contacts_never_appears_in_show_since_it_declares_no_conflict_policy -->
+
+**`work_inputs`, `work_capabilities`, `peer_directory`, and `work_node_contacts` are fully
+guarded** — every axis (`RETAIN`, `HISTORY`, sync-direction, `SYNC CONFLICT`) refuses a mismatching
+`ALTER TABLE`, locally and on arrival from a peer; restating the table's own already-declared value
+verbatim is accepted as a no-op, not a mismatch. `work_inputs`' own `RETAIN 7 DAYS` window is a
+real example of this: `ALTER TABLE work_inputs DROP RETAIN` and `ALTER TABLE work_inputs SET
+RETAIN 30 DAYS` both refuse today, naming `work_inputs` as engine-owned in the error. <!-- enforced by: crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::drop_retain_on_work_inputs_refuses_with_engine_owned_message, crates/contextdb-engine/tests/engine/engine_owned_ledger_policy_tests.rs::set_retain_to_a_different_window_on_work_inputs_also_refuses --> If your
+workload needs a different input-copy lifetime than 7 days, the sanctioned way is
+`run_input_retention`'s `grace_ms` argument, which you call on your own schedule — not an `ALTER
+TABLE` on `work_inputs`, which will refuse.
+
+**What is NOT yet guarded: `RETAIN`, `HISTORY`, and sync-direction (`SYNC OFF` / `SYNC PUSH ONLY` /
+etc.) on the OTHER five reserved names — the hub-refereed work-ledger tables `work_jobs`,
+`work_claims`, `work_results`, `work_failures`, `work_cancellations`.** `ALTER TABLE work_jobs SET
+SYNC OFF` or `SET RETAIN <window>` against one of these succeeds and is honored today, even though
+it should be refused the same way the four tables above (and every table's `SYNC CONFLICT` axis)
+are — this is a filed bug, deferred to a follow-up run, not a contract you should rely on.
+**Practical guidance: don't run those ALTERs against a fabric store, whether or not the engine
+currently stops you.**
+
+## Claim across machines
+
+`contextdb_server::work_ledger::claim_job` **claims by push**: it inserts a local claim row, pushes
+it, and the hub's conflict reply on the claim key *is* the arbitration verdict. Two workers racing
+for the same job resolve at the hub, not by a local guess. <!-- enforced by: crates/contextdb-server/tests/installed_work_ledger_claim_race_tests.rs::two_installed_nodes_racing_one_claim_agree_on_the_holder, crates/contextdb-server/tests/work_ledger_tests.rs::two_workers_race_exactly_one_wins_and_one_result_exists -->
+
+```rust
+use contextdb_server::work_ledger::claim_job;
+
+let outcome = claim_job(&sync_client, "job-1", 1, "node-b", lease_deadline_ms, now_ms).await?;
+```
+
+**If the hub is unreachable the claim is held locally as `Won { synced: false }` rather than
+blocking.** That is deliberate — an offline node keeps working — but it means the claim is not yet
+arbitrated, and you should treat it as provisional. <!-- enforced by: crates/contextdb-server/tests/work_ledger_tests.rs::offline_node_drains_its_own_job_and_reconciles_on_reconnect -->
+
+To run work rather than hand-drive it, implement `WorkExecutor` and use `poll_and_execute_once` or
+`run_worker_loop` with a `WorkerConfig`. <!-- enforced by: crates/contextdb-server/tests/work_ledger_tests.rs::worker_loop_polls_until_shutdown_and_executes_arriving_work --> The executor trait is the seam where your real work
+happens; everything around it is ledger bookkeeping.
+
+## Move the bytes — the blob plane
+
+`contextdb_server::BlobStore` moves opaque, content-addressed bytes node to node.
+
+`BlobStore::new` takes an `Arc<Database>`, so hold the handle in an `Arc` from the moment you open
+it — `Database` itself is not `Clone`, and the ledger calls above take `&db`, which an `Arc` derefs
+to unchanged:
+
+```rust
+use contextdb_engine::Database;
+use contextdb_server::BlobStore;
+use std::sync::Arc;
+
+let db = Arc::new(Database::open(std::path::Path::new("./work.db"))?);
+
+let blob_store = BlobStore::new(db.clone(), policy, identity_path);
+
+// Holder: ingest (idempotent — the hash IS the content) and start serving.
+let blob_hash = blob_store.ingest_bytes(&std::fs::read("frame.jpg")?)?;
+blob_store.serve_on_with_read_budget_provider(&iroh_server, read_budget_provider.clone())?;
+```
+
+The host supplies read_budget_provider from the existing declared reader memory limit.
+Each serving request and reclaim cycle obtains its own child; resolve_blob_ref and
+reclaim_unreferenced receive the executing operation's read_memory. Registration
+and ledger read failures propagate as typed errors. The owned reclaim driver is
+spawn_reclaim_driver(read_budget_provider, grace_ms).
+
+
+`ingest_file(&Path)` is the streaming sibling of `ingest_bytes`. Because the returned `BlobHash` is
+the hash of the bytes, <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::ingest_round_trip_matches_blake3_identity --> ingesting the same content twice is a no-op.
+
+On the consumer side, fetching is async, node-to-node and **hash-verified — only bytes that hash to
+the requested `BlobHash` ever reach your sink**: <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::tampered_bytes_are_caught_by_hash_verify -->
+
+```rust
+let mut sink = Vec::new();
+let bytes_written = blob_store
+    .resolve_blob_ref_with_read_memory(read_memory.clone(), &blob_hash, &holder_ticket, &mut sink)
+    .await?;
+```
+
+Failures are a matchable `ResolveError`, not a string, and it has nine variants — the enum is not
+`#[non_exhaustive]`, so an exhaustive `match` must cover all of them: `Unentitled`,
+`PolicyForbidden`, `HashMismatch`, `HolderUnreachable`, `LocalStoreUnavailable`, `BlobNotFound`,
+`TransferAborted`, `SinkWrite`, and `FetchTimedOut { after_ms }`. `FetchTimedOut` is the one that
+means "still not known" — the fetch passed its `BlobFetchPolicy::fetch_deadline_ms` bound — as
+against `HolderUnreachable` (a definitive dial failure) and `TransferAborted` (a definitive
+mid-stream drop), so retrying it is reasonable where retrying those two is not.
+
+## The entitlement rule — the actual security boundary
+
+**A consumer may fetch a blob only while it holds a *live* claim** — lease still ahead, that attempt
+not failed — **on a job whose inputs reference that blob's hash.** <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::holder_refuses_a_fetcher_whose_lease_has_expired_at_resolve, crates/contextdb-engine/tests/engine/blob_ref_ledger.rs::node_holds_claim_for_blob_tracks_live_claim_on_the_hashs_job -->
+
+This is checked **holder-side at serve time, before any payload bytes move**. The check is the gate,
+not an after-the-fact audit, and it is never trusted from the requester. <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::holder_refuses_unentitled_fetcher_by_authenticated_node_id -->
+
+There is also a local, identity-blind pre-check the consumer can run before dialing. **That is a
+round-trip optimization and nothing more — never treat it as the entitlement boundary.**
+
+If the holder's local mirror of the ledger can lag behind a claim that landed on the hub, wire
+`set_claim_refresh` to this node's own `SyncClient::pull_default()` so the serve-time check
+refreshes instead of polling.
+
+## Wiring the two together
+
+A runnable two-node recipe is
+[`crates/contextdb-server/examples/work_fabric_two_nodes.rs`](../../crates/contextdb-server/examples/work_fabric_two_nodes.rs):
+it boots two in-process nodes, publishes a job on node A, claims it from node B,
+and records the result so A can pull it. Run:
+
+```bash
+cargo run --example work_fabric_two_nodes
+```
+
+```text
+claim: Won { synced: true }
+transfer: node-b recorded result for job-1 (executor=node-b)
+```
+
+The fragment below is the API reference those two nodes call (blob ingest and
+claim), not a second runnable recipe.
+
+```rust
+// Node A (holder): ingest a blob, serve it, and submit a job that references it.
+use contextdb_engine::work_ledger::{InputRef, JobSpec, submit_job};
+use contextdb_server::{BlobStore, work_ledger::claim_job};
+
+let bytes = std::fs::read("frame.jpg")?;
+let blob_hash = blob_store.ingest_bytes(&bytes)?;
+blob_store.serve_on_with_read_budget_provider(&iroh_server, read_budget_provider.clone())?;
+
+let spec = JobSpec::builder("job-1", "describe-image", "once", "node-a")
+    .input_refs(vec![InputRef::blob_ref(blob_hash.clone())])
+    .build();
+let no_direct_inputs: [&[u8]; 0] = [];
+submit_job(&db, &spec, &no_direct_inputs)?;
+
+// Node B (worker): claim the job under a lease, then resolve the referenced blob.
+// Holding a live claim on this job is what entitles Node B to fetch the bytes.
+let claim = claim_job(&sync_client, "job-1", 1, "node-b", lease_deadline_ms, now_ms).await?;
+let mut sink = Vec::new();
+let bytes_written = blob_store
+    .resolve_blob_ref_with_read_memory(read_memory.clone(), &blob_hash, &holder_ticket, &mut sink)
+    .await?;
+```
+
+**The ledger reserves `blob_ref` but does not resolve it.** `materialize_inputs` refuses a
+`blob_ref` input with `Error::InputRequiresBlobResolver` <!-- enforced by: crates/contextdb-engine/tests/engine/blob_ref_ledger.rs::materialize_inputs_surfaces_a_blob_ref_never_silent_empty --> and points you at the blob resolver. The
+ledger tracks that a job depends on a blob; the media plane moves the bytes.
+
+## Reclaiming space
+
+`reclaim_unreferenced(now_ms, grace_ms)` frees a blob once every job referencing it is terminal past
+the grace window, <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::reclaim_deletes_an_unreferenced_blob_then_resolve_is_blob_not_found --> or once no job references it at all. A later resolve against a reclaimed blob
+returns `BlobNotFound` <!-- enforced by: crates/contextdb-server/tests/media_transfer_tests.rs::reclaim_deletes_an_unreferenced_blob_then_resolve_is_blob_not_found --> — **even from an otherwise-entitled caller.** Budget your grace window
+against your slowest worker, not your fastest.
+
+## Transport
+
+Direct or relayed is a **serve-time choice on the holder's endpoint spec**, and by default it is
+direct only — contextdb contacts no relay unless asked. The operator opts into the public relays or
+a self-hosted relay URL, the same relay configuration the `sync` skill describes. The choice rides
+in the serve ticket, so a consumer behind NAT that cannot reach the holder directly is bridged
+automatically.
+
+## Depth
+
+- [`docs/architecture.md`](../../docs/architecture.md#work-ledger-and-media-plane) — the module
+  disambiguation, entitlement rule, and the worked two-node example above
+- [`skills/sync/SKILL.md`](../sync/SKILL.md) — the `SyncClient`/hub the execution layer rides on
+
+## Next
+
+- Stand up the hub/edge `SyncClient` this crate's execution layer rides on → [`skills/sync/SKILL.md`](../sync/SKILL.md)
+- Open a database, run SQL directly (no ledger) → [`skills/using-contextdb/SKILL.md`](../using-contextdb/SKILL.md)

@@ -1,0 +1,530 @@
+---
+name: walkeros-understanding-destinations
+description:
+  Use when working with walkerOS destinations, understanding the destination
+  interface, or learning about env pattern and configuration. Covers interface,
+  lifecycle, env mocking, and paths.
+---
+
+# Understanding walkerOS Destinations
+
+## Overview
+
+Destinations receive processed events from the collector and deliver them to
+third-party tools (analytics, marketing, data warehouses).
+
+**Core principle:** Destinations transform and deliver. They don't capture or
+process: that's sources and collector.
+
+## Destination Interface
+
+See
+[packages/core/src/types/destination.ts](../../packages/core/src/types/destination.ts)
+for canonical interface.
+
+| Method                      | Purpose                    | Required     |
+| --------------------------- | -------------------------- | ------------ |
+| `init(context)`             | Load scripts, authenticate | Optional     |
+| `push(event, context)`      | Transform and send event   | **Required** |
+| `pushBatch(batch, context)` | Batch processing           | Optional     |
+| `destroy(context)`          | Cleanup on shutdown        | Optional     |
+| `config`                    | Settings, mapping, consent | **Required** |
+
+`destroy?: DestroyFn`: optional cleanup method. Called during
+`command('shutdown')`. Use to close DB connections, flush buffers, or release
+SDK clients. Receives `{ id, config, env, logger }`.
+
+## The env Pattern
+
+Destinations use dependency injection via `env` for external APIs. This enables
+testing without mocking.
+
+```typescript
+// Destination defines its env type
+export interface Env extends DestinationWeb.Env {
+  window: {
+    gtag: Gtag.Gtag;
+    dataLayer: unknown[];
+  };
+}
+
+// Destination uses env, not globals
+async function push(event, context) {
+  const { env } = context;
+  env.window.gtag('event', mappedName, mappedData);
+}
+```
+
+### Testing with env
+
+**REQUIRED SKILL:** See
+[testing-strategy](../walkeros-testing-strategy/SKILL.md) for full testing
+patterns.
+
+```typescript
+import { mockEnv } from '@walkeros/core';
+import { examples } from '../dev';
+
+const calls: Array<{ path: string[]; args: unknown[] }> = [];
+const testEnv = mockEnv(examples.env.push, (path, args) => {
+  calls.push({ path, args });
+});
+
+await destination.push(event, { ...context, env: testEnv });
+
+expect(calls).toContainEqual({
+  path: ['window', 'gtag'],
+  args: ['event', 'purchase', expect.any(Object)],
+});
+```
+
+### The env as observability seam
+
+The env pattern is also the interception seam for trace-level vendor-call
+capture. At `trace` level the collector may attach an `observe` recorder under
+the `observe` key of the env, and `@walkeros/web-core`'s `getEnv` wraps the
+callables the destination declared as observable, recording each call. A
+destination that reaches its vendor through `getEnv(env)` is automatically
+observable; one that reaches a global directly, bypassing `env`, is not. This is
+one more reason to route every external call through `env`.
+
+Rules that keep the seam intact:
+
+- **`init` keeps an injected env.** A client built in `init` (SDK client, auth
+  client, writer) is taken from `env` when present and created only otherwise
+  (`env?.BigQuery ?? BigQuery`). Every key the mock env declares must be read as
+  `env.<key>` in `src`.
+- **`simulation` names the request call** (`sendServer`,
+  `call:PubSub.topic.publishMessage`, `call:JSONWriter.appendRows`), not a
+  constructor. The one recorder is `observeEnv` in `@walkeros/core`; it
+  navigates constructors, factories and Promises, and records only the leaf.
+- **Trace-mode limit.** CLI and MCP simulate inject the mock env before `init`,
+  so a client built in `init` is recorded. Runtime trace mode wraps the env per
+  push only, so calls through a client built in `init` are not recorded there.
+- **Client IP and user agent.** Server conversion-API destinations (Meta,
+  TikTok, Snapchat, Pinterest, Bing, Reddit, Criteo, X, Data Manager, Piwik PRO)
+  expose `ip` and `userAgent` settings (`Mapping.Value | false`), defaulting to
+  `['ingest.ip', 'event.user.ip']` and
+  `['ingest.userAgent', 'event.user.userAgent']`, resolved with
+  `getMappingValue(createMappingRoot(ingest, event), setting, { collector })`.
+  `false` disables, an explicit mapped vendor field wins, each package carries
+  its own few lines (no shared helper).
+
+## Destination Config
+
+```typescript
+config: {
+  settings: { /* destination-specific */ },
+  mapping: { /* event transformation rules */ },
+  data: { /* global data mapping */ },
+  consent: { /* required consent states */ },
+  policy: { /* processing rules */ },
+  queue: boolean,  // when added later, receive the run's earlier events (default true)
+  timeout: number, // delivery timeout in ms (default 10000)
+  queueMax: number,  // consent-queued events cap (default 1000)
+  dlqMax: number,    // dead-letter queue cap (default 100)
+}
+```
+
+## Buffer bounds
+
+Each destination keeps two internal buffers: `queuePush` (consent-denied events)
+and `dlq` (failed pushes). Both are size-bounded with FIFO drop-oldest eviction.
+Defaults: `queueMax: 1000`, `dlqMax: 100`. Set either on a destination's config
+to override per destination. Operators read drop counts from
+`collector.status.dropped[stepId('destination', id)]?.queue` (consent-denied
+evictions) and `?.dlq` (DLQ evictions). Build the key with `stepId()` from
+`@walkeros/core`. Point-in-time sizes stay on
+`collector.status.destinations[id].queuePushSize` / `dlqSize`.
+
+`queuePush` drains back into the destination once consent allows delivery. The
+DLQ is never replayed: an event that reaches it is gone once it is evicted.
+
+## Delivery timeout
+
+`config.timeout` bounds one delivery. A `push` or `pushBatch` that has not
+settled within it is abandoned, its events are routed to the DLQ and `failed` is
+incremented. The default is 10000 ms, applied whenever `timeout` is `0` or
+unset, so one slow destination never wedges the collector push.
+
+**A destination's own client timeout has to fit inside it, retry delays
+included.** Many SDK defaults are longer (30 s in several HTTP clients). With a
+longer one, the collector stops waiting at 10 s, dead-letters the batch and
+counts it lost, then the request lands anyway a few seconds later. Those events
+are both counted lost and actually written. Derive the client's per-attempt
+timeout from `config.timeout` minus what the retry delays can take, split across
+the attempts, so the last attempt finishes before the race does.
+
+The same bound applies at shutdown, where the collector races each pending batch
+flush against a fixed 5000 ms step timeout before destroying the destination. A
+destination whose retries need longer than that loses them on shutdown.
+
+## Outcomes and failure reasons
+
+A push ends in one place per destination in the `PushResult`: `done`, `queued`
+(reason `consent`, `batch` or `held`) or `failed`. A failed entry carries a
+`reason` `{ code, message, retryable, status? }` that the collector derives from
+the thrown value: a `StepError` keeps its `code`; a `TypeError`, `RangeError` or
+`ReferenceError` is `runtime` (not retryable), except Node's `fetch failed` with
+a `cause.code`; any other throw is `transport`. A failed browser `fetch` is a
+`TypeError` too, so throw network failures as a `StepError` (`sendWeb` and
+`sendServer` do). Codes the collector assigns itself: `timeout`, `not-ready` (a
+destination whose `init` could not start or returned `false`), `breaker-open`,
+`blocked` (held past one retry window), `queue-full`, `mapping` (a rule
+`condition` threw), `transformer`. Codes a destination throws: `config`,
+`missing-input`, `vendor-not-loaded`, `vendor-not-ready`, `vendor-timeout`,
+`transport`. `retryable` decides whether a server source asks the producer to
+resend (`acknowledge(result)` from `@walkeros/core`: `ack`, `retry` or
+`reject`); it never reads message text.
+
+**Unmet consent is never a failure.** A destination waiting for consent answers
+`queued` with the reason `consent`; a server flow built by the CLI skips a
+consent-denied event instead (`consentDenied: 'skip'`, counted in
+`status.destinations[id].skipped`, a `debug` line). A rule with `ignore: true`
+is a skip as well, not a delivery.
+
+**Failed means thrown.** A destination reports a failure only by throwing a
+`StepError`; it never returns early, never returns `false` from `init`, never
+logs the failure itself, and awaits every call it makes. The collector writes
+one ERROR line per (step, code, status) and minute. Every destination honours
+`rule.silent` (no event of its own, side effects still run) and ships a `silent`
+example.
+
+**The conformance kit.** `conformance('destination', destination, options)` from
+`@walkeros/collector/dev` runs a destination on a real collector against its
+step examples and fails with every broken item of the contract at once. Pick the
+`profile` by what the destination talks to: `http`, `sdk-env`, `web-sdk` (a web
+SDK started in `init`), `vendor-global`, `socket`. A web destination also passes
+`page` from `@walkeros/web-core/dev`. Every destination test passes `minimal`,
+the package's `examples.minimal` published from `src/examples/minimal.ts` (a
+package with several exports passes `exportName` and `exportExamples`, one
+`src/<export>/examples/minimal.ts` each), or `withoutMinimal: '<reason>'` when
+the package publishes none. The kit composes the minimal example into the
+quickstart the docs page shows and requires it delivered. A test with neither
+option fails, and so does one whose option disagrees with the published file.
+See [create-destination](../walkeros-create-destination/SKILL.md).
+
+## Batch scheduling
+
+Set `config.batch` on a destination (with `pushBatch` implemented) to batch
+**all** of its events into one shared buffer. No `'* *'` wildcard mapping rule
+is needed. The configuration shape is `batch?: number | { wait?, size?, age? }`
+at both the destination-config layer and the mapping-rule layer.
+
+**`pushBatch` is the gate.** The collector engages batching only when
+`destination.pushBatch` exists. Set `config.batch` on a destination that lacks
+it and every event is sent one at a time; the collector logs one ERROR at
+registration naming the setting, and `walkeros validate` and the bundle fail
+(`BATCH_WITHOUT_PUSH_BATCH`) for inline `code`. When adding batching to a
+destination, implementing `pushBatch` is the change; `config.batch` alone does
+not batch. A batched event answers `queued` with the reason `batch`, so a server
+source acknowledges the producer at queue time; a failed flush is visible (ERROR
+line, failed counter, DLQ) but is not redelivered. `walker flush` flushes every
+pending batch.
+
+- `wait` (ms): debounce window. The timer resets on every push. A bare number,
+  `batch: 1000`, is shorthand for `{ wait: 1000 }`.
+- `size`: hard count cap. Default `1000`. Flushes immediately when reached.
+- `age` (ms): hard age cap since the first entry of the current window. Default
+  `30000`. Prevents debounce starvation under sustained load.
+
+A mapping rule's own `batch` splits that entity-action into its own buffer and
+overrides `config.batch` per field (`rule ?? config ?? default`). To batch only
+specific events, omit `config.batch` and set `batch` on those rules. Pending
+batches flush on shutdown.
+
+### Per-event metadata
+
+`Batch.entries[]` carries per-event
+`{ event, ingest?, respond?, rule?, data? }`. Destinations that need per-event
+request IDs or HTTP responses (BigQuery, mParticle, HubSpot) should read
+`entries` instead of assuming all events in a batch share one `ingest`.
+`batch.events` and `batch.data` are derived views of `entries`.
+
+### Failure handling
+
+`pushBatch` has three return outcomes:
+
+- **Resolves `void`**: the whole batch succeeded; every entry counts as
+  delivered.
+- **Throws or rejects**: the whole batch failed. Every entry is routed to the
+  destination's `dlq` and `status.destinations[id].failed` is incremented by the
+  batch size.
+- **Resolves a `BatchOutcome`**: partial failure.
+  `{ failed: [{ index, error? }] }` names the entries that did not make it, by
+  index into `batch.entries`. Only those are DLQ'd; the rest count as delivered.
+  Use this when the vendor reports per-row results (BigQuery's `rowErrors` is
+  the reference case), so a later DLQ retry does not rewrite rows that already
+  landed.
+
+**A `BatchOutcome` is for sinks that report per row, and for nothing else.** A
+sink that succeeds or fails as a whole (one SQL `INSERT`, one file write, one
+publish) must never report an all-failed outcome in place of throwing. Only a
+throw can count as a failure on the breaker (a retryable one, such as a network
+error, a timeout or a 429 or 5xx answer), and only a flush with at least one
+delivered entry records a success, so an outcome where nothing succeeded records
+neither: a total outage passes the breaker unseen and it never opens. A
+whole-batch sink has exactly two answers: resolve `void` or throw.
+
+Batching, the delivery timeout, the DLQ and the breaker are the collector's;
+per-call retry is the vendor SDK's (BigQuery, Kafka, HubSpot and the AWS SDK
+each have their own backoff semantics). Where a destination relies on that SDK
+retry, it keeps the attempts and their delays inside `config.timeout`, and makes
+a repeat safe through an idempotency key or a deduplication token computed once
+and reused across attempts. Without that, a retry of a delivery the vendor had
+already accepted duplicates data. Counters (`count`, `out`) are bumped only
+after a successful flush.
+
+**Three rules every destination follows.** First, no retry loops, backoff or DLQ
+code of its own: each request is sent once through the vendor SDK, whose
+built-in retry stays at its defaults, because a standard retry belongs in the
+collector, not in each package. Second, a server destination's `init` is
+offline: it validates the config and builds clients, but makes no network call,
+loads no credentials and creates no remote resources; connections (Kafka,
+BigQuery, S3, Sheets, SQLite) open at the first use, memoized and retried after
+a failure, and provisioning belongs to `setup`. Third, every failure, thrown or
+reported in a `BatchOutcome`, is a `StepError` that names the cause (and, for a
+configuration error, the fix) and carries `code` (the vendor error name or a
+package code), `status` (the HTTP status when the vendor answered) and
+`retryable`. Take `retryable` from the vendor SDK's own public classifier where
+one exists, else from documented codes or statuses, and keep the SDK error
+reachable as `cause`. `@walkeros/server-destination-aws` is the reference
+implementation.
+
+Operators also see `status.destinations[id].inFlightBatch`: the number of events
+buffered but not yet delivered.
+
+### Out-of-band errors from an EventEmitter SDK
+
+`tryCatchAsync` only catches errors on the awaited `push`/`pushBatch` path. If a
+destination owns an SDK object that is an EventEmitter (a BigQuery
+`StreamConnection`, a Redis client, a Kafka producer), that object can emit
+`'error'` on a detached tick with no awaiter. An EventEmitter that emits
+`'error'` with zero listeners throws synchronously and crashes the process.
+
+A destination that owns such an object MUST attach an `'error'` listener and
+route the error through `context.reportError`, which is available on every step
+context:
+
+- `context.reportError(err)` (no event): a connection-level error between
+  pushes. Logs (redacted) and bumps `status.connectionErrors[stepId]`. Does not
+  count as a failed event.
+- `context.reportError(err, event)`: a specific event was lost. Routes it to the
+  DLQ and bumps `failed`, exactly like an in-band push failure.
+
+`reportError` is guarded and must never be called in a way that throws back into
+the emitter tick. The Pub/Sub pull source (`sources/gcp/src/pubsub/pull`) is the
+reference for attaching an `'error'` listener. The runner's process guards are a
+backstop, but the listener is what gives clean DLQ routing, attribution, and
+redaction. Optionally pair this with the `breaker` config so a persistently
+broken transport stops retrying every event.
+
+## Require vs Consent
+
+Two separate mechanisms control when destinations receive events:
+
+| Mechanism | Purpose              | Scope             | Effect                                                                                 |
+| --------- | -------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| `require` | Delay initialization | Whole destination | Destination stays in `pending` until all required events fire (e.g., `walker consent`) |
+| `consent` | Filter events        | Per-event         | Events without matching consent are queued (skipped in a server flow built by the CLI) |
+
+**Require** gates the destination _lifecycle_. A destination with
+`require: ["consent"]` does not exist in the collector until consent state is
+present: a `"walker consent"` event, or starting consent (`startFlow`'s
+`consent`, which `walkeros push --simulate` sets with `--consent`). Until then,
+events are queued internally. `require` takes effect only in the step
+definition's `config` (`destinations.<id>.config` in flow.json,
+`{ code, config }` in `startFlow`); a `require` in the destination code's own
+`config` is ignored today, and the destination receives events at once.
+
+**Consent** gates _individual event delivery_. A destination with
+`consent: { marketing: true }` only receives events where the collector's
+consent state (or the event's own `consent` field) includes
+`{ marketing: true }`.
+
+**State on flush (consent queue):** When consent is granted, the consent-queued
+events are delivered in their original order. Each one gets the current
+`consent`, its `user` is merged with the collector's (the event's own values
+win), and it keeps the `globals` it was captured with. Events that still lack
+the required consent stay queued. See
+[How queued events are processed](../../website/docs/guides/consent/index.mdx#how-queued-events-are-processed).
+Events replayed from the run's buffer, to a `require`-pending destination when
+it activates or to a destination added later, behave differently today: they
+carry the user set after they were captured, and only an event that brought its
+own `user` keeps its values.
+
+Both can be combined:
+
+```json
+{
+  "config": {
+    "require": ["consent"],
+    "consent": { "marketing": true }
+  }
+}
+```
+
+This means: don't initialize until consent fires, then only accept events with
+marketing consent. The state that satisfies `require` reaches `on()` before the
+destination's queued events are pushed.
+
+**Simulation impact:** a destination whose `require` is not met is reported as
+skipped with the reason `pending` by `flow_simulate` and
+`walkeros push --simulate`. Pass the starting consent to simulate it:
+`state.consent` in `flow_simulate`, `--consent` on the CLI.
+
+## Policy
+
+Policy shapes the event before its data is mapped; the rule was selected
+earlier, as the event entered the destination. Defined at config level (applies
+to all events) or rule level (applies to specific events):
+
+```json
+{
+  "config": {
+    "policy": {
+      "user_data.email": {
+        "key": "user.email",
+        "consent": { "marketing": true }
+      }
+    }
+  }
+}
+```
+
+Policy supports consent-gated field injection: fields are only added when the
+required consent is present in the event.
+
+## Destination Paths
+
+| Type   | Path                            | Examples                             |
+| ------ | ------------------------------- | ------------------------------------ |
+| Web    | `packages/web/destinations/`    | gtag, meta, api, piwikpro, plausible |
+| Server | `packages/server/destinations/` | aws, gcp, meta                       |
+
+## Template Destination
+
+Use as starting point: `packages/web/destinations/plausible/`
+
+## Transformer Wiring
+
+Destinations can wire to their own transformer chain via the `before` property.
+It runs for this destination only, after the collector chain (`collector.next`,
+shared by every destination); a `stop` in it skips only this destination:
+
+```typescript
+destinations: {
+  gtag: {
+    code: destinationGtag,
+    before: 'redact'  // First transformer to run before this destination
+  }
+}
+```
+
+The transformer chain runs after collector enrichment, before the destination
+receives events. Each destination can have its own chain. See
+[understanding-transformers](../walkeros-understanding-transformers/SKILL.md)
+for chain details.
+
+## Consent: Two-Layer Pattern
+
+Destinations that integrate vendor SDKs typically need two consent layers:
+
+**Layer 1: `config.consent`** gates walkerOS event delivery. If consent is not
+granted, events don't reach the destination. This is the primary barrier.
+
+**Layer 2: `on('consent')`** controls vendor SDK internals. Even when walkerOS
+stops sending events, the vendor SDK may still run its own behaviors (DOM
+capture, polling, fetching configs). Use `on('consent')` to pause/resume these.
+
+```typescript
+import { getGrantedConsent } from '@walkeros/core';
+
+on(type, { config, collector }) {
+  if (type !== 'consent' || !config.consent) return;
+  // The rule of the delivery gate: one granted required key is enough.
+  // Derive from config.consent, don't hardcode consent names.
+  const granted =
+    getGrantedConsent(config.consent, collector.consent) !== false;
+  vendorSdk.setOptOut(!granted);
+}
+```
+
+Complete consent compliance needs both layers: `config.consent` prevents data
+flow, `on('consent')` prevents vendor SDK side effects.
+
+`on('consent')` runs before the first push on every activation path (`require`,
+`walker destination` at runtime, state passed to `walker run`, state set before
+`run`) and is delivered exactly once per state change. It may be async: the
+collector awaits it, bounded by `config.timeout`, and events pushed meanwhile
+answer `queued` with the reason `held`. A handler that rejects or does not
+settle in that time writes an ERROR line (`consent not applied`) and holds the
+destination's events for one more `config.timeout`. A push after that window
+retries a failed delivery; once a delivery succeeds, the held events are
+delivered. If none has succeeded by the first push after the window, the held
+events and every later event with the required consent fail with the reason
+`blocked` until one does: the push answers `ok: false`, they are counted in
+`failed` and kept in the DLQ, an ERROR `Push failed` line is written, and they
+are not sent when the destination recovers. A handler that never settles keeps
+the destination blocked. Events still held at the next `walker run` are
+discarded. Lifecycle handlers such as `on('run')` are awaited too, bounded by
+the same timeout, and never hold events. `elb` commands and `startFlow` resolve
+only after the destinations' `on()` handlers for that command have settled or
+timed out. See
+[Gate a destination with consent](../../website/docs/guides/consent/index.mdx#gate-a-destination-with-consent).
+
+## Response Delegation (env.respond)
+
+Destinations can customize HTTP responses by calling
+`context.env.respond?.({ body, status?, headers? })`. This is useful for
+destinations that need to signal success/failure back to the HTTP caller. First
+call wins (idempotent). The respond function is optional, only present when the
+source provides one.
+
+## Setup (optional)
+
+Destinations can implement an optional `setup()` lifecycle to provision external
+resources, for example a BigQuery dataset and table, a Pub/Sub topic, or a
+warehouse schema. Setup is **never** invoked by the runtime, push, init, or
+deploy. It runs only when an operator explicitly types
+`walkeros setup destination.<name>`.
+
+The signature is
+`(ctx: LifecycleContext<Config<T>, Env<T>>) => Promise<unknown>`, where
+`LifecycleContext` carries `{ id, config, env, logger }`. Idempotency is the
+package's responsibility: the framework adds no opinion. Use
+`resolveSetup(ctx.config.setup, DEFAULTS)` from `@walkeros/core` to normalize
+the `boolean | object` shape into a concrete options object.
+
+See [walkeros-create-destination](../walkeros-create-destination/SKILL.md),
+[walkeros-understanding-sources](../walkeros-understanding-sources/SKILL.md),
+[walkeros-understanding-stores](../walkeros-understanding-stores/SKILL.md), and
+the `walkeros setup` CLI documentation for the authoring template and operator
+workflow.
+
+## Related Skills
+
+- [walkeros-understanding-flow](../walkeros-understanding-flow/SKILL.md) - How
+  destinations fit in architecture
+- [walkeros-understanding-mapping](../walkeros-understanding-mapping/SKILL.md) -
+  Configure transformations
+- [walkeros-create-destination](../walkeros-create-destination/SKILL.md) -
+  Create new destination
+
+**Source Files:**
+
+- [packages/core/src/types/destination.ts](../../packages/core/src/types/destination.ts) -
+  Interface
+
+**Package READMEs:**
+
+- [packages/web/destinations/gtag/README.md](../../packages/web/destinations/gtag/README.md) -
+  gtag example
+- [packages/web/destinations/plausible/README.md](../../packages/web/destinations/plausible/README.md) -
+  Plausible (template)
+
+**Documentation:**
+
+- [Website: Destinations](../../website/docs/destinations/index.mdx) - Overview
+- [Website: Create Your Own](../../website/docs/destinations/create-your-own.mdx) -
+  Guide

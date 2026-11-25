@@ -1,0 +1,156 @@
+---
+name: update-saasmail
+description: Update a deployed saasmail instance to the latest release (npx saasmail@latest upgrade), or sync a fork or local clone with https://github.com/choyiny/saasmail. Use this skill whenever the user wants to update saasmail, upgrade it, get the latest saasmail, pull upstream changes, sync or rebase on upstream, or says "/update-saasmail". For a fork it adds the upstream remote if missing, rebases local commits on upstream/main, auto-stashes uncommitted work, and prefers upstream on conflicts.
+---
+
+# Update saasmail
+
+Two paths. Pick by how the instance was installed:
+
+- **Installed with `npx saasmail install`** (state in `~/.saasmail/<slug>/`, or `SAASMAIL_HOME`): follow **Upgrade from npm**.
+- **Installed from a clone** (`yarn saasmail install`, state in the checkout's `.saasmail/`), or a fork or modified code the user keeps running from a clone: follow **Sync a fork from upstream** (below).
+
+Ask if unsure. Never deploy from a clone with `yarn deploy` for an install the package owns.
+
+## Upgrade from npm
+
+`upgrade` is npm-only; run it from any directory. Same rule as onboarding: you run the read-only plan, **the user runs the apply in their own terminal, not with `!`**, because the apply prints the setup code and credential prompts must stay out of this conversation.
+
+1. `npx saasmail status [--name <name>]` shows the recorded install, the running version and **Latest** on npm.
+2. Plan (read-only, safe from your shell):
+
+   ```bash
+   npx saasmail@latest upgrade --plan [--name <name>]
+   ```
+
+   Walk the user through it: new migrations, resources and secrets, and the plan digest. Say plainly that **migrations cannot be undone**; if a release is broken, the way back is the next release.
+
+3. It stops, changing nothing, in two cases:
+   - **Downgrade**: the site runs a newer version than the package. Tell the user the version it names; never work around it.
+   - **Custom code**: the running version is not a release (a modified fork, a dirty or diverged commit, or unknown). Ask explicitly whether they want to replace it. Only on a clear yes, the plan and apply get `--replace-custom-code`.
+4. Ask for an explicit yes, then give the user the apply command the plan printed (it ends with `--expect-plan <digest> --yes`) to run in their own terminal.
+5. If it fails, the message prints the command to continue. Ask for the error lines (never a `Setup code:` line), help fix the cause, and have them run `npx saasmail@latest upgrade --resume [--name <name>]` in their terminal. `--resume` continues even if the site is down. "The plan changed since it was reviewed" means something moved: plan again.
+6. Run `npx saasmail status [--name <name>]` yourself and confirm the running version matches Latest.
+
+## Sync a fork from upstream
+
+Sync the local saasmail fork with the latest changes from `choyiny/saasmail` while preserving the user's local commits on top.
+
+### Why this exists
+
+The user maintains a fork (or local clone) of `https://github.com/choyiny/saasmail` with their own commits layered on top. They want a one-shot command that:
+
+1. Grabs the latest upstream state.
+2. Replays their local commits on top (so local work stays at HEAD).
+3. Doesn't get stuck on conflicts they don't care about — when a hunk can't auto-merge, upstream wins.
+
+Regular `git pull` creates merge commits and doesn't give conflict preference. Regular `git rebase` halts on conflicts. This skill wraps the right invocation.
+
+### Preconditions
+
+Before running anything, confirm:
+
+- Working directory is the saasmail repo (check for `wrangler.jsonc` or `wrangler.jsonc.example` and `worker/` directory). If not, stop and tell the user.
+- The current branch is the one they want to update. Usually `main`. If they're on a feature branch, ask which branch to rebase onto upstream/main before proceeding.
+
+### Steps
+
+#### 1. Ensure the `upstream` remote exists
+
+Run `git remote -v` and check for an `upstream` entry pointing at `https://github.com/choyiny/saasmail` (allow `.git` suffix and `git@github.com:choyiny/saasmail.git` SSH form).
+
+- If missing: `git remote add upstream https://github.com/choyiny/saasmail.git`
+- If present but pointing elsewhere: stop and ask the user — don't silently rewrite a remote they configured deliberately.
+
+#### 2. Stash uncommitted changes if any
+
+Run `git status --porcelain`. If there is any output (tracked modifications or staged changes):
+
+```bash
+git stash push -u -m "update-saasmail auto-stash"
+```
+
+Remember that you stashed, so you can restore at the end. Untracked-but-ignored files are fine to leave alone (`-u` covers untracked, not ignored).
+
+#### 3. Fetch upstream
+
+```bash
+git fetch upstream
+```
+
+#### 4. Rebase onto upstream/main with upstream-wins conflict strategy
+
+```bash
+git rebase upstream/main -X ours
+```
+
+**About the `-X ours` flag:** Inside a rebase, "ours" is the branch being rebased _onto_ (upstream/main) and "theirs" is the commits being replayed (the user's local commits). So `-X ours` means: when a hunk can't be auto-merged, take upstream's version. Local commits are still replayed — their non-conflicting changes stay. This matches the user's intent: keep local work, but if a conflict is unresolvable, let upstream win.
+
+If the rebase still stops (e.g., a whole file conflict that `-X ours` can't resolve, like add/add or delete/modify), report the conflicted paths to the user and ask whether to:
+
+- abort (`git rebase --abort`) and let them resolve manually, or
+- accept upstream's version wholesale for those paths (`git checkout --theirs -- <path>` is wrong here because we're in a rebase — use `git checkout --ours -- <path>` to take the upstream version, then `git add` and `git rebase --continue`).
+
+Never run `git rebase --skip` without asking — that silently drops one of the user's commits.
+
+#### 5. Bring `wrangler.jsonc` up to date
+
+`wrangler.jsonc` is gitignored, so the rebase never touches it: bindings, crons and vars that upstream added to `wrangler.jsonc.example` are missing until they are copied over. Compare the two files and show the user each top-level block or `vars` key present in the example but absent from their config (for example `workflows`, `durable_objects` and its `migrations`, or a changed `triggers.crons`). Add the ones they accept, keeping their own values and IDs; never overwrite a value they already set.
+
+Then check push notifications:
+
+```bash
+wrangler secret list
+grep "VAPID_PUBLIC_KEY" wrangler.jsonc
+```
+
+If `VAPID_PRIVATE_KEY` is missing from `wrangler secret list` **or** `VAPID_PUBLIC_KEY` is missing from `wrangler.jsonc`, prompt the user:
+
+> Browser push notifications aren't configured. Generate VAPID keys now? (If skipped, push remains disabled until you run `yarn vapid:generate`.)
+
+**If yes**, run the same flow as the onboarding step:
+
+1. `yarn vapid:generate` — copy the printed `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`.
+2. `wrangler secret put VAPID_PRIVATE_KEY` — paste the private key when prompted.
+3. Edit `wrangler.jsonc` to add under `vars`:
+   ```jsonc
+   "VAPID_PUBLIC_KEY": "<paste VAPID_PUBLIC_KEY here>",
+   "VAPID_SUBJECT": "mailto:admin@<host-of-BASE_URL>"
+   ```
+
+**If no**, proceed without blocking.
+
+#### 5a. Apply database migrations
+
+Run:
+
+```bash
+yarn db:migrate:prod
+```
+
+This ensures any new migrations are applied to the remote D1 database. If the command reports nothing to migrate, that's fine — continue.
+
+#### 6. Restore stashed changes
+
+If you stashed in step 2:
+
+```bash
+git stash pop
+```
+
+If `stash pop` itself conflicts, leave the stash entry in place and tell the user — don't drop their uncommitted work.
+
+#### 7. Report what happened
+
+Give the user a concise summary:
+
+- Whether `upstream` was newly added or already configured.
+- How many commits were pulled from upstream: `git rev-list --count ORIG_HEAD..upstream/main`, run right after the rebase while `ORIG_HEAD` still points at the pre-rebase branch. (`HEAD@{1}` is the rebase's last step, not the old branch, so it counts 0.)
+- Whether any conflicts were auto-resolved in favor of upstream (check rebase output for `CONFLICT` lines that were resolved by the strategy).
+- Whether stashed changes were restored cleanly.
+
+### Non-goals
+
+- Do NOT push to `origin` afterward. The user pushes when they're ready.
+- Do NOT touch branches other than the current one.
+- Do NOT rewrite the `upstream` remote if it already points somewhere unexpected — ask first.

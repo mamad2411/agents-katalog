@@ -1,0 +1,351 @@
+---
+name: titan-forge
+description: Execute the sync.json plan — refactor code, validate with /titan-gate, commit, and advance state (Titan Paradigm Phase 4)
+argument-hint: <--phase N> <--target name> <--dry-run> <--yes>
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Skill, Agent
+---
+
+# Titan FORGE — Execute Sync Plan
+
+You are running the **FORGE** phase of the Titan Paradigm.
+
+Your goal: read `sync.json`, find the next incomplete execution phase, make the actual code changes for each target, validate with `/titan-gate`, commit, and advance state.
+
+> **Context budget:** One phase per invocation. Do not attempt all phases in one session — the context window will fill. Run one phase, report, stop. User re-runs for the next phase.
+
+**Arguments** (from `$ARGUMENTS`):
+- No args → run next incomplete phase
+- `--phase N` → jump to specific phase
+- `--target <name>` → run single target only (for retrying failures)
+- `--dry-run` → show what would be done without changing code
+- `--yes` → skip confirmation prompt (typically passed by `/titan-run` orchestrator)
+
+---
+
+## Step 0 — Pre-flight
+
+1. **Worktree check:**
+   ```bash
+   git rev-parse --show-toplevel && git worktree list
+   ```
+   If not in a worktree, stop: "Run `/worktree` first."
+
+2. **Sync with main (conditional):**
+   ```bash
+   git fetch origin main
+   behind=$(git rev-list HEAD..origin/main --count)
+   ```
+   - If `behind == 0` → already up to date, skip the merge entirely and print "Already up to date with origin/main."
+   - If `behind > 0` → merge:
+     ```bash
+     git merge origin/main --no-edit
+     ```
+     If there are merge conflicts, stop: "Merge conflict detected. Resolve conflicts and re-run `/titan-forge`."
+
+     After a successful merge, run a **duplicate-commit check** to detect re-applied work:
+     ```bash
+     git log origin/main..HEAD --no-merges --format="%s" | sort | uniq -d
+     ```
+     If any subjects are duplicated, print a warning listing them: "WARNING: Duplicate commit subjects found after merge — prior work may have been re-applied. Step 5 will auto-recover completed targets from git log so they are skipped." Do not stop — proceed to Step 3.
+
+3. **Load artifacts.** Read:
+   - `.codegraph/titan/sync.json` — execution plan (if missing: "Run `/titan-sync` first.")
+   - `.codegraph/titan/titan-state.json` — current state
+   - `.codegraph/titan/gauntlet.ndjson` — per-target audit details
+   - `.codegraph/titan/gauntlet-summary.json` — aggregated results
+
+4. **Validate state.** If `titan-state.json` has `currentPhase` other than `"sync"` and no existing `execution` block, stop: "State not ready. Run `/titan-sync` first."
+
+5. **Initialize execution state** (if first run). Before writing a blank `execution` block, **recover already-completed work from the branch's git log** to prevent re-doing commits that are already on the branch:
+
+   ```bash
+   git log origin/main..HEAD --no-merges --format="%s"
+   ```
+
+   Cross-reference each subject line against `sync.json → executionOrder[*].targets[*].commitMessage`. For every match, mark that target as already completed and its phase as completed if all targets in the phase matched.
+
+   Then write `titan-state.json` with the recovered state (pre-populated `completedTargets`, `completedPhases`, and `commits` from `git log origin/main..HEAD --no-merges --format="%H %s"`):
+
+   ```json
+   {
+     "execution": {
+       "currentPhase": <lowest incomplete phase, or 1 if none recovered>,
+       "completedPhases": [<phases where all targets matched>],
+       "currentTarget": null,
+       "completedTargets": [<targets whose commit subjects appeared in git log>],
+       "failedTargets": [],
+       "commits": [<SHAs of matched commits>],
+       "currentSubphase": null,
+       "completedSubphases": [],
+       "diffWarnings": []
+     }
+   }
+   ```
+
+   If any targets were recovered, print: "Recovered N completed targets from branch git log — skipping re-application."
+
+6. **Determine next phase.** Use `--phase N` if provided, otherwise find the lowest phase number not in `completedPhases`.
+
+7. **Print plan:**
+   > Phase N: \<label\> — N targets, estimated N commits
+
+8. **Ask for confirmation** before starting (unless `$ARGUMENTS` contains `--yes`).
+
+---
+
+## Step 1 — Phase-specific execution strategies
+
+Each phase type requires different code-change logic:
+
+### Phase 1: Dead code cleanup
+- Delete the symbol/export
+- Verify no consumers: `codegraph fn-impact <target> -T --json`
+- Remove any orphaned imports
+- Run lint to clean up
+
+### Phase 2: Shared abstractions
+- Extract function/interface to new or existing file
+- Update imports in all consumers
+- Verify with: `codegraph exports <file> -T --json`
+
+### Phase 3: Empty catches / error handling
+- Replace `catch {}` with `catch (e) { logger.debug(...) }` or explicit fallback
+- Use contextually appropriate error handling
+- Subphases: each distinct catch pattern = one commit
+
+### Phase 4: Extractor decomposition
+- Split large `walkXNode` switch cases into handler functions
+- Keep dispatcher thin — handler per node kind
+- Subphases: each extractor = one commit
+
+### Phase 5: General decomposition
+- Read the gauntlet recommendation for the specific target
+- Apply the recommended decomposition strategy
+- Subphases: each function split = one commit
+
+### Phase 6: Small FAIL fixes
+- Read the gauntlet recommendation for the specific target
+- Apply the recommended fix (complexity reduction, metric improvement)
+- Group by domain where possible
+
+---
+
+## Step 2 — Per-target execution loop
+
+For each target in the current phase:
+
+1. **Skip if done.** Check if target is already in `execution.completedTargets`. If so, skip.
+
+2. **Update state.** Set `execution.currentTarget` in `titan-state.json`.
+
+3. **Read gauntlet entry.** Find this target in `gauntlet.ndjson` → get recommendation, violations, metrics.
+
+4. **Understand before touching.** Run codegraph commands:
+   ```bash
+   codegraph context <target> -T --json
+   ```
+   If blast radius > 0:
+   ```bash
+   codegraph fn-impact <target> -T --json
+   ```
+
+5. **Check if already fixed.** If the file has changed since gauntlet ran, re-check metrics:
+   ```bash
+   codegraph complexity --file <file> --health -T --json
+   ```
+   If the target now passes all thresholds, skip with note: "Target already passes — skipping."
+
+6. **Read source file(s).** Understand the code before editing.
+
+7. **Apply the change** based on phase strategy (Step 1) + gauntlet recommendation.
+
+8. **Stage changed files:**
+   ```bash
+   git add <specific changed files>
+   ```
+
+9. **Diff review (intent verification):**
+   Before running gate or tests, verify the diff matches the intent. This catches cases where the code change is structurally valid but doesn't match what was planned.
+
+   Collect the context:
+   ```bash
+   git diff --cached --stat
+   git diff --cached
+   ```
+
+   Load the gauntlet entry for this target (from `gauntlet.ndjson`) and the sync plan entry (from `sync.json → executionOrder.find(e => e.phase === currentPhase)`).
+
+   **Check all of the following:**
+
+   **D1. Scope — only planned files touched:**
+   Compare staged file paths against `sync.json → executionOrder.find(e => e.phase === currentPhase).targets` and their known file paths (from gauntlet entries). Flag any file NOT associated with the current target or phase.
+   - File in a completely different domain → **DIFF FAIL**
+   - File is a direct dependency of the target (consumer or import) → **OK** (expected ripple)
+   - Test file for the target → **OK**
+
+   **D2. Intent match — diff aligns with gauntlet recommendation:**
+   First, check if this target is a dead-code target (present in `titan-state.json → roles.deadSymbols`). If so, the expected recommendation is "remove dead code" — skip gauntlet entry lookup (dead-code targets have no gauntlet.ndjson entry) and verify the diff shows only deletions (no new functions or logic added). If the diff contains non-trivial additions for a dead-code target → **DIFF FAIL**.
+
+   Otherwise, read the gauntlet entry's `recommendation` field and `violations` list. Verify the diff addresses them:
+   - If recommendation says "split" → diff should show new functions extracted, original simplified
+   - If recommendation says "remove dead code" → diff should show deletions, not additions
+   - If violation was "complexity > threshold" → diff should reduce complexity, not just move code around
+   - If the diff does something **entirely different** from the recommendation → **DIFF FAIL**
+
+   **D3. Commit message accuracy:**
+   Compare the planned commit message from `sync.json` against what the diff actually does.
+   - Message says "remove dead code" but diff adds new functions → **DIFF WARN**
+   - Message says "extract X from Y" but diff only modifies Y without creating X → **DIFF FAIL**
+
+   **D4. Deletion audit:**
+   If the diff deletes code (lines removed > 10), identify deleted symbols by comparing the pre-change file against removed lines:
+   ```bash
+   # Get the pre-change version's symbols (temp file for shell portability)
+   D4_PRE_EXT="${changed_file##*.}"
+   D4_PRE_TMP=$(mktemp "/tmp/titan-d4-pre-XXXXXX.${D4_PRE_EXT}")
+   git show HEAD:<changed-file> > "$D4_PRE_TMP"
+   codegraph where --file "$D4_PRE_TMP" -T --json 2>/dev/null
+   rm -f "$D4_PRE_TMP"
+   ```
+   Cross-reference with `git diff --cached -- <changed-file>` to find symbols whose definitions appear only in removed lines (lines starting with `-`). For each deleted symbol:
+   ```bash
+   codegraph fn-impact <deleted-symbol> -T --json 2>/dev/null
+   ```
+   If the deleted symbol has active callers not updated in this diff → **DIFF FAIL**: "Deleted <symbol> still has <N> callers not updated in this commit."
+
+   **D5. Leftover check:**
+   If the gauntlet recommendation mentioned specific symbols to remove/refactor, verify they were actually addressed:
+   - Dead symbols listed for removal but still present in the diff → **DIFF WARN**: "Gauntlet listed `<symbol>` for removal but it was not deleted."
+   - Functions marked for decomposition but original is unchanged → **DIFF WARN**: "Gauntlet recommended decomposing `<symbol>` but original function was not simplified."
+   - If all recommended symbols were addressed → **DIFF PASS** (implicit — no warnings emitted)
+
+   **On DIFF FAIL:**
+   ```bash
+   git reset HEAD -- $(git diff --cached --name-only)
+   git checkout -- $(git diff --name-only)
+   ```
+   Add to `execution.failedTargets` with reason starting with `"diff-review: "`. Continue to next target.
+   **On DIFF WARN:** Log the warning but proceed to gate. Include the warning in the gate-log entry.
+
+10. **Run tests** — detect the project's test command from `package.json` (same detection as gate Step 4):
+    ```bash
+    testCmd=$(node -e "const p=require('./package.json');const s=p.scripts||{};const script=s.test?'test':s['test:ci']?'test:ci':null;if(!script){console.log('NO_TEST_SCRIPT');process.exit(0);}const fs=require('fs');const runner=fs.existsSync('yarn.lock')?'yarn':fs.existsSync('pnpm-lock.yaml')?'pnpm':fs.existsSync('bun.lockb')?'bun':'npm';console.log(runner+(script==='test'?' test':' run '+script));")
+    ```
+    - If `testCmd == "NO_TEST_SCRIPT"` → skip pre-gate test run (no test script configured).
+    - Otherwise:
+      ```bash
+      $testCmd 2>&1
+      ```
+      If tests fail → go to rollback (step 13).
+
+    > **Note:** Gate (Step 11) also runs tests. This pre-gate test is a fast-fail optimization — it catches obvious breakage before running the full gate checks (codegraph analysis, semantic assertions, arch snapshot). For projects with fast test suites the duplication is negligible; for slow suites, the tradeoff is: catch failures ~2x faster at the cost of ~2x test time on passing targets.
+
+11. **Run /titan-gate:**
+    Use the Skill tool to invoke `titan-gate`.
+    - If FAIL on **cycle/test/lint/build** (gate auto-rolls back staged changes on Step 2/4 cycle; Step 1 may also report cycle violation via `--cycles` flag — treat that the same as Step 2) → go to rollback (step 13) to also revert working tree.
+    - If FAIL on **any other check** — complexity (Step 3), semantic (Step 5), structural/arch (Steps 1, 5.5, 6-8) — gate does NOT auto-rollback its staging area; forge must clean up for the next target → unstage with `git reset HEAD -- $(git diff --cached --name-only) && git checkout -- $(git diff --name-only)`, add to `execution.failedTargets` with reason, log the gate report, and continue to the next target. Do NOT go to step 13 — that step is for Step 2/4 failures where gate already unstaged; going there again would attempt a duplicate rollback.
+
+12. **On success:**
+    ```bash
+    git commit -m "<commit message from sync.json>"
+    ```
+    - Record commit SHA in `execution.commits`
+    - Add target to `execution.completedTargets`
+    - Record any diff-review warnings by **appending** to `execution.diffWarnings` (if any). Each entry must follow this schema:
+      ```json
+      { "target": "<target-name>", "check": "<D3 or D5>", "message": "<warning text>", "phase": N }
+      ```
+    - Update `titan-state.json`
+
+13. **On failure (test or gate):**
+    ```bash
+    # Discover dirty files at rollback time (don't rely on carried file list)
+    git reset HEAD -- $(git diff --cached --name-only)
+    git checkout -- $(git diff --name-only)
+    ```
+    - Add to `execution.failedTargets` with reason: `{ "target": "<name>", "reason": "<why>", "phase": N }`
+    - Clear `execution.currentTarget`
+    - **Continue to next target** — don't block the whole phase
+
+---
+
+## Step 3 — Phase completion
+
+When all targets in the phase are processed:
+
+1. Add phase number to `execution.completedPhases`
+2. Advance `execution.currentPhase` to the next phase number
+3. Clear `execution.currentTarget`
+4. Write updated `titan-state.json`
+
+---
+
+## Step 4 — Report
+
+Print:
+
+```
+## Phase N Complete: <label>
+
+Targets: X/Y completed, Z failed
+Commits: N
+Files changed: N
+
+### Failed targets (if any):
+- <target>: <reason>
+
+### Next: Phase M — <label> (N targets)
+Run /titan-forge to continue.
+```
+
+If all phases are complete:
+
+```
+## All phases complete
+
+Total commits: N
+Total targets: X completed, Y failed
+Failed targets: <list or "none">
+
+Run /titan-gate on the full branch to validate.
+```
+
+---
+
+## Edge Cases
+
+- **Test failure mid-phase:** Revert target, mark failed, continue. Don't block the whole phase.
+- **Merge conflict with main:** Stop, report, ask user to resolve.
+- **Gate detects new cycle:** Stop immediately — this is a real problem, not skippable.
+- **Target already fixed on main:** Check if file has changed since gauntlet. If metrics now pass, skip with note.
+- **Interrupted mid-phase:** Re-running picks up from `execution.currentTarget`. Already-committed targets are skipped.
+- **`--dry-run`:** Walk through all targets, print what would be done (phase strategy, gauntlet recommendation, files affected), but make no changes.
+- **`--target <name>`:** Run only that target. Useful for retrying entries in `failedTargets`.
+
+---
+
+## Rules
+
+- **One phase per invocation.** Stop after the phase completes. User re-runs for next.
+- **Resumable.** If interrupted, re-running picks up where it left off.
+- **Always use `--json` and `-T`** for codegraph commands.
+- **Gate before commit.** Every commit must pass `/titan-gate`. No exceptions.
+- **One commit per logical unit.** Use commit messages from `sync.json`.
+- **Stage only specific files.** Never `git add .` or `git add -A`.
+- **Rollback on failure is gentle** — `git reset HEAD -- $(git diff --cached --name-only)` to unstage, then `git checkout -- $(git diff --name-only)` to revert working tree. Never `git reset --hard`.
+- **Subphase awareness** — phases 3-6 have subphases. Each subphase = one commit. Track at subphase level.
+- **Never skip `/titan-gate`.** Even for "trivial" changes.
+
+## Relationship to Other Skills
+
+| Skill | Produces | Used by /titan-forge |
+|-------|----------|---------------------|
+| `/titan-recon` | `titan-state.json`, `GLOBAL_ARCH.md` | State tracking, domain context |
+| `/titan-gauntlet` | `gauntlet.ndjson`, `gauntlet-summary.json` | Per-target recommendations |
+| `/titan-sync` | `sync.json` | Execution plan (phases, targets, commits) |
+| `/titan-gate` | Gate verdict | Called per-commit for validation |
+| `/titan-reset` | Clean slate | Removes all artifacts |
+
+## Self-Improvement
+
+This skill lives at `.claude/skills/titan-forge/SKILL.md`. Edit if phase strategies need refinement or execution loop needs adjustment after dogfooding.

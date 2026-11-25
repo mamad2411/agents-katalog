@@ -1,0 +1,470 @@
+---
+name: zhub-management
+description: |
+  Manage Zerone Hub resources via the `zhub` CLI. Use when user asks to
+  create/update/delete agents, skills, tools, mcps, providers, or to view chat
+  history (chat sessions, chat messages, conversation records). Covers full CRUD on
+  five domains: Agent, Skill, Tool, MCP, and Provider+Model, plus read-only chat
+  history access.
+---
+
+# Zerone Hub Management
+
+## Overview
+
+This skill teaches you how to manage Zerone Hub resources through the `zhub` CLI.
+
+## When to Use
+
+Trigger when the user asks to manage resources on Zerone Hub:
+
+- Creating, updating, or deleting agents
+- Deploying, starting, stopping, or undeploying agents
+- Uploading or deleting skills
+- Creating, updating, or deleting tools and MCPs
+- Creating, updating, or deleting providers and models
+- Listing agents, skills, tools, MCPs, or providers
+- Viewing or searching chat history (sessions and messages, filtered by agent, user, keyword, time range, or message content)
+- Checking CLI login status or troubleshooting CLI access
+
+**Do NOT use when:** the user is asking about the control-panel web UI, runtime APIs, or frontend behavior that does not go through `zhub`.
+
+## Supported resource domains
+
+- **Agent** (CRUD, deploy lifecycle, associations)
+- **Skill** (upload, download, delete)
+- **Tool** (CRUD, default flag)
+- **MCP** (CRUD, headers are masked in CLI output)
+- **Provider + Model** (CRUD, probe)
+- **Chat History** (read-only: list sessions with server-side filters, get session detail, view messages)
+
+## Pre-flight Check
+
+Every time you enter this skill, first verify the CLI is ready:
+
+1. **Check installation**: Run `which zhub`. If not found, tell the user:
+   ```
+   npm install -g @zerone-agent/zhub
+   ```
+   Or with Bun: `bun add -g @zerone-agent/zhub`
+
+2. **Check login**: Run `zhub whoami`. If it fails or shows no profile, tell the user:
+   ```
+   zhub login --url <server-url> --token cli_xxxxxxxxxxxx
+   ```
+   The token can be obtained from control-panel web UI: Settings → CLI Tokens.
+
+## Output Convention
+
+**Always use `--output json`** when you need to parse the output programmatically:
+
+```bash
+zhub agent list --output json     # parseable JSON with { data, meta } wrapper
+zhub agent get my-agent --output json
+```
+
+Default `table` output is for humans — it contains formatting characters that are hard to parse.
+
+For YAML output (single objects): `--output yaml`
+
+## Decision Tree
+
+### 3.1 "Create an agent"
+
+1. List existing agents to understand naming conventions:
+   ```bash
+   zhub agent list --output json
+   ```
+2. List available providers and models:
+   ```bash
+   zhub provider list --output json
+   zhub provider get <id> --output json   # see available models
+   ```
+3. Ask the user for required fields:
+   - **id** (required, kebab-case identifier, e.g. `research-agent`)
+   - **config.title** (localized display titles, e.g. `zh` and `en`)
+   - **config.description** (localized descriptions, e.g. `zh` and `en`)
+   - **config.modelId** (modelId from provider, e.g. `claude-sonnet-4-5`)
+   - **config.systemPrompt** (the agent's system prompt)
+4. Write an `agent.yaml` file:
+   ```yaml
+   id: research-agent
+   desktop: true
+   mobile: false
+   isDefault: false
+   config:
+     title:
+       zh: 研究员
+       en: Research Agent
+     description:
+       zh: 负责深度研究与总结
+       en: Performs deep research and synthesis
+     modelId: claude-sonnet-4-5
+     systemPrompt: |
+       你是一个研究员，擅长深度搜索和总结。
+     maxTurns: 20
+     permissionMode: auto
+   ```
+5. Create the agent:
+   ```bash
+   zhub agent create --file ./agent.yaml --output json
+   ```
+6. Verify:
+   ```bash
+   zhub agent get research-agent --output json
+   ```
+7. Optionally deploy:
+   ```bash
+   zhub agent deploy research-agent
+   ```
+
+### 3.2 "Upload a skill"
+
+1. Verify the skill directory has `SKILL.md` with valid frontmatter (`name` + `description`).
+2. Ask the user for the skill name (kebab-case, globally unique) if not obvious from frontmatter.
+3. Pack and upload (`--name` is required on every `skill create`):
+   ```bash
+   zhub skill create --from-dir ./my-skill/ \
+     --name my-skill \
+     --title "中文名称" \
+     --title-en "English title" \
+     --description "中文描述" \
+     --description-en "English description" \
+     --output json
+   ```
+   There is no frontmatter fallback for upload metadata: `--title`
+   defaults to the `--name` value on create; omitted `--description`/
+   `--description-en` are not sent at all (the Hub keeps existing values
+   on update and stores empty on create), so pass them explicitly. The
+   four metadata flags `--title`, `--title-en`, `--description`, and
+   `--description-en` are available on both `skill create` and
+   `skill update`.
+4. Verify:
+   ```bash
+   zhub skill get <skill-name>
+   ```
+
+**Bundle (composite skill) uploads** — a directory containing multiple
+nested `SKILL.md` files (e.g. a suite repo's `skills/` directory) is
+packed and uploaded as one entry; the runtime registers every nested
+skill automatically:
+
+1. Verify every nested `SKILL.md` has frontmatter with `name` +
+   `description` (the CLI validates all of them and reports per-file
+   errors; CRLF line endings are accepted).
+2. Upload with the same flags as a single skill (`--name` is required
+   on every create, and metadata follows the same no-fallback rules):
+   ```bash
+   zhub skill create --from-dir ./my-suite/skills/ \
+     --name my-suite \
+     --title "套件中文名" \
+     --title-en "Suite Title" \
+     --description "中文描述" \
+     --description-en "English description" \
+     --output json
+   ```
+3. Update an existing bundle in place (the zip is replaced wholesale):
+   ```bash
+   zhub skill update my-suite --from-dir ./my-suite/skills/ --output json
+   ```
+4. Verify — fetch the download URL and unpack the zip to count the
+   nested `SKILL.md` entries:
+   ```bash
+   zhub skill download my-suite --output json
+   ```
+
+Bundle notes: 50MB size cap; `.git`, `node_modules`, `.DS_Store`,
+`dist`, `build`, `.zerone-uploads` are excluded automatically;
+sub-skills added upstream are included on the next `update` without any
+extra config.
+
+### 3.3 "Test a provider"
+
+**Mode A — test a stored provider:**
+```bash
+zhub provider probe <id>
+```
+
+**Mode B — test a custom config (not yet saved):**
+```bash
+zhub provider probe \
+  --base-url https://api.anthropic.com \
+  --api-key sk-ant-xxxx \
+  --protocol anthropic \
+  --output json
+```
+
+If the probe succeeds, suggest creating the provider:
+```bash
+zhub provider create --file ./provider.yaml
+```
+
+### 3.4 "Create or update a tool"
+
+1. Ask the user for:
+   - **name** (required, kebab-case identifier, e.g. `my-tool`)
+   - **title** (required, display title, e.g. `我的工具`)
+   - **description** (required, what the tool does)
+   - **isDefault** (optional boolean, defaults to false)
+2. Write a `tool.yaml` file:
+   ```yaml
+   name: my-tool
+   title: 我的工具
+   description: 这是一个示例工具
+   isDefault: false
+   ```
+3. Create or update:
+   ```bash
+   zhub tool create --file ./tool.yaml --output json
+   zhub tool update my-tool --file ./tool.yaml --output json
+   ```
+4. Verify:
+   ```bash
+   zhub tool get my-tool --output json
+   ```
+
+### 3.5 "Create or update an MCP"
+
+1. Ask the user for:
+   - **name** (required, kebab-case identifier)
+   - **title** (required, display title)
+   - **description** (required)
+   - **transportType** (required, `sse` or `http`)
+   - **url** (optional, e.g. `http://localhost:3001/sse`)
+   - **headers** (optional key-value map, e.g. `Authorization`, `X-Api-Key`)
+   - **retryMaxRetries** / **retryTimeoutMs** (optional)
+2. Write an `mcp.yaml` file:
+   ```yaml
+   name: my-mcp
+   title: 我的 MCP
+   description: 这是一个示例 MCP 服务
+   transportType: http
+   url: http://localhost:3001/sse
+   headers:
+     Authorization: Bearer xxxx
+     X-Api-Key: sk-xxxx
+   retryMaxRetries: 3
+   retryTimeoutMs: 5000
+   ```
+3. 探测 MCP 以验证配置并获取 tools：
+   ```bash
+   zhub mcp probe --file ./mcp.yaml --output json
+   ```
+4. 探测成功后创建（CLI 会自动探测，也可以手动）：
+   ```bash
+   zhub mcp create --file ./mcp.yaml --output json
+   zhub mcp update my-mcp --file ./mcp.yaml --output json
+   ```
+   注：SSE transport 暂不支持探测，创建时不强制。
+5. Verify:
+   ```bash
+   zhub mcp get my-mcp --output json
+   ```
+   Headers will be masked as `<hidden>` in the output.
+
+### 3.6 "Update agent associations"
+
+Use dedicated association commands (not `update`, which overwrites the full config):
+
+```bash
+# Set subagents
+zhub agent set-subagents <name> subagent-a subagent-b
+
+# Set tools
+zhub agent set-tools <name> bash edit read write
+
+# Set mcps
+zhub agent set-mcps <name> mcp-a mcp-b
+
+# Set skills
+zhub agent set-skills <name> skill-1 skill-2
+```
+
+### 3.7 "Deploy lifecycle"
+
+```bash
+zhub agent deploy <name>          # deploy (creates runtime container)
+zhub agent status <name>          # check deployment status
+zhub agent stop <name>            # stop running container
+zhub agent start <name>           # restart stopped container
+zhub agent undeploy <name>        # archive (keeps data)
+zhub agent undeploy <name> --purge  # permanently delete
+```
+
+### 3.8 "View or search chat history"
+
+Chat history is **read-only** — there is no create/update/delete for sessions
+or messages via the CLI. Three commands:
+
+```bash
+# List sessions (ordered by last-activity DESC), with server-side filters
+zhub chat list [--agent <name>] [--user <u>] [--keyword <title-kw>] \
+               [--text <content-kw>] [--from <RFC3339>] [--to <RFC3339>] \
+               [--page N] [--page-size N] [--output table|json|yaml]
+
+# Get one session's metadata
+zhub chat get <session-id> [--output yaml|json|table]
+
+# View a session's full message stream (paginated)
+zhub chat messages <session-id> [--page N] [--page-size N] [--full] [--output table|json|yaml]
+```
+
+**Filter semantics** (all optional, empty string = not sent):
+
+| Flag | Matches | Notes |
+|------|---------|-------|
+| `--agent` | `agent_id` exact match | cheapest, indexed |
+| `--user` | `user_name` OR `user_id` fuzzy (LIKE) | same column set as audit logs |
+| `--keyword` | session **title** only (LIKE) | does NOT search message content |
+| `--text` | any message **content** (cross-table scan) | **expensive**; see guard rules below |
+| `--from` / `--to` | `updated_at` (last activity time, NOT creation time); RFC3339, closed interval | indexed |
+
+**`--text` guard rules** (cross-table scan on message content):
+
+- Must be ≥ 2 characters (CLI checks locally, exits 2 if shorter)
+- Non-member roles (admin/maintainer) **must** combine it with at least one
+  narrowing filter (`--agent` / `--user` / `--from` / `--to`), or the server
+  returns 400. Member role is exempt (already scoped to own sessions)
+- Case sensitivity depends on database collation (MySQL: case-insensitive by
+  default; sqlite: case-sensitive) — not a contract, don't rely on either
+
+**`--from > --to`** is rejected locally (exit 2, no request sent).
+
+**Output shapes**:
+
+- `table` (default): human-readable; `id` column shows the **full session ID**
+  (can be directly fed to `chat get` / `chat messages`); `hidden` column shows
+  whether a session is hidden; pagination stats go to **stderr** (stdout stays
+  pipe-friendly)
+- `--output json`: `{ data: [...], meta: { page, pageSize, total, totalPages } }`;
+  `data[].content` is a **JSON array of message parts** (e.g.
+  `[{"type":"text","text":"..."}]`) — parse with `jq` to extract text:
+  ```bash
+  zhub chat messages <id> --output json | jq -r '.data[].content | fromjson? // . | if type=="array" then map(select(.type=="text").text) | join("\n") else . end'
+  ```
+- `--output yaml`: raw objects, no column-level processing
+- `--full` (messages only): widen content preview from 80 to 4000 chars;
+  for complete content always use `--output json` and parse `content`
+
+**Role scoping**: admin/maintainer see all sessions in the tenant; member sees
+only their own sessions (server-enforced, cannot be bypassed by any flag).
+
+## Common Mistakes
+
+- **MCP headers are masked**: `zhub mcp get` always shows headers as `<hidden>`; you cannot read back the original secret after creation. If lost, update the MCP with new headers.
+- **Provider apiKey is write-only**: After creating a provider, the API key cannot be read back. If lost, `update` the provider with a new key.
+- **Deleting an agent doesn't auto-undeploy**: Always `zhub agent undeploy <name>` before `zhub agent delete <name>`.
+- **Skill zip excludes hidden dirs**: `.git`, `node_modules`, `.DS_Store`, `dist`, `build`, `.zerone-uploads` are automatically excluded from the zip.
+- **Skill name must be globally unique**: Check with `zhub skill list` before creating.
+- **`--name` is required on every `skill create`**: Single-skill and bundle directories alike. There is no frontmatter fallback for any upload metadata — `--title` defaults to the name on create, and omitted `--description`/`--description-en` are not sent (the Hub keeps existing values on update) — so pass them explicitly.
+- **Agent YAML has two supported shapes**: `id` is required when creating an agent and optional when updating one. Prefer native `config` with `title`, `description`, `modelId`, and other configuration nested beneath it. The compatible flat shape accepts `title`, `description`, `model`, `systemPrompt`, `maxTurns`, and `permissionMode`; `model` maps to `config.modelId`, and `name` remains a legacy Chinese-title alias. Do not define the same normalized field in flat and nested form because the CLI rejects conflicts. See `references/agent.yaml`.
+- **Agent update ID must match when provided**: In `zhub agent update <name> --file agent.yaml`, an optional YAML `id` must exactly match positional `<name>`. Agent update accepts `--file`, not `--json`.
+- **Prefer `--set` for single-field changes**: `zhub agent update <name> --set key=value` (repeatable) patches fields incrementally via read-modify-write — the rest of the config is preserved. Examples: `--set maxTurns=100`, `--set "config.group=桌面端"`, `--set title.zh=新标题`, `--set guest=true`. Values are YAML-parsed (numbers, booleans, strings, `[a, b]`, `{zh: x}`). Platform flags accept `desktop`/`mobile`/`isDefault`/`default`/`guest` and their `*Enabled` aliases, and must be boolean. Any other key is a config path (dot-separated, optional `config.` prefix; top-level `model` maps to `modelId`). `--set` and `--file` are mutually exclusive. Use `--file` only for full-config replacement — it overwrites the whole config, so fields omitted from the YAML are cleared.
+- **Agent platform flags**: On create, `--desktop`/`--no-desktop` and `--mobile`/`--no-mobile` override YAML `desktop`/`mobile`; both default to false when omitted. `--default`/`--no-default` overrides YAML `isDefault`, and `--guest`/`--no-guest` overrides YAML `guest` (Open to Guests), with native last-argument-wins behavior. Update takes state from YAML and leaves omitted state fields unchanged.
+- **Using `update` to change associations**: `update` overwrites the whole config. Use `set-subagents`, `set-tools`, or `set-skills` instead.
+- **Tool/MCP names are URL-encoded internally**: Use the raw name in CLI commands, even with spaces or special characters.
+- **MCP probe is required for create**: CLI automatically probes before creating. If probe fails, creation is aborted. SSE transport is not supported for probe yet.
+- **`--keyword` searches titles only**: To find sessions by message content, use `--text` (and combine with a narrowing filter if you're admin/maintainer — the server will 400 otherwise). Don't use `--keyword` expecting message-body hits.
+- **`--from`/`--to` filter on `updated_at`, not `created_at`**: A session created long ago but still active will match recent time ranges. If you need "recently created" semantics, this flag won't give it — there is no creation-time filter.
+- **`chat messages` content is parts JSON**: In `--output json`, `data[].content` is a JSON-encoded array of parts, not plain text. Use `jq` with `fromjson? // .` to extract text (see Decision Tree 3.8) — some legacy rows may contain plain text instead of JSON, and a bare `fromjson` will error on those. In table mode the CLI already renders a plain-text preview with graceful degradation (80 chars, or 4000 with `--full`).
+- **Session IDs in table output are NOT truncated**: The `id` column shows the full UUID — it can be directly copied to `zhub chat get <id>` or `zhub chat messages <id>`.
+- **Chat history is read-only**: There is no `chat create` / `chat delete` via CLI. To delete a session, use the control-panel web UI.
+- **Local validation exits** (all exit 2, no request sent): `--from` later than `--to`; `--text` shorter than 2 characters; invalid RFC3339 timestamp in `--from`/`--to`; `--page`/`--page-size` not a positive integer. These are checked locally — you'll never see a server error for them.
+
+## Error Recovery
+
+| Exit code | HTTP status | Meaning | Action |
+|-----------|-------------|---------|--------|
+| 0 | 200 | Success | — |
+| 2 | 400 | Bad request | Check parameters, fix and retry |
+| 3 | 401 | Unauthorized | Tell user to `zhub login` again |
+| 4 | 403 | Forbidden | User needs admin role in control-panel |
+| 5 | 404 | Not found | Check name/id exists |
+| 6 | 409 | Conflict | Resource already exists, use different name or `update` |
+| 8 | 5xx | Server error | Retry once, then report to user |
+| 9 | — | Network error | Check server URL and connectivity |
+
+## Command Reference
+
+### Global
+```
+zhub login --url <url> --token <token>   # Authenticate
+zhub whoami                               # Show current user
+zhub --help                               # Full help
+```
+
+### Agent (14 commands)
+```
+zhub agent list [--desktop] [--mobile] [--output json|table|yaml]
+zhub agent get <name> [--output yaml]
+zhub agent create --file <path> [--desktop|--no-desktop] [--mobile|--no-mobile] [--default|--no-default] [--output yaml]
+zhub agent update <name> --file <path> [--output yaml]
+zhub agent update <name> --set key=value [--set key=value ...]  # incremental patch, preserves other fields
+zhub agent delete <name>
+zhub agent set-subagents <name> <sub1> [sub2 ...]
+zhub agent set-tools <name> <tool1> [tool2 ...]
+zhub agent set-mcps <name> <mcp1> [mcp2 ...]
+zhub agent set-skills <name> <skill1> [skill2 ...]
+zhub agent deploy <name> [--force]
+zhub agent undeploy <name> [--purge]
+zhub agent start <name>
+zhub agent stop <name>
+zhub agent status <name> [--output json|text]
+```
+
+### Provider (6 commands)
+```
+zhub provider list [--output json|table|yaml]
+zhub provider get <id> [--output yaml]
+zhub provider create --file <path> | --json '<json>'
+zhub provider update <id> --file <path> | --json '<json>'
+zhub provider delete <id>
+zhub provider probe <id> | --base-url X --api-key Y --protocol Z
+```
+
+### Skill (6 commands)
+```
+zhub skill list [--type expert|community] [--output json|table|yaml]
+zhub skill get <name> [--output yaml]
+zhub skill create --from-dir <dir> --name <name> [--title T] [--title-en T] [--description D] [--description-en D] [--type T]
+zhub skill update <name> --from-dir <dir> [--title T] [--title-en T] [--description D] [--description-en D] [--type T]
+zhub skill delete <name>
+zhub skill download <name> [--output json|text]
+```
+
+`--from-dir <dir>` accepts both single-skill directories (one top-level
+`SKILL.md`) and bundle directories (multiple nested `SKILL.md` anywhere
+in the tree). `--name` is required on every create.
+
+### Tool (5 commands)
+```
+zhub tool list [--output json|table|yaml]
+zhub tool get <name> [--output yaml]
+zhub tool create --file <path> | --json '<json>' [--output json|table|yaml]
+zhub tool update <name> --file <path> | --json '<json>' [--output json|table|yaml]
+zhub tool delete <name>
+```
+
+### MCP (6 commands)
+```
+zhub mcp list [--output json|table|yaml]
+zhub mcp get <name> [--output yaml]
+zhub mcp create --file <path> | --json '<json>' [--output json|table|yaml]
+zhub mcp update <name> --file <path> | --json '<json>' [--output json|table|yaml]
+zhub mcp delete <name>
+zhub mcp probe <name> | --file <path> | --json '<json>' [--output json|table|yaml]
+```
+
+### Chat History (3 commands, read-only)
+```
+zhub chat list [--agent <name>] [--user <u>] [--keyword <kw>] [--text <kw>] \
+               [--from <RFC3339>] [--to <RFC3339>] [--page N] [--page-size N] [--output table|json|yaml]
+zhub chat get <session-id> [--output yaml|json|table]
+zhub chat messages <session-id> [--page N] [--page-size N] [--full] [--output table|json|yaml]
+```
+
+`--text` is a cross-table message-content scan: ≥ 2 chars required; admin/maintainer
+must combine it with `--agent`/`--user`/`--from`/`--to` (server 400 otherwise;
+member exempt). `--from`/`--to` apply to `updated_at` (last activity, not creation).
+Pagination stats go to stderr in table mode; `--output json` wraps in
+`{ data, meta }` where `data[].content` is parts JSON.

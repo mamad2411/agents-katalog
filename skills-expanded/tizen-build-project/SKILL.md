@@ -1,0 +1,294 @@
+---
+name: tizen-build-project
+description: Build a Tizen app/project (Native, DotNET, WebApp, standalone RPK resource package, or Platform/GBS). TRIGGERS — 빌드, 빌드해줘, 앱 빌드, 앱 빌드해줘, 프로젝트 빌드, 타이젠 빌드, 타이젠 앱 빌드, RPK 빌드, build, build app, build the app, build project, tz build, gbs build, build native/dotnet/webapp/rpk/platform. When the user asks to build, ROUTE HERE FIRST and follow this skill — do NOT run SDK tools by hand or debug PATH yourself; this skill's CLI runner detects the type and builds/packages correctly.
+
+metadata:
+  author: Samsung Electronics
+  last-updated: "2026-10-20"
+  keywords:
+    - 빌드
+    - 빌드해줘
+    - 앱 빌드
+    - 앱 빌드해줘
+    - 프로젝트 빌드
+    - 타이젠 빌드
+    - 타이젠 앱 빌드
+    - build
+    - build app
+    - build the app
+    - build project
+    - Tizen build
+    - tz build
+    - tz build native
+    - tz build dotnet
+    - tz build webapp
+---
+
+### Claude Code (서브에이전트 위임)
+
+> Agent tool이 없으면 (예: Cline) 아래 "CLI Runner" 섹션으로 가세요.
+
+1. Agent tool로 `tizen-build-project` 에이전트 호출 (개인 배포 또는 `tizen-sdk-skills:tizen-build-project`)
+2. 수집된 입력(프로젝트 경로, 빌드 타입, 프로필, Platform 프로젝트면 `--arch`)을 프롬프트로 전달
+3. 서브에이전트의 JSON Envelope를 그대로 사용자에게 전달 — 아래 "결과 보고" 규칙을 따른다
+   (fenced `json` 블록으로 원문을 싣고, 그 아래 요약은 1~2줄만)
+
+### CLI Runner (Cline / Claude Code)
+
+**Pick the ONE block for the shell your terminal / tool runs — the prompt tells you: `$` is Bash (Linux, macOS, Claude Code's Git Bash on Windows, Codex on Linux / macOS) → Bash block; `PS C:\…>` is PowerShell (Codex on Windows, Cline PowerShell terminal) → PowerShell block; `C:\…>` is cmd.exe (Cline cmd.exe terminal) → cmd.exe block. Run that block as-is: a block pasted into another shell, or wrapped in `powershell -Command "…"`, is a parse error.**
+
+**Run the `node` line exactly as written and read the JSON envelope it prints to stdout. Do NOT redirect or capture the output (`> file`, `2>&1 | tee`, `Out-File`, `| Out-String`), do NOT wrap the line in `cmd /c`, `powershell -Command "…"` or any second shell, and do NOT mix shell dialects: `%TEMP%` and `2>nul` are cmd.exe only, `$env:TEMP` and `Out-File` are PowerShell only — in the other shell they are literal text or a parse error. A tool message that the command's completion or output "could not be observed / captured" means the terminal is still busy with an earlier command or its shell-integration hooks have broken, not that the runner failed: open a NEW terminal and re-run the SAME line unchanged. Runners that drive em-cli, sdb or a JVM can take 10–30 s and print the envelope only when they exit — wait for it rather than retrying with a redirect.**
+
+**Bash — Linux / macOS / Ubuntu, and Windows Git Bash (Claude Code):**
+
+```bash
+BASE="$HOME/.cline"; [ -z "${CODEX_THREAD_ID:-}${CODEX_SANDBOX_NETWORK_DISABLED:-}${CODEX_SANDBOX:-}${CODEX_VERSION:-}" ] || BASE="$HOME/.codex"; [ -z "${GEMINI_CLI:-}" ] || BASE="$HOME/.gemini"; [ -z "${CLAUDECODE:-}" ] || BASE="$HOME/.claude"
+CLI=$(ls "$BASE"/plugins/cache/tizen-platform/tizen-sdk-skills/*/lib/cli/project-manager-cli.js 2>/dev/null | sort -V | tail -1) || true
+[ -n "$CLI" ] || for d in .claude .cline .codex .gemini; do CLI=$(ls "$HOME/$d"/plugins/cache/tizen-platform/tizen-sdk-skills/*/lib/cli/project-manager-cli.js 2>/dev/null | sort -V | tail -1) || true; [ -z "$CLI" ] || break; done
+node "$CLI" build --project "<project-path>" --build-type Debug
+```
+
+**PowerShell (Codex CLI on Windows, Cline PowerShell terminal) — prefers this harness's own cache, then the newest version. Run all three lines below, in order, in the SAME PowerShell session: the `node` line needs the `$CLI` the lookup line sets (on its own, `node "$CLI" …` becomes `node <first-arg>` and fails with a misleading `MODULE_NOT_FOUND`), so it carries a guard that stops with a clear message when `$CLI` is empty. Never wrap the lines in `powershell -Command "…"` (PowerShell and Git Bash expand `$h`, `$CLI` and `$env:…` before the inner shell runs, so the lookup arrives empty):**
+
+```powershell
+$h = ".cline"; if ($env:CODEX_THREAD_ID -or $env:CODEX_SANDBOX_NETWORK_DISABLED -or $env:CODEX_SANDBOX -or $env:CODEX_VERSION) { $h = ".codex" }; if ($env:GEMINI_CLI) { $h = ".gemini" }; if ($env:CLAUDECODE) { $h = ".claude" }
+$CLI = $null; foreach ($d in @($h, ".claude", ".cline", ".codex", ".gemini")) { $CLI = Get-ChildItem "$env:USERPROFILE\$d\plugins\cache\tizen-platform\tizen-sdk-skills\*\lib\cli\project-manager-cli.js" -ErrorAction SilentlyContinue | Sort-Object { [version]$_.Directory.Parent.Parent.Name }, FullName | Select-Object -Last 1 -ExpandProperty FullName; if ($CLI) { break } }
+if (-not $CLI) { throw 'tizen-sdk-skills runner not found: $CLI is empty. Run the two lookup lines above in THIS PowerShell session first; if they still find nothing, the tizen-sdk-skills plugin is not installed.' }; node "$CLI" build --project "<project-path>" --build-type Debug
+```
+
+**Windows — cmd.exe terminal only (Cline with a cmd.exe terminal). `&` and `2>nul` are cmd.exe syntax — in a PowerShell terminal run the PowerShell block above instead; Claude Code on Windows runs Git Bash — use the Bash block above. cmd.exe cannot version-sort, so this only lists every copy: pick your own host's highest version and paste it into the `node "<found-path>"` step below:**
+
+```
+cmd /c dir /s /b "%USERPROFILE%\.claude\plugins\cache\tizen-platform\tizen-sdk-skills\*project-manager-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.cline\plugins\cache\tizen-platform\tizen-sdk-skills\*project-manager-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.codex\plugins\cache\tizen-platform\tizen-sdk-skills\*project-manager-cli.js" 2>nul & dir /s /b "%USERPROFILE%\.gemini\plugins\cache\tizen-platform\tizen-sdk-skills\*project-manager-cli.js" 2>nul & ver >nul
+```
+
+Pick the highest-version path (the PowerShell form above already resolved `$CLI`), then:
+
+```
+node "<found-path>" build --project "<project-path>" --build-type Debug
+```
+
+> **Runner not found?** If none of the `~/.claude`, `~/.cline`, `~/.codex`, `~/.gemini` caches contains the runner, the tizen-sdk-skills plugin is NOT installed on this machine — install it first; do not improvise with other tools. (Contributors working inside the tizen-sdk-skills source repository can use the in-repo runner instead: `node common/lib/cli/<runner>.js`.)
+
+### Codex CLI — run the build as a job (one exec call waits ≤ 30 s)
+
+Under Codex CLI a tool call returns after at most 30 s, and a native, .NET or GBS build (and any
+`--clean` build) usually takes longer — the call would come back with only the runner's
+`[tizen-build] Building …` header while the build keeps running unseen (issue #48). Add
+**`--background`**: the runner returns a job receipt (`result.job_id`) within a second. Then poll
+
+```
+node "<same lib/cli dir>/job-cli.js" wait --id <job_id>   # blocks ≤ 25 s; repeat while result.state is "running"
+```
+
+`status`/`wait` show the live `tz build` output (`progress_tail`, `log_file`); when `job.state` is
+`done` the response **is** this runner's build envelope — report it exactly as below. A result
+that shows only progress lines and no `{ "status": … }` JSON is not a result.
+
+**Codex sandbox (guard rule 12).** Run this runner — and its `--background` form — **with escalated
+permissions**: `tz build`/`tz pack` sign with the profile in `<sdk>-data/profile/profiles.xml` and the `--background` job must outlive this call, and Codex's default `workspace-write` sandbox blocks TCP sockets, writes
+outside the workspace and (Linux) kills detached jobs when the call ends. An envelope with
+`error_category: sandbox_blocked` / `sandbox_job_lost`, or a warning starting "Running inside Codex's
+sandbox", means exactly that — re-run `suggested_fix.command` (the same command line, `escalate: true`)
+with escalated permissions; do not retry inside the sandbox and do not fall back to raw tools.
+
+## Arguments
+
+1. **projectPath** (required) — absolute path to project directory
+2. **buildType** (optional, default `Debug`) — `Debug` | `Release` | `Test`. Use Debug unless user explicitly requests Release.
+3. **signProfile** (optional) — signing profile name
+4. **`--clean`** (optional flag) — remove previous build output on the SDK host before
+   building, forcing a full non-incremental rebuild. Use when the user asks for a
+   clean/full rebuild ("클린 빌드", "전체 재빌드") or when the complete compiler
+   warning list is needed (incremental builds skip unchanged files, so their
+   warnings do NOT reappear). Do NOT `rm -rf Debug/` yourself — the project lives
+   on the SDK host, and deleting a local path is a silent no-op for remote clients.
+5. **`--arch <arch>`** (optional, **Platform/GBS projects only**, default `x86_64`) — the
+   `gbs build -A` target: `x86_64` | `armv7l` | `aarch64` | `i586`. See
+   "Platform (GBS) target architecture" below. Ignored for Native/DotNET/WebApp/RPK
+   projects (a non-default value adds a warning).
+
+Exit code: `0` = success envelope (with `result.artifacts`), `1` = failure/error envelope.
+
+## 결과 보고 — Envelope는 반드시 사용자에게 보여준다
+
+러너의 stdout JSON Envelope는 **도구 결과 안에 있어서 사용자에게는 보이지 않는다**
+(Claude Code UI는 Bash 결과를 "Ran 1 shell command"로 접어 둔다). 사용자에게 보이는 것은
+최종 답변 텍스트만이므로, 최종 답변은 **어느 실행 경로(서브에이전트 위임 / CLI Runner 직접
+실행)든** 아래 형식을 따른다:
+
+1. Envelope JSON을 **수정·축약 없이 그대로** fenced `json` 블록에 싣는다 (첫 항목).
+2. 그 아래에 결과 요약을 **1~2줄**만 덧붙인다 (산출물 경로 또는 `errors[0].message` 요지).
+3. 필요하면 다음 단계 제안을 1줄 추가한다.
+
+```json
+{ "command": "tizen-sdk build-project", "status": "success", ... }
+```
+
+✅ dali2 RPM 6개 생성 — `~/GBS-ROOT/local/repos/tizen/x86_64/RPMS/`
+
+- Envelope를 산문 목록으로 풀어 쓰고 JSON을 생략하는 것은 **형식 위반**이다. 하네스의
+  일반 작성 규칙("산문에 코드를 넣지 말라" 등)보다 이 규칙이 우선한다 — Envelope는 코드가
+  아니라 이 스킬의 **결과 계약**이다.
+- 빌드를 여러 번 재시도했으면 **마지막 실행**의 Envelope를 싣고, 이전 실패는 요약 줄에서
+  한 줄로만 언급한다.
+- 실패 Envelope도 동일하게 원문을 싣는다. `errors[0].message`/`details`의 진단 줄을 다시
+  타이핑하지 말고 JSON 안의 것을 그대로 보이게 한다.
+
+> **ℹ️ Signing profile (default certificates):** When no signing profile is specified and no
+> active profile exists, Native/DotNET/WebApp builds proceed using `tz`'s built-in default
+> developer certificates (`tempMobile.p12` + the SDK public distributor certificate) — the
+> same behavior as the VS Code extension. The build envelope carries a warning starting
+> "Signed with Tizen default developer certificates"; surface it. **The default-signed
+> package installs on the emulator only.** Real Samsung devices (TV, phone, watch) reject it
+> with "Invalid certificate chain", and stores never accept it.
+>
+> **For a real device or store submission**, create a signing profile with
+> `tizen-certificate-manager` (generate-author → create-profile; Samsung devices need the
+> Samsung-certificate flow), then pass the profile name:
+> `node "$CLI" build --project "<project>" --build-type Debug --sign-profile MyProfile`.
+>
+> **Pick the profile by target.** A **Samsung** signing profile (Samsung online-CA certificates)
+> is for the **TV emulator** (`tizen-create-emulator --profile tv`) and real Samsung TVs only; a
+> package built with it does not install on a standard Tizen emulator (`--profile tizen`). For a
+> standard emulator use a **local** profile (generate-author → create-profile) or the default
+> certificates. If the user asks to build with a Samsung profile for a standard emulator, say so
+> and use a local profile instead.
+>
+> **Standalone RPK projects have no default-certificate fallback.** They are packaged by the
+> legacy `tizen package -t rpk`, so a missing profile is still rejected with
+> `signing_profile_invalid` before packaging — create and activate a profile first.
+>
+> If a selected or **active signing profile** exists but its certificate files are missing or
+> unreadable, the runner rejects the build with `signing_profile_invalid`
+> (`TIZEN_SDK_CERT_E021`) before `tz` is invoked. Recreate or repair the profile before
+> retrying; do not run the build unchanged.
+>
+> **NEVER run `tz build` or `tz pack` directly** — the CLI runner handles both internally.
+
+> **Build method by project type.** The runner picks the method from markers, top-down:
+> `tizen_resource_project.yaml` → RPK (`tizen package -t rpk`); `tizen_dotnet_project.yaml` /
+> `*.csproj` → DotNET, `tizen_native_project.yaml` / `project_def.prop` → Native,
+> `config.xml` / `index.html` → WebApp (all three: `tz build` + `tz pack`);
+> `CMakeLists.txt` + `packaging/*.spec` → Platform (**GBS**, Linux only). **GBS is used ONLY
+> for Platform projects.** A Native/DotNET/WebApp/RPK build never runs GBS — `tizen-manifest.xml`
+> is present in every Native app and is not a Platform marker. A native build that takes a
+> minute is `tz build` compiling, not GBS; do not describe it as a GBS build.
+
+## Platform (GBS) target architecture
+
+A Platform build produces RPMs for **one** CPU architecture, chosen with `--arch`. Without it
+the runner builds **`x86_64`**, which installs only on the emulator — an x86_64 RPM on an ARM
+device fails at `rpm -i`.
+
+| User says | Target | Pass |
+|---|---|---|
+| emulator, x86, 에뮬레이터 (or nothing about the target) | Tizen emulator | `--arch x86_64` (default) |
+| arm, armv7, armv7l, 32-bit ARM, 32비트 ARM | 32-bit ARM device or image | `--arch armv7l` |
+| arm64, aarch64, 64-bit ARM, 64비트 ARM | 64-bit ARM device or image | `--arch aarch64` |
+| i586, 32-bit x86 | legacy 32-bit x86 emulator image | `--arch i586` |
+
+```bash
+node "$CLI" build --project "<platform-project>" --build-type Debug --arch armv7l
+```
+
+- **Ask before building when the target is unclear.** If the user wants the RPM for a real
+  device ("디바이스에 설치할 RPM", "for my board") but names no architecture, ask which one
+  (`x86_64` / `armv7l` / `aarch64`) instead of silently building `x86_64`.
+- **A connected device tells you.** Ask `tizen-sdb-helper`'s shell action (never a
+  hand-typed `sdb shell`) to run `uname -m; ls -d /usr/lib*`. `uname -m` names the CPU
+  family; the library directories name the word size of the userspace the RPM installs
+  into — Tizen's 64-bit images (`aarch64`, `x86_64`) have `/usr/lib64`, 32-bit images
+  (`armv7l`, `i586`) only `/usr/lib`. Check both: `uname -m` reports the **kernel**, so a
+  64-bit kernel under a 32-bit userspace still prints `aarch64`, and an `aarch64` RPM does
+  not install there.
+
+  | `uname -m` | `/usr/lib64` listed? | Pass |
+  |---|---|---|
+  | `aarch64` | yes | `--arch aarch64` |
+  | `aarch64`, `armv8l`, `armv7l` (any `arm…`) | no | `--arch armv7l` |
+  | `x86_64` | yes | `--arch x86_64` |
+  | `x86_64`, `i686`, `i586` | no | `--arch i586` |
+
+  Prefer this over guessing from the device model.
+- **Only these four names are accepted.** `arm`, `arm64` or `armv7` are rejected with
+  `invalid_parameters` before GBS runs — map them as in the table, do not retry the same value.
+- The RPMs land in `~/GBS-ROOT/local/repos/<repo>/<arch>/RPMS/`; `result.artifacts` already
+  lists them, so report the arch from those paths.
+
+> **RPK:** A standalone resource project is marked by `tizen_resource_project.yaml` and
+> is packaged internally with `tizen package -t rpk -- <project>`, not `tz build`.
+> A .NET project with `pack_as_rpk: true` remains a DotNET project and builds through its
+> normal .NET flow. Both produce `.rpk`; neither may be launched after installation.
+> The RPK packager crashes (`StringIndexOutOfBoundsException` in PropertyParser.getKey) on an
+> `sdk.info` with a comment header or BOM, as written by installers ≤ 1.1.1. The runner repairs
+> the file before every build and, if it did, adds a `Repaired <sdk>/sdk.info: …` warning.
+
+## DALi / Platform projects require C++17
+
+Tizen 9.0 `dali2` headers use `std::string_view` and `std::any`. A DALi project that
+does not select C++17 fails inside `/usr/include/dali*`, which reads as a broken SDK
+rather than a missing build setting.
+
+The build script preflights this and **exits 4 before GBS runs** when a project
+declares a `dali2-*` dependency but no C++17 setting. The only fix is in the project:
+
+```cmake
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+```
+
+Add it to `CMakeLists.txt` before `add_executable()`, then rebuild.
+
+**Do not** attempt `gbs build --define "optflags -std=c++17"`. The spec's `%build`
+runs plain `cmake`, so rpm optflags never reach the compiler, and CMake composes its
+own `-std` flag from `CMAKE_CXX_STANDARD` regardless. This is a dead end, not a
+slower path to the same result.
+
+## On failure — read the errors before retrying
+
+The failure envelope already contains the compile errors. You do NOT need to open the
+host log file to find out what broke:
+
+- `errors[0].message` — headline, the diagnostic lines (compiler errors first), and the
+  full-log path.
+- `errors[0].details` — the same diagnostic lines as a string array, for structured use.
+
+Rules:
+
+1. **Report the actual diagnostic** (file, line, message) to the user — never just
+   "빌드 실패" or a bare log path.
+2. **Never re-run the same build unchanged.** An identical rebuild produces an identical
+   failure. Retry only after the cause is addressed, or when the envelope points to a
+   specific fix (e.g. exit 3 → `tizen-dotnet-setup`).
+3. **Do not guess the cause** when `details` names it. `Full log:` is only for cases where
+   the diagnostics are empty or insufficient.
+
+## Handoff
+
+- **Single-task** (e.g., "빌드해줘") → DONE. Report the envelope per the "결과 보고" rules
+  (verbatim fenced `json` block first, then a 1–2 line summary), suggest next steps.
+- **Multi-step** (e.g., "빌드해서 설치해줘") → Continue to next step.
+- SDK or `tz` not found → `tizen-sdk-install`
+- DotNET build fails with exit 3 (dotnet not found) → `tizen-dotnet-setup` then retry
+- Platform build fails with exit 4 (DALi without C++17) → add `set(CMAKE_CXX_STANDARD 17)`
+  to the project's `CMakeLists.txt`, then retry
+- `--clean` fails with exit 5 (build output could not be fully removed — a file
+  is locked by an editor/emulator/sdb) → the build is deliberately aborted, NOT
+  run incrementally; close the locking process and retry
+- No project → `tizen-create-project`
+
+**Suggested next steps (only when user asks):**
+
+- `tizen-install-app` — install built `.tpk`/`.wgt`/`.rpk`/`.rpm` to device/emulator
+  - RPK is resource-only: install the `.rpk` without `--run`. The runner internally uses
+    direct `sdb install` for RPK; do not replace it with `tz install`.
+  - Platform (GBS) builds produce `.rpm` packages (not `.tpk`/`.wgt`).
+    RPMs are output to `~/GBS-ROOT/local/repos/<repo>/<arch>/RPMS/` and **can** be installed
+    via `tizen-install-app` (which supports `.rpm` — it handles `sdb root on`, `rpm -i`,
+    and app execution as `owner` user with proper Wayland/DBus environment internally).
+    **NEVER run `sdb` or `rpm` directly** — always use `tizen-install-app` for RPM installation.
+    The RPM's architecture must match the target: the default `x86_64` build is for the
+    emulator — rebuild with `--arch armv7l` / `--arch aarch64` for an ARM device.
+
+- Debugging: Native → `tizen-gdb-debug`, DotNET → `tizen-dotnet-debug`

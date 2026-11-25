@@ -1,0 +1,189 @@
+---
+name: vllm-reasoning-parsers
+description: |-
+  vLLM reasoning-parser operator + developer reference. `--reasoning-parser` CLI wiring, `ReasoningParser` contract (non-streaming `extract_reasoning` + per-delta `extract_reasoning_streaming`), `is_reasoning_end` xgrammar gating, `--structured-outputs-config.enable_in_reasoning` bypass, 42 built-in parsers (v0.33.0) with per-model quirks, 15 production pitfalls, authoring custom parsers via `@ReasoningParserManager.register_module` or plugin.
+when_to_use: |-
+  Trigger on `reasoning_content`, `reasoning_parser_plugin`, `<think>`/`</think>` handling, harmony channels (`<|channel|>analysis`/`final`), Qwen3 prompt-side `<think>`, DeepSeek-R1 missing start tag, Kimi K2 tool-section implicit end, Hunyuan state machine, Granite phrase markers, `enable_thinking=False`, reasoning leaked into content, content empty while reasoning filled, structured output breaking with thinking disabled, tool calls not parsed when reasoning is on, adding a new reasoning model. Applies without "parser" in prompt. Also implicit — "audit reasoning config", "deploy-memo reasoning". NOT prompt-side Jinja (→ `vllm-chat-templates`) or tool-call JSON extraction (→ `vllm-tool-parsers`).
+---
+
+# vLLM reasoning parsers
+
+Target: operators wiring up `--reasoning-parser NAME` on a chat-completion endpoint, or developers authoring a parser for a new thinking model. Source of truth: `vllm/reasoning/` on `main`.
+
+## What a reasoning parser actually does
+
+When a reasoning-trained model emits a single token stream like
+
+```
+<think>user asked X, let me check Y...</think>The answer is 42.
+```
+
+vLLM splits this into two fields on the chat-completion response: `reasoning` (the CoT) and `content` (the final answer). `--reasoning-parser NAME` selects the class that does the split. Without it, the whole stream lands in `content`.
+
+> **Field-name note.** The response field is `reasoning` (`ChatMessage.reasoning` in `vllm/entrypoints/openai/chat_completion/protocol.py`, `DeltaMessage.reasoning` in `vllm/entrypoints/generate/base/protocol.py`). `reasoning_content` was **removed from the output in v0.16.0** ([#33402](https://github.com/vllm-project/vllm/pull/33402), merge `c5113f60`), and v0.28.0 documents the result as a breaking client change ([#50624](https://github.com/vllm-project/vllm/pull/50624)). Many third-party docs and clients still call it `reasoning_content`. **The asymmetry is the trap: input still accepts the old name and normalizes it, output never emits it.** So a request looks fine and a client reading `reasoning_content` off the response sees `null` every time, with no error, even when the parser ran correctly. Serving **v0.16.0 or newer, read `reasoning`**.
+
+The parser is also the gating authority for **xgrammar / structured output**: by default, grammar enforcement is held off until `is_reasoning_end(input_ids)` flips true, so the model thinks freely before being constrained to JSON. Flip that default with `--structured-outputs-config.enable_in_reasoning=true` — then the grammar applies from token 0 regardless of reasoning state (useful for structured CoT).
+
+## The contract (`ReasoningParser` ABC)
+
+`vllm/reasoning/abs_reasoning_parsers.py`. Every parser implements:
+
+| Method | Called by | Purpose |
+|---|---|---|
+| `is_reasoning_end(input_ids)` | xgrammar, non-streaming serving, tool-call gate | Has `</think>`-equivalent been emitted yet? |
+| `is_reasoning_end_streaming(input_ids, delta_ids)` | xgrammar per decode step | Same, but cheap — checks only the delta |
+| `extract_content_ids(input_ids) -> list[int]` | structured output | Token IDs of post-reasoning content |
+| `extract_reasoning(model_output, request) -> (reasoning, content)` | non-streaming chat completion | Full-string split; either field may be `None` |
+| `extract_reasoning_streaming(previous_text, current_text, delta_text, previous_token_ids, current_token_ids, delta_token_ids) -> DeltaMessage \| None` | streaming chat completion | Per-delta split; returns `DeltaMessage(reasoning=..., content=...)` or `None` to swallow |
+
+Optional:
+
+- `count_reasoning_tokens(token_ids)` — for usage accounting. Default returns `0`. `BaseThinkingReasoningParser` implements it via depth counter so nested `<think>…<think>…</think>…</think>` are handled.
+- `adjust_request(request)` — mutate request (rare).
+- `set_prompt_token_ids(prompt_token_ids)` — v0.33.0+, called with the rendered prompt before the output is parsed, streaming and non-streaming; default no-op. Override it when the prompt can already close reasoning (`continue_final_message`) — see `references/pitfalls.md` §"continued answer returned as reasoning".
+- `prepare_structured_tag(original, tool_server)` — emit a `structural_tag` JSON. Base returns `original` unchanged; harmony builds its tag in `HarmonyParser.adjust_request`, not here.
+- `reasoning_start_str` / `reasoning_end_str` — expose delimiter strings so `ReasoningConfig.initialize_token_ids` can derive the multi-token ID sequences automatically.
+
+**Streaming vs. non-streaming are two independent code paths.** A parser that's correct on `extract_reasoning` can be buggy on `extract_reasoning_streaming` and vice versa. Every parser must be tested on both.
+
+## The CLI path (what `--reasoning-parser qwen3` actually triggers)
+
+`vllm/engine/arg_utils.py` declares `reasoning_parser: str = StructuredOutputsConfig.reasoning_parser` (grep `--reasoning-parser`; the line moves every release). At startup `setup_server` in `vllm/entrypoints/launchers/launcher.py` imports `--reasoning-parser-plugin` first, then `validate_api_server_args` checks the name against `ReasoningParserManager.list_registered()`; a bad name fails with `KeyError: invalid reasoning parser: X (chose from {...})`. From v0.32.0 `ParserManager.get_parser` also builds the parser once against the tokenizer, so a parser whose `__init__` cannot find its delimiter tokens stops startup with `TypeError: --reasoning-parser X cannot be used with the tokenizer of 'M': ...`; through v0.31.x the server came up healthy and every chat request returned 500. `vllm/entrypoints/openai/api_server.py` is a deprecated re-export shim since v0.29.0 — do not patch it.
+
+On request, `OpenAIServingChat` builds a **fresh parser per choice** — streaming always, non-streaming `n > 1` from v0.31.0 (before that, non-streaming choices shared one instance and state such as tool-call ID counters leaked between them): `ParserManager.get_parser(...)` wraps the reasoning and tool parsers in one `Parser` class, and `_make_parser` → `self.parser_cls(tokenizer, request.tools, chat_template_kwargs=..., model_config=...)` constructs the `ReasoningParser` with `chat_template_kwargs` and `model_config` (`vllm/entrypoints/openai/chat_completion/serving.py`, `vllm/parser/abstract_parser.py`). "Fresh per request" is load-bearing for stateful parsers — see Hunyuan in the matrix.
+
+Registry: `vllm/reasoning/__init__.py` has a `_REASONING_PARSERS_TO_REGISTER` dict of `name → (filename, ClassName)` that feeds `ReasoningParserManager.register_lazy_module`. Lazy import means a broken parser file won't crash vLLM startup until somebody selects it.
+
+Plugin path: `--reasoning-parser-plugin /path/to/my_parser.py` calls `ReasoningParserManager.import_reasoning_parser(path)`, which `importlib`-loads the file. The file registers itself via `@ReasoningParserManager.register_module(["my-name"])` at import time. Then `--reasoning-parser my-name` selects it.
+
+**Headless mode needs v0.30.0+ for a plugin to resolve at all.** `vllm serve --headless` used to call `AsyncEngineArgs.create_engine_config()` — which validates `--reasoning-parser` against the registry — before importing the plugin file, so a custom name fast-failed as unregistered even though the plugin was correct. Fixed in `vllm/entrypoints/cli/serve.py::run_headless` by importing the plugin first ([#53124](https://github.com/vllm-project/vllm/pull/53124)). On an older build, load the plugin through the non-headless path instead.
+
+## The 15 things that go wrong
+
+See `references/pitfalls.md` for each with repros and fixes. Quick index:
+
+1. **Reasoning `null` on DeepSeek-R1, whole output — `</think>` included — in `content`** — the chat template put `<think>` in the prompt, so the output is only `…</think>answer`, and the parser that ran required a start tag, found none, and returned `(None, model_output)`. `</think>` inside `content` is the signature of this cause, not evidence against it. Parsers that do this: `deepseek_r1` through v0.7.2 (fixed v0.7.3) and custom or third-party regex parsers that match a `<think>…</think>` pair. Fix: split on the end marker alone — `BaseThinkingReasoningParser` (`vllm/reasoning/basic_parsers.py`) partitions on `</think>` and tolerates a missing start; upgrade vLLM or rebase the custom parser on it. Confirm by rendering the prompt with `add_generation_prompt=True` and checking it ends in `<think>`. If `content` is clean and only the reasoning field is null, it is pitfall 15 instead.
+
+2. **`content` is empty, CoT in `reasoning` with `enable_thinking=False`** — parser didn't branch on `chat_template_kwargs`. Qwen3 / DeepSeek-V3 / Kimi K2 route to `IdentityReasoningParser` (or internal flag) when thinking is off. DeepSeek-V3 has two thinking-default variants: `deepseek_v3` (default **off**) and `holo2` = `DeepSeekV3ReasoningWithThinkingParser` (default **on**). **`glm45` is not in that group**: it runs on the adapter path with `glm47` — read its matrix row instead of assuming `holo2` behaviour.
+
+3. **Gibberish JSON when `guided_json` + `enable_thinking=False`** — the reasoning parser's `is_reasoning_end` on the *prompt* must return True so xgrammar enforces from token 0. The serving layer computes it once per request (`request.resolve_reasoning_ended(parser, prompt_token_ids)` → `parser.is_reasoning_end(prompt_token_ids)`, forced `True` when `include_reasoning=false`) and hands it to the engine, where `StructuredOutputManager._get_constraint_bounds` reads it (`_get_constraint_start` through v0.31.x). If the parser only checks for `</think>` in input_ids and the thinking-disabled chat template emits `<think>\n\n</think>\n\n` in the prompt, this works; if it does something else, xgrammar silently stays gated.
+
+4. **Truncated output = wrong field** — when the model hits `max_tokens` mid-reasoning, the parser's policy picks the field: `qwen3` with thinking on and `deepseek_r1` → all `reasoning`; `qwen3` with `enable_thinking=False` → all `content` (other parsers: `references/pitfalls.md` §4). Know the policy before shipping. Fix: cap reasoning with **`thinking_token_budget`** in the request body, so the run ends through the parser's normal path instead of truncation (Model Runner V2, v0.28.0+; cases where the budget does not fire or misfires: `references/pitfalls.md` §4).
+
+5. **Nested `<think>` tags** — base parser's `partition` stops at the first `</think>`; if a CoT contains a literal `</think>` substring (sometimes seen in distillation artifacts), content gets split wrong. `count_reasoning_tokens` uses a depth counter so counts are right, but the split is not. Adapter-path parsers have the same exposure in non-streaming only: the split runs on decoded text, so a `</think>` the model spelled with ordinary tokens (quoting it) ends reasoning there, while streaming matches token ids and does not (open at v0.33.0) — if only `stream: false` misroutes, it is this.
+
+6. **Tool calls break with reasoning enabled** — tool parser only sees the `content` half of `extract_reasoning`'s return. If the reasoning parser returns `(everything, None)`, tool parser sees nothing. Kimi K2 handles this by treating `<|tool_calls_section_begin|>` as an implicit reasoning-end marker. Dropping `--reasoning-parser` makes the tool calls reappear only because the whole stream then lands in `content`: say so, and call it a mask that gives up the reasoning split, not a fix. The fix moves the reasoning-end boundary (the model emits `</think>` first, or the parser treats the tool-call opener as an implicit end). That same boundary releases grammar enforcement, so a tool-output-only special case leaves structured output and `tool_choice="required"` gated at the wrong token.
+
+7. **Stateful parser reused across requests** — Hunyuan A13B's `extract_reasoning_streaming` is a token-ID state machine with `self.current_state` / `self.token_buffer`. Second concurrent request on the same instance = interleaved garbage. vLLM already instantiates per-request, but custom plugins must not hoist state to class-level.
+
+8. **Multi-token delimiter** — `<think>` may encode as a single token (DeepSeek-R1 vocab) or as multiple (`<think`, `>` in some tokenizers). Single-token path: `vocab.get("<think>")`. Multi-token: `tokenizer.encode("<think>")` and do sequence match — the current in-tree worked example is `kimi_k3_reasoning_parser.py`, whose `<|open|>think<|sep|>` marker is a 3-token sequence, so its token-id helpers search for the *subsequence* rather than one id. (The old example, GPT-OSS `reasoning_end_token_ids_prefix`, was deleted at v0.27.0 — see pitfall 10.) `BaseThinkingReasoningParser` raises at init if `vocab.get` returns None — don't inherit from it unless the delimiter is a single vocab entry.
+
+9. **Single-token delta spam** — if delta is exactly one token that *is* `<think>` or `</think>`, return `None` from streaming so the client doesn't see an empty delta. Almost every parser has this skip.
+
+10. **Harmony / GPT-OSS is not a `<think>` model** — since v0.27.0 `openai_gptoss` is a stub: `is_reasoning_end` / `is_reasoning_end_streaming` return `True` unconditionally, and the three extraction methods raise `NotImplementedError`. Anything that relies on its reasoning-end check to hold grammar enforcement back until reasoning ends no longer gates at all — the structured-output manager constrains from the first token, and harmony keeps the analysis channel free only because `HarmonyParser.adjust_request` rewrites `response_format`/`structured_outputs` into a `structural_tag` that constrains just the final channel. A copy of the stub in another model's parser constrains the reasoning too. The analysis/final channel split is done by `HarmonyParser` (`vllm/parser/harmony.py`), which serving selects by `hf_config.model_type == "gpt_oss"`, not by the flag; reasoning and content still split. Keep `--reasoning-parser openai_gptoss` — it is the default for `gpt_oss` when unset, and `HarmonyParser` raises `ValueError` on any other reasoning parser. A `NotImplementedError` from the stub is that upstream change, not packaging, a bad flag or the weights: any caller still using its extraction methods (the generic `DelegatingParser`, out-of-tree code) now raises — route it through `HarmonyParser` (bypass causes: `references/pitfalls.md` §10). Its old backward-scan attributes (`reasoning_end_token_ids_prefix`, `reasoning_max_num_between_tokens`, `eom_token_id`) are deleted for good — do not copy them or roll back to keep them. A parser copied from gpt-oss belongs to a channel-marker model: rebuild it on `ReasoningParser` with the token-subsequence match of `kimi_k3_reasoning_parser.py` (pitfall 8). Never offer `BaseThinkingReasoningParser` / `deepseek_r1` as its template, and `HarmonyParser` only engages for `model_type == "gpt_oss"`.
+
+11. **Mistral runs on the unified engine since v0.27.0** — `--reasoning-parser mistral` is unchanged; logic is in `vllm/parser/mistral.py`, shared with `--tool-call-parser mistral`. The old `MistralTokenizer` `ValueError` is gone: with an HF tokenizer it silently falls back to the generic path and loses grammar-enforced `tool_choice`. Serve with `--tokenizer-mode mistral`.
+
+12. **Granite is regex-on-text** — "Here is my thought process:" / "Here is my response:" are phrases, not special tokens. Streaming parser has to buffer partial matches across deltas (`Here is my thou…`) which makes it the most complex parser in the tree. Read `granite_reasoning_parser.py:140+` before modifying.
+
+13. **Implicit reasoning-end** — Kimi K2 ends at `</think>` **or** `<|tool_calls_section_begin|>`. MiniMax M2 never emits `<think>`, only `</think>`. Custom `is_reasoning_end` must encode these facts or xgrammar gates at the wrong moment. Through v0.31.x the grammar also skipped an implicit end token that is content (`<tool_call>` with no `</think>`, GLM/Qwen3), forced a second `<tool_call>` and lost `required`/named tool calls; v0.32.0 fixes it for adapter-path parsers only. On v0.32.x a request whose grammar cannot start with that token (JSON schema, `tool_choice="none"` + `response_format`) fails with HTTP 500 `grammar rejected tokens` when the model samples it mid-reasoning — upgrade to v0.33.0.
+
+14. **`--enable-reasoning` does not exist** — `vllm serve` exits with `unrecognized arguments: --enable-reasoning`. Drop it: passing `--reasoning-parser NAME` enables reasoning, omitting it disables it.
+
+15. **`reasoning_content` is always null — but the parser worked.** The client reads the removed field name (field-name note above). Before debugging any parser, run `jq '.choices[0].message | keys'` — if `reasoning` is there, fix the client. A client that echoes history with both `reasoning` and `reasoning_content` gets 400 `duplicate field` from the Rust frontend through v0.33.0 — send one key (`references/pitfalls.md` §15).
+
+## The per-model matrix
+
+`references/parser-matrix.md` — one row per registered name (**42** at v0.33.0: `beam`, `cohere_command3`, `cohere_command4`, `deepseek_r1`, `deepseek_v3`, `deepseek_v4`, `deepseek_v41`, `ernie45`, `gemma4`, `glm45`, `glm47`, `granite`, `granite_thinking_parser`, `hf`, `holo2`, `hunyuan_a13b`, `hy_v3`, `hy_v4`, `inkling`, `k2_horizon`, `kimi_k2`, `kimi_k3`, `ling3`, `mimo`, `minicpmv`, `minimax_m2`, `minimax_m2_append_think`, `minimax_m3`, `mistral`, `muse`, `muse_glimmer`, `musespark1x`, `nemotron_v3`, `olmo3`, `openai_gptoss`, `plamo3`, `poolside_v1`, `qwen3`, `seed_oss`, `step3`, `step3p5`, `step5`) with: delimiter style, start-token-in-prompt-or-output, thinking-disable mechanism, truncation policy, structured-output gating peculiarities.
+
+Routing (which family each name belongs to — `<think>` two-token, delegating wrapper, stateful, harmony, phrase-regex, tokenizer-gated) lives in the matrix `Family` column. Non-obvious cases: `openai_gptoss` is harmony (`extract_reasoning` raises `NotImplementedError`), `mistral` runs without `MistralTokenizer` but needs `--tokenizer-mode mistral` for grammar-enforced `tool_choice` (pitfall 11), `hunyuan_a13b` is a token-ID state machine, `granite` is phrase-regex on text, and `nemotron_v3` swaps reasoning↔content on `enable_thinking=False`.
+
+## Writing a custom parser
+
+`references/writing-custom-parser.md` for the step-by-step. **A `ReasoningParser`
+subclass is the only shape an out-of-tree parser can take** — it is what
+`--reasoning-parser-plugin` loads (from v0.30.0 the flag also takes an importable
+module name from site-packages, tried before the file path —
+[#45241](https://github.com/vllm-project/vllm/pull/45241); there is no
+entry-point discovery). 20 of the 42 names
+use it.
+
+The other two shapes are in-tree only (name lists: the matrix path table):
+
+- **Adapter** (18 names): `vllm/parser/<model>.py` defines one class per model,
+  and `make_adapters(XParser)` in `vllm/parser/engine/registered_adapters.py`
+  derives *both* `XParserReasoningAdapter` and `XParserToolAdapter` — the
+  unified reasoning+tool design of RFC
+  [#32713](https://github.com/vllm-project/vllm/issues/32713) (bot-closed for
+  inactivity while the code shipped; read the tree, not the tracker).
+- **Name-wired unified** (`cohere_command3`, `cohere_command4` from v0.30.0,
+  `hf` from v0.32.0, `beam` from v0.33.0): the registered class only answers
+  `is_reasoning_end`; `ParserManager` picks the real parser
+  (`vllm/parser/cohere_command.py`, `vllm/parser/response_template.py`,
+  `vllm/parser/beam.py`).
+
+Opening one of these as a worked example finds a re-export or stub, with the
+logic elsewhere.
+
+**On v0.32.0+, if the checkpoint's tokenizer config ships `response_template`,
+try `--reasoning-parser hf` before writing a parser** — it needs no
+model-specific code. Startup fails with `TypeError` if that metadata is missing
+or has no `thinking` field; `hf` cannot be combined with any other reasoning or
+tool parser.
+
+**Do not infer membership from the filename.** Only some are named
+`*_engine_reasoning_parser.py`; `kimi_k2_reasoning_parser.py`,
+`minimax_m2_reasoning_parser.py`, `glm47_moe_reasoning_parser.py` and
+`mistral_reasoning_parser.py` are ordinary names that are nonetheless shims. The
+test is a reference to the `vllm.parser` package:
+`grep -l "vllm\.parser" vllm/reasoning/*.py`. Do NOT grep for
+`registered_adapters import` — `ling3` imports from `vllm.parser.ling3` and the
+cohere file only names `vllm.parser.cohere_command` in a docstring, so that
+pattern misses both.
+
+Copy a **legacy-path** parser as the template for a custom one. Shape:
+
+```python
+from vllm.reasoning import ReasoningParser, ReasoningParserManager
+from vllm.entrypoints.generate.base.protocol import DeltaMessage  # v0.29.0+
+
+@ReasoningParserManager.register_module(["my_model"])
+class MyReasoningParser(ReasoningParser):
+    def __init__(self, tokenizer, *args, **kwargs):
+        super().__init__(tokenizer, *args, **kwargs)
+        # resolve delimiter token IDs via self.vocab or tokenizer.encode(...)
+
+    def is_reasoning_end(self, input_ids): ...
+    def extract_content_ids(self, input_ids): ...
+    def extract_reasoning(self, model_output, request): ...
+    def extract_reasoning_streaming(self, prev_text, cur_text, delta_text,
+                                    prev_ids, cur_ids, delta_ids): ...
+```
+
+Register decorator → lazy entry in `ReasoningParserManager.lazy_parsers`. Pass the file to `vllm serve ... --reasoning-parser-plugin /path/to/my_parser.py --reasoning-parser my_model`.
+
+Shortcuts when delimiter is a single vocab token: inherit `BaseThinkingReasoningParser` (`vllm/reasoning/basic_parsers.py`), override `start_token` / `end_token` properties only. That covers 90% of the surface — see `deepseek_r1_reasoning_parser.py` (66 lines) for the minimal concrete subclass.
+
+## Testing a parser
+
+Unit tests live in `tests/reasoning/` (DeepSeek R1, Qwen3, Granite, Hunyuan, GPT-OSS, Kimi K2 all have coverage). Run a single file with:
+
+```bash
+.venv/bin/python -m pytest tests/reasoning/test_qwen3_reasoning_parser.py -v
+```
+
+Every new parser needs tests for:
+- Non-streaming: start-in-prompt, start-in-output, truncated (no end), nested, empty.
+- Streaming: delta that is only the start token, only the end token, end token spanning two deltas, content-before-end-token in same delta, content-after-end-token in same delta.
+- `is_reasoning_end` on both pre-reasoning, mid-reasoning, and post-reasoning token ID sequences.
+- Thinking-disabled path if applicable.
+
+## Companion skills
+
+- `vllm-chat-templates` — how the chat template injects `<think>` into the prompt (or not); why `enable_thinking=False` can change what the parser sees.
+- `vllm-tool-parsers` — tool-call extraction runs on the post-reasoning `content` only. A wrong reasoning split silently breaks tool calling.
+- `vllm-configuration` — `chat_template_kwargs` flows through `ChatCompletionRequest.chat_template_kwargs` into the parser `__init__`.
+- `vllm-performance-tuning` — structured output tuning; reasoning parser choice affects xgrammar gating latency.
+- `vllm-input-modalities` — reasoning parsers don't apply to embedding / rerank / ASR endpoints.
+
+Upstream issue/PR anchors for each pitfall → `references/sources.md`.

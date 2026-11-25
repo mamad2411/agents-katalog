@@ -1,0 +1,158 @@
+---
+name: spec-evidence-analysis
+description: Recommend verification methods per obligation from the declared catalog, and flag mismatches with what was authored.
+---
+
+# Verification & Evidence Strategy
+
+If this plugin is not initialized or an Agent IX command fails, read [the quoin setup guide](https://github.com/agent-ix/quoin/blob/main/setup.md) for its prerequisites and local diagnosis.
+
+Every requirement needs a defined verification method and a concrete artifact
+that proves it was verified. This skill recommends the method **from the
+declared catalog**, and flags where the authored choice disagrees.
+
+> **This skill no longer carries its own method table.** It used to: a
+> skill-local list of `test | analysis | inspection | demonstration` plus a few
+> evidence kinds, declared in no manifest and read by no code. The result was
+> `Verification` columns defaulting to `Test` by habit, with nothing ever
+> advising DAST for an attack surface, monitors for a temporal property, or
+> fault injection for a reliability NFR. The methods now live in module data
+> (quire-rs FR-054, `spec-artifacts-process` FR-007) and are read from there.
+
+## When to use
+
+- At **Spec Review**, to confirm each obligation's method before tests are written.
+- Before tagging tests to criteria, to plan which suites the chosen methods imply.
+- Whenever a new NFR is added — NFRs are the ones most prone to a defaulted method.
+
+## Run the advisor, do not recall the table
+
+```bash
+quoin advise                     # every obligation, with its recommendations
+quoin advise --mismatch-only     # only where the authored method disagrees
+quoin advise --inconclusive-only # only where no rule matched — your work list
+quoin advise --json              # for scripting
+```
+
+`quoin advise` derives the obligations from `quire coverage --json`, reads each
+criterion's FR-052 property shape from `quire properties --json`, and matches
+both against the catalog's `applicability` rules. **This is the deterministic
+half of the analysis and it is not optional** — a method you recalled is a
+method nobody can check.
+
+The catalog behind it:
+
+```bash
+quoin catalog methods            # human-readable, grouped by class
+quoin catalog methods --json     # the merged catalog, for scripting
+quoin catalog methods --class Analysis
+```
+
+Merged first-wins across active modules, exactly as quire-rs merges it — so the
+method you are advised is the method the auditor will later check conformance
+against.
+
+## Process
+
+1. **Run `quoin advise`.** It carries the obligations (quire-rs FR-053: id,
+   statement, authored method, criticality) *and* the recommendations.
+   Do not restate either by hand.
+
+2. **Take the deterministic recommendations first.** They come from the
+   catalog's `applicability` rules matched against facts about the obligation:
+   its statement's characteristics, its FR-052 property shape, its archetype,
+   its declared criticality, and what the evidence store already records.
+   Rules match or they do not. Each recommendation names the rule and the value
+   that matched, so you can check the reasoning rather than trust it.
+
+   **Read what matched, not just what was recommended.** A recommendation
+   matched *only* on an evidence characteristic is telling you about the tests,
+   not about the requirement — see below.
+
+3. **Judge only the residue, and label it.** Where the rules are inconclusive
+   the advisor says so and stops rather than guessing. That is where your
+   judgement belongs — and it must be recorded *as* judgement. Never present an
+   LLM conclusion as a verdict (the ADR-0010 discipline).
+
+4. **Confirm or correct the authored method.** A mismatch (`⚠` in the human
+   output, `mismatch: true` in JSON) is advisory: the human decides. The confirmed method lands in the spec, becomes the
+   obligation's method, and is what `quoin evidence` records discharge against.
+
+5. **Plan the suite.** A method implies an evidence kind; a suite in
+   `spec/evidence/suites.md` produces that kind. A recommended method with no
+   suite that can produce its evidence is a gap in the plan, not a gap in the
+   spec.
+
+## Recommendations that come from the evidence, not from the requirement
+
+`quoin advise` reads the evidence store. Two characteristics come from there
+rather than from the statement, and they mean something different from the rest.
+
+| Matched value | What it says |
+|---|---|
+| `fault-detection-unmeasured` | the obligation **is** exercised by a bound run, and nothing measures whether that exercise would catch a fault |
+| `fault-detection-failed` | something **did** measure it, and a seeded fault survived |
+
+**Both mean "escalate the existing suite", not "the requirement is unverified".**
+An obligation nothing is bound to is `undischarged`, which the auditor reports
+separately — and neither of these mints for it, deliberately, because
+recommending a solver for code nobody has tested yet is advice nobody can act
+on.
+
+So when the only reason a method was recommended is one of these two, the
+finding you write is about the tests. "This is tested and nothing says the tests
+discriminate" is a different sentence from "this requirement has no method", and
+they lead to different work.
+
+## Cost is not in the catalog yet, so it has to be here
+
+The advisor ranks by **how many rules matched**. It has no way to say what a
+method costs, so an escalation of last resort ties with a unit test and the
+output gives no hint. Filed as `agent-ix/quire-rs#190`; until it lands, this
+paragraph is the only place the ordering is written down.
+
+**`concolic-execution` is the case to watch.** Concrete + symbolic execution
+runs the code while recording the constraints on each branch, then negates one
+and asks a solver for an input that flips it — `if x * 3 == 51` is a
+1-in-4-billion coin flip for a fuzzer and one line of algebra for a solver. It
+also path-explodes and is slow. **Nobody reaches for it first.** The industrial
+pattern is hybrid fuzzing: fuzz until the coverage curve flattens, then hand the
+stuck branches to a solver (Driller, QSYM, SymCC).
+
+When it is recommended alongside a cheaper method keyed on the same evidence —
+`mutation-testing` on `fault-detection-unmeasured`, for instance — **take the
+cheaper one first.** Measuring is what tells you whether the escalation is
+warranted.
+
+This is the skill-local-prose arrangement ADR-0011 moved away from, and it is
+recorded as a debt rather than a design. When `quire-rs#190` lands, this section
+should shrink to a pointer at the catalog.
+
+## What "inconclusive" means, and why it is not a failure
+
+An obligation the rules cannot place is a normal outcome — the catalog's
+applicability rules are deliberately narrow, because a rule that matches
+everything advises nothing. Report it as inconclusive and choose a method
+yourself. **Do not default to `Test` to make the report look complete**: that is
+precisely the habit this skill was rebuilt to end.
+
+## Deliverable
+
+A `SpecReview` with `analysis: evidence`, under `reviews/YY-MM-DD-<slug>.md`.
+
+The `Findings` table carries one row per obligation whose method needs
+attention — a mismatch, or an inconclusive recommendation the author must
+settle. An obligation whose authored method matches the recommendation needs no
+row; a review listing every passing obligation is a review nobody reads to the
+end.
+
+```markdown
+| ID | Severity | Summary | Refs |
+|----|----------|---------|------|
+| FND-001 | medium | NFR-009-AC-1 is authored `Inspection`; the statement's `reliability` characteristic recommends `fault-injection` (Test). | NFR-009-AC-1 |
+| FND-002 | low | FR-001-AC-9 matched no applicability rule; method chosen by judgement, not by the catalog. | FR-001-AC-9 |
+```
+
+Record the per-requirement outcome in the requirement's own `Verification`
+cell — that cell **is** the obligation's method (quire-rs FR-053), so editing it
+is what changes the plan. There is no separate evidence file to keep in sync.

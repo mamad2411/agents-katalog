@@ -1,0 +1,93 @@
+---
+name: whalechan-image-character
+description: Propose DeepSeek Whale-chan character illustrations, let the user select directions, then separately confirm quantities, visual settings and candidate budget before generating verified PNGs. Use for character portraits and themed illustrations with consistent identity and customizable visuals; default to one image per selected proposal.
+---
+
+# Whale-chan Image Character
+
+Create verified Whale-chan PNGs. Preserve Whale-chan's permanent identity while resolving every visual dimension independently from the user's request, typed reference images, and canonical defaults. A custom value changes only its own field.
+
+Workflow: propose → **Gate 1: select directions** → **Gate 2: confirm scope and begin** → expand, validate and freeze → generate, review and deliver. Selection alone is not permission to generate.
+
+## Load guidance as needed
+
+- Read `references/proposal-selection.md` before presenting either gate or interpreting replies.
+- Read `references/assignment-schema.md` whenever normalizing, confirming, or freezing a request.
+- Read `references/character-spec.md` before building prompts or deciding whether a requested customization preserves Whale-chan identity.
+- Read `references/form-profiles.md` when resolving or measuring proportions. The five bundled forms are recommended presets, not the only allowed ratios.
+- Read `references/reference-index.md` when selecting bundled or user-supplied references.
+- Read `references/provider-routing.md` before any provider call or parallel run.
+- Read `references/qa-rubric.md` before reviewing or promoting a candidate.
+- Read `references/gallery.md` before exporting the completed task's preview gallery.
+- Treat `references/reference-catalog.json` as the machine-readable authority for bundled paths, hashes, preset ratios, and preset acceptance ranges.
+
+## Choose the language
+
+Read `references/language-policy.md` before planning. Resolve one task `language`: explicit user instruction → meaningful current-session expression → newest meaningful local session within 24 hours → ask when uncertain. Use `scripts/detect-language.py` for historical evidence, not as an automatic verdict; recent sessions take precedence over aggregate counts.
+
+Save the normalized BCP-47 tag, actual resolution evidence and any explicit scoped overrides. Use it for communication, image lettering, HTML UI, drawing prompts and visible run/image titles. Preserve exact locked wording and necessary technical tokens. Keep internal IDs and filenames in English. Propagate the saved language to workers and resume from it; never redetect during execution.
+
+Prepare required plan/prompt locale sections before confirmation; use the offline gallery language selector for UI only. Keep generated content in its recorded language. See the language policy for custom dictionaries, display titles, scoped overrides and legacy compatibility.
+
+
+## Resolve the request
+
+Resolve the request field by field while planning; build the complete schema v7 assignment only after Gate 2. Use the user's explicit instructions first, then references only for their declared roles, then canonical defaults for unresolved fields. Do not let a reference silently control unrelated dimensions.
+
+Defaults:
+
+- Five directions for an open theme; one image per selected proposal. A precisely specified scene uses direct proposals without inventing five alternatives.
+- `semi-chibi`; canonical style; canonical maid outfit.
+- Warm ivory-beige solid background `#F5EADD`; transparency off.
+- No visible text. When text is requested without a language, use the session language (see [Choose the language](#choose-the-language)); do not translate or invent wording without confirmation.
+- Full-body centered composition, `1:1`, PNG, provider-native resolution, automatic sub-agent execution (up to 10 workers, resolved from actual capacity before Gate 2). Prefer 1024×1024 when the selected provider exposes a compatible size control, but do not treat 1024×1024 as a default acceptance requirement.
+
+The user may explicitly request any style, action, outfit, solid/custom/transparent background, exact multilingual text, measurable head ratio greater than 1.0, positive-integer aspect ratio, or exact positive pixel resolution. If the user gives only width and height, derive the aspect ratio; if both are given, require them to agree. Keep extreme but measurable ratios possible; disclose that ratios outside the five presets have no bundled proportion reference and may be harder to satisfy. Provider safety and technical limits still apply.
+
+Input screenshots, chat logs, and dialogue supply subject matter only. They do not authorize copying UI, visible source text, avatars, brands, or visual style unless the user explicitly assigns those roles.
+
+Give the run an English kebab-case `run_name` and every image a unique English snake_case `name`. Write `run_title` and each image `title` in the resolved titles language. When one request contains several images, freeze a complete image-level configuration for each one rather than asking workers to inherit unstated choices.
+
+## Obtain both user decisions
+
+1. Prepare and review materially different directions for an open theme, or preserve the user's precisely specified scenes in direct mode. Show the seven-column Markdown table from `proposal-selection.md`, explain one image per selected proposal by default, and wait at **Gate 1**. Do not expand unselected alternatives into full image assignments.
+2. Record the actual reply, chosen proposals, quantities and explicit changes. Prepare `scope.configurations` for the selected quantities: lock subject/action/composition, visual fields, exact text, output intent and reference permissions; state what execution details may vary. Use separate configurations when approved variants need different locked settings.
+3. Show the Gate 2 summary generated by `summarize-selection`: titles, per-proposal counts, total images, adjustments, configurations, output, references, execution request, concrete sub-agent count and candidate budget. Explain a budget above 24 in this same summary. Wait for explicit permission to begin. Never infer it from silence or a recommendation.
+4. After **Gate 2**, expand exactly the approved counts, review each execution against its proposal and locked requirements, validate and freeze internally. No third routine approval is required. A change to the core direction returns to Gate 1; changes to selection, counts, locked settings or budget require an updated Gate 2 summary and reply. Defect repairs within the approved scope and reduced runtime parallelism do not.
+
+## Execute the confirmed assignment
+
+1. Write the schema v7 assignment with both actual decision records described in `references/assignment-schema.md`, then validate and initialize it:
+
+   ```bash
+   python3 scripts/manage-run.py validate-assignment --assignment <assignment.json>
+   python3 scripts/manage-run.py init --assignment <assignment.json> \
+     --effective-parallelism <current-capacity> --effective-subagents <actual-worker-count>
+   ```
+
+   Recheck capacity before initialization and report any reduction. Pass the actual worker count and parallelism explicitly (0 workers and parallelism 1 for main-agent fallback). Never exceed the count confirmed at Gate 2.
+
+2. Build each prompt from the normalized assignment in this order: permanent identity → theme → proportion target → resolved style → expression/action/composition → resolved outfit → props/objects → resolved background and alpha → exact text directive → typed-reference role limits → anatomy/contact constraints → output format, aspect ratio, and resolution intent. Include canonical locks only for fields whose mode is `canonical`.
+3. Route providers and references according to `provider-routing.md`. Use one provider call per candidate and stop after the first complete PASS. Codex ImageGen comes first whenever Codex is available: inside Codex, call the built-in tool; in any other agent, run `scripts/generate-codex.py --check`, then generate with `generate-codex.py` while this agent keeps prompting, QA, recording and retries. Save each prompt to a file and run `python3 scripts/manage-run.py build-request --run-dir <run> --image <id> --prompt-file <prompt.txt>`; it writes `<prompt>.request.json` from the frozen references, hashes and output, for `generate-codex.py` and every fallback adapter. Record a failed check as a `codex` provider error and continue in provider order. Record Codex candidates with `--transport cli --provider-audit <output>.codex.json` (or `--transport builtin` inside Codex); an audit with `usable: false` is a failed candidate, and `usable: null` is recorded and reported as unverified.
+4. Run deterministic image validation against the frozen resolution mode, inspect the original resolution, measure the frozen proportion, and complete the assignment-aware visual QA in `qa-rubric.md`. Never resize or crop a candidate to make it pass. Promote only when automatic and visual verdicts both pass.
+5. Retry with one targeted correction at a time. Use at most 2 candidates per provider by default and 8 candidates per image total.
+6. Finalize through `manage-run.py finalize`. Preserve failed numbering gaps and report final paths, provider/model, effective prompt, references, and QA result. If every provider failed only for setup reasons (`unavailable`, `authentication` or `quota`) while images still have unused candidates, leave the run open: a finalized run cannot accept more images. Report what to configure (install and log in to Codex CLI, or set a provider key) so the same run resumes without repeating either gate; close it with `--allow-failures` only when budgets are exhausted or the user asks.
+
+After Gate 2 and successful preparation/initialization, **create the confirmed number of sub-agents using the runtime's delegation tool**, reduced only for current capacity. Follow the dispatch and result-collection procedure in `references/provider-routing.md`; writing a parallelism field alone does not start workers. Reuse available workers for remaining images. The main agent alone writes the manifest and promotes finals. Each worker handles one candidate for one image at a time; retries and fallback for that image wait for the coordinator's record. Do not launch generation workers during planning or before the required batch review.
+
+The required batch review above is the existing [expansion consistency review](references/proposal-selection.md#expansion-consistency-review), completed during assignment expansion.
+
+## Preview gallery
+
+Before final delivery, export the finalized run with `python3 scripts/export-gallery.py --run-dir <run>` and link the returned `gallery` HTML path. For a multi-source batch, keep each independent source group in its own run, with consecutive screenshots together in `input.content`; after all runs finalize, export one gallery using repeated `--run-dir` and an explicit `--output`. Include all proposals, final images and recorded attempts. A gallery is a read-only snapshot, not new QA or permission to generate. If setup failures leave a run open, resume it before exporting. Export errors do not require regeneration. See `references/gallery.md`.
+
+## Hard stops
+
+- Do not initialize a formal run, generate, or call a paid image API before both gates for the current scope are complete and the assignment validates. Do not exceed the confirmed budget or fabricate approval.
+- Do not weaken permanent Whale-chan identity, anatomy/contact checks, or assignment-specific QA merely because another field is custom.
+- Do not accept missing, misspelled, illegible, additional, or wrong-language text. Source UI, signatures, watermarks, usernames, QR codes, and unconfirmed brand marks always fail.
+- Do not silently drop a reference, role, alpha requirement, or other confirmed field because a provider lacks the capability; route forward or seek renewed confirmation.
+- Do not silently resize, crop, or convert a provider-native result, and do not send an exact-resolution assignment to a provider that cannot guarantee its width and height.
+- Do not route around a safety rejection. Record it as a run-level halt, stop new dispatch, and quarantine uncommitted in-flight results.
+- Do not promote from automatic checks alone.
+- Do not overwrite bundled references, prior runs, attempts, staging results, or final files.

@@ -1,0 +1,154 @@
+---
+name: turbo-quant-memory
+description: Install, configure, and operate the Turbo Quant Memory (tqmemory) MCP server. Use for persistent agent memory, project selection, index maintenance, MCP client setup, and tqmemory tools (remember_note, semantic_search, recent_context, link_entities, secrets vault).
+version: 0.36.1
+---
+
+# Turbo Quant Memory (tqmemory)
+
+Local-first MCP memory server for AI coding agents: compact retrieval, knowledge graph, secrets vault. You are the agent — this skill tells you how to detect, install, and operate it.
+
+## 1. Detect
+
+Check whether tqmemory is already available:
+
+1. **MCP tools present?** If you can call `health` / `server_info`, tqmemory is installed and registered. Call `health()`:
+   - `migrations_pending: true` → surface the `migrations_hint` field verbatim to the user. Do NOT run `migrate --apply` yourself — active MCP clients must close first.
+2. **CLI present but not registered?** Run `turbo-memory-mcp --version` in a shell. If it answers, the tool is installed and only MCP registration in the current client may be missing (see §2.3).
+3. **Neither?** Go to §2.
+
+## 2. Install & Deploy
+
+### 2.1 Install the CLI
+
+```bash
+uv tool install turbo-quant-memory
+# or pinned: uv tool install 'turbo-quant-memory==0.36.1'
+```
+
+### 2.2 Install this skill
+
+```bash
+turbo-memory-mcp skill install
+```
+
+Copies the canonical SKILL.md into all detected agent skill directories (`~/.agents/skills/` always, plus detected client dirs). Idempotent — re-run after every `uv tool upgrade` to upgrade older copies.
+
+### 2.3 Register the MCP server in the client
+
+```bash
+# Codex
+codex mcp add tqmemory -- turbo-memory-mcp serve
+
+# Gemini CLI
+gemini mcp add tqmemory turbo-memory-mcp serve
+
+# Claude Code (project scope)
+claude mcp add --scope project tqmemory -- turbo-memory-mcp serve
+```
+
+Any other client (Cursor, OpenCode, Antigravity, Kimi Code) takes the same server under its own config format — merge `{"tqmemory": {"command": "turbo-memory-mcp", "args": ["serve"]}}` into its MCP server map. Hermes runs a systemd gateway: add the same entry under `mcp_servers:` in `~/.hermes/config.yaml`, then `systemctl --user restart hermes-gateway`. Per-client details: <https://github.com/Lexus2016/turbo_quant_memory/blob/main/CLIENT_INTEGRATIONS.md>. Restart the client afterwards.
+
+**Claude Code, optional:** offer (do not silently add; it edits the user's settings) a `SessionStart` hook with `"matcher": "compact"` and `{"type": "mcp_tool", "server": "tqmemory", "tool": "recent_context", "input": {"format": "hook", "limit": 5}}`. It re-injects recent notes after every compaction. Use `format: "hook"`: an `mcp_tool` hook's plain text never reaches the model, only its JSON `additionalContext` does. The full snippet is in CLIENT_INTEGRATIONS.md.
+
+### 2.4 Verify and index
+
+1. After the client restarts, call `health()` — expect `status: "ok"`.
+2. Index the project's Markdown docs: `index_paths(paths=["."])`. The first run MUST name a root — a bare `index_paths()` only re-indexes roots already registered, and raises `ValueError` when there are none.
+3. Call `server_info()` and note the `project_id` — memory is scoped to it.
+
+### 2.5 Keep tqmemory and this skill in sync
+
+This skill's `version:` (frontmatter) always equals the package version it shipped with. Compare it with `server_info().version` or `turbo-memory-mcp --version`. `turbo-memory-mcp skill install --dry-run` shows every installed copy's version against the packaged one, without writing anything.
+
+- **Package newer than this skill:** run `turbo-memory-mcp skill install`. It rewrites every copy whose version differs and leaves matching ones untouched.
+- **This skill newer than the package, or the user asks to update:** do it in this order:
+  1. `uv tool upgrade turbo-quant-memory`
+  2. `turbo-memory-mcp skill install`
+  3. Tell the user to restart every MCP client. Running servers, including the shared daemon, keep the old code until then.
+  4. After the restart, call `health()`. On `migrations_pending`, follow §1.
+- **Never hand-edit an installed copy.** `skill install` replaces it on the next version change and skips it while the versions match, so a local edit either vanishes or silently diverges.
+- **Editing the canonical skill** (`src/turbo_memory_mcp/skills/turbo-quant-memory/SKILL.md` in the tqmemory repo): ship the edit in a release that bumps the package version, and set `version:` and the pinned install line in §2.1 to that version. `skill install` upgrades only on a version change, so an edit without a bump never reaches installed copies. `tests/test_skill_install.py` and `tests/test_version_metadata.py` fail when they drift.
+
+## 3. Operate
+
+### 3.1 Session-start ritual
+
+1. Call `health()` + `server_info()` (migrations check — see §1).
+2. Call `recent_context()` FIRST — a query-free bootstrap, **including session `handoff` notes** that a plain `semantic_search` hides by default. Ordering: `project`/`global` scopes are pure recency (newest first); in `hybrid` the current project's notes fill the window first and other projects' promoted notes only backfill leftover slots. `recent_context(format="text")` returns the same window as one line per note plus a short summary, about 5× smaller than the JSON.
+3. For a specific task: `semantic_search(query="<task topic>", scope="hybrid")`. Asking "what did we decide/learn about X"? Pass `source_filter="notes"` so indexed doc blocks don't crowd decision/lesson notes out of the top ranks. Recovering a handoff by query? Pass `tier_filter=["episodic"]`.
+4. A `semantic_search` or `hydrate` result that carries `index_refresh` (`{"state": "refreshing", "pending_files": N, "pending_items": M}`) means the project's index is still catching up in the background after a large change. Results can miss very recent doc edits. Carry on, and repeat the search later if those edits matter.
+
+### 3.1.1 Project catalog and folder bindings / Каталог проєктів і прив’язки папок
+
+EN: To use an existing project from another folder without storing a folder binding, call `select_project(project_id="<exact-id>")` after `list_projects()`, then verify `server_info().current_project.project_id`. It affects only this MCP connection. `select_project()` clears the choice and returns to automatic project detection. Selection does not index files or rewrite the project's original root. `TQMEMORY_PROJECT_ID` must not conflict with the selected ID.
+
+UK: Щоб користуватися наявним проєктом з іншої папки без збереження прив’язки, після `list_projects()` викличте `select_project(project_id="<точний-ідентифікатор>")`, а потім перевірте `server_info().current_project.project_id`. Вибір діє лише в цьому підключенні MCP. `select_project()` скидає його й повертає автоматичне визначення проєкту. Вибір не індексує файли та не змінює початковий корінь проєкту. `TQMEMORY_PROJECT_ID` не повинен суперечити вибраному ідентифікатору.
+
+EN: Call `list_projects()` to discover existing project IDs, names, labels, original roots, and bound folders. The CLI equivalent is `turbo-memory-mcp projects`. If the user explicitly says a new folder belongs to an existing project, call `bind_project(project_id="<exact-id>", path="/absolute/folder")`, then verify `server_info().current_project.project_id`. This selects the folder only for the current MCP connection and persists its exact folder-to-project binding. Use `set_project_labels(project_id, labels=[...])` only for display; labels are not identity. `unbind_project(path=...)` removes a binding. Do not bind on a guessed or ambiguous name. Binding does not index files; call `index_paths` separately only when requested. An explicit `TQMEMORY_PROJECT_ID` overrides folder bindings.
+
+UK: Викликайте `list_projects()`, щоб побачити ідентифікатори, назви, мітки та прив’язані папки; у терміналі — `turbo-memory-mcp projects`. Коли користувач прямо вказав, що нова папка належить наявному проєкту, викличте `bind_project(project_id="<точний-ідентифікатор>", path="/абсолютний/шлях")` і перевірте `server_info().current_project.project_id`. Прив’язка зберігається, а вибір папки діє лише в поточному підключенні MCP. Мітки через `set_project_labels` служать тільки для відображення. `unbind_project` прибирає прив’язку. Не обирайте проєкт за неоднозначною назвою. Прив’язка не індексує файли; `index_paths` — окрема дія. Явне `TQMEMORY_PROJECT_ID` має вищий пріоритет.
+
+EN: After restoring storage on another machine, use `select_project` by ID. Saved folder bindings contain machine-specific absolute paths; rebind them explicitly if needed. An encrypted secrets vault needs the original passphrase or system keyring key.
+
+UK: Після відновлення сховища на іншому комп’ютері виберіть проєкт через `select_project` за ідентифікатором. Збережені прив’язки містять абсолютні шляхи старого комп’ютера; за потреби прив’яжіть папки заново. Для зашифрованих секретів потрібен початковий пароль або ключ зі сховища ключів системи.
+
+### 3.2 Memory writing discipline
+
+When you learn something important, fix a complex bug, or make an architectural decision — save it IMMEDIATELY with `remember_note()`; do not wait for session end.
+
+- `kind="lesson"` — hard-won bug fixes and gotchas.
+- `kind="decision"` — structural or tooling choices.
+- `kind="pattern"` — reusable templates and conventions.
+- `kind="handoff"` — episodic progress before pausing or ending a session (lands in the `episodic` tier).
+- The USER explicitly asked to remember something → `remember_note(..., provenance="human-explicit")` (ranks above agent-written notes). Your own notes keep the default `provenance="agent"`.
+- Write notes in English: concise, technical, actionable, with 2–3 lowercase semantic tags. Never write smoke/temporary notes.
+
+### 3.3 Knowledge graph linking
+
+- Note about a bug fix: `link_entities(source_uri="note://<note_id>", target_uri="file://src/auth.py", relation_type="fixes")` — file URIs are **project-root-relative**, never absolute.
+- Note supersedes a note: `link_entities(source_uri="note://<new>", target_uri="note://<old>", relation_type="supersedes")`.
+- File implements a task: `link_entities(source_uri="file://src/auth.py", target_uri="task://TASK-101", relation_type="implements")`.
+- Browse associations with `get_related_entities(uri)`; remove wrong links with `unlink_entities(...)`.
+
+### 3.4 Updating memory
+
+- Knowledge replaced? Write the NEW note first, then `deprecate_note(old_id)` on the old one — never leave both active (search pollution).
+- Global scope is for reusable cross-project knowledge only, by explicit promotion (`promote_note`).
+- Preserve provenance: keep file paths and line numbers in note payloads.
+
+### 3.5 Secrets vault
+
+- **Discover, don't guess:** find the right `get_secret(name)` call via `semantic_search` for a `pattern`-kind recipe note that documents the credential. Never fish names from chat history.
+- Read the value from the dedicated `secret_value` field; pass it programmatically (env var, subprocess argument, in-memory). NEVER echo it into summaries, logs, or `remember_note`.
+- The user pasted a credential into chat (or you generated one in-conversation) → call `set_secret(name, value)` directly; the exposure already happened, the CLI adds no secrecy now.
+- The user is ABOUT to share a credential but hasn't → suggest `turbo-memory-mcp secret-set NAME` from a terminal (getpass keeps it out of the chat entirely).
+- Any vault error (`master_key_unavailable`, `master_key_mismatch`, `vault_error`) carries a `setup_hint` field with the exact commands the user needs. Print it verbatim and stop — never invent or regenerate a key.
+- `master_key_mismatch` specifically means the resolved key does not match the vault — usually a `TQMEMORY_SECRETS_PASSPHRASE` shadowing a keyring-keyed vault (that variable is an Argon2id passphrase, never the raw keyring key). The fix is normally to UNSET it. Reads never mint a key, so the vault is intact.
+
+### 3.6 Working alongside other agents
+
+Several agent sessions may share one working tree. tqmemory shows them to each other; it does not block anyone.
+
+- At session start, call `workspace_status`.
+- When starting a feature, call `announce_work(feature, areas)`; when done, call `finish_work()`.
+- While other sessions are live: call `workspace_status` before editing a file you have not touched recently, before every commit, and every few edits.
+- When any tqmemory response carries a `workspace` field, read it. Before writing a file another session changed since you read it, re-read it.
+- While other sessions are live, do not run destructive git commands (`checkout -- .`, `reset --hard`, `stash`, `clean`, branch switch) without the human's explicit confirmation.
+- "Live" means listed in `sessions`. A session under `idle_sessions` made no tqmemory call for 30+ minutes: it is not an active peer and its areas are not in `overlaps`. A session's presence or old `last_activity_at` is never a reason to postpone work; only `overlaps` and `recent_changes` are.
+- If your edit overwrote someone's work, or theirs overwrote yours: `file_history(path)` then `restore_file(path, version)`; a restore is itself undoable.
+
+### 3.7 Index maintenance / Обслуговування індексів
+
+EN: The primary storage-owning server starts a background index-maintenance pass immediately after startup, then checks again every six hours. It optimizes each project and global LanceDB table only when full-text rows are unindexed or versions older than seven days remain. Requests to a project may briefly return busy while its table is optimized. Its write lock is process-local; independent standalone or CLI writers are not covered, and a conflict is logged for retry on a later pass. Proxy clients and uncoordinated standalone fallback processes do not run maintenance. Use `turbo-memory-mcp index-status` for a read-only summary of size and coverage. Recent versions are retained for seven days, so a busy table can temporarily grow after optimization. Never delete LanceDB files by hand. Restart old MCP clients after upgrading so the new server becomes the storage owner. A first full sync of a legacy table re-embeds its rows once; future full syncs skip unchanged rows only while model, backend, and backend version match. Scheduled maintenance does not re-embed vectors.
+
+UK: Головний процес, який володіє сховищем, одразу після запуску починає фонову перевірку індексів і повторює її кожні шість годин. Він обслуговує таблиці проєктів та глобальну таблицю лише за наявності непроіндексованих рядків або версій старших за сім днів. Запит до проєкту під час оптимізації може тимчасово отримати відповідь «зайнято». Блокування діє лише всередині головного процесу; незалежні автономні процеси й команди термінала ним не охоплені, а конфлікт буде записано для повторної спроби. Клієнти-посередники й автономні процеси не запускають дубль. Команда `turbo-memory-mcp index-status` без зміни даних показує обсяг і покриття. Недавні версії зберігаються сім днів, тому активна таблиця після обслуговування може тимчасово зрости. Не видаляйте файли LanceDB вручну. Після оновлення перезапустіть старі клієнти MCP, щоб новий процес став власником сховища. Перше повне узгодження старої таблиці один раз перебудує її вектори; далі незмінені рядки пропускаються лише за однакової моделі, способу обчислення та версії бібліотеки. Регулярне обслуговування вектори не перебудовує.
+
+## 4. Troubleshoot
+
+| Symptom | Action |
+| --- | --- |
+| `migrations_pending` in `health()` | Surface `migrations_hint` verbatim; the user runs `turbo-memory-mcp migrate --apply` with MCP clients closed. Never self-apply. |
+| MCP tool timeouts | Run `turbo-memory-mcp doctor` FIRST — it prints the lockfile path, checks the owner with an authenticated connection, and does not block the daemon's listener. Owner dead → just restart the MCP client; the server reclaims stale locks itself. Owner alive → leave the lock alone. Never `pkill -f turbo-memory-mcp`: it kills every tqmemory server on the host, including your own. |
+| `master_key_unavailable` / `master_key_mismatch` | Print the `setup_hint` field verbatim; stop. For a mismatch, suspect a `TQMEMORY_SECRETS_PASSPHRASE` shadowing a keyring-keyed vault. |
+| Anything else | `turbo-memory-mcp doctor` runs lock / migration / storage / socket / index read-path diagnostics and prints PASS/FAIL per check. A `[FAIL] read path` line names the index row search cannot read; report it verbatim and do not retry the search. |

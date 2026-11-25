@@ -1,0 +1,196 @@
+---
+name: webiny-admin-catalog
+description: >
+  admin — 28 abstractions.
+---
+
+# admin
+
+## How to Use
+
+1. Find the abstraction you need below
+2. You MUST read the source file to get the exact interface and types!
+3. Import: `import { Name } from "<importPath>";`
+
+## Abstractions
+
+---
+
+**Name:** `AdminConfig`
+**Import:** `import { AdminConfig } from "webiny/admin"`
+**Source:** `@webiny/app-admin/config/AdminConfig.tsx`
+
+---
+
+**Name:** `BaseError`
+**Import:** `import { BaseError } from "webiny/admin"`
+**Source:** `@webiny/feature/admin/index.ts`
+
+---
+
+**Name:** `BuildParam`
+**Import:** `import { BuildParam } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/buildParams/index.ts`
+
+---
+
+**Name:** `BuildParams`
+**Import:** `import { BuildParams } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/buildParams/index.ts`
+
+---
+
+**Name:** `BulkActionButton`
+**Import:** `import { BulkActionButton } from "webiny/admin"`
+**Source:** `@webiny/app-admin/components/BulkActions/index.ts`
+
+---
+
+**Name:** `Command`
+**Import:** `import { Command } from "webiny/admin"`
+**Source:** `@webiny/app-admin/presentation/commandPalette/index.ts`
+
+---
+
+**Name:** `CommandPalettePresenter`
+**Import:** `import { CommandPalettePresenter } from "webiny/admin"`
+**Source:** `@webiny/app-admin/presentation/commandPalette/index.ts`
+
+---
+
+**Name:** `createAbstraction`
+**Import:** `import { createAbstraction } from "webiny/admin"`
+**Source:** `@webiny/feature/admin/index.ts`
+
+---
+
+**Name:** `createFeature`
+**Import:** `import { createFeature } from "webiny/admin"`
+**Source:** `@webiny/feature/admin/index.ts`
+
+---
+
+**Name:** `createProvider`
+**Import:** `import { createProvider } from "webiny/admin"`
+**Source:** `@webiny/app/core/createProvider.tsx`
+**Description:** Creates a Higher Order Component which wraps the entire app content.
+This is mostly useful for adding React Context providers.
+
+---
+
+**Name:** `createProviderPlugin`
+**Import:** `import { createProviderPlugin } from "webiny/admin"`
+**Source:** `@webiny/app/core/createProviderPlugin.tsx`
+**Description:** Creates a component, which, when mounted, will register an app provider.
+This is particularly useful for wrapping the entire app with custom React Context providers.
+For more information, visit https://www.webiny.com/docs/admin-area/basics/framework.
+
+---
+
+**Name:** `createReactiveComponent`
+**Import:** `import { createReactiveComponent } from "webiny/admin"`
+**Source:** `@webiny/app-admin/index.ts`
+
+---
+
+**Name:** `DevToolsSection`
+**Import:** `import { DevToolsSection } from "webiny/admin"`
+**Source:** `@webiny/app-admin/components/index.ts`
+**Description:** Registers a named section in the Webiny DevTools extension.
+Renders nothing — purely a data registration side-effect.
+
+When the component unmounts (e.g., route change), the section
+is automatically removed from DevTools.
+
+---
+
+**Name:** `FormModelFactory`
+**Import:** `import { FormModelFactory } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/formModel/abstractions.ts`
+
+---
+
+**Name:** `LexicalContext`
+**Import:** `import { LexicalContext } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/tools/index.ts`
+
+---
+
+**Name:** `MainGraphQLClient`
+**Import:** `import { MainGraphQLClient } from "webiny/admin"`
+**Source:** `@webiny/app/features/mainGraphQLClient/index.ts`
+
+---
+
+**Name:** `NetworkErrorEventHandler`
+**Import:** `import { NetworkErrorEventHandler } from "webiny/admin"`
+**Source:** `@webiny/app/errors/index.ts`
+
+---
+
+**Name:** `Notifications`
+**Import:** `import { Notifications } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/notifications/abstractions.ts`
+
+---
+
+**Name:** `Plugin`
+**Import:** `import { Plugin } from "webiny/admin"`
+**Source:** `@webiny/app/core/Plugin.tsx`
+
+---
+
+**Name:** `Provider`
+**Import:** `import { Provider } from "webiny/admin"`
+**Source:** `@webiny/app/core/Provider.tsx`
+**Description:** Register a new React context provider.
+
+---
+
+**Name:** `RegisterFeature`
+**Import:** `import { RegisterFeature } from "webiny/admin"`
+**Source:** `@webiny/app-admin/components/RegisterFeature.tsx`
+
+---
+
+**Name:** `Routes`
+**Import:** `import { Routes } from "webiny/admin"`
+**Source:** `@webiny/app-admin/routes.ts`
+
+---
+
+**Name:** `Tool`
+**Import:** `import { Tool } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/tools/index.ts`
+
+---
+
+**Name:** `ToolPipelineRunner`
+**Import:** `import { ToolPipelineRunner } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/tools/index.ts`
+
+---
+
+**Name:** `ToolsFeature`
+**Import:** `import { ToolsFeature } from "webiny/admin"`
+**Source:** `@webiny/app-admin/features/tools/index.ts`
+
+---
+
+**Name:** `useBuildParams`
+**Import:** `import { useBuildParams } from "webiny/admin"`
+**Source:** `@webiny/app-admin/presentation/buildParams/useBuildParams.ts`
+
+---
+
+**Name:** `useBulkActionDialog`
+**Import:** `import { useBulkActionDialog } from "webiny/admin"`
+**Source:** `@webiny/app-admin/components/BulkActions/index.ts`
+
+---
+
+**Name:** `useFeature`
+**Import:** `import { useFeature } from "webiny/admin"`
+**Source:** `@webiny/app/shared/di/useFeature.ts`
+
+---

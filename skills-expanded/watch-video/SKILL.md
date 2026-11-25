@@ -1,0 +1,413 @@
+---
+name: watch-video
+description: When you want to extract content from a video — YouTube, Loom, Vimeo, Riverside, Zoom recording, local MP4, X/IG video, anything yt-dlp supports. Three depth modes user picks per invocation — transcript (just words, fast/free), visual (transcript + ffmpeg frame extraction + Claude vision pass on key moments), multimodal (Gemini native video ingestion if $GEMINI_API_KEY set, else dense Claude vision). Uses local Whisper for transcription (MLX-Whisper on Apple Silicon, faster-whisper elsewhere), falls back to platform-provided transcripts when available (Loom, Riverside, YouTube auto-subs). Saves to ~/Documents/videos/<source>-<slug>-<date>/ and optionally captures summary to second-brain raw/ as call-/meeting-/note-. Triggers on "/watch-video <url>," "watch this video," "transcribe this loom," "analyze this video," "summarize this recording," "key moments from this," "what happened in this video." For a post's text and engagement, use social-fetch.
+metadata:
+  version: 0.3.1
+---
+
+# /watch-video — Transcribe and analyze any video at the depth you choose
+
+Replaces and broadens the prior `youtube-transcript` skill. YouTube is now one of many sources; depth is user-controlled.
+
+## Step 1 — Parse input
+
+Accept:
+- **YouTube**: full URL, `youtu.be/<id>`, `youtube.com/shorts/<id>`, raw 11-char ID
+- **Loom**: `loom.com/share/<id>` or `loom.com/embed/<id>`
+- **Vimeo**: `vimeo.com/<id>`
+- **Riverside**: download URL or local file
+- **Zoom**: local `.mp4` from a downloaded recording
+- **X / IG / TikTok video**: URL — defers to `social-fetch` for metadata, uses yt-dlp for the file
+- **Local file**: any path to an `.mp4` / `.mov` / `.webm` / `.mkv`
+
+Detect source from URL pattern or file extension. If ambiguous, ask.
+
+## Step 2 — Parse depth mode
+
+| Invocation | Mode | What you get |
+|---|---|---|
+| `/watch-video <url>` | **transcript** (default) | Clean text, metadata, optional chapters |
+| `/watch-video <url> transcript` | transcript | Same as default |
+| `/watch-video <url> visual` | visual | Transcript + frames at intervals + Claude vision pass identifying key moments |
+| `/watch-video <url> multimodal` | multimodal | Native video to Gemini (if `$GEMINI_API_KEY`), else dense Claude vision frame-by-frame |
+
+If the depth isn't specified and the video is >10 minutes, ask before defaulting (visual/multimodal cost real money on long videos).
+
+## Step 3 — Pull metadata
+
+For URL sources, use yt-dlp:
+
+```bash
+yt-dlp --skip-download --print "%(.{title,uploader,duration_string,upload_date,webpage_url,chapters,description})j" "<url>"
+```
+
+One JSON object comes back. Descriptions run multi-line, so don't parse the output with `|` or line splits. `chapters` is absent when the video has none. `upload_date` is `YYYYMMDD`.
+
+Capture: title, uploader/channel, duration, upload date, description (first paragraph), chapters (list or absent). Save the object as `<workdir>/metadata.json` once Step 4 creates the workdir.
+
+For local files, use ffprobe:
+
+```bash
+ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "<file>"
+```
+
+## Step 4 — Build workdir
+
+```
+~/Documents/videos/<source>-<slug>-<date>/
+```
+
+Where:
+- `source`: `youtube` / `loom` / `vimeo` / `riverside` / `zoom` / `local`
+- `slug`: kebab-case of title (first 4–6 words, max 50 chars)
+- `date`: `YYYY-MM-DD`
+
+## Step 5 — Get the transcript
+
+**Backend selection** (in order):
+
+1. **Platform-provided transcript** if it exists and looks complete:
+   - YouTube: `yt-dlp --write-sub --write-auto-sub --skip-download --sub-langs "en,en-US,en-GB" --sub-format vtt -o "<workdir>/transcript" "<url>"` — writes `<workdir>/transcript.en.vtt`. For a non-English video, run `yt-dlp --list-subs "<url>"` and swap in its code. Don't use `en.*`: it also matches auto-translated tracks (`en-sq`, …) and trips HTTP 429.
+   - Loom: fetch via `https://www.loom.com/share/<id>` page metadata or Loom API if `$LOOM_API_KEY` set
+   - Riverside: built-in transcripts available on the recording's share page
+   - If platform transcript exists and has timestamps, use it. Skip Whisper.
+
+2. **MLX-Whisper local** (default on Apple Silicon Macs):
+```bash
+# Install once: pip install mlx-whisper
+python3 -I - "<file>" "<workdir>/transcript" <<'PY'
+import sys, mlx_whisper
+r = mlx_whisper.transcribe(sys.argv[1], path_or_hf_repo="mlx-community/whisper-large-v3-turbo", condition_on_previous_text=False)
+def ts(x):
+    h, m, s = int(x // 3600), int(x % 3600 // 60), x % 60
+    return f"{h:02}:{m:02}:{s:06.3f}".replace(".", ",")
+segs = r["segments"]
+open(sys.argv[2] + ".txt", "w", encoding="utf-8").write("\n".join(s["text"].strip() for s in segs) + "\n")
+with open(sys.argv[2] + ".srt", "w", encoding="utf-8") as f:
+    for i, s in enumerate(segs, 1):
+        f.write(f"{i}\n{ts(s['start'])} --> {ts(s['end'])}\n{s['text'].strip()}\n\n")
+PY
+```
+   Both snippets write `transcript.txt` and a timestamped `transcript.srt`, which the loop check in Step 5 reads.
+   Or via the CLI: `mlx_whisper <file> --model mlx-community/whisper-large-v3-turbo --output-dir <workdir>`
+
+3. **Not on Apple Silicon** (Linux, Intel Mac, Windows, cloud agents): `faster-whisper` (CPU or CUDA) or `whisper.cpp`. Same model size.
+```bash
+# Install once: pip install faster-whisper "av>=17,<18"
+python3 -I - "<file>" "<workdir>/transcript" <<'PY'
+import sys
+from faster_whisper import WhisperModel
+model = WhisperModel("large-v3-turbo", compute_type="int8")  # add device="cuda" on an NVIDIA GPU
+segments, info = model.transcribe(sys.argv[1], vad_filter=True, condition_on_previous_text=False)
+def ts(x):
+    h, m, s = int(x // 3600), int(x % 3600 // 60), x % 60
+    return f"{h:02}:{m:02}:{s:06.3f}".replace(".", ",")
+with open(sys.argv[2] + ".txt", "w", encoding="utf-8") as txt, open(sys.argv[2] + ".srt", "w", encoding="utf-8") as srt:
+    for i, s in enumerate(segments, 1):
+        txt.write(s.text.strip() + "\n")
+        srt.write(f"{i}\n{ts(s.start)} --> {ts(s.end)}\n{s.text.strip()}\n\n")
+PY
+```
+   Run it with whichever `python3` has the package (a venv's `bin/python` works). The `av` pin matters: faster-whisper 1.2.x passes an argument that PyAV 18+ removed, and transcription then dies with `TypeError: open() got an unexpected keyword argument 'metadata_errors'`.
+
+Download the video file first if it's a URL (use yt-dlp; Loom/Vimeo/YT all supported):
+
+```bash
+yt-dlp -f "bv*[height<=720]+ba/b[height<=720]" --merge-output-format mp4 -o "<workdir>/video.%(ext)s" "<url>"
+```
+
+720p is plenty for transcription and frame analysis (smaller download, faster processing). Without `--merge-output-format mp4`, YouTube usually lands as `video.webm` and every `video.mp4` below misses.
+
+**Clean the transcript** (YouTube VTT — de-dups rolling captions, strips tags, decodes `&gt;`/`&amp;`, starts a new paragraph after a >2s gap between cues; Whisper output is already clean):
+
+```bash
+python3 -I - "<workdir>/transcript.en.vtt" "<workdir>/transcript.txt" <<'PY'
+import html, re, sys
+
+def secs(t):
+    return sum(float(p) * m for p, m in zip(reversed(t.replace(",", ".").split(":")), (1, 60, 3600)))
+
+out, last, prev_end = [], None, None
+for block in re.split(r"\n{2,}", open(sys.argv[1], encoding="utf-8").read().replace("\r\n", "\n")):
+    lines = block.strip().splitlines()
+    cue = next((i for i, l in enumerate(lines) if "-->" in l), None)
+    if cue is None:
+        continue
+    start, end = (secs(t.split()[0]) for t in lines[cue].split("-->"))
+    first = True
+    for raw in lines[cue + 1:]:
+        text = html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+        if not text or text == last:  # rolling captions repeat the previous line
+            continue
+        if first and prev_end is not None and start - prev_end > 2:
+            out.append("")
+        first = False
+        out.append(text)
+        last = text
+    prev_end = end
+open(sys.argv[2], "w", encoding="utf-8").write("\n".join(out) + "\n")
+PY
+```
+
+**Verify the transcript for Whisper hallucination loops before using it.** On long recordings (especially multi-speaker calls with silence/crosstalk), Whisper can fall into a repetition loop and emit the same caption for huge stretches — a real failure produced "Yep." for 95 of 105 minutes while looking like a successful run. Detect it by scanning for runs of ≥8 consecutive identical captions:
+
+The check needs timestamped captions, so have Whisper write SRT (`--output-format srt` on the mlx_whisper CLI).
+
+```python
+# entries = [(start_sec, text), ...] parsed from the SRT
+i = 0
+while i < len(entries):
+    j = i
+    while j+1 < len(entries) and entries[j+1][1] == entries[i][1]:
+        j += 1
+    if j - i >= 8:
+        print("hallucination run:", entries[i][0], "->", entries[j][0], repr(entries[i][1][:30]))
+    i = j + 1
+```
+
+If long runs appear, re-transcribe with conditioning disabled — this breaks the loop propagation:
+
+```bash
+mlx_whisper <file> --model mlx-community/whisper-large-v3-turbo --output-dir <workdir> --output-format srt --condition-on-previous-text False
+```
+
+On faster-whisper, pass `condition_on_previous_text=False` to `transcribe()`; on whisper.cpp, `--max-context 0`.
+
+Run this check BEFORE building any analysis on the transcript; a looped transcript silently poisons keyword scans and any vision pass that pairs frames with audio.
+
+Save final to `<workdir>/transcript.txt`.
+
+## Step 6 — If `transcript` mode: stop here
+
+Output:
+- `transcript.txt`
+- `metadata.json`
+- One-line summary in chat: title, source, duration, word count
+- Path to workdir
+- (Optional) Step 9 — offer to capture to second-brain
+
+## Step 7 — If `visual` mode: extract frames + vision pass
+
+### Frame extraction (ffmpeg)
+
+Cadence by source heuristic:
+
+| Source type | Frame cadence |
+|---|---|
+| Screen-share / Loom / demo | 1 frame per **5s** (UI changes fast) |
+| Talking head / podcast | 1 frame per **30s** (slow change) |
+| Slide presentation | 1 frame per **10s** + force a frame on each detected scene change |
+| Default if unsure | 1 frame per **15s** |
+
+```bash
+mkdir -p "<workdir>/frames"
+ffmpeg -i "<workdir>/video.mp4" -vf "fps=1/15" "<workdir>/frames/frame-%04d.png" -y
+```
+
+For scene-change detection (slide decks especially):
+
+```bash
+ffmpeg -i "<workdir>/video.mp4" -vf "select='gt(scene,0.3)',showinfo" -fps_mode vfr "<workdir>/frames/scene-%04d.png" 2> "<workdir>/scene-detection.log"
+```
+
+### Dense second pass on hot windows (bugs / changes being discussed)
+
+For working sessions, bug reviews, and product walkthroughs, a single uniform cadence misses the detail that matters. Do a **two-pass** analysis:
+
+1. **First pass** at the normal cadence identifies findings (bugs hit on screen, improvements discussed) with timestamps.
+2. Build **hot windows** from (a) the first pass's finding timestamps and (b) a transcript keyword scan (`bug|broken|doesn't work|error|glitch|stuck|failing|should change|fix|confusing|janky`), pad each ±20s, and merge overlaps. Keep windows tight — over-padding merges the whole video back into one window.
+3. Re-extract those windows at **1 frame per 3s** and run a second, detail-focused vision pass over them, pairing with the transcript:
+
+```bash
+mkdir -p "<workdir>/dense"
+# per hot window [A, B] seconds:
+ffmpeg -ss <A> -to <B> -i "<workdir>/video.mp4" -vf "fps=1/3,scale=1280:-2" "<workdir>/dense/w<NN>-%03d.png" -y
+```
+
+The dense pass is where exact repro sequences, on-screen error text, and short-lived UI states (a modal that flashes, a wrong redirect, a state mismatch) get captured — several real findings only exist at 3s cadence. Long videos: parallelize both passes with subagents, each taking a frame chunk + its transcript slice, then dedupe findings across passes at synthesis.
+
+### Vision pass
+
+Pair each frame with the transcript chunk for the same timestamp window. Then batch-send to Claude vision for synthesis.
+
+**Per-frame batch prompt** (up to ~10 frames per call):
+
+> Here are N frames from a video at timestamps T1..TN. For each frame, describe what's on screen in 1–2 sentences. Flag: (a) UI changes from previous frame, (b) text visible on screen, (c) any moment that looks like a decision, action, or notable event. Also note the transcript text spoken during this window.
+
+Save the output as `<workdir>/moments.md`:
+
+```markdown
+# Key moments — <title>
+
+## 00:00:15 (frame-001.png)
+**On screen**: Login form, email field focused
+**Transcript**: "So you just open it up and..."
+**Note**: Beginning of UI demo
+
+## 00:00:45 (frame-002.png)
+**On screen**: Dashboard with 4 cards
+**Transcript**: "And here's where you see all your projects."
+**Note**: Major view change — first time the dashboard appears
+```
+
+### Generate summary
+
+After moments are identified, synthesize the whole video into `<workdir>/summary.md`:
+
+```markdown
+# Summary — <title>
+
+**Source:** <source URL / file>
+**Duration:** <hh:mm:ss>
+**Watched at:** <date>
+**Mode:** visual
+
+## TL;DR
+<2–4 sentences>
+
+## Key moments
+- 00:00:15 — <one-line>
+- 00:00:45 — <one-line>
+
+## Action items flagged
+- <item> [timestamp]
+
+## Decisions flagged
+- <decision> [timestamp] — consider routing to /decide
+
+## Quotes worth keeping
+- "..." [timestamp]
+
+## Open questions
+- <question raised but not answered>
+```
+
+## Step 8 — If `multimodal` mode
+
+### Backend selection
+
+1. **Gemini native** if `$GEMINI_API_KEY` is set (much cheaper + faster than per-frame for long videos):
+
+   **Default model: `gemini-3.5-flash`** (released May 2026, ~USD 1.50 input / USD 9 output per 1M tokens; ~USD 0.15/sec of video; beats 3.1 Pro on coding/agentic benchmarks at 4× the speed). Override to `gemini-3.1-pro` for brand audits / high-stakes analysis where details matter; `gemini-2.5-flash-lite` for bulk cheap processing.
+
+   ```bash
+   # Step 1: Upload video via Files API
+   FILE_URI=$(curl -s -X POST "https://generativelanguage.googleapis.com/upload/v1beta/files?key=$GEMINI_API_KEY" \
+     -H "X-Goog-Upload-Command: start, upload, finalize" \
+     -H "Content-Type: video/mp4" \
+     --data-binary "@<workdir>/video.mp4" | jq -r '.file.uri')
+
+   # Wait until file is ACTIVE (Gemini processes the video first)
+   while true; do
+     STATE=$(curl -s "$FILE_URI?key=$GEMINI_API_KEY" | jq -r '.state')
+     [ "$STATE" = "ACTIVE" ] && break
+     sleep 3
+   done
+
+   # Step 2: Generate content with the file + multimodal-analysis prompt
+   curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$GEMINI_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d "{
+       \"contents\":[{
+         \"parts\":[
+           {\"file_data\":{\"mime_type\":\"video/mp4\",\"file_uri\":\"$FILE_URI\"}},
+           {\"text\":\"<multimodal analysis prompt — see Step 7's summary template + use-case extensions>\"}
+         ]
+       }]
+     }"
+   ```
+
+   Files persist in Gemini Files API for ~48 hours — useful for re-querying the same video with different prompts.
+
+2. **Dense Claude vision fallback** if no Gemini key:
+   - Frame cadence: 1 frame per **3s** (much denser than visual mode)
+   - Batch through Claude vision with the multimodal-analysis prompt
+   - Slower and more expensive than Gemini for long videos — warn the user before running on >10min content
+
+### Multimodal output
+
+Same `summary.md` template as Step 7 + an extended section:
+
+```markdown
+## Multimodal observations
+- **Body language / delivery**: <observations on talking-head video>
+- **Pacing**: <fast/slow/uneven>
+- **Visual style**: <brand audit, ad review, design observations>
+- **Audio quality / atmosphere**: <music, silence, background>
+```
+
+Exact extra sections depend on the use case (brand audit, ad review, talk delivery review, client-call read). Use case is inferred from the source + the user's verbal framing when invoking.
+
+## Step 9 — Optional: capture to second-brain
+
+After any mode completes, offer:
+
+> *"Want to capture this to second-brain? I'll write a `call-<slug>.md` (or `meeting-` / `note-` / `resource-`) to `${SECOND_BRAIN_VAULT:-$HOME/Documents/SecondBrain}/raw/` with the summary, source URL, and transcript link."*
+
+Type prefix by source:
+
+| Source | Prefix |
+|---|---|
+| Loom / Zoom / Riverside / Otter / call recording | `call-` |
+| Meeting (own notes, not a transcript) | `meeting-` |
+| Talk / keynote / conference | `note-` |
+| Ad / landing-page video / marketing reference / competitor video | `resource-` |
+
+File body: 1-line source, the summary, link to full workdir.
+
+## Step 10 — Report
+
+In chat:
+
+- One-line headline: `<source> · <title> · <duration> · <mode> · <word count> words`
+- Workdir path
+- For `visual` / `multimodal`: brief list of top 3 key moments
+- For all modes: any action items / decisions flagged for triage
+- If captured to second-brain: that path too
+
+## Sources reference
+
+| Source | Download | Built-in transcript | Notes |
+|---|---|---|---|
+| YouTube | `yt-dlp` | Auto-subs (`--write-auto-sub`) | Same as the prior youtube-transcript skill |
+| Loom | `yt-dlp` (Loom supported) | Yes — fetch via embed metadata or Loom API | Async screenshare focus — prime use case |
+| Vimeo | `yt-dlp` | Sometimes | Marketing/embed videos |
+| Riverside | Direct URL from export, or local file | Yes — Riverside generates them | Podcast episodes |
+| Zoom | Local `.mp4` (downloaded recordings) | Sometimes (Zoom audio transcript file) | Client calls |
+| X / IG / TikTok | Defer to `social-fetch` for metadata, yt-dlp for file | No | Short-form |
+| Local file | n/a | n/a | Drop a path |
+
+## Composes with
+
+- `social-fetch` — for X/IG/TikTok URL metadata (engagement, author, replies) before video processing
+- `second-brain` — capture summary as `raw/call-<slug>.md`, `meeting-`, `note-`, or `resource-` per source type
+- `decide` — when a video contains a flagged decision, route to `/decide` for structured capture
+- `project-manager` — action items flagged in summary can be triaged to project boards
+- `slide-deck` — talk recordings → outline extraction → deck draft (loop)
+- `jab-hook` — quotes + clip-worthy moments from podcast/talk videos feed BIP/promo posts
+- **`skillify from-video`** — primary use case for `visual` mode on process recordings. the user records themselves doing a workflow (Loom/screen-share), this skill extracts transcript + key visual moments, then `skillify` synthesizes the workflow into a SKILL.md. "Record once, AI converts to skill."
+
+## Error handling
+
+| Failure | Response |
+|---|---|
+| Video unavailable / private / region-locked | Report and stop |
+| No subtitles + Whisper not installed | Tell the user: `pip install mlx-whisper` (Apple Silicon) or `pip install faster-whisper` (anything else) |
+| ffmpeg missing (for visual/multimodal) | Tell the user: `brew install ffmpeg` |
+| Vision pass returns empty / unclear | Lower the frame count, retry, or fall back to transcript-only with a note |
+| Multimodal requested but no `$GEMINI_API_KEY` and >30min video | Warn cost, offer to fall back to visual mode |
+| `yt-dlp` binary missing | `brew install yt-dlp` |
+
+## Notes on quality
+
+- **Never put a dollar sign directly before a digit in this file.** Agent hosts replace those tokens with the invocation arguments when they load a skill: an awk field reference turns into the URL and a price like USD 1.50 written with a dollar sign turns into a word from the command line. Use a Python snippet, and spell money as `USD 1.50`.
+- **User picks depth, not the skill.** Transcript / visual / multimodal are 3 different cost + latency profiles. Long videos (>10 min) always confirm before spending on visual/multimodal.
+- **Platform transcript first, Whisper second.** YouTube auto-subs, Loom transcripts, Riverside built-in transcripts — all free + instant when they exist. Fall back to local Whisper only when nothing platform-provided works.
+- **Always verify Whisper output for repetition loops.** A hallucination loop can silently replace 90%+ of a long recording with one repeated caption while the run exits 0. Scan for runs of identical captions (Step 5); re-run with conditioning on previous text turned off if found.
+- **Densify around bugs and change discussions.** When the video is a working session or bug review, run the two-pass flow (Step 7): normal cadence to find the moments, then 1 frame/3s over ±20s hot windows around every bug/change timestamp + transcript keyword hit. Uniform cadence alone misses flash-frame UI states and exact repro sequences.
+- **Local Whisper is the fast path.** MLX on M-series Macs transcribes faster than real-time; faster-whisper is the equivalent elsewhere. Cloud Whisper is a distant second choice — costs money, network dependency, worse latency on typical durations.
+- **Frame cadence by source type.** Screen-share / demos need 1 frame per 5s (UI changes fast); talking-head podcasts need 1 per 30s (slow change). Default 15s if unsure. Wrong cadence = missed key moments OR wasted vision-pass cost.
+- **720p is plenty.** Downloading 1080p / 4K for transcription + frame analysis wastes bandwidth + storage. `yt-dlp -f "bv*[height<=720]+ba/b[height<=720]"` is the default.
+- **Scene-change detection catches slide transitions.** When the video is a slide presentation, add `ffmpeg -vf "select='gt(scene,0.3)'"` to force a frame on each detected slide change — more reliable than pure time-based sampling.
+- **Multimodal cost warning is non-optional.** Gemini multimodal on a 60-min video is meaningfully expensive. Warn before running; offer transcript-only as fallback if the user isn't sure.
+- **Summary format includes routing hints.** `## Decisions flagged` + `## Action items flagged` sections signal `/decide` and `/project-manager` follow-ups. Downstream composability lives in the summary structure.

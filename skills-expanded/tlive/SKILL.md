@@ -1,0 +1,109 @@
+---
+name: tlive
+description: tlive — remote approvals (Telegram/Feishu/web), live web terminal, and
+  session monitoring for Claude Code / Codex. Use for configuring or diagnosing
+  tlive, connecting IM platforms, printing session links, or explaining approval
+  behavior. Triggers "tlive", "IM bridge", "phone approvals", "remote terminal",
+  "Telegram/Feishu notifications".
+---
+
+# tlive usage guide
+
+tlive is a self-hosted monitoring/approval layer. Claude Code sessions report
+through global hooks; Codex sessions are watched through an app-server
+companion process (no hooks, no trust step). Completions and failures land in
+IM (Telegram/Feishu) and the web dashboard, where you can reply-to-continue.
+The **posture** (`tlive mode`, default `notify`) decides whether approvals are
+held for a remote answer, in escalation order: `off` makes every hook a no-op;
+`notify` only watches + notifies (the shim never holds an approval — prompts
+stay 100% native) and reports **to the machine** (desktop toast + dashboard)
+— IM stays quiet about a dialog only the terminal can answer, except once
+ever per chat, when a card explains why and offers the switch to `full`;
+`full` is the posture that puts approvals **on your phone**: it turns on
+remote approval for the main session (Allow/Deny from IM/desktop/dashboard),
+in parallel with the terminal dialog — first answer wins; `all` holds
+sub-agent approvals too, with **no terminal dialog** for a held one until the
+window ends, so use it only when nobody is at the keyboard (`tlive mode full`
+goes back). Also settable from IM: `/mode` (a bare `/mode` replies with the
+ladder). The daemon auto-starts with new sessions (disable via
+`daemon.autoStart: false`).
+
+## Commands
+- `tlive setup` — configure IM credentials + register the Claude/Codex plugins
+  (hooks ride the Claude plugin; Codex needs none). `--hooks-only` re-registers
+  plugins only; add `--claude` / `--codex` to pick a vendor.
+- `tlive status` — daemon health, effective `mode`, channels, and the Codex
+  companion state (`running` / `degraded` / `off`; degraded or off = Codex
+  approvals local-only).
+- `tlive mode off|notify|full|all` — set posture (see intro). Persisted to
+  config, takes effect on the next hook; `notify` is the default, `full` =
+  remote approval on, `all` = also holds sub-agent approvals.
+- `tlive run <cmd>` — wrap a process: local terminal + live web terminal (QR to open).
+- `tlive url` — print the dashboard link + QR code.
+- `tlive logs -f` — follow the daemon log.
+- `tlive start` / `tlive stop` — explicit lifecycle (start is rarely needed;
+  sessions lazy-start the daemon unless autoStart is off).
+
+## Diagnostics
+1. No IM messages: `tlive status` for channel config; `tlive logs -f` for send
+   errors; confirm the daemon is up after starting a session.
+2. Codex has no remote cards: check `tlive status` — the companion line must say
+   `running`. `off` means codex isn't on PATH (or Windows); `degraded` means
+   codex is there but nothing is answering on the app-server socket — see
+   `~/.tlive/codex-appserver.log`. Neither is permanent: tlive keeps checking,
+   so installing or reinstalling codex recovers on its own with no tlive
+   restart. Either way Codex still prompts locally; nothing is ever auto-run.
+3. No approval card ever arrives: check `tlive status` — the `mode:` line must
+   say `full` or `all`. The default `notify` never sends approval cards (tool
+   prompts stay local); enable remote approval with `tlive mode full`.
+4. Claude approval card unanswered (in `full` or `all`): the local dialog stays
+   live the whole time (parallel channels, first answer wins); answering
+   locally resolves the remote card as "answered in terminal". The remote
+   window defaults to ~24h (`approvals.windowSec`, shared by both vendors).
+5. Web page unreachable: `tlive url` for the current link (token is in the URL);
+   phones need the same LAN (or your own reverse proxy/VPN — tlive has no
+   `publicUrl` config, and cards never carry the link).
+
+## Security model in one breath
+- Never auto-allow: unanswered → Claude's local dialog governs / Codex's native
+  prompt governs. Deny always carries a reason.
+- Read-only tools (Read/Glob/Grep) pass by default. `/safe on` also auto-allows
+  routine ops (non-dangerous Bash, non-sensitive edits) — the danger floor
+  (rm -rf, sudo, .env/.ssh writes…) still asks and no config can lower it.
+  `/trust on` pauses approvals entirely (high risk — pair with allowedSenders).
+- Runtime switches flip the same state from either entrance: IM commands
+  (/mute /trust /safe on|off, /mode for the posture ladder) and the CLI
+  (`tlive mute|trust|safe on|off`, `tlive mode off|notify|full|all`). `/mute on`
+  = go quiet; it silences IM notifications ONLY. The desktop toast is
+  independent of `/mute` and has no on/off switch of its own: one fires per
+  thing that starts waiting on you (a pending approval, or the idle "waiting
+  for your input" nudge), named with its project and call, and tlive never
+  touches it again — it ages into the notification centre like any other
+  app's, a log rather than live status (the dashboard is the live view).
+  Silence it with your OS's Do Not Disturb, or `tlive mode off` to stop tlive
+  entirely. A finished turn notifies the desktop too, from the Stop hook and
+  after the same grace as the IM card; a failed tool does not, it blocks
+  nobody.
+- Vendor-side `permissions.deny` always wins; tlive never overrides it.
+
+## First-time onboarding
+
+When the user says "help me set up tlive" (or runs /tlive:setup), walk them
+through:
+1. `tlive status` to check the engine; missing → `npm i -g tlive`.
+2. No channels → collect Telegram (bot token + chat id) or Feishu
+   (appId + appSecret + chat id `oc_…`) credentials and merge into `~/.tlive/config.json`:
+   `{ "allowedSenders": [], "adapters": { "telegram": { "token": "…", "chatIdAllowList": ["…"] }, "feishu": { "appId": "…", "appSecret": "…", "chatId": "oc_…" } } }`
+3. `tlive start` → `tlive status` to verify channels; `tlive url` for the dashboard.
+4. Offer remote approval: tlive defaults to `notify` (watch + notify only). If
+   the user wants to Allow/Deny tool calls from their phone, run `tlive mode full`
+   (holds each tool call for a remote answer; reversible with `tlive mode notify`).
+   Leave it in `notify` if they only want monitoring. If they say they're
+   stepping away and want sub-agent approvals on their phone too, that's
+   `tlive mode all` — flag the trade plainly: a held sub-agent has no terminal
+   dialog until the window ends, so it only pays off when nobody is at the
+   keyboard (`tlive mode full` to come back).
+5. Codex needs no extra step — the companion connects as soon as an app-server
+   is answering, and tlive starts one if none is. If status says
+   `off`/`degraded`, that's diagnostic info, not a setup task, and it clears
+   itself once codex is installed — don't tell them to restart tlive.

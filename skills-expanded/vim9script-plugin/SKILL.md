@@ -1,0 +1,207 @@
+---
+name: "vim9script-plugin"
+description: Create, edit, review, or maintain Vim plugins and Vim scripts using Vim9script per this project's standards. Use whenever writing or modifying a .vim file, a Vim plugin, Vim9 classes, autoload/import scripts, Vim commands, or Vim plugin documentation — even for small edits or single functions. Covers naming, formatting, the Vim9 specifics of comments, imports, logging, script section ordering, and directory structure.
+---
+
+# Vim9script Plugin Development
+
+## Scope
+
+- Use the latest, or highest available stable, version of Vim.
+- Use Vim9script.
+- Target Vim and gvim only. Other Vim clones and UIs are out of scope.
+- Never rely on compatibility mode (vi), except to ensure the plugin does not load under it.
+
+## Vim9script Design
+
+- Use classes and other Vim9 performance features.
+- Prefer classes over bare methods/functions. Use bare methods/functions only when necessary.
+- Put any method used more than once into its own exportable, reusable method or class.
+- Each Vim script should focus on a singular task.
+
+## Script Structure
+
+Order each script's sections as follows, when applicable:
+
+1. Vim9script header (if vim9script)
+2. Main script comment block
+3. Imports
+4. Script-level variables
+5. Script-level constants
+6. Global variables
+7. Bare methods/functions — exported ones first
+8. Classes — exported ones first
+
+Deviate from this order only when functionality depends on a different order.
+
+## Required Script Header
+
+Every Vim9script begins with:
+
+```vim
+vim9script
+
+if exists('s:is_loaded') || v:version < 902 || &cp
+  finish
+endif
+
+var is_loaded: bool = true
+```
+
+The version check enforces Vim 9.2+ and blocks loading under compatibility mode.
+
+Syntax, ftdetect, ftplugin, and indent files are also Vim9 script, but they run once per buffer, so they never use the `s:is_loaded` guard. A syntax file starts with `vim9script`, guards with `if exists('b:current_syntax') | finish | endif` on separate lines, and ends with `b:current_syntax = 'name'`. After converting one, compare `synID()` names for every character of a sample against the old file. A syntax file can import shared constants and build a rule with `:execute`. A rule's `\` continuation line then joins the string expression, not the command, so put the whole rule in the executed string.
+
+## Plugin Directory Structure
+
+```text
+Project/
+  autoload/
+    <plugin>.vim
+    <plugin>/
+  plugin/
+    <plugin>.vim
+  import/
+  doc/
+  README.md
+```
+
+- `autoload/`: always autoload imports from here.
+- `import/`: scripts meant to be imported by other plugins, scripts that cannot be autoloaded, or scripts explicitly meant to be imported rather than autoloaded.
+
+### The plugin file
+
+Vim sources `plugin/<plugin>.vim` at every start, whether or not the user opens the plugin that day, so keep it to what must exist before the first use:
+
+- The global settings, each with its default: the single source for them.
+- The user commands, each a one-line call into an autoload script.
+- The mappings, with a `<Plug>` name for each and default keys that a `g:<plugin>_no_mappings` setting turns off. Map a default key only when the user has not mapped its `<Plug>` name: `if !hasmapto('<Plug>(MyAction)', 'n')`.
+- The autocommands, each a call into an autoload script.
+
+Put every function that these need in `autoload/<plugin>.vim`, with its imports and the logger, never in the plugin file. Import it, and every other script, with `import autoload`, which only records the name. While it loads, the plugin file calls nothing in an autoload script, not even to decide whether to define a mapping, and names no autoload class as a type: each would load that script, and everything that it imports, at every start. A check that needs the plugin's scripts belongs in the action that the mapping or command runs, which can say what is missing.
+
+### Named values
+
+Never hard-code a value, in one script or in many. Give every value that the code defines or depends on a name, and use the name everywhere. When a value already has a name, use the name and never type the value again. Where the name lives depends on who uses it:
+
+- One script uses it: a script-local `const` in the script-level constants section, near the top. Add a short comment when the value is not obvious.
+- More than one script uses it: a shared constant, see Shared constants.
+- A user may change it: a global variable with a default, see Global Variables.
+
+These are values, and all of them need a name:
+
+- File names, extensions, folder names, paths, URLs, program names, and their command line flags.
+- Names that the plugin defines: buffers, filetypes, highlight groups, text properties, autocommand groups, and signs.
+- Status values and mode or action names that scripts pass to each other, and a dictionary key that is written as a string. A key written bare, as in `{title: x}` or `x.title`, is an identifier and needs no name. Pass a record between scripts as a class when you can.
+- Key notations, date formats, glyphs, and patterns that appear more than once.
+- Every number except 0, 1, and a list index: sizes, widths, padding, limits, timeouts, and thresholds.
+
+Vim's own vocabulary may stay inline when a script uses it once: an option value such as `'nofile'`, a highlight group that Vim defines such as `'Pmenu'`, or a file name modifier such as `':t:r'`. Name it when a script uses it twice or more. Separators such as `', '`, line breaks, and the rows of a data table may stay inline as well.
+
+Text that the user reads is not a value. Follow the message rules of the project for it.
+
+### Shared constants
+
+Put every named value that more than one script uses in `import/<plugin>/variables/constants.vim`, each exported, and import it with a plain import, which Vim finds in the `import/` folder of `runtimepath`. The file imports nothing, so it can never be part of an import cycle. A constant that only one script uses stays in that script and moves when it becomes shared. Derive display names from one `PLUGIN_NAME`. Give values stored on disk, such as a file extension or a data folder name, their own literal, so that renaming the plugin never breaks existing user data.
+
+## Naming
+
+Use English for identifiers. Never use kebab-case.
+
+| Case | Use for |
+|---|---|
+| PascalCase | Class names, function/method names, function-reference variables, user commands |
+| camelCase | Class-local variables, function/method-local variables, class/method parameters |
+| snake_case | Global, script-local, buffer-local, window-local, tab-local variables |
+| ALLCAPS | Import aliases, constants |
+
+Ephemeral variables (loop vars, etc.): single lowercase letter, preferring the first letter of what it references (`for f in foo`); default to `i` when no letter fits.
+
+Never separate numbers from letters: `special_var1`, not `special_var_1`.
+
+### Short names
+
+Keep every name as short as it can be while its meaning stays easy to tell. Use the common abbreviations: `str` for string, `num` for number, `amt` for amount, `cmd` for command, `msg` for message, `buf` for buffer, `win` for window, `cur` for current, `prev` for previous, `idx` for index, `pos` for position, `len` for length, `doc` for document, `dir` for directory, `ref` for reference, `pat` for pattern, `fmt` for format, `sel` for selected, and `tmp` for temporary. Leave out a prefix that the item already makes plain: a text constant needs no `TEXT_`, and a script needs no word for its own name in its variables, so a copy of `g:my_quill_width` in `quill.vim` is `width`. When a short name would clash with another name in the same script, or with a Vim function such as `col()`, keep a longer one.
+
+Three kinds of name keep their full form, because something outside the code depends on them:
+
+- A class field or a dictionary key that is saved to disk, or read back as data, such as a key of a JSON file.
+- A name that the user sees or sets: a command, a setting, a highlight group, a filetype, or a mapping.
+- A name that another plugin defines, such as a method of a shared dependency.
+
+Test suites are exempt: a test name describes the behavior that it checks, in full.
+
+## Imports and Aliases
+
+Default alias is the first letter of the imported script:
+
+```vim
+import autoload 'project/foo.vim' as F
+```
+
+When taken, use a two-letter alias: first letter + first letter of the next word, or first letter + next available letter.
+
+```vim
+import autoload 'project/foobar.vim' as FB
+import autoload 'project/food.vim' as FO
+import autoload 'project/foody.vim' as FD
+```
+
+When two letters are also taken, add a letter in the same way: the first letter of the next word, else the next available letter. Test modules, which all start with `test_`, use `T` plus the first letter of each following word: `test_binder.vim` as `TB`, `test_binder_directory.vim` as `TBD`.
+
+Keep an alias consistent for the same script across all imports, and never use one alias for two scripts, even in different files. Before adding an import, check the aliases already in the project.
+
+## Global Variables
+
+- Use a one-line `get()` method for global variables.
+- Define global variables in the `plugin/` script. If unavailable to edit, define at the top of the current script for later relocation.
+- Assign any global variable used in a script to a terse script-local variable near the top, after imports: `var foo = g:some_option`.
+- Prefer short names when reducing globals: `var foo = g:my_foo`.
+- Never read a global variable inside a function. Read the script-local copy, so that a setting has one default, in the `plugin/` script, and one copy in each script that uses it. The one exception is a setting that the user may change while Vim runs, such as a toggle: read it where it is used, in one place in the script.
+
+## Formatting
+
+- Two-space indentation. Never hard tabs.
+- No trailing whitespace. Unix line endings.
+- Break line continuations at semantic boundaries; never use backslash for continuation.
+- Use long names of built-ins (`tabstop`, not `ts`).
+
+## Comments
+
+Follow the code-comments skill for every comment: its principles, placement, punctuation, blocks, identifiers, and issue references. Vim9script adds:
+
+* The comment marker is `#`, and a delimiter line is `#` repeated to column 78.
+* `METHOD:` marks a def inside a class, and `FUNCTION:` a def outside one.
+* The top-of-script comment block follows the Required Script Header, with one blank line before and after it. It contains:
+  * `# Plugin_Name:` followed by the plugin name.
+  * A terse, concrete description of the script's purpose.
+  * `# License:` followed by the license. Default: GNU GPL 3.0.
+
+```vim
+# Plugin_Name: example
+# Provides commands for managing plugin configuration.
+# License: GNU GPL 3.0
+```
+
+## Strings
+
+Precedence order:
+1. Regexes: always single-quoted (`'\s*'` — escaping differs from `"\s*"`). Double a single quote to embed one: `'example('')'` → `example(')`.
+2. Strings needing escapes (`\n`, `\t`): double-quoted, since single-quoted strings can't express escapes. Note `\n` in a regex isn't a literal newline — use `"\n"` when an actual newline is needed.
+3. No escapes, no single quotes: single-quoted.
+4. Contains single quotes but no double quotes: double-quoted.
+
+## String Interpolation
+
+Prefer `$'{expression}'` over `..` concatenation whenever possible.
+
+## Further reading
+
+- Adding logging output? Read `references/logging.md` first.
+- Writing or updating `doc/*.txt`? Read `references/documentation.md` first.
+- Working with Vim9 classes? Read `references/classes.md` first.
+- Writing or running tests, or setting up CI? Read `references/testing.md` first.
+
+## Response Style
+
+Keep responses terse, in Simplified Technical English. Apply these standards directly when generating or editing Vim9script rather than describing them. When reviewing code, name the violated rule and give the concrete fix, not lengthy commentary.

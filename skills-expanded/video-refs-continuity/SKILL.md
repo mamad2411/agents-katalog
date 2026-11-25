@@ -1,0 +1,405 @@
+---
+name: video-refs-continuity
+description: >
+  Continuity through consistency for generated video: builds the DERIVED reference set and start image
+  every shot needs, keeps the continuity ledger between shots, and runs the refs gate in code before any
+  generation call. Use when a shot must match the shot before it (room, cast, seats, wardrobe, held props,
+  door swing, a named state), when a character, product or room reference is built or
+  cut from a keeper, when a plate or start image is generated, or when seeds keep drifting between shots.
+  Triggers — "continuity", "refs gate", "reference set", "start image", "continuity ledger", "backfill
+  from accepted", "the door is on the wrong wall", "not the same guy", "the same shape in all videos".
+  Not for the cost line, the GO and the submit itself — use video-gen-cost-gate. Not for the prompt's
+  wording — use video-prompt-dialects. Not for upscale, film look, grain or the delivery encode — use
+  video-finish.
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash(python3*), Bash(ffmpeg*), Bash(ffprobe*), Bash(ls*)
+---
+
+# Video Refs & Continuity
+
+Every still and every clip is generated from nothing, with no memory of the shot before it. Continuity
+is therefore **built**: a *ledger* of what each shot leaves behind, a reference set *derived* from what
+the operator already accepted, and a *gate* that refuses the generation call until both are in place.
+The ruling that binds this skill: spatial and geometric consistency between the shots of a scene is the
+PRIORITY consideration for accepting or rejecting a generation — believability depends on it.
+
+Three words carry the method. A **keeper** is a take the operator picked — its frames are the only root a
+scene can continue from. **Backfill** means every regen's references come from accepted assets: a keeper
+frame, a crop of an accepted plate, an edit of an accepted still; a fresh still is the last resort.
+**Lineage** means every start image chains, by crop or image-to-image edit, back to a keeper or the
+client's own photo — a still generated from prose starts a new world, and three seeds of it are a round
+of continuity errors.
+
+**What varies.** Which venue accepts a photoreal person, how many references a call carries, which mode holds a shot and
+whether a local GPU builds the scene proxy are tool facts of the established chain — re-read them for another venue or
+model. The ledger, the lineage and the gate do not move —
+`video-production/references/WHAT-VARIES.md` § Generator, venue and native raster.
+
+## 1. Fill the ledger from the keeper frames, at zoom
+
+Before any reference for a scene, open the previous shot's keeper and read its LAST frame (and the
+accepted plate, and the client's photos) at 2–4×. Record one row per element that appears in more than
+one shot: element · fixed fact (read, never remembered) · state before · state after · tolerance
+(locked / flexible / story-changing) · reference name. The axes — seating order, counts on shelves, what
+is in whose hands, wardrobe, eyeline, door swing and distance, product size, named states — are the
+checklist in [`references/CONTINUITY-AXES.md`](references/CONTINUITY-AXES.md); every one of them is a round lost when missed.
+
+Two rules: **shot N's `after` is shot N+1's `before`** — diff them; and **every number in a prompt comes
+from this table verbatim** (the count read on the zoom, never a number from memory).
+
+**Where a keeper frame exists, compute the room instead of remembering it.** `scripts/scene_blockout.py
+<keeper-frame.png>` returns the frame as a labelled grey-box scene (people, furniture, door, window, lamp,
+floor; relative scale; ~20 s on a 24 GB GPU, USD 0; `scripts/comfy_ready.py` first — it says whether the server
+and its two providers answer, and `scripts/comfy_up.sh` starts one from the env; any OTHER graph queued on that server
+goes through `scripts/comfy_preflight.py <graph.json> --expect video|image --host` first — it refuses a graph that
+would finish and save nothing (a preview-only output, `save_output` false, an unfed save node, the wrong kind), that
+names a model file the server does not hold, or that a template conversion broke (an editor-only Reroute or note left
+in, a dotted dynamic key such as `resize_type.width` flattened), and lists the custom node packs the graph needs; an unattended caller
+sets `COMFY_START_POLICY=connect` or `ask` so `comfy_up.sh` never starts a server nobody asked for), and `scripts/scene_proxy.py <scene.json> <out> "<camera>"`
+prints, for ANY camera you author, where every object sits — left/right %, depth rank, in frame, occluded,
+out of frame — and renders a grey-box + depth frame of that angle. That table IS the *Room geometry per cut*
+row and the source of every geometry sentence for a new angle; on the pilot it reproduced the accepted keepers'
+order on every frame ([`references/SCENE-PROXY.md`](references/SCENE-PROXY.md)). Read the render before you write:
+the grey frame is your own view of the angle, and the same scene supplies the still and the video references, so the
+prompt, the stills and the refs cannot disagree (SCENE-PROXY.md § One geometry, three channels).
+
+**Done when:** every multi-shot element has a row with both states and a reference name, the previous
+keeper's last state is written as this shot's start state, and no number in the shot list lacks a row.
+
+## 2. Build the reference set — derived, never fresh
+
+Order of preference for any reference: an accepted keeper frame › a crop of an accepted plate › an edit
+of an accepted still › a fresh still. Build in this order:
+
+1. **Start image = the previous shot's LAST state**, never the scene's opening wide: who stands, what
+   has fired, how much is still in the air. Make it an image-to-image edit of the keeper's own frame with
+   ONLY the scripted change. A start image *dictates*; a reference image only *informs* — a reverse
+   angle with no start image re-invents the room on every seed unless the scene proxy's grey frame of that
+   camera rides as its layout-only reference (SCENE-PROXY.md). Which shots take a start image and which go
+   refs-only is decided per shot by what it must hold (`video-gen-cost-gate` SKILL § Mode by what the shot
+   must hold): an exact continuation or a defined Seedance move → a start image; a fresh angle → refs + the
+   grey frame. A continuation's frame 0 comes back drifted from its start image — Seedance 2.5 flatter and
+   cooler (red contrast −6 to −9 %, blue +0.011 to +0.030, same sign on 5 of 5), Seedance 2.0 and local H3
+   darker (2026-09-19) — and the drift compounds over chained continuations (the community reports burn-in
+   by the third hop). Grade-match every continuation cut in finishing (`video-finish` "Diagnose a look
+   complaint per shot"), and plan a long chain with that correction in it.
+2. **Before/after pairs from ONE source** — the "after" still is an edit of the accepted "before". A kept
+   post-state element (a transformed mantel) has its pre-state DERIVED from the kept frame with the
+   change reversed. Pre-state refs ride only pre-transition gens, post-state refs only post-transition
+   gens.
+3. **Inserts and close-ups start on a CROP of the accepted plate at that framing** — references do not pin
+   a close-up's background; a crop does.
+4. **Character refs cut from the first accepted take** — a frame of its upscale, the subject isolated,
+   occluders painted out (the model copies whatever else sits in the crop); one ref per recurring
+   character, in every later gen. On a creator-style spot the first keeper IS the presenter's identity for the
+   campaign's life (product and person morphing across shots is the tell practitioners name first). The presenter's first still is
+   GENERATED (house rule, 2026-09-25) — an authored persona, one image pass, accepted on the persona reads in
+   REFERENCE-CONTRACT.md; building it on a real person's photograph is the practitioner route, and the house does not use
+   it. "Generate the first take with no reference, then lock its frame 1 as the reference" is an UNVERIFIED heuristic (one account; mechanically plausible,
+   since Seedance re-renders frame 0) — test it on one shot before a shot list relies on it. **A recurring
+   character with no keeper and no client photo is the one reference that must be AUTHORED**, and an authored
+   identity is a lineage root: write it as a locked JSON prompt, save that JSON beside the frame it produced, and
+   register the frame with the JSON as its provenance. These routes carry no seed, so the prompt is the seed and
+   only its lack of freedom makes it one — [`references/REFERENCE-CONTRACT.md`](references/REFERENCE-CONTRACT.md)
+   § Generating an identity reference.
+5. **Product shape from the client's own photo** — single pieces cut out on grey, laid as the shot's own
+   scatter (the model transfers the sheet's LAYOUT: a grid renders as rows). **Size from an
+   in-world crop beside a known object** (a tie knot, a seated knee); a magnified sheet pins shape only
+   and its role sentence says so. A held product is composited standing at true scale before the gen. **Every state
+  the script shows has its own sheet** — lid open and lid shut, empty and loaded, screen off and lit — each from the
+  client's photo of that state (`ad-spot-preprod` INTAKE § Assets to ask for, the states row). A state with no photo
+  is a named gap: it is resolved before the beat that needs it (the client sends one, or rules the beat dropped or
+  rewritten), never left for a generator to guess.
+6. **Room ref = the establishing frame with the whole cast in it.** It EMBEDS them — adding a member from
+   their single ref puts that person in twice. A recast replaces the old room ref everywhere.
+7. **Text on a garment or prop is generated INTO the reference** (an image model with the string; the copy
+   route with a lettered ref and no words in the prompt; the local knit composite last, verified in
+   position at 4×) — never hand-placed on a whole figure, never left unstated on an item that carries text
+   by convention (a uniform jacket).
+8. **A look plate per light context** — an abstract full-frame field of colour and light, no subject,
+   generated template-free (never through a prop leg) and cited by every shot in that light with a
+   look-only role; the family is enumerated against the shot list before it is generated (three exterior
+   plates covered ten shots and neither interior). Counts and accents stay in the prose; grain and bloom
+   stay out of the plate. A prompt whose prose names a light cites that light's plate — the gate fails it
+   otherwise once the rules list the plates.
+9. **The scene proxy is one geometry for three channels.** Its render and table are read before any geometry
+   word is written; its grey frame composes a start or end still (layout-only role) and stands as the r2v layout
+   reference for a static new angle; its clip drives MiniMax H3's camera. On Seedance a move is a start image
+   + an end still baked from the proxy — a clip beside a start image is inert (`SCENE-PROXY.md`, A/B
+   2026-09-10). Renders ride only complete: the lamp a lamp-less proxy lacked vanished from the take.
+10. **A client-supplied image is IMPORTED with its provenance** — `refs_gate.py --import NAME --file <path>
+    --provenance "<who, when, how>"` — a lineage root of its own beside a keeper. Recording a client's approved
+    photo as a generated take to satisfy the lineage rule writes a false record; the import is the honest path.
+
+Point at references, never describe them — any adjective about a cited reference can only contradict
+it. One subject per reference at native resolution, a preserve list and a conflict priority in the
+prompt: [`references/REFERENCE-CONTRACT.md`](references/REFERENCE-CONTRACT.md).
+A reference that must read as a photograph is written per `video-prompt-dialects`
+[`REALISM.md`](../video-prompt-dialects/references/REALISM.md) § 2 — the capture, night exposure, a clean image — and
+an approved still is made real by an edit that keeps it, never by a re-roll; a CG object that survives the edit gets its
+own targeted edit, and a changed identity reference is read face-to-face against the approved one before it replaces it.
+
+The composite tools ship in `scripts/` (Python 3, numpy, Pillow, scipy): `plate_pieces.py` (exact product
+sprites onto a plate — perspective-sized, locally tinted, kept off dark and bright pixels),
+`sprinkle_pieces.py` (a band at a named piece length), `air_pieces.py` (the still-falling layer after a
+burst, motion-blurred), `split_sheet.py` (a three-view sheet → single-subject crops), `knit_letters.py`
+(intarsia lettering multiplied onto a knit's own luminance). Each takes `--in/--out` and a `--sheet`.
+
+**Done when:** every locked element has one accepted reference or a before/after pair; every one traces by
+crop or edit to a keeper or a client photo; the start image is the previous shot's last state; nothing in
+the set is a montage, a schematic with labels or arrows, or a photoreal person bound for a venue that
+refuses one. A real person's likeness is not a gate failure by itself — it is a ROUTING fact: it is legal
+on treg's `reapi.video-gen.seedance-2-5.unrestricted` row and refused upstream on fal and monid
+(`video-gen-cost-gate` VENUES.md § Video).
+
+**Build the set in dependency order.** A still is generated only after every still it is built FROM is accepted:
+portraits, locations and look plates first; a prop after its owner (built in the owner's hand or on the owner's table);
+an anchor frame last, after every reference it composes. `scripts/ref_dag.py --refs refs.json [--accepted A,B]` prints the
+waves, refuses a cycle, an unknown name, a prop with no owner or an anchor with no refs, and names what may be built NEXT.
+Built out of order, a prop is generated against a face nobody has accepted yet and re-rolled when the face changes
+(ReCA's image DAG: portrait / location / prop / anchor).
+
+## 3. Accept every generated still like a seed
+
+A start image is a contract: any defect in it is in every seed built on it. Before it feeds anything,
+run the scene's acceptance rows on it at zoom and record them: product pieces at 2× (shape, size,
+haphazard angles), lettering (string and position against the accepted close-up), geometry against the
+previous keeper (every person's position, the door leaf's swing, their distance from it), the cast
+counted once each at 2× across the crowd, anatomy per person in a per-person crop at 3× (arms, hands,
+legs, where each arm ends; one prop per hand), a silent subject's mouth closed (frame 0 copies the still, and a
+mouth caught mid-word opens the take on a flap: 0.31 → 0.19 with only the mouth closed, 0.15 with a concrete
+soundscape too, local H3, 2026-09-19) — and a SPEAKING subject's mouth open mid-syllable, because the model reads
+the picture's mouth as the resting state and a closed one gives a lazy mouth (community, not measured here),
+and the ledger (what has happened is visible; what the script has not yet done is absent).
+
+```
+python3 scripts/refs_gate.py --root <project> --accept <NAME> --note "<every row checked>" --text none
+```
+
+A defect is fixed at the source: a surgical edit (a count, a ghost, one limb) on the CLEAN plate with the
+pieces composited afterwards — never a whole-plate regen when the rest is right; a mispositioned figure
+is a copy-route regen from the pre-plate with an explicit placement sentence, never a sprite move.
+Re-roll a still when its defect breaks something a later stage depends on (a continuity break, a wrong
+object); accept it when the defect sits in a property every later prompt restates anyway — re-rolling a
+defeated prior is a real risk, not a free retry.
+
+**Repair by REASON, then read it again** — the same rows, the same zoom. A stochastic miss (a stray limb, a ghost) is a
+new seed on the same request; a local defect in a right still is an EDIT on the clean plate (above); a still that shows
+exactly what was asked for — the request itself is wrong — is a re-written request, never another seed of it. Two repairs
+that do not clear the row go to the operator with both attempts; a still is never accepted because the attempts ran out
+(ReCA's validator loop does exactly that after its last attempt — the one part not taken). ReCA also reports its validator
+judging better from TEXT reference specs than from the images inline; that is its own small sample, untested here — the
+acceptance read stays on the images at zoom until our own read says otherwise.
+
+**Every cited reference is accepted the same way, not only the start image.** In reference-driven generation the
+references ARE the product: register each to its file (`--register NAME --file`) and accept it for the role it plays —
+the note names that role's read (a face for an identity ref, no subject in a look plate, the named geometry in a
+setting ref). The gate re-hashes the file on every run, so a reference edited after acceptance fails until it is
+checked again.
+
+**Read the TEXT in every frame you accept.** A watermark, a badge, a price banner, a caption or a line of interface
+baked into a start image or a reference is animated into every seed, and a model reads lettering in a reference as an
+instruction to letter the frame (the official Seedance 2.0 guide's fix for unasked subtitles starts with removing text
+from the references). Accept with `--text none`, or with `--text "intended: <the string>"` for lettering the shot must
+carry (a garment's print, a product label); a frame carrying unwanted text is not accepted — edit it out on the clean
+plate, then accept the edit. The gate prints the text read for the start image and every cited reference: a missing read
+WARNs, and FAILs when the rules set `require_text_read`.
+
+**A new cast member is stress-locked before the first video that shows them.** The dress rehearsal (`video-gen-cost-gate`
+COST-AND-GO § The reference dress rehearsal) checks a reference SET for one batch; the stress lock checks one MEMBER once,
+under the conditions that break an identity: three angles, three shot sizes, every light context they appear in (its look
+plate), and a two-shot beside every co-star they share a frame with — at least ten cheap stills from the member's own
+identity references. Each prompt pastes the canonical descriptor verbatim (`stress/<NAME>/descriptor.txt`, never
+shortened) and holds a static composition, no action; each still is read against the references for face, hair, age
+cues, build, wardrobe and distinctive marks, and a two-shot for BOTH identities. A character locks at 10 of 10 — one
+drift is a miss, never averaged away by the good ones; a location or a prop is shown as its matrix and locks on the
+operator's explicit pass. On a miss the member stays draft: revise the reference set (a new identity still, a dedicated
+headshot) and rerun the affected rows, or move the scene to a later block. Stills cost, so each member's matrix is its
+own cost line and GO.
+
+```
+python3 scripts/cast_stress.py plan   --root <project> --cast W1 --refs S01-W1-ref --costar LEAD=S01-LEAD-ref --light "lamp=LOOK-interior-lamp"
+python3 scripts/cast_stress.py record --root <project> --cast W1 --row T03 --verdict pass|miss --note "<what was read>"
+python3 scripts/cast_stress.py lock   --root <project> --cast W1          # 10 of 10, or the operator's pass for a place or prop
+```
+
+The plan writes its prompts into `gen_stills.py`'s own layout and generates nothing; the lock lands in the gate's ledger
+with each identity reference's sha256, the rules' `cast` map tells the gate which references belong to whom, and
+`require_cast_lock` turns an unlocked member's cited reference from a WARN into a FAIL. A reference changed after the
+lock voids it. Pattern: `machina-exm/film-studio-skills` `skills/stress-test/SKILL.md`.
+
+**Done when:** the acceptance note names every row checked and the frame's text read, and the gate shows the still
+`ACCEPTED` with a `lineage → keeper` chain (or `--fresh-scene` for a scene with no predecessor, stated in the GO ask).
+
+## 4. Run the gate before the GO — code, not memory
+
+> In reference-driven generation the references are the product. Verify them with the cheap instrument before you
+> spend on the expensive one: a still costs cents, a video seed tens of credits, a wrong reference the whole batch.
+> (house rule, 2026-09-13 — the rehearsal still is `video-gen-cost-gate` COST-AND-GO § The reference dress rehearsal)
+
+```
+python3 scripts/refs_gate.py --root <project> --prompt prompts/<shot>.txt --refs A,B,C \
+    --target hf|kie|monid [--start-image NAME] [--births ROLE,..] [--prose ROLE,..] [--record NAME]
+python3 scripts/refs_gate.py --root <project> --register NAME --file references/<file>.png
+python3 scripts/refs_gate.py --root <project> --import CLIENT-PHOTO --file assets/<file>.jpg --provenance "<client, date, channel>"
+```
+
+Each target has its own upload ledger, and the gate reads the one the call will use: `receipts/<NAME>-upload-id.txt`
+for `hf`, `refs-urls.json` for `kie`, `monid-urls.json` for `monid`, `treg-urls.json` for `treg`. A reference bound for
+monid is hosted on monid's own
+`sfs` store by `video-gen-cost-gate/scripts/monid_upload.py` at **USD 0.00** — and because a lapsed sfs URL is re-issued by a
+free `/cat` rather than re-uploaded, an expired link there costs nothing, unlike kie's ~24 h expiry. The same call also
+carries a privacy consequence the other targets do not: an sfs URL is fetchable by anyone who holds it until its `ttl`
+lapses, and `/rm` frees the quota without recalling a copy already served — so a client's own asset gets a short `ttl`,
+not the default. **The gate checks that url's EXPIRY, not just its presence** — a lapsed signed url would pass a name
+check and then cost the batch, because the model fetches it at generation time while the job bills at acceptance. Expiry is
+read locally from the recorded `expiresAt` or the url's own `?e=<unix>` (zero API calls); an expired url FAILS, one lapsing
+inside a generation's p95 WARNs, and the fix is free: `monid_upload.py --refresh <NAME> --go`.
+
+**A treg reference expires the same way and is checked the same way, with one fact reversed.** It is hosted by
+`video-gen-cost-gate/scripts/treg_host.py` at **USD 0.00** — hosting on treg is deliberately un-metered, a courtesy beside
+polling — and the url carries a **7-day TTL**. But `treg host` returns an OPAQUE token, not a signed url: nothing about
+the expiry is encoded in the link, so a treg reference whose expiry the ledger does not record **FAILS** where the same
+monid reference only WARNs, because monid's `?e=<unix>` can rebuild a lost ledger and treg's token cannot. The other
+reversal is the refresh: monid re-issues a link over bytes that never moved, while a treg refresh **re-uploads** and mints
+a NEW url — free in money, not free in treg's **300 MB per org per 24 h** quota (30 MB per file). `treg_host.py` counts
+the bytes it has hosted in that window and refuses before the server's 429, which arrives only after the upload has
+streamed. `treg_host.py --root <project> --verify` reads every recorded expiry at zero API calls; `--refresh --go` fixes
+what has lapsed.
+
+Rules live in `<project>/prompts/refs-required.json`
+([template](references/refs-required.example.json)): each element the prompt matches needs its reference
+ROLES present AND uploaded for the target; every capitalised subject is ruled, born in this gen
+(`--births`) or a conscious prose-only decision (`--prose`) — a capital inside a quoted or braced line is a spoken stress
+mark (house rule, 2026-09-25), never a subject; a start image needs its own accepted record;
+negated clauses are not elements. The gate opens the files, not only the names: every cited reference is
+re-hashed against its registration (a file changed after acceptance FAILS), decoded and sized; light or grade
+language in the prose with no look plate cited FAILS when the rules list `look_plates` (`--prose LOOK` keeps a
+prose-only light on purpose); a cited reference nothing in the prompt depends on WARNs as COMPETING — an older room
+plate beside an exact start frame competes with it. `require_ref_files` and `require_ref_acceptance` turn the
+unregistered and unaccepted WARNs into FAILs, and a new project sets both. What an image SHOWS stays the acceptance
+note's read: a detector that returns confident false positives would pass the wrong reference with a number beside
+it. The gate's table is pasted into the cost/GO ask; `REFS-GATE FAIL` means
+no submit. Add a rule the moment an element gets a locked reference — a sheet ruled for one scene and not the
+next costs a round.
+
+**Done when:** the table reads `REFS-GATE PASS` for the exact `--refs` and start image the submit will
+use, and it is in the GO message.
+
+## 5. Close the loop on the keeper
+
+When the operator picks a seed: record its last frame as the next shot's start state (step 1), crop any
+new keeper-derived references and record their derivation (`--record NAME --derived-from KEEPER`), and
+write the handoff row in the ledger. On the seed itself continuity is the FIRST acceptance row — the
+geometry across the take's own cuts and against the established shots — and a break rejects the seed
+before its gag is judged; that read is the take review's, the ledger update is this skill's.
+
+**Done when:** the keeper's `after` column is filled, every crop from it has a ledger record, and the next
+shot's step 1 can start from the table alone.
+
+## When continuity breaks — the repair ladder
+
+Cheapest first; the full ladder with what did NOT work is
+[`references/REPAIR-LADDER.md`](references/REPAIR-LADDER.md):
+
+1. **Backfill** — rebuild the references from whatever is accepted; regen only the failing shot.
+2. **Extension** — continue the keeper from its last frame (a video-extension mode on the keeper's own
+   job): room, wardrobe, framing and props carry by construction.
+3. **Insert** — a cutaway that explains the break (passage of time; where the prop came from).
+4. **Start ON the establishing frame** — a punch-in on the same axis; never a reverse angle when
+   continuity is the note.
+5. **Punch-in or reframe at the finish** — a stale state that framing reveals leaves the frame for free.
+6. **Drop or reframe the beat** — a state the model cannot render (one it overrides on seed after seed)
+   gets a framing where it cannot appear, or the beat is cut.
+
+**One continuous action is ONE generation.** A frame-perfect chain of separate gens still reads as a
+stitch — each gen re-decides pace, drift and light — so size the gen to the whole action and cut only
+where the script cuts. And a shot whose last state hides the face (a headstand, a face-down fall) cannot
+be continued by a gen: write the face into the last frame, or continue from the take's own footage.
+
+## ❌/✅
+
+```
+❌ "@ref2 the middle one, red-ginger, long face"          # the words beat the picture
+✅ "@ref2 — take his complete appearance from his sheet and change nothing"
+
+❌ A fresh still of "the same room" for shot N+1
+✅ An edit of shot N's keeper frame with only the scripted change
+
+❌ Prose geometry — "the door is on the far wall opposite the sofa"
+✅ Upload the frame; copy the door sentence from the geometry record, never re-derive it
+
+❌ A reverse angle's geometry written from memory of the wide
+✅ `scene_proxy.py` through that camera; the row says door RIGHT, lamp beside it, sofa OCCLUDED — copy it
+
+❌ A reverse angle to fix continuity
+✅ A push-in starting ON the establishing frame
+
+❌ Lettering pasted by hand on a figure
+✅ Generated into the reference; copy route; knit composite last, checked at 4× in position
+
+❌ The magnified silhouette sheet as the size reference
+✅ An in-world crop beside a known object; the sheet's role is shape and colour only
+
+❌ Room ref + the same character's single ref
+✅ The room ref alone carries her; count every named character once at 2×
+
+❌ Four gens chained frame-to-frame for one action
+✅ One take sized to the whole action
+
+❌ "The refs are probably in" → submit
+✅ REFS-GATE PASS in the GO ask, for these refs and this start image
+
+❌ A grade sentence in every prompt ("warm low sun, long shadows…")   # twelve prompts, twelve drifts
+✅ One look plate per light context, look-only role; counts stay in prose
+
+❌ A client's approved photo recorded as a keeper take to pass the lineage rule
+✅ `--import` it with its provenance — a lineage root of its own
+
+❌ "The refs are named and uploaded" → submit
+✅ Registered, unchanged since acceptance, accepted for its role — and one still from the same set read first
+
+❌ "Both boards are WRONG" — a note about an asset name
+✅ The note names the hash-suffixed file; the re-roll that fixes it clears the note
+```
+
+## Failure behavior
+
+- A still with no gate record, or not accepted, **fails** the gate: regenerate it through the gate, then
+  accept it. A fresh upload is not a bypass.
+- A start image whose lineage reaches neither a keeper nor a client-supplied import **fails** unless
+  `--fresh-scene` is declared, and that declaration appears in the GO ask.
+- A registered reference whose file changed since acceptance **fails** — re-check it for its role, re-register,
+  re-accept. Unregistered or unaccepted references warn, and fail where the rules require files and acceptance.
+- Light language in the prose with no look plate cited **fails** once the rules list `look_plates`.
+- Every composite script prints a `check` crop; a composited piece that cannot be identified at 2× is a
+  defect.
+- When correction rounds on one element stop converging (three rounds), stop generating and ask the
+  operator for the asset or the framing.
+- `comfy_preflight.py` FAIL → the graph is fixed and re-checked, never queued as it stands; exit 2 (the server did not
+  answer) is no schema check at all, never a pass. A PASS means the graph will write a file — the file is still read
+  off its frames before anyone calls it good.
+- A graph converted from an official template stays the template: only the prompt, the seed and a size the job asks for
+  change. Never strip or "simplify" nodes — a path the job does not use stays wired and bypassed — resolve a Reroute to
+  its source `[node id, output slot]` (the slot matters: a checkpoint loader's VAE is slot 2, not 0), and keep every
+  dotted key as the template writes it. A server rejection names the key it wants in
+  `node_errors.<id>.errors[].extra_info.input_name`: patch that one node with the key LITERALLY and resubmit — never
+  regenerate the graph from the template, which brings back every bug already fixed (`NousResearch/hermes-agent`
+  `optional-skills/creative/comfyui` v5.1.0, `references/template-integrity.md`).
+- `scene_blockout.py` fails closed — server down, node or checkpoint missing, job failed — with the route's
+  own reason; the GO ask then says "no scene proxy for this shot" and the row is read off the frame. Never
+  write geometry from memory and call it computed.
+
+## Cross-references
+
+- `video-finish` — the finishing chain; it starts only after a seed is APPROVED (no upscale before
+  approval).
+- [`references/ZOOM-OUT-CHAIN.md`](references/ZOOM-OUT-CHAIN.md) — a generated aerial or wide open grown OUTWARD from one real
+  frame: import the landing frame, generate closest-first with the previous output as reference 1, land on the frame that IS
+  the first live frame (four stills, one afternoon, no re-rolls, 2026-09-15).
+- [`references/ASSET-HYGIENE.md`](references/ASSET-HYGIENE.md) — citations vs assets both ways, two-SSOT
+  sync, superseded assets, defect notes keyed to the file, counts derived never retyped, derived artefacts
+  fingerprinted.
+- [`references/SCENE-PROXY.md`](references/SCENE-PROXY.md) — the keeper frame as a labelled grey-box scene:
+  build, read from any camera, the proxy clip, what to expect wrong, the hygiene.
+- `~/.claude/skills/video-production/references/CHAIN.md` — handoff budget and stop conditions.
+- Deeper context — the upstream projects behind the rules here: `video-production/references/CONTEXT-MAP.md` § Where the deeper context lives.

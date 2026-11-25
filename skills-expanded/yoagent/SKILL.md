@@ -1,0 +1,580 @@
+---
+name: yoagent
+description: Use when building, extending or upgrading an agent on the yoagent Rust crate. Maps each job (tools, policies, verifiers, budgets, sub-agents, plugins from other ecosystems, retries, structured output, tests) to the yoagent feature for it, with tips, pitfalls and what changed per version.
+---
+
+# yoagent: which feature for which job
+
+Written for **yoagent 0.27.7** (and yoagent-rutis 0.13.0); the recipes
+below are compiled by `tests/skill_test.rs`, line for line. Check what you
+build against: `cargo tree -p yoagent` or `Cargo.lock`. If you are on an
+older version, read [What changed](#what-changed) first.
+
+yoagent is a loop library. It runs the loop (stream a reply, run the tools
+it asks for, feed results back, repeat) and its guarantees: retries,
+cancellation, limits, compaction, cost accounting. **Everything that
+changes what the loop does goes through one contract, `Extension`.**
+Before writing loop code of your own, find the hook below.
+
+## Pick the feature
+
+| You want to… | Use | Read |
+|---|---|---|
+| build an agent | `Agent::from_config(ModelConfig::…)` (provider and API key follow the config) | `docs/getting-started/quick-start.md` |
+| pick a model from `provider/id` text | `ModelConfig::preset(p, id)`, else `ModelConfig::generic(p, id)` (provider-default limits: tell the user); `preset` also reads `("bedrock", "us.anthropic.claude-sonnet-4-6")` and `("openrouter", "anthropic/claude-sonnet-4.6")` — unpriced; every preset: `ModelConfig::presets()` | `docs/providers/model-presets.md#looking-up-a-preset-by-name` |
+| switch model or thinking mid-session | `agent.set_model(config)` (an explicit key or provider is kept); `agent = agent.with_thinking(ThinkingLevel::…)` between runs | `docs/providers/overview.md` |
+| run on Bedrock or Azure OpenAI | `ModelConfig::custom(ApiProtocol::…)` (Bedrock: SigV4 or API key, `base_url` required; a Claude preset by Bedrock id via `preset("bedrock", id)`, starts on `us-east-1`) | `docs/providers/bedrock.md`, `docs/providers/azure-openai.md` |
+| give it tools | `impl AgentTool`; `.with_tools(…)` (built-ins: `tools::default_tools()`) | `docs/concepts/tools.md` |
+| run tool calls one at a time or in batches | `.with_tool_execution(ToolExecutionStrategy::Sequential)` / `Batched { size }` (default `Parallel`) | `docs/concepts/tools.md#execution-strategies` |
+| turn an OpenAPI spec into tools | `.with_openapi_file(…)` / `_url(…)` / `_spec(…)` (feature `openapi`) | `docs/guides/openapi.md` |
+| give it skills (`<name>/SKILL.md` folders) | `SkillSet::load(&dirs)` (or `load_resilient`: skips bad ones, returns their errors) + `.with_skills(set)` | `docs/concepts/skills.md` |
+| allow / rewrite / deny tool calls | `RunHooks::before_tool` in an `Extension` | `docs/concepts/extensions.md` |
+| redact or edit a tool's output | `RunHooks::after_tool` (+ `.filters_tool_output()`) | same |
+| refuse an input before the run | `RunHooks::on_input` | same |
+| add a note to every model request | `RunHooks::before_model` → `TurnDecision::Note` | same |
+| check the final answer, send the agent back | `RunHooks::on_stop` → `StopDecision::Continue(why)` | same |
+| count, log or record what happened | `RunHooks::on_event` (sync, cheap), `finish` | same |
+| write an extension with per-run state or run-scoped tools | `impl Extension` (`start_run(&RunContext)` returns that run's `RunHooks`; `RunHooks::tools` offers tools for the run), or `ClonedHooks` | `docs/concepts/extensions.md#runs-and-state` |
+| gate tool calls / screen input with a small decision model | `.with_tool_gate(ToolGate)`, `.with_input_guard(InputGuard)` (feature `decision`; both fail closed) | `docs/concepts/decision-models.md#blocking-with_tool_gate` |
+| ask a small model typed questions, or let it advise | `DecisionModel` (`jev()`, `clef(…)`, `local(url)`, `logprobs(url, model)`; `.or(fallback)`), `.with_decision_model(m)` (notes only, never blocks); pick thresholds with `decision::calibrate` (feature `decision`) | `docs/concepts/decision-models.md` |
+| cap spend in dollars | `extension::Budget` | `docs/concepts/extensions.md#budget` |
+| charge an extension's own model calls | `RunContext::spend_handle()` → `SpendHandle::add(&usage, &model)` | `docs/concepts/extensions.md#spend-an-extension-makes` |
+| cap turns / tokens / time | `ExecutionLimits` | `docs/concepts/context-management.md` |
+| tune or replace compaction | `.with_context_config(ContextConfig { … })`, `.with_compaction_strategy(LlmCompaction::from_config(…))` (a model writes the summary), `.without_context_management()` (also removes `ExecutionLimits`) | `docs/concepts/context-management.md` |
+| delegate to a child agent | `SubAgentTool` (own model, tools, limits) | `docs/concepts/sub-agents.md` |
+| share large artifacts with sub-agents by key | `SharedState` + `SubAgentTool::with_shared_state` (and `Agent::with_shared_state`, which also stashes cut tool output) | `docs/concepts/sub-agents.md#shared-state` |
+| delegate from a tool you write | `Agent::from_config(..).delegated_from(&ctx)` (the tree extensions follow) + `ctx.report_delegated_run(stats)` (its spend) | `docs/concepts/extensions.md#sub-agents` |
+| apply one policy to every sub-agent | `.with_tree_extension(…)` | `docs/concepts/extensions.md` |
+| offer tools that change between runs — or mid-run | `ToolSource` (consulted at each run start; again mid-run when `generation()` moves); an MCP server whose tools change: `mcp::McpToolSource` (withdraws a stdio server that exits; `McpClient::exited()` says why) | `docs/concepts/tools.md` |
+| reuse pi extensions or DeepSeek Harness plugins unchanged, or load plugins at runtime (Rust, TS on Node/Bun, Python, Go) | the **yoagent-rutis** crate (`RutisBridge`, one `Extension`): [how to start](#plugins-from-other-ecosystems-yoagent-rutis) | [yoagent-rutis README](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis) |
+| use MCP servers | `.with_mcp_server_stdio(…)` / `_http(…)` / `_http_transport(…)` | `docs/guides/mcp.md` |
+| reach an MCP server behind OAuth or an expiring token | `HttpTransport::with_authorization(Arc<dyn AuthorizationSource>)` (refresh in `challenged`); a refusal is `McpError::Http` (`http_status()`, `www_authenticate()`) | `docs/guides/mcp.md#credentials-that-change-an-authorization-source` |
+| get typed JSON back | `agent.prompt_structured::<T>(text, schema)` | `docs/concepts/structured-outputs.md` |
+| stream events to a UI as they happen | `agent.prompt_with_sender(text, tx)` (returns when the run ends; dropping its future cancels the run — then `agent.finish().await`), or `agent.prompt(text)` → receiver (drain it, then `finish()`) | `docs/concepts/messages-events.md#agentevent` |
+| steer a running agent | `agent.steer(msg)` (between tool batches), `follow_up(msg)` | `docs/concepts/agent-loop.md` |
+| show streamed text without retry duplicates | `retry::retry_safe_events(rx)` | `docs/concepts/retry.md` |
+| save and restore a conversation | `agent.save_messages()` / `restore_messages(&json)` | `docs/concepts/persistence.md` |
+| branch / restore history | `session::Session` (a tree, JSONL) | `docs/concepts/session-trees.md` |
+| know what it cost | `agent.total_cost_usd()`, `SessionStats` buckets | `docs/concepts/pricing.md` |
+| use current prices, not the bundled snapshot | `prices::enable_live_cached(&source, path, CacheOptions)` (native), then `agent.reprice()` for configs built before | `docs/concepts/pricing.md#live-sources` |
+| keep API keys from processes it starts | MCP stdio: `StdioOptions::new().env_remove_all(provider::api_key_variables())` (unset, not `""`); elsewhere unset or blank each of `provider::api_key_variables()` | `docs/providers/overview.md` |
+| record runs to a git repo (GASP) | `gasp::GaspRecorder` + `recording_sender` (feature `gasp`, native) | `docs/concepts/gasp.md` |
+| test without a network | `MockProvider` + `Agent::from_provider` | `docs/guides/testing.md` |
+| run on Cloudflare Workers | `default-features = false` (wasm32); the AI binding: [yoagent-workers](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-workers) | `docs/guides/wasm-workers.md` |
+
+## Recipes
+
+### A policy (deny, rewrite)
+
+```rust
+use yoagent::extension::{ClonedHooks, RunHooks};
+use yoagent::{ToolCallRequest, ToolDecision};
+
+#[derive(Clone)]
+struct ProtectGuards;
+
+#[async_trait::async_trait]
+impl RunHooks for ProtectGuards {
+    async fn before_tool(&self, call: &ToolCallRequest<'_>) -> ToolDecision {
+        let path = call.args["path"].as_str().unwrap_or_default();
+        if path.starts_with(".github/") {
+            ToolDecision::Deny("CI files are off limits".into())
+        } else {
+            ToolDecision::Allow
+        }
+    }
+}
+
+let agent = agent.with_extension(ClonedHooks::new("protect-guards", ProtectGuards).required());
+```
+
+`ClonedHooks` clones the hooks per run, so state starts fresh every run.
+`.required()` makes a failing hook fail the run (default: advisory, the
+failure is logged and that hook skipped).
+
+### A verifier (don't accept "done" without evidence)
+
+```rust
+use yoagent::extension::{RunHooks, StopContext, StopDecision};
+use yoagent::{AgentMessage, Content, Message};
+
+#[derive(Clone)]
+struct RequireTests;
+
+#[async_trait::async_trait]
+impl RunHooks for RequireTests {
+    async fn on_stop(&mut self, stop: &StopContext<'_>) -> StopDecision {
+        let ran_tests = stop.messages.iter().any(|m| match m {
+            AgentMessage::Llm(Message::Assistant { content, .. }) => content.iter().any(|c| {
+                matches!(c, Content::ToolCall { name, arguments, .. }
+                    if name == "bash" && arguments["command"].as_str().is_some_and(|cmd| cmd.contains("cargo test")))
+            }),
+            _ => false,
+        });
+        if ran_tests {
+            StopDecision::Accept
+        } else {
+            StopDecision::Continue("Run `cargo test` before saying you are done.".into())
+        }
+    }
+}
+```
+
+Read the evidence from `stop.messages` (the conversation so far). Don't
+try to set a flag from `on_event`: it takes `&self`, and a shared
+`Arc<AtomicBool>` would carry over between runs, since `ClonedHooks`
+clones the `Arc`. Continues are capped per run (`max_stop_continues`,
+default 3); a required extension that still continues at the cap fails the
+run.
+
+### A dollar budget
+
+```rust
+use yoagent::extension::Budget;
+
+yoagent::provider::prices::enable_bundled(); // pricing is opt-in since 0.25
+let config = ModelConfig::claude_sonnet_5();
+if let Some(budget) = Budget::for_model(2.00, &config) { // None when unpriced
+    agent = agent.with_extension(budget.across_runs()); // one total for the session
+}
+```
+
+It is checked before every model call: once the spend has reached the
+limit, the run stops there (one call may cross it). It counts sub-agents,
+decision models and compaction too, and what extensions record through
+`RunContext::spend_handle` (a plugin's host service, say).
+
+### A sub-agent with its own limits, under the parent's policy
+
+```rust
+use yoagent::context::ExecutionLimits;
+
+let child = SubAgentTool::from_config("researcher", ModelConfig::claude_sonnet_5())
+    .with_system_prompt("Research, then report.")
+    .with_execution_limits(ExecutionLimits::default().with_max_turns(20));
+let agent = agent
+    .with_tools(vec![Box::new(child)])
+    .with_tree_extension(ClonedHooks::new("protect-guards", ProtectGuards).required());
+```
+
+### Plugins from other ecosystems (yoagent-rutis)
+
+Before writing a tool or policy, check npm: pi extensions (keyword
+`pi-package`) and DeepSeek Harness plugins (`dsh-plugin`) number 10k+
+packages, and the separate **yoagent-rutis** crate loads them unchanged.
+What follows is a map; every name is in its
+[README](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis).
+
+- **Host** ([README: Host](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis#host)):
+  `RutisBridge::install(&root)` once on the rutis root, then
+  `agent.with_extension(bridge.extension())` — add `.require_policy()` so a
+  run that starts before a policy plugin registered denies tool calls, or
+  install it with `with_tree_extension` to cover sub-agents. Plugins
+  register handlers: Rust (`AgentPlugin`, `Handler`), TypeScript (Node or
+  Bun), Python and Go through the `node` / `bun` / `python` / `go`
+  features.
+- **Runtimes** (yoagent-rutis 0.11+): the host starts each one itself with
+  rutis-host's `SpawnPlugin` and resolves plugin rows with rutis-loader's
+  `SessionResolver` (yoagent-rutis's `language_plugins` example is a whole host). A plugin
+  declares `yoagent` in its `inject`; services it can run without go in
+  `optional`, read with `ctx.get` (rutis 0.20). Pin the npm / PyPI / Go
+  runtimes to the host's rutis version
+  ([README: Versions](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis#versions)).
+- **pi extensions** ([README](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis#pi-extensions-tools-and-tool-policies)):
+  mapped are tools, `tool_call` / `tool_result` policies, `input`,
+  `before_agent_start` additions (as notes) and the observer events; not
+  mapped are commands, UI and session history. `pi.exec` is closed by
+  default: grant it with `exec` / `execFor`, or `"gate"` to ask the host
+  (load `plugins/pi/host-approval.ts`); `projectTrusted` defaults to false.
+- **DSH plugins** ([README](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis#dsh-deepseek-harness-tool-plugins)):
+  tools and system-prompt sections. Many wait for DSH's own host services:
+  load the rows of `plugins/dsh/host-services.json` before them — or,
+  when they need a DSH agent for the call, the rows
+  `adapters::dsh_host_rows(..)` returns **instead** (`host-services.json`
+  plus a stand-in agent; loading both keeps the first row of an id). Give the runtime its own `DSH_HOME`, or the plugins see the
+  user's DSH keys and skills.
+- **Vet a package first** (feature `probe`): `probe::pi` / `probe::dsh`
+  load it through its adapter without calling a tool or a model;
+  `report.problem()` is `None` when it is usable. Blank provider keys for
+  the probe with `ProbeOptions::default().env(name, "")` (`pi_with` /
+  `dsh_with`), one per `provider::api_key_variables()`.
+- **Untrusted packages** ([README](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis#restricted-runtimes-tools-only)):
+  `bridge.restrict_runtime(handle)` before the runtime starts makes its
+  plugins tools only, offered as `<handler>__<tool>`;
+  `bridge.extension().late_tools()` (a `ToolSource`: install it with
+  `with_tool_source`) offers one loaded mid-run from the next turn. Known gap: a restricted runtime
+  can still publish services host-wide
+  ([arcships/rutis#1040](https://github.com/arcships/rutis/issues/1040)).
+- **Examples**: `pi_extensions`, `dsh_tools`, `ecosystem_probe`,
+  `language_plugins`, `policy_plugin` in its
+  [examples](https://github.com/yologdev/yoagent/tree/main/integrations/yoagent-rutis/examples).
+
+What yoagent cannot honour (UI, commands) is ignored, and what would decide
+things yoagent cannot enforce is **refused**. Measured 2026-10-16 on
+yoagent-rutis 0.4 / rutis 0.9, not re-measured since: of the 20
+most-downloaded packages, pi 12 and DSH 3 are usable
+(`docs/evals/plugin-compatibility.md`). The 3 usable DSH ones need
+DSH's host services (above); 12 of its top 20 extend DSH's own app (web
+UI, model layer, agents) rather than add agent tools.
+
+## Tips and pitfalls
+
+- **Pricing is opt-in (0.25).** Call `prices::enable_bundled()` once,
+  *before* building configs, on a path tests reach too (tests never run
+  `main`). Without it every cost is `None`, `Budget::for_model` is `None`.
+- **`with_tools` replaces the list.** An agent starts with no tools; the
+  built-ins come from `tools::default_tools()`. `with_mcp_server_*` adds to
+  that list, so call `with_tools` first — a later `with_tools` drops the
+  MCP tools.
+- **Policies fail closed.** A `before_tool` that panics, or is still
+  running when the run is cancelled, denies the call (a plugin policy
+  through yoagent-rutis also denies on an error or its timeout); an
+  `after_tool` that fails withholds the output. A deny is a normal tool
+  result the model reads and adapts to.
+- **`before_tool`, `after_tool`, `on_event` take `&self`** and run
+  concurrently for parallel calls; keep shared state in a `Mutex`/atomic.
+- **Never rewrite the system prompt per turn.** It breaks the prompt cache.
+  Per-turn context goes in `before_model` notes (added to the latest user
+  turn, never stored).
+- **Cancelling**: a cancel during a model call ends that message as
+  `StopReason::Aborted`; a cancel while tools run or between turns appends
+  `[Agent stopped: cancelled]`. Either way `on_error` is not called. A
+  cancelled sub-agent arrives as `ToolError::Cancelled` (cancelled before
+  its first answer), `Sub-agent '<name>' failed: [Agent stopped: cancelled]`,
+  or `Sub-agent '<name>' failed: Cancelled` (mid-stream) — key on the cancel
+  token, not the text.
+- **`bash` runs in its own process group (0.25.2)**: the terminal's Ctrl+C
+  does not reach a running command any more. A terminal host must catch
+  Ctrl+C and call `agent.abort()`; the cancel then kills the whole group.
+- **Retries emit `AgentEvent::ProviderRetry`.** A streamed attempt that
+  failed was already shown; look at the next event before treating an error
+  `MessageEnd` as final, or use `retry_safe_events`.
+- **Limits are per run** and `max_total_tokens` by default counts the whole
+  prompt every turn, so it fills faster than the visible conversation —
+  `with_token_accounting(TokenAccounting::Growth)` counts the conversation's
+  growth instead (a cap on the conversation, not on spend: use `Budget`).
+- **Spend is bucketed**: the agent's own, `sub_agents`, `decision`,
+  `compaction`, `extensions` (calls an extension records through
+  `RunContext::spend_handle`); `total_cost_usd()` adds them. Unknown cost
+  is `None`, never zero.
+- **Plugin messages are capped at 16 MiB**: on rutis 0.19 and later
+  (yoagent-rutis 0.11 and later) a larger one fails that call; on rutis
+  0.9–0.12 (yoagent-rutis 0.3–0.10) it ends the runtime and its plugins.
+  Large images in a conversation reach plugins as text.
+- **MCP servers you start**: `McpClient::connect_stdio_with(cmd, args, env,
+  StdioOptions::new().own_process_group(true))` (Unix) keeps the
+  terminal's Ctrl+C from the server and kills what it started on close or
+  drop. The server inherits your environment:
+  `.env_remove_all(provider::api_key_variables())` on the same options
+  keeps your keys from it (unset, not `""`). Over
+  HTTP, redirects stay within the server's origin unless
+  `HttpTransport::with_redirects(Redirects::Any)`; a custom `McpTransport`
+  reports tool-list changes through `report_notifications`.
+- **Tests**: script whole multi-turn tool conversations with `MockProvider`
+  (`Agent::from_provider(MockProvider::new(…), ModelConfig::mock())`); it
+  honours cancellation, so abort and steering paths are testable.
+- **The older hooks still work** (`ToolMiddleware`, input filters,
+  `TurnHook`, callbacks), but new work should use `Extension`: one place,
+  per-run state, sub-agent coverage.
+
+## What changed
+
+Newest first; the full list is `CHANGELOG.md`.
+
+- **0.27.7** — preset `gemini_2_5_flash_lite()` (1,048,576 / 65,536; the one
+  2.5 text model Google does not deprecate).
+- **0.27.6** — presets `gemini_3_5_flash_lite()`, `gemini_3_1_flash_lite()`,
+  `gemini_3_flash_preview()`: `ModelConfig::preset("google", id)` now covers
+  every current Gemini 3+ text model with Google's limits (1,048,576 /
+  65,536), so a host needs no limits table of its own.
+- **0.27.5** — fixes only. Built-in tools: `write_file`/`edit_file` replace
+  a file atomically (temp + rename; read-only files refused, symlinks
+  followed, mode and owner kept); `bash` keeps the end of long output;
+  `read_file` pages through files over `max_bytes` with offset/limit.
+  `on_before_turn` returning false now appends an `[Agent stopped: …]`
+  marker (the run ends `Stopped`). `Agent` setters called while a run is out
+  apply on top of the run's output when it is joined. MCP `tools/list`
+  follows `nextCursor`; a cancelled call sends `notifications/cancelled`.
+  Gemini no longer runs calls of a blocked response. One recording per
+  `recording_sender` in GASP.
+- **0.27.4** — no `temperature` for GPT-6 either: it rejects one unless
+  the effort is `none`, which no GPT-6 defaults to and yoagent never sends,
+  so `openai` / `openai_responses` (and the presets, `generic`, OpenCode,
+  OpenRouter) turn `accepts_sampling_params` off for a `gpt-6…` id.
+- **0.27.3** — no `temperature` for a model that rejects it: Claude from
+  4.7 on 400s on sampling parameters, so `ModelConfig::accepts_sampling_params`
+  (inferred off for those ids by `anthropic` / OpenCode and their presets)
+  makes the loop leave it out, with a `warn!` once per model. Set it with
+  `with_accepts_sampling_params` for a gateway or `custom` config.
+- **0.27.2** — additive. Model limits are data: a price-table entry may
+  carry `context_window` / `max_output` (`PriceEntry::with_limits`), and a
+  first-party constructor uses them for a model with no named preset — the
+  bundled snapshot's limits apply even with pricing off (prices stay
+  opt-in). Claude Opus 4.7 / 4.6 / 4.5 rows. `ModelConfig::bedrock_anthropic_id`
+  maps a Bedrock id to the Anthropic id behind it, so a host can price
+  Bedrock usage with its own rule.
+- **0.27.1** — no panic when the HTTP client cannot be built: a CA
+  setting that loads nothing (`SSL_CERT_FILE` / `SSL_CERT_DIR` on Linux
+  and other non-Apple Unix), or a host with no CA bundle, is a
+  `ProviderError::Other` naming the fix instead of a crashed task; a
+  decision model is built anyway and returns `DecisionError::Backend` from
+  each request.
+- **0.27.0** — breaking for struct literals only (new public fields on
+  `ReadFileTool`, `WriteFileTool`, `BashTool`). Built-in tools are safer:
+  `write_file` from `default_tools()` refuses to overwrite a file read only
+  in part (`tools::ReadLog`); `read_file`, `write_file` and `edit_file` take
+  turns on a file, so parallel edits no longer lose one; `read_file` sends
+  only PNG, JPEG and WebP images, typed by content, up to 8000 px and
+  3.75 MB (`ReadFileTool::with_max_image_bytes`); `bash` strips ANSI
+  sequences (`with_raw_output(true)` keeps them) and names a killing
+  signal; `edit_file` keeps CRLF. Loop: `on_stop` also judges an answer cut
+  off at the output limit (check `stop.answer`'s `stop_reason`); tool calls
+  a run left unanswered are answered when the next run starts, never re-run,
+  so `continue_loop` after a failed or killed run works. Providers: images
+  from tool results reach OpenAI-compatible models (in a user message);
+  `ModelConfig::with_image_input(false)` sends a text-only model a note
+  instead of each image; Gemini's `RECITATION` is a refusal. Opt-in knobs:
+  `SubAgentTool::with_max_depth`, `Agent::with_max_retry_after`. With
+  yoagent-rutis 0.13.0: plugins' `on_stop` gets `stop_reason`.
+- **0.26.8** — MCP stdio: `StdioOptions::env_remove` / `env_remove_all`
+  start a server with the host's variables unset (not `""`), and
+  `env_clear_except(names)` with only an allow-list;
+  `.env_remove_all(provider::api_key_variables())` keeps your provider
+  keys out. `Agent::with_mcp_server_stdio_with(.., options)` takes them on
+  the `Agent` path.
+- **0.26.7** — presets `claude_sonnet_4_6()`, `gemini_3_6_flash()`,
+  `gemini_3_1_pro_preview()`; `ModelConfig::preset("bedrock", id)` takes
+  Bedrock / cross-Region profile ids (`us.anthropic.claude-sonnet-4-6`) and
+  `preset("openrouter", "anthropic/claude-sonnet-4.6")` OpenRouter ids —
+  limits only, unpriced. This skill gained most of its feature map and the
+  pi / DSH how-to.
+- **0.26.6** — MCP over HTTP: `HttpTransport::with_authorization(Arc<dyn
+  AuthorizationSource>)` asks for the `Authorization` value per request and,
+  on a 401, lets the source refresh it (`challenged`) — the request is sent
+  once more on the same session; `McpError::Http` carries the server's
+  `WWW-Authenticate` (`err.www_authenticate()`) on 401/403. Credential
+  headers set with `with_header` are now redacted from quoted server text.
+- **0.26.5** — `max_total_tokens` can count what a run adds to the
+  conversation instead of every resent prompt:
+  `ExecutionLimits::with_token_accounting(TokenAccounting::Growth)` (the
+  run's starting conversation is the baseline; opt-in, default unchanged).
+- **0.26.4** — presets `gpt_6_1_terra()`, `glm_5_3_flashx()`,
+  `qwen_3_8_omni_flash()`; `ModelConfig::meta` prices `muse-spark-1.3` and
+  `muse-wonder-1.0` (after `prices::enable_bundled()`). No API change.
+- **0.26.3** — Gemini and Vertex keep text, thinking and tool arguments
+  intact when an HTTP chunk ends inside a UTF-8 character (Chinese, emoji
+  came back as U+FFFD); their SSE parser now scans each event once.
+- **0.26.2** — compaction keeps the task prompt, the latest user message
+  and the newest turn when the `keep_first` + `keep_recent` messages exceed
+  its target (small budgets, bulky tool results): it overshoots the target,
+  never the budget, instead of dropping the task or leaving only the
+  `[Context compacted]` marker (#150). Small-budget tool-heavy sessions
+  compact ~14% more often; nothing changes at the default 96K.
+  `mistral_large_4` is priced at $0.70 / $2.10 (Mistral's new rate).
+- **0.26.1** — MCP over HTTP: a key in the server URL (path, query,
+  userinfo) stays out of errors — they read `HTTP error reaching
+  <scheme://host:port>` — and out of server bodies / JSON-RPC error
+  messages quoted in them (`[redacted]`); a notification's 404 clears an
+  expired session like a call's. Don't match on the old error text.
+- **0.26.0** (breaking: `McpError` is `#[non_exhaustive]` — add a `_` arm)
+  — MCP over HTTP: a non-success status is `McpError::Http { status, .. }`
+  (`err.http_status()`: 401/403 wants a credential; a call's 404 with a
+  session = expired, reconnect); redirects stay within the server's origin
+  unless `HttpTransport::with_redirects(Redirects::Any)`. A stdio server in
+  its own process group has the group killed as soon as its command's exit
+  is seen. Take yoagent-rutis 0.10 / yoagent-workers 0.3 with it.
+- **0.25.16** — MCP stdio: `McpClient::connect_stdio_with(.., StdioOptions::new()
+  .own_process_group(true))` (Unix) keeps a host terminal's Ctrl+C from the
+  server and kills what it started (`npx` → `node`) on close/drop — catch
+  Ctrl+C and drop your clients. A server that stops reading its input reads
+  as gone (`exited()`).
+- **0.25.15** — `McpClient::exited()`: whether a stdio MCP server has gone
+  (its exit status and last stderr), read without waiting behind a call, so
+  a host can poll it. `McpToolSource` withdraws an exited server's tools at
+  the next turn. `with_mcp_server_*` get neither: they keep no client.
+- **0.25.14** — a `ToolSource` can change mid-run: implement `generation()`
+  (a counter that moves when its tools change) and the loop asks it again
+  before the next model request, once every tool call of the turn has
+  returned. `mcp::McpToolSource` is an MCP server whose tools follow
+  `notifications/tools/list_changed`; a custom `McpTransport` opts in with
+  `report_notifications`. `with_mcp_server_*` still list once.
+- **0.25.13** — Bedrock, Gemini and Vertex: a parallel tool call's
+  results go back in one message (consecutive same-role messages are
+  merged; on Gemini/Vertex the function responses come first), and an
+  empty message (an errored or cancelled turn) is no longer sent, so the
+  request after a multi-tool turn or a failed run is accepted.
+- **0.25.12** — `provider::api_key_variables()`: every environment
+  variable yoagent reads a credential from (providers', Bedrock's `AWS_*`,
+  the `YOAGENT_API_KEY` / `API_KEY` fallback, the decision presets'). To
+  keep keys from processes you start (plugin runtimes, MCP servers), set
+  each to `""` in their environment.
+- **0.25.11** — `tool_output_max_lines` is one budget per tool result,
+  shared by its text blocks (a many-block MCP result reached the model as
+  blocks × the budget): short blocks stay whole, long ones split the rest,
+  each cut with its own marker and stash key. Older multi-block results
+  over the budget are cut once more at their first level-1 compaction.
+- **0.25.10** — `ModelConfig::presets()` / `preset(provider, id)` /
+  `generic(provider, id)`: for a model given as text, write
+  `preset(p, id).or_else(|| generic(p, id))` and tell the user when the
+  fallback ran (its limits are the provider's defaults, not the model's).
+  `RunContext::spend_handle()` → `SpendHandle::add(&usage, &model)`: an
+  extension's own model calls (a host service's, for a plugin) count in
+  `Budget` and `SessionStats::extensions`. Steering and follow-ups taken
+  before a cancel are kept in the history (they were lost);
+  `Batched { size: 0 }` no longer answers a steered call twice.
+- **0.25.9** — a tool result with several text blocks reaches the model
+  whole (Anthropic, OpenAI-compatible, Responses, Gemini and Vertex sent
+  only the first block; an MCP server answering in blocks was seen as its
+  intro line). Upgrade if you use MCP tools.
+- **0.25.8** — eleven priced presets with real context windows and
+  output limits (`claude_sonnet_5_5`, `claude_haiku_5_5`, `gpt_6_1_sol`,
+  `gemini_4_argon`, `gemini_3_8_flash`, `grok_4_7`, `mistral_large_4`,
+  `glm_5_3`, `glm_5_3_flash`, `qwen_3_8_max`, `qwen_3_8_flash`; the three
+  on promotion carry the regular rate). Gemini thinking tokens and
+  OpenAI-compatible reasoning tokens reported beside `completion_tokens`
+  now count as output (cost, context tracking, `max_total_tokens`). The
+  file tools refuse a FIFO, device, socket or directory. **Behaviour
+  change:** `bash` returns when `bash` exits; a background job still
+  holding its output is left running with that output discarded
+  (`NOTE:` line, `details.output_still_open`) instead of holding the call
+  until the timeout killed it — redirect a job's output to keep it.
+- **0.25.7** — `McpToolAdapter::with_prefix` / `from_client_with_prefix`
+  name the tool `<prefix>__<tool>` (the prefix was ignored); the server is
+  still called with its own name. The `with_mcp_server_*` helpers add no
+  prefix: wrap a server yourself when two offer the same tool name.
+- **0.25.6** — DeepSeek is priced (after `prices::enable_bundled()`):
+  `deepseek-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`, at the **peak**
+  rate (off-peak is half; a flat price has no time of day), so its costs are
+  an upper bound and a `Budget` stops early rather than late. Install the
+  off-peak rates as an override to count those (`docs/concepts/pricing.md`).
+- **0.25.5** — the built-in `search` tool ignores the user's ripgrep
+  config (`--no-config`) and `GREP_OPTIONS`, finds `rg` without `which`
+  (`details.engine` says `"rg"` or `"grep"`), and reports a search that
+  ended abnormally as an error, never as "No matches". The experimental
+  frontend and its examples moved to
+  [yobuild](https://github.com/yologdev/yobuild).
+- **0.25.4** — `ToolGate` (feature `decision`) sends a call's arguments
+  whole when they fit (`with_max_argument_chars`, default 48,000, and the
+  decision backend's token limits) and otherwise cuts only the longest
+  strings, listing them under `tool_call.omitted`. **Behaviour change:**
+  `bash`'s command is a full view (`with_full_view`; drop it with
+  `without_default_full_views`), so a command too large to review whole is
+  denied instead of judged from its head and tail.
+- **0.25.3** — this skill and `llms.txt` ship in the crate; no code changes.
+- **0.25.2** — MCP `HttpTransport::with_header`; `bash` kills its process
+  group (Ctrl+C: see above).
+- **0.25.1** — GASP records plugin log lines on their run
+  (`GaspRecorder::extension()` + `plugin_log_layer()`).
+- **0.25.0** — `Extension` / `RunHooks` (the contract above), `Budget`;
+  pricing opt-in (`enable_bundled`); `AgentMessage::Extension` renamed
+  `Custom`; `ToolGate` / `InputGuard` run as extensions; encrypted
+  reasoning opt-in for the Responses API. **Breaking for event consumers:**
+  every message now gets its `MessageStart` / `MessageEnd` (a cancel during
+  a retry backoff emits an `Aborted` end), every `TurnStart` a `TurnEnd`,
+  and a cancelled run no longer runs its pending tool calls. **Breaking for
+  free-function users:** `AgentLoopConfig` is `#[non_exhaustive]` — build it
+  with `AgentLoopConfig::new(…)`; `provider::sse` is private.
+- **0.24.3** — `SubAgentTool::with_execution_limits`; 503 / 529 and
+  in-stream overloads retried; the `[Agent stopped: cancelled]` marker.
+- **0.24.2** — built-in tool sandbox fixes (path escapes, `search` flag
+  injection, Gemini key out of the URL, tool panics contained).
+- **0.24.1** — `retry_safe_events`.
+- **yoagent-rutis 0.12.0** (breaking) — rutis 0.20.0: move the npm /
+  PyPI / Go runtimes to 0.20.0 with it (protocol is still 4, so a 0.19
+  runtime connects but runs plugins on 0.19 rules). A plugin's `use` /
+  `get` now read only what it or its row declares: declare services you
+  can run without in `optional` and read them with `ctx.get` (the pi and
+  DSH adapters now do). Cleanups run one at a time in reverse.
+- **yoagent-rutis 0.11.0** (breaking) — rutis 0.19.3: move the npm /
+  PyPI (Python 3.12+) / Go runtimes to 0.19.3 with it; 0.12 runtimes are
+  refused at the handshake. The `node` / `python` / `bun` / `go` features
+  no longer start runtimes: start each with rutis-host's `SpawnPlugin` and
+  resolve rows with rutis-loader's `SessionResolver` (the CHANGELOG has the
+  before/after). `rows::wait_running(loader, ids, timeout)`. Agent events
+  no longer go on the rutis bus: `ctx.on::<AgentEventEmitted>` no longer
+  compiles — use `on_agent_event`. A restricted runtime's plugins are
+  restricted from their first call.
+- **yoagent-rutis 0.10.0** — requires yoagent 0.26; no other change.
+- **yoagent-rutis 0.9.0** — restricted runtimes: `bridge.restrict_runtime(handle)`
+  before a runtime starts makes its plugins tools only (their tools as
+  `<handler>__<tool>`, their own `before_tool` run inside their tool, never
+  any other hook). `RutisExtension::late_tools()` (a `ToolSource` for the
+  same agent) offers a restricted plugin loaded mid-run from the next turn.
+- **yoagent-rutis 0.8.3** — pi: a run's `agent_end` reaches the
+  observers even when the plugins unload right after the run (it comes
+  after `finish`; unloading now waits for it, bounded at 5 s).
+- **yoagent-rutis 0.8.2** — feature `embedded-adapters`:
+  `adapters::files()` is the pi and DSH adapter files built into the
+  binary, for hosts installed without the crate's source (write them under
+  one folder per version, then `npm ci` in its `pi/` and `dsh/`).
+- **yoagent-rutis 0.8.1** — `probe::pi_with` / `probe::dsh_with` with
+  `ProbeOptions::default().env(name, value)`: variables for the probe's
+  runtime (an empty value blanks one; the DSH probe's own homes win).
+- **yoagent-rutis 0.8.0** — pi adapter grants a host can ask about:
+  `exec` / `execFor[file] = "gate"` sends each `pi.exec` to the host's
+  `host_approval` (`judge(argv, cwd?)`, then `ask(question, details,
+  file)`; only `"allow"` runs, exactly what was judged);
+  `projectTrustedFor` per extension; `wakeFor` turns `pi.sendUserMessage`
+  into `host_session.wake(text, file)`. Load `plugins/pi/host-approval.ts`
+  / `host-session.ts` to pass the services in. Fixed-answer log lines now
+  name the extension file.
+- **yoagent-rutis 0.7.1** — pi adapter: `model` / `models` give
+  extensions `ctx.model` (default: the run's model id under provider
+  `yoagent`) and a read-only `ctx.modelRegistry`; `execFor` grants
+  `pi.exec` per extension file. pi observer events (`agent_end`,
+  `turn_end`, `tool_execution_*`, …) now fire. Opt-in DSH host
+  (`adapters::dsh_host_rows`) gives DSH plugins a stand-in DSH agent.
+- **yoagent-rutis 0.7.0** — pi adapter: **`pi.exec` is closed by
+  default** (row config `exec`: `true`, or an exact command list; only the
+  command is checked, so granting `git`/`sh`/`node` grants anything; a
+  refusal is code 126, never a throw). Fixed answers are logged as
+  `[pi] fixed answer: <question> → <answer>`; `projectTrusted` sets
+  `ctx.isProjectTrusted()` (default false). Loads write wrappers to
+  `$TMPDIR/yoagent-pi-wrappers-<uid>`.
+- **yoagent-rutis 0.6.1** — `rows::wait_running` (feature `loader`): a
+  host's plugin rows can wait for a service nobody provides, and `reconcile`
+  still reports success; this waits until they run and names, per waiting
+  row, the services it lacks.
+- **yoagent-rutis 0.6.0** — rutis 0.12 (move the npm / PyPI / Go runtimes
+  to 0.12 with it; undeclared `ctx.provide`d services now reach rutis, and
+  `ServiceCatalog::new()` shares every name). A TypeScript, Bun, Python or
+  Go plugin's handlers are owned by its row (`offered_by().owner()` is the
+  row id, seen by the host) and go when the row unloads or restarts —
+  declare `yoagent` in the plugin's `inject` to be attributed.
+- **yoagent-rutis 0.5.1** — pi adapter fix: a run calls only the tools it
+  was offered (top-level and nested), so `offered_by.source` names what
+  runs; `nestedCalls` (`"own-extension"`, `"off"`) narrows what a pi tool
+  can call through `ctx.executeTool`.
+- **yoagent-rutis 0.5.0** — rutis 0.11 (move the npm / PyPI / Go
+  runtimes to 0.11 with it: an integer beyond ±(2^53−1) now crosses as a
+  big integer, which older peers refuse); `Registry::offered_by(run_id,
+  tool)` names the plugin handler (and, for pi, the extension file) that
+  offered a tool, for policies that trust tools per plugin; per-handler hook
+  timing (`Registry::timings()` / `take_timings()`).
+- **yoagent-rutis 0.4.0** — `adapters()` (the pi and DSH adapter files the
+  crate ships: copy `root`, `npm ci` the copy) and the `probe` feature: vet
+  a pi extension or DSH plugin without running it as an agent; each
+  report's `problem()` is the verdict.
+- **yoagent-rutis 0.3.1** — DSH's own host services for DSH plugins:
+  `plugins/dsh/host-services.json` lists DSH's headless packages for
+  files, attachments, credentials, storage, session persistence and skills
+  (load them before the plugins that wait for them). They read `DSH_HOME`
+  / `DSH_AGENTS_HOME` (else `~/.dsh`, `~/.agents`): give the runtime homes
+  of its own. No Rust API change.
+- **yoagent-rutis 0.3.0** — rutis 0.9 (Rust 1.88); Bun and Go plugins;
+  the 16 MiB guard.
+- **yoagent-rutis 0.2.0** — rutis 0.8 (move the npm / PyPI packages to
+  0.8.0 with it, and depend on `rutis = "0.8"`). A DSH tool policy's `ask`,
+  and DSH's `ask_user_question` tool, reach the user on hosts with a `ui` service
+  (`plugins/dsh/host-dialogs.ts`); DSH tool cards as `details.view`; pi
+  dialogs reach a frontend through `plugins/pi/host-ui.ts`.
+
+Older releases (0.24.0 added Clef decision models and the yoagent-workers
+crate) are in `CHANGELOG.md`.
+
+## More
+
+The book: <https://yologdev.github.io/yoagent/> (source `docs/`), the
+design philosophy (`docs/design-philosophy.md`), the API reference
+(<https://docs.rs/yoagent>), and `llms.txt` at the repository root for a
+map of every page.

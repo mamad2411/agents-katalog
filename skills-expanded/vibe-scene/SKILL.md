@@ -1,0 +1,207 @@
+---
+name: vibe-scene
+description: Author, repair, render, and inspect VibeFrame scene projects built from STORYBOARD.md and DESIGN.md.
+---
+
+# Vibe Scene
+
+VibeFrame scene projects are editable video projects built from:
+
+- `STORYBOARD.md` - beats, narration, backdrop cues, duration hints
+- `DESIGN.md` - visual identity, palette, typography, motion rules
+- `compositions/scene-*.html` - per-beat HTML compositions
+- `index.html` - root timeline that references scene compositions
+- `assets/` and `renders/` - generated inputs and final outputs
+
+Use this skill when the user wants editable HTML-based scene composition,
+storyboard-to-MP4 work, or a host-agent authoring loop.
+
+Use the top-level commands for the main project lifecycle:
+
+```bash
+vibe init my-video --profile agent --ratio 16:9
+vibe build my-video
+vibe render my-video -o renders/final.mp4
+```
+
+The `vibe scene ...` namespace is the lower-level authoring surface:
+`install-skill`, `compose-prompts`, `list-styles`, `add`, and `lint`.
+
+## Pick The Right Path
+
+| Path                       | Use when                                                                                | Commands                                                     |
+| -------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Host-agent authoring       | Claude Code/Codex/Cursor writes the scene HTML from a plan (default)                    | `vibe build`, then `vibe scene compose-prompts`              |
+| Deterministic template     | CI or a human demo should produce scene HTML without a coding agent (no LLM call)       | `vibe build --composer template`                             |
+| Single-scene draft         | You need a quick template scene or fallback HTML                                        | `vibe scene add`                                             |
+
+Default recommendation for public demos and reproducible dogfood runs:
+
+```bash
+vibe init my-video --profile agent --ratio 16:9
+# edit DESIGN.md and STORYBOARD.md
+vibe build my-video \
+  --tts kokoro \
+  --skip-backdrop \
+  --skip-render
+# (the host agent authors compositions/scene-*.html, then re-run vibe build)
+vibe scene lint index.html --project my-video --fix
+vibe render my-video -o renders/final.mp4 --quality standard
+```
+
+Use `--skip-backdrop` when you want a low-cost composition test. Remove it when
+the demo should exercise OpenAI image generation from each beat's `backdrop`
+cue.
+
+## Host-Agent Loop
+
+Use this when Claude Code or another coding agent should be the reasoner that
+authors `compositions/scene-*.html`.
+
+```bash
+vibe build my-video \
+  --tts kokoro \
+  --skip-backdrop \
+  --skip-render
+
+vibe scene compose-prompts my-video --json
+```
+
+If `vibe build` returns a `needs-author` plan:
+
+1. Read the compose plan.
+2. Author each missing `compositions/scene-<id>.html`.
+3. Run `vibe scene lint index.html --project my-video --fix`.
+4. Fix remaining lint errors by editing the HTML.
+5. Run `vibe render my-video`.
+
+Hard rules for authored scene HTML:
+
+- Every timed element needs `data-start`, `data-duration`, and `data-track-index`.
+- Timed elements must have `class="clip"`.
+- GSAP timelines must be paused and registered on `window.__timelines`.
+- Do not use `Date.now()`, `Math.random()`, or network fetches in render paths.
+- Route final audio through root-level `<audio>` elements when possible.
+- For factual, typography-heavy videos, keep claims and layout in HTML/CSS/JS;
+  treat provider assets as inputs rather than the whole product.
+
+## Low-Level Scene Commands
+
+```bash
+vibe scene install-skill my-video --host auto
+vibe scene compose-prompts my-video --json
+vibe scene list-styles
+vibe scene add intro --project my-video --style announcement --headline "Hello"
+vibe scene add badge --project my-video --style simple --lottie assets/logo.lottie --lottie-position bottom-left
+vibe scene lint index.html --project my-video --json --fix
+```
+
+Run `vibe schema scene.<subcommand>` before using less common flags.
+
+Overlay a Lottie animation (`.json`/`.lottie`) on a scene with `--lottie <path>`,
+tuned by `--lottie-position` (full|center|top-left|top-right|bottom-left|bottom-right),
+`--lottie-scale`, `--lottie-opacity`, and `--lottie-no-loop`. The scene timeline
+drives it frame by frame from a runtime copied into `assets/vendor/dotlottie/`
+(no provider call, free).
+
+## Takes: Keeping A Generation You Liked
+
+`vibe build` records every beat asset it generates (narration, backdrop,
+keyframe, video, music) as a take, and keeps each take's bytes. When a
+regeneration came out worse, put the earlier one back instead of paying again:
+
+```bash
+vibe take list --beat <id> --json       # inSlot marks what the slot holds now
+vibe take promote <take id> --dry-run --json
+vibe take promote <take id>
+```
+
+Later builds keep a promoted slot until that beat's cue is edited or
+`vibe build --force` runs. `vibe take log --json` totals what the project
+spent, split into provider billing and estimates. See `docs/take-graph.md`.
+
+A beat video that is close but not right can be continued instead of
+regenerated: `vibe take extend <take id>` adds time after its last frame,
+`vibe take edit <take id> --prompt "<the change>"` revises it (Grok and
+Gemini Omni; Kling legacy models extend only). Both are paid: run
+`--dry-run --json` first, confirm the spend with the user, and pass
+`--max-cost`. The result is a new take for the same slot; promote it to use it.
+
+## Narration Word-Sync
+
+During `vibe build`, generated narration is transcribed at the word level
+(ElevenLabs Scribe when `ELEVENLABS_API_KEY` is set, else OpenAI Whisper) to
+`assets/transcript-<beat>.json` whenever narration exists and one of those keys
+is configured. Those word timings are passed into each beat's compose
+prompt so captions / kinetic typography can be synced to speech.
+
+- On by default; pass `--skip-transcript` to opt out (no transcription cost).
+- Neither key → silently skipped; narration still plays, just without
+  word-level animation timing.
+- Timings are advisory and visual-only — the composer never adds audio/SFX from
+  them. For long narration the prompt downgrades to coarse phrase-level anchors.
+
+## STYLE And STORYBOARD Guidance
+
+Never author scene HTML before `DESIGN.md` exists. Treat it as the hard gate
+for visual decisions:
+
+- palette and contrast
+- typography and hierarchy
+- layout density
+- animation timing and transition style
+- what to avoid
+
+Scenes live in `scenes/`, one markdown file per scene, playing in filename
+order. Cues go in the frontmatter, direction in the body:
+
+```markdown
+---
+type: Scene
+narration: "The first sentence the viewer hears."
+backdrop: "Specific visual prompt for the scene backdrop"
+duration: 5
+---
+
+What the scene should show.
+```
+
+`STORYBOARD.md` holds only project frontmatter and direction prose. Beat
+headings left in it are ignored and reported - move them into `scenes/`, or
+run `vibe storyboard migrate` on an older single-file project.
+
+## Lint Feedback Loop
+
+```bash
+vibe scene lint index.html --project my-video --json --fix
+```
+
+Recommended loop:
+
+1. Run lint with `--json --fix`.
+2. Fix any `error` findings in the referenced scene file.
+3. Re-run lint.
+4. Cap retries at 3; if errors persist, replace the scene with a simpler
+   `vibe scene add ... --style simple --force` draft and explain the tradeoff.
+
+Warnings can be acceptable for demos only when the final render is visually
+correct and deterministic.
+
+## Render Checklist
+
+- `vibe doctor` reports Chrome and FFmpeg as available.
+- `vibe scene lint` exits 0 or only acceptable warnings remain.
+- `index.html` references every `compositions/scene-*.html` file needed.
+- `vibe render my-video -o renders/final.mp4` writes the expected MP4.
+- Final `media info` or `ffprobe` confirms the intended duration, fps, and
+  codec shape.
+
+## Common Failures
+
+- `Root composition not found`: run `vibe build` once so the render scaffold is
+  created, or use `vibe init --profile full`.
+- `needs-author`: expected when the host agent authors scenes (the default);
+  author the listed scene files and rerun build.
+- `OPENAI_API_KEY not set`: use `--skip-backdrop` for a local composition test,
+  or configure the key before generating backdrops.
+- Render hangs at 0%: run `vibe doctor`; install Chrome or set `CHROME_PATH`.

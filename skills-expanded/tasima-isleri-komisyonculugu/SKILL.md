@@ -1,0 +1,87 @@
+---
+name: tasima-isleri-komisyonculugu
+description: "Müvekkil veya karşı tarafın freight forwarder/taşıma işleri komisyoncusu olduğu, taşımanın organizasyonu üstlenildiği ilişkilerde komisyoncunun sorumluluk rejiminin ve taşıyıcı gibi sorumlu sayılma hallerinin değerlendirilmesi gerektiğinde kullanılır."
+---
+
+# Taşıma İşleri Komisyonculuğu (Forwarder)
+
+## Görev
+Taşıma işleri komisyoncusunun (freight forwarder) borçlarını, özen ve sorumluluk ölçüsünü belirlemek; hangi hallerde taşıyıcı gibi tam sorumlu sayılacağını saptamak.
+
+## Soğuk başlangıç (intake)
+1. Müvekkil taşımayı kendi mi üstleniyor, yoksa taşıyıcılarla sözleşip organizasyonu mu sağlıyor?
+2. Ücret nasıl belirlenmiş: sabit/maktu (kapsamlı) ücret mi, yoksa komisyon mu?
+3. Eşya başkalarının yüküyle birlikte toplu (gruppage) taşımaya mı verildi?
+4. Komisyoncu bizzat taşımayı (kendi aracıyla) üstlendi mi?
+
+## Denetim şeması
+1. **Tanım ve borç:** TTK m.917 — komisyoncu, ücret karşılığı kendi adına ve müvekkil hesabına eşya taşıtmayı üstlenir. Taşıma sözleşmelerini yapma, gönderme ve özen borcu vardır.
+2. **Özen ve sorumluluk:** TTK m.918 — komisyoncu işleri tedbirli bir tacir özeniyle görmekle yükümlüdür; kendi kusurundan ve seçtiği kişilerden sorumludur.
+3. **Taşıyıcı gibi sorumluluk halleri:** 
+   - **Sabit ücret (m.926):** Komisyoncu müvekkille maktu/sabit bir taşıma ücreti kararlaştırmışsa, yalnızca taşıyıcının hak ve borçlarına sahip olur ve taşıyıcı gibi sorumlu olur.
+   - **Toplu yük/gruppage (m.927):** Eşyayı başkalarının eşyasıyla birlikte toplu taşımaya verirse taşıyıcı gibi sorumlu tutulur.
+   - **Bizzat taşıma (m.928):** Komisyoncu taşımayı kendisi yaparsa taşıyıcının hak ve yükümlülüklerine de sahip olur.
+4. **Sorumluluk sınırı:** Taşıyıcı gibi sorumlu sayılan komisyoncu, TTK m.882 sınırından yararlanır; m.886 halinde sınır kalkar.
+5. **Zamanaşımı:** TTK m.855 (1/3 yıl) komisyonculuk istemleri için de esas alınır.
+6. **Ara sonuç:** Komisyoncunun özen sorumluluğu mu yoksa taşıyıcı gibi objektif sorumluluğu mu söz konusu.
+
+## Çıktı modülleri
+- Sıfat ve ücret yapısına göre sorumluluk rejimi tablosu (m.917/926/927/928).
+- Taşıyıcı gibi sorumluluk tetiklenip tetiklenmediği değerlendirmesi.
+- Rücu ve zincir sorumluluk (alt taşıyıcı) haritası.
+
+## Plugin bağlamı
+
+Bu beceri `tasima-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

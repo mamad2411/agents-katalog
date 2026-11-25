@@ -1,0 +1,118 @@
+---
+name: three-tier-testing
+description: Use when setting up test infrastructure, adding tests, reorganizing test directories, or reviewing test structure. Triggers include creating test files, discussing test strategy, separating unit from integration tests, or when tests need external services like databases or Docker.
+---
+
+# 三層測試架構
+
+依照外部依賴程度，將測試分為三層。每層獨立運行，一條指令執行。
+
+| 層級 | 目錄 | 外部依賴 | 目的 |
+| ---- | ---- | -------- | ---- |
+| 單元測試 | `tests/unit/` | 無 | 邏輯正確性 — 純程式碼，所有依賴皆 mock |
+| 整合測試 | `tests/integration/` | 假的（測試用 DB 等） | 服務串接 — 真實 DB、mock 外部服務 |
+| E2E 測試 | `tests/e2e/` | 真的 | 完整使用者流程 — 無 mock，真實外部服務 |
+
+前後端分離時，後端測試放 `<backend>/tests/` 下，前端測試放 `<frontend>/tests/`（單元測試可能在 `<frontend>/src/**/*.test.*`）。單體專案直接用根目錄 `tests/`。
+
+## 裸跑原則
+
+裸跑測試指令（不帶目錄或標籤參數）只跑單元測試。整合與 E2E 需明確指定。具體實現方式（testpaths、build tag、設定檔分離等）依語言而定，見語言設定章節。
+
+## 整合測試環境：Host（預設） vs Docker
+
+```
+本機已跑單一 DB？          → Host（預設）
+開發流程已有 Docker Compose？ → Docker
+多資料庫 / 訊息佇列？       → Docker
+```
+
+## Docker 構建與清理
+
+適用於以容器交付的專案；Host 模式維持原有測試方式。
+
+- 開發測試重用專案開發 image，掛載目前工作區的程式碼；與 production 共用 runtime 版本、依賴鎖定與 Dockerfile 階段，依賴變更時重建。
+- 正式 E2E／QA 使用 production Dockerfile 的正式 target 構建，不掛載原始碼；修改後重建受影響 image 並重新驗證。改到 Dockerfile、啟動、打包或檔案權限時，提前驗證正式 image。
+- 正常構建重用 build cache，不預設使用 `--no-cache`。
+- 每個任務使用獨立 Compose project 名稱或資源標籤，記錄自己建立的資源。
+- 執行者先保存測試結果與必要 logs，再清理已無後續用途的任務專用 container、network、測試 volume 與 image；後續仍需使用的資源交接給接手者。
+- 保留共用 image、共用資料與 build cache，不執行全域 prune。Build cache 的容量與期限由主機 GC 政策管理。
+
+## 測試範圍判斷
+
+優先測試：
+- 需求指定的功能，以及使用者操作後應出現的結果
+- 業務關鍵路徑（付款、認證、資料寫入）
+- 錯誤處理與邊界條件
+- 安全邊界（權限檢查、輸入驗證）
+- 資料完整性（migration、約束、串接）
+
+通常不需單獨測試無自訂行為的 getter/setter、純資料結構與框架產生的樣板；若影響需求、資料或執行行為，仍需驗證其結果。一次性腳本、設定檔與 migration 依影響選擇驗證方式，不以檔案種類直接排除。
+
+依需求、使用者影響、資料正確性與失敗風險選擇測試；是否會觸發值班告警不是跳過的判準。選擇能證明該行為的層級，不要求每項都用 E2E。
+
+## 測試可信度
+
+- 測試受影響的使用流程時，若以 mock／override 替換權限、認證、配額、模型決策等正式行為，在測試或 fixture 說明替換內容與驗證限制，並連結適當層級下實際執行相關控制／路徑的補充證據。缺少證據的那項保證標為 `UNPROVEN`，不以其他測試通過代替；不要求每個單元測試連接真實外部服務。
+- 例如，強制權限放行的工具測試不能證明正式權限流程可用；預先寫好的模型工具呼叫不能證明真實模型會選用哪個工具。補充驗證須涵蓋被替換且與本次需求相關的行為。
+- 修復缺陷的回歸測試須在修復前版本因目標缺陷失敗，並在修復後通過；保留版本、指令與結果。Import、fixture 或環境錯誤不算重現。無法取得基準或重現時，將「測試能攔下原缺陷」標為 `UNPROVEN` 並記原因，修復後結果另列，不抹除其他有效證據。
+- 結果區分 `PASS`、`FAIL`、`UNPROVEN`（證據不足）與 `NOT_EXECUTED`（未執行），記錄原因；未測與無法證明不能彙總成通過。
+
+## 測試歸屬判斷
+
+### 單元測試（`tests/unit/`）
+
+- 函式邏輯搭配 mock 依賴
+- 資料轉換、驗證、解析
+- 類別行為搭配假協作物件
+- 無 DB fixture、無外部服務
+
+### 整合測試（`tests/integration/`）
+
+- 資料庫操作（migration、CRUD、約束）
+- API endpoint 經由 test client 加真實 DB
+- 前端流程搭配 mock backend
+
+### E2E 測試（`tests/e2e/`）
+
+- 瀏覽器驅動的使用者流程 — 無 mock，打真實 server
+- 完整 API 呼叫鏈搭配真實外部服務與真實 API 金鑰
+- 判斷標準：有 mock 就不是 E2E，歸 integration
+
+## 驗收測試（`tests/qa_e2e/`，選用）
+
+三層之外的獨立目錄，存放對應規格驗收清單（QA）的測試。LoopAgentTeams 的 qa_executor 依規格逐條撰寫於此。
+
+- 技術規則同 E2E：無 mock、驅動真實應用
+- 與 `tests/e2e/` 分開的原因：每條測試對應規格的一條驗收項，由驗收方撰寫；修正實作的一方（如 test_executor）只能執行、不得修改
+- 裸跑不含此目錄，執行需明確指定（設定方式見語言 reference）
+- 前後端分離時放 `<frontend>/tests/qa_e2e/`
+
+## 從扁平 tests/ 遷移
+
+- [ ] 建立 `tests/unit/` 和 `tests/integration/`
+- [ ] 逐一檢查測試檔：用到真實外部服務 → `integration/`，純 mock → `unit/`
+- [ ] 拆分共用 fixture：DB fixture → `integration/`，其餘 → `unit/`
+- [ ] 設定裸跑只執行單元測試（依語言設定）
+- [ ] 每層加上自動標記或標籤
+- [ ] 執行驗證：裸跑只收集單元測試、指定目錄只收集對應層級
+
+## 語言設定
+
+依專案檔偵測語言，讀取對應 reference：
+
+| 偵測檔案 | 語言 | Reference |
+| -------- | ---- | --------- |
+| `pyproject.toml` 或 `setup.py` | Python | `references/python.md` |
+| `package.json` | TypeScript/JavaScript | `references/typescript.md` |
+
+多語言專案：各語言子專案分別偵測，各讀各的 reference。
+
+未列出的語言：依本文的通用原則（三層目錄、歸屬判斷、裸跑原則），具體設定由 agent 依該語言慣例自行決定。
+
+## 注意事項
+
+- 裸跑只跑單元測試是核心設定。若設定錯誤導致裸跑執行整合測試，會破壞層級隔離。
+- 若測試 import 了真實外部服務，即使放在 `tests/unit/` 也是整合測試。正確做法是搬移檔案，不是 mock import。
+- Docker 模式使用非預設 port，避免與開發環境衝突。
+- Host 模式需確保外部服務在測試前已啟動。

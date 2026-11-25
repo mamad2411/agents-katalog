@@ -1,0 +1,183 @@
+---
+name: xpp-database-queries
+description: Authoritative rules for X++ select / while-select queries in D365 Finance & Operations. Invoke whenever the user asks to write a "select", "while select", "query", joins, aggregates, cross-company, set-based ops, or any data-access X++.
+applies_when: User intent involves X++ data access — select / while select / joins / aggregates / cross-company / validTimeState / set-based operations.
+---
+> ⛔ **NEVER write X++ AOT XML files directly** via PowerShell, terminal file commands (`Set-Content`, `Out-File`, `New-Item`), editor write tools, or any raw text approach. The XML schema (`<AxClass>`, `<AxTable>`, `<AxForm>`, `<Methods>`, `<SourceCode>`) is proprietary — LLMs have not been trained on it reliably. **ALWAYS use `d365fo generate …` commands** to produce correct AOT XML. If `d365fo` is unavailable in PATH, stop and ask the user to install it.
+
+# X++ database queries — `select` / `while select`
+
+> **Source of truth:** [learn:xpp-select-statement](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/dev-ref/xpp-data/xpp-select-statement).
+> **Pre-flight:** confirm the target table / field with `d365fo get table <Name> --output json` before writing the query.
+
+## Statement order (grammar-enforced)
+
+```
+select [FindOption…] [FieldList from] tableBuffer [index…]
+       [order by | group by] [where …] [join … [where …]]
+```
+
+`FindOption` keywords (`crossCompany`, `firstOnly`, `forUpdate`, `forceNestedLoop`, `forceSelectOrder`, `forcePlaceholders`, `pessimisticLock`, `optimisticLock`, `repeatableRead`, `validTimeState`, `noFetch`, `reverse`, `firstFast`) sit **between `select` and the buffer / field list** — never on a joined buffer (sole exception: `forUpdate` may target a specific buffer in a join).
+
+`order by` / `group by` / `where` must appear **after the LAST `join` clause** — never between joins.
+
+## `crossCompany` belongs on the OUTER buffer
+
+```xpp
+// ✅ CORRECT
+select crossCompany custTable
+    join custInvoiceJour
+    where custInvoiceJour.OrderAccount == custTable.AccountNum;
+
+// ❌ WRONG — cross-company on the joined buffer
+select custTable
+    join crossCompany custInvoiceJour
+    where …;
+```
+
+Optional company filter: `select crossCompany : myContainer custTable …` — the **colon is required**, and the operand may be a container variable, an inline literal (`['dat', 'dmo']`) or an expression. Empty container = scan all authorised companies.
+
+## `in` operator — ENUM fields with a container VARIABLE
+
+Grammar: `where EnumField in containerVariable`. Two limits xppc enforces (both
+verified against the compiler):
+
+- The **left side must be an enum field**. A `str`/`int64`/`real`/`date` field
+  answers `Types 'str(CustAccount)' and 'container' are not compatible with
+  operator 'in'` — for those, write the `||` chain.
+- The right side must be a **container variable**, never an inline literal:
+  `where t.Status in [MyStatus::A, MyStatus::B]` answers `Container literals in
+  'in' expression are not supported. Declare container variable instead.`
+  (validator rule `SEL009`).
+
+```xpp
+container postingTypes = [LedgerPostingType::PurchStdProfit, LedgerPostingType::PurchStdLoss];
+select sum(CostAmountAdjustment) from inventSettlement
+    where inventSettlement.OperationsPosting in postingTypes;
+```
+
+## Other Learn-confirmed rules
+
+- **Field list before table** when you don't need the full row — `select FieldA, FieldB from myTable where …`. Never `select * from`.
+- **`firstOnly`** when at most one row is expected. Cannot be combined with `next`.
+- **`forUpdate`** required before any `.update()` / `.delete()`; pair with `ttsbegin` / `ttscommit`.
+- **`exists join` / `notExists join`** instead of nested `while select` for filter-only joins.
+- **Outer join** — only LEFT outer; no RIGHT outer, no `left` keyword. Default values fill non-matching rows; distinguish "no match" vs "real zero" by checking the joined buffer's `RecId`.
+- **Join criteria use `where`, not `on`.** X++ has no `on` keyword.
+- **`index hint`** requires `myTable.allowIndexHint(true)` *before* the select; otherwise silently ignored. Only when measured.
+- **Aggregates** (`sum`, `avg`, `count`, `minof`, `maxof`):
+  - `sum` / `avg` / `count` work only on integer/real fields.
+  - When `sum` would return null (no rows), X++ returns NO row — guard with `if (buffer)` after.
+  - Non-aggregated fields in the select list must be in `group by`.
+- **`forceLiterals`** reveals the where-clause values to the optimiser — avoid it, and never use it with values that come from user input (SQL injection). It is not *forbidden*: xppc accepts it and standard code uses it where the plan measurably needs the literal. The force* options are exactly `forceLiterals`, `forcePlaceholders`, `forceNestedLoop`, `forceSelectOrder` — "forceLaterals" is not a keyword.
+- **`validTimeState(dateFrom, dateTo)`** for date-effective tables (`ValidTimeStateFieldType ≠ None`). Don't query without it unless you specifically want all historical rows.
+- **Set-based ops** (`RecordInsertList`, `insert_recordset`, `update_recordset`, `delete_from`) over row-by-row loops for performance. They fall back to row-by-row only when an overridden table method, DB log, or alerts subscription forces it.
+- **SQL injection mitigation** — `executeQueryWithParameters` for dynamic queries; never concatenate strings into `where`.
+- **Timeouts** — interactive 30 min, batch/services/OData 3 h. Override via `queryTimeout`. Catch `Exception::Timeout`.
+
+## SysDa Framework — fluent query API
+
+SysDa is the modern X++ query API — fluent and object-oriented. Use it when query shape depends on runtime conditions or when building reusable framework logic.
+
+**Core classes:**
+- `SysDaQueryObject` — root query builder; set table buffer via constructor.
+- `SysDaSearchObject` — wraps a `SysDaQueryObject` for iteration; pass this (not the raw query object) to `SysDaSearchStatement`/`SysDaFindStatement`.
+- `SysDaSearchStatement` — execute + iterate; `SysDaFindStatement` — `firstOnly` equivalent.
+- `SysDaUpdateStatement` / `SysDaInsertStatement` / `SysDaDeleteStatement` — set-based ops.
+
+```xpp
+CustTable custTable;
+var qe = new SysDaQueryObject(custTable);
+qe.whereClause(new SysDaEqualsExpression(
+    new SysDaFieldExpression(custTable, fieldStr(CustTable, AccountNum)),
+    new SysDaValueExpression('US-001')));
+var so = new SysDaSearchObject(qe);       // wraps the query object for iteration
+var search = new SysDaSearchStatement();
+while (search.nextRecord(so))
+{
+    info(custTable.AccountNum);
+}
+```
+
+**Joins:** `qe.joinClause(SysDaJoinKind::InnerJoin, joinQe)` — supports `InnerJoin`, `OuterJoin`, `ExistsJoin`, `NotExistsJoin`. ⚠️ This `SysDaJoinKind` spelling (**with** "t") is specific to the `SysDa` builder framework — the native AOT `AxQuerySimpleEmbeddedDataSource.JoinMode` property (and the `d365fo generate query --join` flag) uses the differently-spelled `NoExistsJoin` (**no** "t"). Confirmed against both enums as shipped on the platform; mixing them up produces an invalid enum literal.
+
+**SysDa vs `select` — decision:**
+
+| Situation | Preferred |
+|---|---|
+| Static, compile-time query | `select` / `while select` — cleaner, compile-time field validation |
+| Query shape depends on runtime conditions | SysDa |
+| Building reusable framework / query logic | SysDa |
+| Dynamically selecting fields or aggregates | SysDa |
+
+## Query Object Model — `Query` / `QueryRun`
+
+Use `Query` / `QueryRun` when forms/reports bind to a shared query or the user can modify filters dynamically (e.g. `SysQueryForm`).
+
+```xpp
+Query query = new Query();
+QueryBuildDataSource qbds = query.addDataSource(tableNum(CustTable));
+qbds.addRange(fieldNum(CustTable, CustGroup)).value(queryValue('10'));
+qbds.addSortField(fieldNum(CustTable, AccountNum));
+QueryRun qr = new QueryRun(query);
+while (qr.next())
+{
+    CustTable ct = qr.get(tableNum(CustTable));
+    info(ct.AccountNum);
+}
+```
+
+**Key APIs:**
+- `SysQuery::findOrCreateRange(qbds, fieldNum)` — idempotent range addition.
+- `QueryBuildDataSource::addDataSource()` — nested join (child data source).
+- `qbds.joinMode(JoinMode::ExistsJoin)` — set join type at runtime.
+- `query.allowCrossCompany(true)` + `query.addCompanyRange('dat')` — cross-company at Query level.
+
+## Hard "never" list
+
+- **Never** call functions in `where` (e.g. `where strFmt(...) == 'X'`) — assign to a local first; the optimizer can't index function expressions.
+- **Never** use `today()` (BP `BPUpgradeCodeToday`) — use `DateTimeUtil::getToday(DateTimeUtil::getUserPreferredTimeZone())`.
+- **Never** nest `while select` loops (BP `BPCheckNestedLoopinCode`) — joins, `exists join`, or pre-load to `Map` / temp table.
+- **Never** call `doInsert` / `doUpdate` / `doDelete` for normal business logic — they bypass overridden methods, framework validation, and event handlers. Reserved for data-fix / migration scripts only.
+
+## Pre-flight commands
+
+```sh
+d365fo get table <Table> --output json                 # field list, indexes, relations
+d365fo find relations <Table> --output json            # FK relations to model joins
+d365fo find usages <field|method> --output json        # caller risk before refactor
+```
+
+
+## Rule canon — `select` grammar
+
+<!-- canon:queries -->
+**Order:** `select [FindOption…] [FieldList from] tableBuffer [index…] [order/group by] [where …] [join … [where …]]`.
+`FindOption` keywords sit between `select` and the buffer (sole exception:
+`forUpdate` may target a specific buffer in a join). `order by`/`group by`/
+`where` come AFTER the last `join`.
+
+**`crossCompany` belongs on the OUTER buffer** — query-level, not per-table.
+Optional company filter: `select crossCompany : myContainer custTable …` —
+`myContainer` is a `container` literal `(['dat'] + ['dmo'])`.
+
+**`in`** works with ANY primitive (`str`, `int`, `int64`, `real`, `enum`,
+`boolean`, `date`, `utcDateTime`, `RecId`). Operand is a `container` literal.
+One `in` per `where`. NEVER expand to `OR == OR ==`.
+
+**Other rules:**
+- Field list before table; never `select * from`.
+- `firstOnly` when ≤1 row; cannot combine with `next`.
+- `forUpdate` before any `.update()`/`.delete()`; pair with `ttsbegin`/`ttscommit`.
+- `exists join` / `notExists join` over nested `while select`.
+- Outer join is LEFT only; no `on` keyword (use `where`).
+- `index hint` requires `myTable.allowIndexHint(true)` first.
+- Aggregates: int/real fields only; sum-with-no-rows returns no row.
+- `forceLiterals` never with user-derived values (SQL injection); prefer
+  `forcePlaceholders` unless the plan measurably needs the literal.
+- `validTimeState(dateFrom, dateTo)` for date-effective tables.
+- Set-based ops over loops (`RecordInsertList`, `insert_recordset`,
+  `update_recordset`, `delete_from`).
+- Dynamic queries: `executeQueryWithParameters` — never string concat.
+- Timeouts: 30 min interactive, 3 h batch. Override `queryTimeout`.
+<!-- /canon -->

@@ -1,0 +1,59 @@
+---
+name: validate-context
+description: "Audit CFD context integrity (CLAUDE.md size/shape, ROADMAP freshness, ADR index sync and completeness, conventions, the ADR-003 surface boundary, language) and report PASS/WARN/FAIL with proposed fixes. Use when asked to audit the context, or before a push or a release."
+metadata:
+  cfd-version: "0.4.0"
+  token-budget: "~2,000–5,000"
+---
+
+Validate the CFD context in this project. Check, in order, and output a
+checklist with PASS / WARN / FAIL per item:
+
+1. **`CLAUDE.md` size**: WARN if >150 lines, FAIL if >300.
+2. **`CLAUDE.md` content shape**: should be mostly references (`@` for the
+   always-on files, a plain path for the on-demand ones — ADR-033), not
+   paragraphs of prose. FAIL if any section has >10 lines of inlined
+   content where an `@docs/...` reference would do.
+3. **`docs/ROADMAP.md` freshness**: run
+   `git log -1 --format=%ar -- docs/ROADMAP.md`. WARN if it predates the
+   last feature commit on `main` — a shipped surface whose row was never
+   ticked. (Do NOT check `docs/CURRENT_STATUS.md`: it is untracked since
+   #79, so any git-based check reports it as infinitely stale.)
+4. **ADR index integrity**: every file matching
+   `docs/decisions/[0-9]*.md` must be listed in
+   `docs/decisions/_index.md`, and every row in `_index.md` must point to
+   a file that exists. FAIL on mismatch.
+5. **ADR completeness**: every ADR has Status, Context, Decision,
+   Alternatives Considered, Consequences sections. FAIL on any ADR
+   missing one.
+6. **Convention coverage**: spot-check 3 random source files. Do their
+   patterns match `docs/CONVENTIONS.md`? If not, propose updates to
+   CONVENTIONS.md (do not auto-apply).
+7. **Surface boundary (ADR-003)**: spot-check that `packages/cli` and
+   `packages/mcp` import only `@albertomarturelo/sii-core`'s task layer (+ port
+   interfaces), never a portal/dte/auth/storage facade directly. Flag any
+   reach-past — it bypasses the throttling / audit / credential rails.
+8. **Language check**: any `docs/**/*.md` file written in a non-English
+   language? WARN per file.
+9. **`AGENTS.md` alias**: must be a symlink to `CLAUDE.md`
+   (`test -L AGENTS.md && [ "$(readlink AGENTS.md)" = CLAUDE.md ]`), so
+   agents other than Claude Code read the same index. FAIL if missing, or
+   if it is a regular file: a divergent copy, or a checkout without
+   `core.symlinks` that turned the link into a one-line text file. The CI
+   `validate-context` job fails on the same cases. Propose
+   `ln -sf CLAUDE.md AGENTS.md`.
+
+10. **On-demand context (ADR-033)**: neither `CLAUDE.md` nor a file it
+    `@`-imports may `@`-import `docs/ROADMAP.md` or
+    `docs/conventions/sii-wire.md` (anywhere on a line, outside backticks);
+    `docs/conventions/sii-wire.md` must exist; and `CLAUDE.md`'s Critical
+    Rules must keep the rule that names it. FAIL on any: an import puts the
+    file back in every request, a missing rule leaves the wire rules with no
+    trigger. The CI `validate-context` job fails on the same cases.
+
+11. **CFD version**: `grep -h '^  cfd-version:' .agents/skills/*/SKILL.md
+    | sort -u` must print one line. WARN if it prints several (partial
+    upgrade) or none (older than 0.3.0); propose `/cfd-upgrade`.
+
+Output the checklist and propose concrete fixes for any failures.
+Do NOT auto-apply fixes — the user reviews first.

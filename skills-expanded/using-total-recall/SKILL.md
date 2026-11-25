@@ -1,0 +1,128 @@
+---
+name: using-total-recall
+description: Initialize total-recall memory system and ensure session_start has been called. Use at session start or when memory features aren't working.
+---
+
+# Using total-recall
+
+This skill ensures the total-recall memory system is active for this session.
+
+## Immediate Action
+
+1. Call the total-recall `session_start` MCP tool now (if it already ran server-side, it returns cached results instantly)
+2. **If `session_start` is blocked by permissions** (e.g., in TUI fullscreen / `dontAsk` mode):
+   - Tell the user: "total-recall session_start was blocked by permissions. Your host's tool-permission settings need to allow total-recall's MCP tools to function (the exact tool name depends on how your host namespaces MCP tools). You may need to adjust permissions if you want total-recall active this session."
+   - On Claude Code, suggest running `/total-recall:commands setup` to auto-configure permissions for future sessions; other hosts don't have an automated fix yet — point the user at their host's own MCP tool-permission config.
+   - Proceed without memory features — this is degraded mode, not fatal
+3. **Announce startup** using the returned data:
+   - Report tier summary: pinned, hot, warm, cold, KB counts from `tierSummary`
+   - Report storage backend from `storage` (e.g. "sqlite", "cortex", "postgres"). If it shows a fallback like "sqlite (cortex failed)", flag this prominently.
+   - If `lastSessionAge` is present, mention when the last session was
+   - If `hints` are present, briefly surface the most relevant ones
+   - If `pinned_budget_pressure` is present in `hints`, surface it prominently: pinned entries are eating over half the context budget — suggest unpinning or trimming entries
+   - If `backgroundTasks.reindex` shows `state: "running"`, tell the user a one-time embedding re-index is in progress (`done`/`total`): **local semantic retrieval is degraded until it completes**. It runs in the background and the server is fully usable meanwhile — re-check via the `status` tool or the next `session_start`. (This is normal after an embedding-model change or upgrade; it is not an error.)
+   - If `backgroundTasks.setup` is present (`event: "provisioned"`), briefly note that first-run setup finished (the memory engine was downloaded) — a one-time message
+   - Keep it to 2-3 lines max
+4. Use `hints` to inform your behavior throughout the session
+5. Incorporate the returned context to inform your responses
+
+The built-in web UI is available at any time via `total-recall ui` (opens a local browser dashboard on port 5577 by default). It is independent of the MCP session — no AI assistant needed to use it.
+
+## Ongoing Behaviors
+
+Once initialized, follow these behaviors throughout the session. Tool calls will be visible to the user.
+
+### Handling startup not-ready results (shim provisioning)
+
+Since the MCP bootstrap shim (`bin/start.js`) stays connected while it provisions and starts the engine, a `tools/call` may return a structured not-ready result **before the engine is up** instead of dropping the connection. The response shape is an MCP tool result with `isError: true` and a JSON text payload:
+
+```json
+{ "status": "not_ready", "phase": "<phase>", "hint": "total-recall is still starting up; retry in a moment." }
+```
+
+The key phases you will actually see:
+
+| phase | What it means | What to do |
+|---|---|---|
+| `provisioning` | First launch after a plugin update — the shim is downloading and sha256-verifying the engine binary from GitHub Releases. | Wait 5–10 seconds and retry the tool call. Self-heals; the connection stays up. |
+| `engine-restarting` | The engine crashed and the shim is restarting it. | Retry shortly (5–10 s). After repeated failures the shim reports `engine-failed`. |
+| `engine-failed` | Engine could not be started after several attempts. | Surface the phase to the user and suggest restarting the MCP host. |
+
+The MCP connection **never drops** during provisioning — this eliminates the old `MCP error -32000: Connection closed` that would appear on first launch after a plugin update. Once the shim is proxying to the engine (`phase: "proxying"`), it emits `notifications/tools/list_changed` and normal operation resumes.
+
+This is **distinct** from the engine's own `model_not_ready` error (embedding model, described below). Both use the same recovery approach: wait briefly and retry.
+
+### Handling model bootstrap errors (embedding model)
+
+When `session_start` returns an error response containing `"error": "model_not_ready"`, parse the JSON payload and follow the recovery flow based on `reason`:
+
+| reason | What it means | What to do |
+|---|---|---|
+| `downloading` | First-run bootstrap is in progress (loading/validating the ~133 MB bundled ONNX model). Another process or this one holds the lock. | Wait 5–10 seconds and call `session_start` again. Repeat up to 12 times (~2 minutes total). Surface a brief status to the user on the first retry: "Total-recall is preparing its embedding model on first run. This is a one-time setup." |
+| `missing` | Bundled model not found on disk. The runtime does not download it — it must be present in the artifact (fetched + sha256-verified at build via `scripts/fetch-bge-small.sh`). | Surface the `hint` field to the user verbatim (it contains manual install instructions) and proceed without memory features for this session. |
+| `corrupted` | Model file present but failed checksum (e.g., partial install or a bad bundled file). | Call `session_start` once more in case it was a transient read. If it fails again with the same reason, surface the `hint` field to the user verbatim (it contains manual install instructions) and proceed without memory. |
+| `failed` | Other unrecoverable error preparing the model. | Surface the `hint` field verbatim to the user (manual install commands) and proceed without memory features for this session. Do NOT keep retrying — that will only delay the user. |
+
+After successful recovery, all subsequent total-recall behaviors (capture, retrieve, session end) should resume normally. If recovery is impossible, the assistant must continue helping the user with their actual task — memory unavailability is a degraded mode, not a fatal error.
+
+### Capture (continuous)
+
+When you detect these patterns in user messages, call `memory_store`:
+
+- **Correction**: "no", "not that", "actually", "use X instead" -> type "correction"
+- **Preference**: How the user wants things done -> type "preference"
+- **Decision**: Non-obvious architectural or design choices -> type "decision"
+- **Pin**: "pin that", "never forget this", "keep this permanently" -> call `memory_pin` (for new content: `memory_store` with `pinned: true`)
+- **Unpin**: "unpin X" -> `memory_unpin`
+
+Do NOT ask permission — just store it.
+
+**Storage constraints (apply when storing or pinning):**
+- **Pins are short directives, not reference material.** Pinned entries are capped at 500 characters. If the content is longer, distill the RULE into <= 500 chars and pin the distillation; keep the full detail as a normal warm memory.
+- **Store atomic, concise memories at every tier**: one fact per entry; split compound observations into separate memories. Long reference content belongs in the knowledge base (kb_ingest), not in memories.
+
+### Retrieve (continuous)
+
+On each user message that is a question or task request:
+
+1. Call `memory_search` with the message, searching warm tier
+2. If top score < 0.5, also search cold/knowledge tier
+3. Use results to inform your response
+
+### Feedback (continuous)
+
+`memory_search` and `kb_search` now return a `retrievalId` alongside `results`.
+After you use retrieved memories in your work, call `memory_feedback`:
+
+- Used it → `memory_feedback({ retrievalId, used: true })`
+- Searched and nothing was relevant → `memory_feedback({ retrievalId, used: false })`
+
+Report once per search, as soon as you know the outcome. Skip the call only when
+`retrievalId` is empty. Do NOT ask permission — just report it. This is what makes
+the Dashboard "Retrieval quality" metric real.
+
+### Pinned directives (continuous)
+
+Pinned directives are re-asserted automatically near the live edge by the
+per-turn pinned floor (where the host supports it — see the capability matrix in
+`skills/commands/SKILL.md`). You do not need to do anything for this.
+
+Additionally: when the user makes a **significant task switch** (a clearly new
+piece of work), call `session_refresh` once. This re-prepends the pinned block
+and refreshes hot-tier context near the current generation point. On hosts
+without a per-turn floor (e.g. Cursor) this is the primary way pinned directives
+stay salient — so do it on task switches there especially.
+
+### Session End
+
+1. Call `session_context` to get current hot tier entries
+2. If there are 2+ hot entries, launch the `total-recall:compactor` agent with the entries as input
+3. Parse the agent's JSON decisions and execute them
+4. Call `session_end` for final bookkeeping
+
+### Rules
+
+- Let tool calls be visible — users should see that memory is working
+- ALWAYS store corrections — highest-value memories
+- ALWAYS search warm tier before answering project questions
+- NEVER modify host tool files (Claude Code memory/, CLAUDE.md, etc.)
